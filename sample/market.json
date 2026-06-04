@@ -1,0 +1,11 @@
+{
+  "source": "stooq",
+  "updated_at": "2026-06-04T00:00:00",
+  "items": [
+    {"symbol": "AAPL", "price": "203.42", "change": "1.70", "percent": "+0.84%"},
+    {"symbol": "NVDA", "price": "142.08", "change": "-0.44", "percent": "-0.31%"},
+    {"symbol": "TSLA", "price": "178.66", "change": "2.24", "percent": "+1.27%"},
+    {"symbol": "SPY", "price": "592.18", "change": "1.30", "percent": "+0.22%"},
+    {"symbol": "QQQ", "price": "518.90", "change": "-0.62", "percent": "-0.12%"}
+  ]
+}
