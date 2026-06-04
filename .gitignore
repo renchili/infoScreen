@@ -1,0 +1,16 @@
+# runtime data
+schedule.json
+weather.json
+market.json
+
+# logs / backups
+*.log
+*.bak.*
+index.html.bak.*
+
+# unrelated local tools
+chatgpt-ui-once/
+
+# system
+.DS_Store
+__pycache__/
