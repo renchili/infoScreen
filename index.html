@@ -56,7 +56,7 @@
       padding: 10px;
       display: grid;
       grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.34fr) minmax(0, 0.96fr);
-      grid-template-rows: 82px minmax(0, 1fr) 62px;
+      grid-template-rows: 54px 82px minmax(0, 1fr) 62px;
       gap: 8px;
     }
 
@@ -140,8 +140,8 @@
       gap: 8px;
     }
 
-    .left { grid-template-rows: 0.7fr 1fr; }
-    .center { grid-template-rows: 0.58fr 1fr; min-width: 0; }
+    .left { grid-template-rows: minmax(0, 1fr) 46px; }
+    .center { grid-template-rows: minmax(0, 1fr); min-width: 0; }
     .right { grid-template-rows: 82px 112px minmax(0, 1fr); min-width: 0; overflow: hidden; }
 
     .summary {
@@ -409,11 +409,587 @@
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+
+
+    /* event stream: real fixed-pixel synced multilingual ticker */
+    .news-ticker-panel {
+      height: 100% !important;
+      display: grid !important;
+      grid-template-rows: 30px 30px 30px minmax(0, 1fr) !important;
+      gap: 5px !important;
+      overflow: hidden !important;
+      padding: 8px 0 0 0 !important;
+      background:
+        radial-gradient(circle, rgba(215,221,217,0.08) 1px, transparent 1.2px),
+        #050606 !important;
+      background-size: 6px 6px !important;
+      align-content: start !important;
+    }
+
+    .news-ticker-row {
+      height: 30px !important;
+      min-height: 30px !important;
+      max-height: 30px !important;
+      overflow: hidden !important;
+      display: flex !important;
+      align-items: center !important;
+      border-top: 1px solid var(--line2) !important;
+      border-bottom: 1px solid var(--line2) !important;
+      background: rgba(0, 0, 0, 0.38) !important;
+      min-width: 0 !important;
+      position: relative !important;
+    }
+
+    .news-ticker-track {
+      display: inline-flex !important;
+      align-items: center !important;
+      width: max-content !important;
+      height: 30px !important;
+      white-space: nowrap !important;
+      will-change: transform !important;
+      animation: none !important;
+      transform: translate3d(0,0,0);
+    }
+
+    .news-item {
+      display: inline-grid !important;
+      grid-template-columns: 58px 1fr 28px !important;
+      align-items: center !important;
+      width: 760px !important;
+      min-width: 760px !important;
+      max-width: 760px !important;
+      height: 30px !important;
+      overflow: hidden !important;
+      flex: 0 0 760px !important;
+      box-sizing: border-box !important;
+    }
+
+    .news-source {
+      color: var(--cyan) !important;
+      border: 1px solid var(--line2) !important;
+      padding: 2px 6px !important;
+      margin: 0 8px 0 18px !important;
+      font-size: 11px !important;
+      background: rgba(0,0,0,0.38) !important;
+      min-width: 34px !important;
+      justify-content: center !important;
+      overflow: hidden !important;
+      white-space: nowrap !important;
+    }
+
+    .news-title {
+      color: var(--text) !important;
+      font-size: 15px !important;
+      line-height: 1 !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+      white-space: nowrap !important;
+      min-width: 0 !important;
+      max-width: 100% !important;
+    }
+
+    .news-sep {
+      color: var(--yellow) !important;
+      padding: 0 !important;
+      font-size: 12px !important;
+      justify-content: center !important;
+    }
+
+    /* top market tape must be one single row */
+    .global-market-tape {
+      height: 46px !important;
+      min-height: 46px !important;
+      max-height: 46px !important;
+      overflow: hidden !important;
+      grid-column: 1 / 4 !important;
+    }
+
+    .global-tape-mask {
+      position: absolute !important;
+      left: 0 !important;
+      right: 0 !important;
+      top: 5px !important;
+      height: 36px !important;
+      overflow: hidden !important;
+      display: flex !important;
+      align-items: center !important;
+      white-space: nowrap !important;
+    }
+
+    .global-tape-track {
+      display: inline-flex !important;
+      flex-wrap: nowrap !important;
+      align-items: center !important;
+      width: max-content !important;
+      height: 36px !important;
+      line-height: 36px !important;
+      white-space: nowrap !important;
+      overflow: visible !important;
+      animation: globalMarketTapeLeft 52s linear infinite !important;
+    }
+
+    .global-tape-track > span {
+      display: inline-flex !important;
+      flex: 0 0 auto !important;
+      align-items: center !important;
+      height: 36px !important;
+      line-height: 1 !important;
+      white-space: nowrap !important;
+      font-size: 16px !important;
+      padding: 0 30px !important;
+    }
+
+    /* left column: status / market / sync ticker */
+    .left {
+      grid-template-rows: 170px minmax(0, 1fr) 46px !important;
+      min-height: 0 !important;
+      overflow: hidden !important;
+    }
+
+    .left > .box:first-child {
+      height: 170px !important;
+      min-height: 170px !important;
+      max-height: 170px !important;
+      overflow: hidden !important;
+    }
+
+    .left > .box:first-child .inner {
+      padding: 8px 10px !important;
+      height: 100% !important;
+      overflow: hidden !important;
+    }
+
+    .status-matrix {
+      gap: 5px !important;
+    }
+
+    .status-row {
+      display: grid !important;
+      grid-template-columns: 12px 1fr 78px !important;
+      gap: 7px !important;
+      align-items: center !important;
+      min-height: 22px !important;
+      padding: 3px 6px !important;
+      overflow: hidden !important;
+    }
+
+    .status-name {
+      font-size: 12px !important;
+      line-height: 1 !important;
+      overflow: hidden !important;
+      white-space: nowrap !important;
+      text-overflow: ellipsis !important;
+    }
+
+    .status-value {
+      font-size: 10px !important;
+      line-height: 1 !important;
+      overflow: hidden !important;
+      white-space: nowrap !important;
+      text-overflow: ellipsis !important;
+      text-align: right !important;
+    }
+
+    /* left sync ticker must be one row */
+    .left-ticker-tape {
+      height: 46px !important;
+      min-height: 46px !important;
+      max-height: 46px !important;
+      overflow: hidden !important;
+    }
+
+    .left-ticker-mask {
+      position: absolute !important;
+      left: 0 !important;
+      right: 0 !important;
+      top: 5px !important;
+      height: 36px !important;
+      overflow: hidden !important;
+      display: flex !important;
+      align-items: center !important;
+      white-space: nowrap !important;
+    }
+
+    .left-ticker-track {
+      display: inline-flex !important;
+      flex-wrap: nowrap !important;
+      align-items: center !important;
+      width: max-content !important;
+      height: 36px !important;
+      line-height: 36px !important;
+      white-space: nowrap !important;
+      overflow: visible !important;
+      animation: leftTickerMove 18s linear infinite !important;
+    }
+
+    .left-ticker-track > span {
+      display: inline-flex !important;
+      flex: 0 0 auto !important;
+      align-items: center !important;
+      height: 36px !important;
+      line-height: 1 !important;
+      white-space: nowrap !important;
+      font-size: 12px !important;
+      padding: 0 22px !important;
+    }
+
+    /* prevent market rows from stretching/wrapping */
+    .market-list {
+      overflow: hidden !important;
+    }
+
+    .market-row {
+      display: grid !important;
+      grid-template-columns: 56px 1fr 70px !important;
+      align-items: center !important;
+      min-height: 24px !important;
+      overflow: hidden !important;
+    }
+
+    .market-row span {
+      white-space: nowrap !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+    }
+
+
+    /* restore top market tape + left sync ticker scrolling */
+    .global-market-tape,
+    .left-ticker-tape {
+      overflow: hidden !important;
+    }
+
+    .global-tape-mask,
+    .left-ticker-mask {
+      overflow: hidden !important;
+      white-space: nowrap !important;
+      display: flex !important;
+      align-items: center !important;
+    }
+
+    .global-tape-track {
+      display: inline-flex !important;
+      flex-wrap: nowrap !important;
+      align-items: center !important;
+      width: max-content !important;
+      min-width: max-content !important;
+      white-space: nowrap !important;
+      will-change: transform !important;
+      animation: marketTapeScroll 48s linear infinite !important;
+    }
+
+    .left-ticker-track {
+      display: inline-flex !important;
+      flex-wrap: nowrap !important;
+      align-items: center !important;
+      width: max-content !important;
+      min-width: max-content !important;
+      white-space: nowrap !important;
+      will-change: transform !important;
+      animation: syncTapeScroll 22s linear infinite !important;
+    }
+
+    .global-tape-track > span,
+    .left-ticker-track > span {
+      display: inline-flex !important;
+      flex: 0 0 auto !important;
+      align-items: center !important;
+      white-space: nowrap !important;
+    }
+
+    @keyframes marketTapeScroll {
+      from { transform: translate3d(0, 0, 0); }
+      to { transform: translate3d(-50%, 0, 0); }
+    }
+
+    @keyframes syncTapeScroll {
+      from { transform: translate3d(0, 0, 0); }
+      to { transform: translate3d(-50%, 0, 0); }
+    }
+
+
+    /* restore tape colors only */
+    .global-tape-track > span {
+      color: var(--text) !important;
+    }
+
+    .global-tape-track .symbol {
+      color: var(--cyan) !important;
+      font-weight: 950 !important;
+      margin-right: 7px !important;
+    }
+
+    .global-tape-track .price {
+      color: var(--text) !important;
+      font-weight: 950 !important;
+      margin-right: 7px !important;
+    }
+
+    .global-tape-track .session {
+      color: var(--muted) !important;
+      font-size: 12px !important;
+      margin-right: 7px !important;
+    }
+
+    .global-tape-track .up {
+      color: var(--green) !important;
+      font-weight: 950 !important;
+    }
+
+    .global-tape-track .down {
+      color: var(--yellow) !important;
+      font-weight: 950 !important;
+    }
+
+    .global-tape-track .flat {
+      color: var(--muted) !important;
+      font-weight: 850 !important;
+    }
+
+    .left-ticker-track > span {
+      color: var(--muted) !important;
+    }
+
+    .left-ticker-track .sync-ok,
+    .left-ticker-track .up {
+      color: var(--green) !important;
+      font-weight: 950 !important;
+    }
+
+    .left-ticker-track .sync-fail,
+    .left-ticker-track .down {
+      color: var(--red) !important;
+      font-weight: 950 !important;
+    }
+
+    .left-ticker-track .sync-muted,
+    .left-ticker-track .flat {
+      color: var(--muted) !important;
+      font-weight: 850 !important;
+    }
+
+
+    /* left sync ticker multi-source colors */
+    .left-ticker-track .sync-ok {
+      color: var(--green) !important;
+      font-weight: 950 !important;
+    }
+
+    .left-ticker-track .sync-fail {
+      color: var(--red) !important;
+      font-weight: 950 !important;
+    }
+
+    .left-ticker-track .sync-warn {
+      color: var(--yellow) !important;
+      font-weight: 950 !important;
+    }
+
+    .left-ticker-track .sync-muted {
+      color: var(--muted) !important;
+      font-weight: 850 !important;
+    }
+
+
+    /* move center status into clock area */
+    .center {
+      grid-template-rows: minmax(0, 1fr) !important;
+    }
+
+    .time-status-mini {
+      margin-top: 3px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 14px;
+      font-size: 11px;
+      line-height: 1;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      white-space: nowrap;
+      text-transform: uppercase;
+    }
+
+    .time-status-mini .mini-ok {
+      color: var(--green);
+      font-weight: 900;
+    }
+
+    .time-status-mini .mini-warn {
+      color: var(--yellow);
+      font-weight: 900;
+    }
+
+    .time-status-mini .mini-dim {
+      color: var(--muted);
+      font-weight: 800;
+    }
+
+
+    /* remove duplicated left status matrix; compact into time */
+    .left {
+      grid-template-rows: minmax(0, 1fr) 46px !important;
+      min-height: 0 !important;
+      overflow: hidden !important;
+    }
+
+    .left > .box:first-child {
+      min-height: 0 !important;
+      height: auto !important;
+      max-height: none !important;
+      overflow: hidden !important;
+    }
+
+    .left > .box:first-child .inner {
+      height: 100% !important;
+      padding: 10px 12px !important;
+      overflow: hidden !important;
+    }
+
+    .time-status-mini {
+      margin-top: 3px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 14px;
+      font-size: 10px;
+      line-height: 1;
+      letter-spacing: 0.07em;
+      color: var(--muted);
+      white-space: nowrap;
+      text-transform: uppercase;
+    }
+
+    .time-status-mini .mini-ok {
+      color: var(--green);
+      font-weight: 900;
+    }
+
+    .time-status-mini .mini-warn {
+      color: var(--yellow);
+      font-weight: 900;
+    }
+
+    .time-status-mini .mini-dim {
+      color: var(--muted);
+      font-weight: 800;
+    }
+
+
+    /* hide all block title labels, content/layout unchanged */
+    .box::before,
+    .global-market-tape::before,
+    .left-ticker-tape::before {
+      display: none !important;
+      content: none !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+    }
+
+
+    /* single-photo airport flip display */
+    .photo-flip-wall {
+      grid-row: 4;
+      min-height: 0;
+      height: 100%;
+      overflow: hidden;
+      display: block !important;
+      padding: 10px;
+      background:
+        radial-gradient(circle, rgba(215,221,217,0.07) 1px, transparent 1.2px),
+        #050606;
+      background-size: 6px 6px;
+      position: relative;
+    }
+
+    .photo-single-card {
+      position: absolute;
+      inset: 10px;
+      overflow: hidden;
+      border: 1px solid var(--line2);
+      background: #050606;
+      perspective: 1000px;
+    }
+
+    .photo-single-inner {
+      position: absolute;
+      inset: 0;
+      background-size: contain;
+      background-repeat: no-repeat;
+      background-position: center;
+      transform-origin: center center;
+      transform: rotateX(0deg);
+      transition: transform 620ms ease, opacity 620ms ease, filter 620ms ease;
+      filter: grayscale(0.08) contrast(1.08) brightness(0.88);
+    }
+
+    .photo-single-card.flipping .photo-single-inner {
+      transform: rotateX(90deg);
+      opacity: 0.45;
+      filter: grayscale(0.35) contrast(1.2) brightness(0.42);
+    }
+
+    .photo-single-card::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background:
+        linear-gradient(to bottom, transparent 49%, rgba(0,0,0,0.65) 50%, transparent 51%),
+        repeating-linear-gradient(to bottom, rgba(255,255,255,0.035) 0, rgba(255,255,255,0.035) 1px, transparent 1px, transparent 6px);
+      mix-blend-mode: screen;
+      opacity: 0.36;
+    }
+
+    .photo-single-caption {
+      position: absolute;
+      left: 12px;
+      bottom: 10px;
+      z-index: 2;
+      max-width: calc(100% - 24px);
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 950;
+      letter-spacing: 0.08em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      text-shadow: 0 1px 3px #000;
+      opacity: 0.86;
+    }
+
+    .photo-flip-empty {
+      position: absolute;
+      inset: 10px;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 900;
+      letter-spacing: 0.12em;
+      border: 1px dashed var(--line2);
+      background: rgba(0,0,0,0.22);
+    }
+
   </style>
 </head>
 
 <body>
   <main class="screen">
+    <section class="box global-market-tape" data-title="market tape">
+      <div class="global-tape-mask">
+        <div class="global-tape-track" id="globalMarketTapeTrack">
+          <span class="flat">LOADING MARKET DATA</span>
+          <span class="flat">WAITING FOR market.json</span>
+          <span class="up">SURFACE TIMER ACTIVE</span>
+          <span class="flat">LOADING MARKET DATA</span>
+          <span class="flat">WAITING FOR market.json</span>
+          <span class="up">SURFACE TIMER ACTIVE</span>
+        </div>
+      </div>
+    </section>
+
+
     <section class="box top">
       <div>
         <div class="brand">SURFACE_INFO_TTY</div>
@@ -423,6 +999,11 @@
       <div class="clock">
         <div class="time" id="time">--:--</div>
         <div class="date" id="date">----</div>
+        <div class="time-status-mini" id="timeStatusMini">
+          <span class="mini-ok">DISPLAY ONLINE</span>
+          <span class="mini-warn">AC ONLY</span>
+          <span class="mini-dim">LOCAL DASHBOARD</span>
+        </div>
       </div>
 
       <div class="top-right">
@@ -432,17 +1013,7 @@
     </section>
 
     <section class="col left">
-      <div class="box" data-title="today">
-        <div class="inner">
-          <div class="summary">
-            <div class="summary-line"><span class="summary-key">location</span><span class="summary-val">Singapore</span></div>
-            <div class="summary-line"><span class="summary-key">weather</span><span class="summary-val cyan" id="summaryWeather">loading</span></div>
-            <div class="summary-line"><span class="summary-key">calendar</span><span class="summary-val" id="calendarCount">loading</span></div>
-            <div class="summary-line"><span class="summary-key">power</span><span class="summary-val warn">plugged / battery pending</span></div>
-            <div class="summary-line"><span class="summary-key">network</span><span class="summary-val ok">LAN OK</span></div>
-          </div>
-        </div>
-      </div>
+            
 
       <div class="box" data-title="market">
         <div class="inner">
@@ -451,23 +1022,46 @@
           </div>
         </div>
       </div>
-    </section>
 
-    <section class="col center">
-      <div class="box" data-title="status">
-        <div class="inner main-status">
-          <div class="cmd">$ surface-info --today --local</div>
-          <div class="headline" id="headline">Loading local dashboard<span class="cursor"></span></div>
-          <div class="quick-grid">
-            <div class="quick"><div class="quick-label">FOCUS</div><div class="quick-value">info-screen</div></div>
-            <div class="quick"><div class="quick-label">NEXT</div><div class="quick-value">real data</div></div>
-            <div class="quick"><div class="quick-label">DEVICE</div><div class="quick-value">surface-go</div></div>
+      <div class="box left-ticker-tape" data-title="ticker tape">
+        <div class="left-ticker-mask">
+          <div class="left-ticker-track" id="leftSyncTapeTrack">
+                        
+            
+            
+            
+            <span class="sync-muted">CHECKING SYNC STATUS</span>
+            <span class="sync-muted">SCHEDULE / WEATHER / MARKET / NEWS</span>
+            <span class="sync-muted">CHECKING SYNC STATUS</span>
+            <span class="sync-muted">SCHEDULE / WEATHER / MARKET / NEWS</span>
+          
+          
+          
+          
           </div>
         </div>
       </div>
+    </section>
+
+    <section class="col center">
+      
 
       <div class="box" data-title="event stream">
-        <div class="inner logs" id="logs"></div>
+        <div class="inner news-ticker-panel" id="eventFeed">
+          <div class="news-ticker-row">
+            <div class="news-ticker-track" id="newsTickerTrackEN"></div>
+          </div>
+          <div class="news-ticker-row">
+            <div class="news-ticker-track" id="newsTickerTrackFR"></div>
+          </div>
+          <div class="news-ticker-row">
+            <div class="news-ticker-track" id="newsTickerTrackZH"></div>
+          </div>
+
+          <div class="photo-flip-wall" id="photoFlipWall">
+            <div class="photo-flip-empty">ADD PHOTOS TO ~/infoscreen/photos</div>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -529,6 +1123,9 @@
     let headlineIndex = 0;
 
     function rotateHeadline() {
+      const headline = document.getElementById("headline");
+      const cursor = document.getElementById("cursor");
+      if (!headline || !cursor) return;
       document.getElementById("headline").innerHTML = headlines[headlineIndex] + '<span class="cursor"></span>';
       headlineIndex = (headlineIndex + 1) % headlines.length;
     }
@@ -601,44 +1198,439 @@
         if (temp) temp.textContent = tempText;
         if (desc) desc.innerHTML = `${escapeHtml(w.location || "Singapore")}<br />${escapeHtml(w.desc || "unknown")} / humidity ${escapeHtml(w.humidity || "--")}%<br />feels ${escapeHtml(w.feels_like_c || "--")}°C · ${escapeHtml(w.source || "local")}`;
         if (summary) summary.textContent = `${tempText} ${w.desc || ""}`;
+        const ws = document.getElementById("weatherStatus");
+        if (ws) ws.textContent = "OK";
       } catch (err) {
         if (temp) temp.textContent = "--°C";
         if (desc) desc.innerHTML = "weather.json not loaded<br />check Surface timer";
         if (summary) summary.textContent = "weather not loaded";
+        const ws = document.getElementById("weatherStatus");
+        if (ws) ws.textContent = "ERR";
       }
     }
 
     async function loadMarket() {
       const box = document.getElementById("marketList");
+      const tape = document.getElementById("leftTickerTrack");
+
       try {
         const res = await fetch("market.json?_=" + Date.now());
         const data = await res.json();
         const items = data.items || [];
         if (!items.length) throw new Error("empty market data");
-        box.innerHTML = items.slice(0, 6).map(i => {
-          const pct = String(i.percent || "N/A");
-          const cls = pct.trim().startsWith("-") ? "warn" : "ok";
-          const price = i.price && i.price !== "N/D" ? `$${escapeHtml(i.price)}` : "N/A";
-          return `<div class="market-row"><span class="ticker">${escapeHtml(i.symbol || "--")}</span><span class="price">${price}</span><span class="chg ${cls}">${escapeHtml(pct)}</span></div>`;
-        }).join("") + `<div class="market-foot">source: ${escapeHtml(data.source || "market")} · ${escapeHtml(data.updated_at || "")}</div>`;
+        const ms = document.getElementById("marketStatus");
+        if (ms) ms.textContent = "OK";
+
+        if (box) {
+          box.innerHTML = items.slice(0, 6).map(i => {
+            const pct = String(i.percent || "N/A");
+            const cls = pct.trim().startsWith("-") ? "warn" : "ok";
+            const price = i.price && i.price !== "N/D" ? `$${escapeHtml(i.price)}` : "N/A";
+            const session = i.session ? ` ${escapeHtml(i.session)}` : "";
+            return `<div class="market-row"><span class="ticker">${escapeHtml(i.symbol || "--")}</span><span class="price">${price}${session}</span><span class="chg ${cls}">${escapeHtml(pct)}</span></div>`;
+          }).join("") + `<div class="market-foot">source: ${escapeHtml(data.source || "market")} · ${escapeHtml(data.updated_at || "")}</div>`;
+        }
+
+        if (tape) {
+          const parts = items.slice(0, 10).map(i => {
+            const symbol = escapeHtml(i.symbol || "--");
+            const price = i.price && i.price !== "N/D" ? `$${escapeHtml(i.price)}` : "N/A";
+            const pct = String(i.percent || "N/A");
+            const session = i.session ? escapeHtml(i.session) : "";
+            const direction = pct.trim().startsWith("-") ? "down" : (pct === "N/A" ? "flat" : "up");
+            const arrow = direction === "down" ? "▼" : (direction === "up" ? "▲" : "◆");
+            return `<span><span class="symbol">${symbol}</span><span class="price">${price}</span>${session ? `<span class="session">${session}</span>` : ""}<span class="${direction}">${arrow} ${escapeHtml(pct)}</span></span>`;
+          });
+          tape.innerHTML = parts.join("") + parts.join("");
+        }
       } catch (err) {
-        box.innerHTML = `<div class="market-row"><span class="ticker">ERR</span><span class="price">market.json</span><span class="chg warn">FAIL</span></div><div class="market-foot">check Surface timer</div>`;
+        if (box) {
+          box.innerHTML = `<div class="market-row"><span class="ticker">ERR</span><span class="price">market.json</span><span class="chg warn">FAIL</span></div><div class="market-foot">check Surface timer</div>`;
+        }
       }
     }
 
+
+    async function loadTopMarketTape() {
+      const tape = document.getElementById("globalMarketTapeTrack");
+      if (!tape) return;
+
+      try {
+        const res = await fetch("market.json?_=" + Date.now());
+        const data = await res.json();
+        const items = data.items || [];
+
+        if (!items.length) throw new Error("empty market data");
+        const ms = document.getElementById("marketStatus");
+        if (ms) ms.textContent = "OK";
+
+        const parts = items.slice(0, 10).map(i => {
+          const symbol = escapeHtml(i.symbol || "--");
+          const price = i.price && i.price !== "N/D" ? `$${escapeHtml(i.price)}` : "N/A";
+          const pct = String(i.percent || "N/A");
+          const session = i.session ? escapeHtml(i.session) : "";
+          const direction = pct.trim().startsWith("-") ? "down" : (pct === "N/A" ? "flat" : "up");
+          const arrow = direction === "down" ? "▼" : (direction === "up" ? "▲" : "◆");
+
+          return `<span><span class="symbol">${symbol}</span><span class="price">${price}</span>${session ? `<span class="session">${session}</span>` : ""}<span class="${direction}">${arrow} ${escapeHtml(pct)}</span></span>`;
+        });
+
+        tape.innerHTML = parts.join("") + parts.join("");
+      } catch (err) {
+        tape.innerHTML =
+          `<span class="flat">MARKET DATA FAILED</span>` +
+          `<span class="flat">CHECK market.json</span>` +
+          `<span class="down">SURFACE TIMER ERROR</span>` +
+          `<span class="flat">MARKET DATA FAILED</span>` +
+          `<span class="flat">CHECK market.json</span>` +
+          `<span class="down">SURFACE TIMER ERROR</span>`;
+      }
+    }
+
+
+
+
+
+
+    let newsTickerStartTs = null;
+    let newsTickerLoopWidth = 0;
+    let newsTickerRaf = null;
+
+    function startSyncedNewsTicker() {
+      const tracks = [
+        document.getElementById("newsTickerTrackEN"),
+        document.getElementById("newsTickerTrackFR"),
+        document.getElementById("newsTickerTrackZH"),
+      ].filter(Boolean);
+
+      if (tracks.length !== 3) return;
+
+      // 每条 760px，显示 8 条，所以一轮固定 6080px。
+      const itemWidth = 760;
+      const itemCount = 8;
+      newsTickerLoopWidth = itemWidth * itemCount;
+
+      // 每秒移动像素。越小越慢。
+      const pxPerSecond = 48;
+
+      newsTickerStartTs = performance.now();
+
+      if (newsTickerRaf) {
+        cancelAnimationFrame(newsTickerRaf);
+        newsTickerRaf = null;
+      }
+
+      function frame(now) {
+        const elapsed = (now - newsTickerStartTs) / 1000;
+        const x = -((elapsed * pxPerSecond) % newsTickerLoopWidth);
+
+        tracks.forEach(el => {
+          el.style.transform = `translate3d(${x}px,0,0)`;
+        });
+
+        newsTickerRaf = requestAnimationFrame(frame);
+      }
+
+      newsTickerRaf = requestAnimationFrame(frame);
+    }
+
+    async function loadEventStream() {
+      const en = document.getElementById("newsTickerTrackEN");
+      const fr = document.getElementById("newsTickerTrackFR");
+      const zh = document.getElementById("newsTickerTrackZH");
+      if (!en || !fr || !zh) return;
+
+      try {
+        const res = await fetch("event_stream.json?_=" + Date.now());
+        const data = await res.json();
+        const grouped = data.items_by_lang || {};
+        const enItems = grouped.en || [];
+        const frItems = grouped.fr || [];
+        const zhItems = grouped.zh || [];
+
+        const count = Math.min(8, enItems.length, frItems.length, zhItems.length);
+        if (count < 1) throw new Error("empty event stream");
+
+        function render(label, list) {
+          let html = "";
+          for (let i = 0; i < 8; i++) {
+            const item = list[i % count] || {};
+            html += `
+              <span class="news-item">
+                <span class="news-source">${escapeHtml(label)}</span>
+                <span class="news-title">${escapeHtml(item.title || "Untitled")}</span>
+                <span class="news-sep">◆</span>
+              </span>
+            `;
+          }
+          return html;
+        }
+
+        const enHtml = render("EN", enItems);
+        const frHtml = render("FR", frItems);
+        const zhHtml = render("中文", zhItems);
+
+        // 两份完全相同的固定宽度内容，三行宽度严格一致。
+        en.innerHTML = enHtml + enHtml;
+        fr.innerHTML = frHtml + frHtml;
+        zh.innerHTML = zhHtml + zhHtml;
+
+        startSyncedNewsTicker();
+      } catch (err) {
+        const fallback = `
+          <span class="news-item">
+            <span class="news-source">ERR</span>
+            <span class="news-title">event_stream.json not loaded</span>
+            <span class="news-sep">◆</span>
+          </span>
+          <span class="news-item">
+            <span class="news-source">ERR</span>
+            <span class="news-title">check fetch_event_stream.py</span>
+            <span class="news-sep">◆</span>
+          </span>
+          <span class="news-item">
+            <span class="news-source">ERR</span>
+            <span class="news-title">translation failed or feed empty</span>
+            <span class="news-sep">◆</span>
+          </span>
+          <span class="news-item">
+            <span class="news-source">ERR</span>
+            <span class="news-title">waiting for next refresh</span>
+            <span class="news-sep">◆</span>
+          </span>
+        `;
+        en.innerHTML = fallback + fallback;
+        fr.innerHTML = fallback + fallback;
+        zh.innerHTML = fallback + fallback;
+        startSyncedNewsTicker();
+      }
+    }
+
+
+
+    function duplicateTapeIfNeeded(id) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (el.dataset.duplicated === "1") return;
+
+      const html = el.innerHTML.trim();
+      if (!html) return;
+
+      el.innerHTML = html + html;
+      el.dataset.duplicated = "1";
+    }
+
+
+    async function getFileSyncStatus(path, label, maxAgeSec) {
+      try {
+        const res = await fetch(path + "?_=" + Date.now(), {
+          method: "HEAD",
+          cache: "no-store"
+        });
+
+        const lastModified = res.headers.get("Last-Modified");
+
+        if (!res.ok || !lastModified) {
+          return {
+            label,
+            ok: false,
+            state: "MISS",
+            ageText: "--",
+            latest: "--"
+          };
+        }
+
+        const ts = new Date(lastModified);
+        const ageSec = Math.floor((Date.now() - ts.getTime()) / 1000);
+        const ok = ageSec <= maxAgeSec;
+
+        const ageText = ageSec < 60
+          ? `${ageSec}s`
+          : `${Math.floor(ageSec / 60)}m${ageSec % 60}s`;
+
+        const latest = ts.toLocaleString("zh-CN", {
+          hour12: false,
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit"
+        });
+
+        return {
+          label,
+          ok,
+          state: ok ? "OK" : "STALE",
+          ageText,
+          latest
+        };
+      } catch (err) {
+        return {
+          label,
+          ok: false,
+          state: "ERR",
+          ageText: "--",
+          latest: "--"
+        };
+      }
+    }
+
+
+
+
+    async function loadSyncStatus() {
+      const tape = document.getElementById("leftSyncTapeTrack");
+      if (!tape) return;
+
+      const items = await Promise.all([
+        getFileSyncStatus("schedule.json", "SCHEDULE", 10 * 60),
+        getFileSyncStatus("weather.json", "WEATHER", 15 * 60),
+        getFileSyncStatus("market.json", "MARKET", 10 * 60),
+        getFileSyncStatus("event_stream.json", "NEWS", 10 * 60),
+      ]);
+
+      const parts = items.map(x => {
+        const cls = x.ok ? "sync-ok" : (x.state === "STALE" ? "sync-warn" : "sync-fail");
+        const icon = x.ok ? "●" : (x.state === "STALE" ? "▲" : "■");
+
+        return `<span class="${cls}">${icon} ${escapeHtml(x.label)} ${escapeHtml(x.state)}</span>` +
+               `<span class="sync-muted">LATEST ${escapeHtml(x.latest)}</span>` +
+               `<span class="sync-muted">AGE ${escapeHtml(x.ageText)}</span>`;
+      });
+
+      tape.innerHTML = parts.join("") + parts.join("");
+    }
+
+
+    function updateTimeMiniStatus() {
+      const el = document.getElementById("timeStatusMini");
+      if (!el) return;
+
+      const weather = document.getElementById("weatherStatus")?.textContent || "WAIT";
+      const market = document.getElementById("marketStatus")?.textContent || "WAIT";
+      const calendar = document.getElementById("calendarCount")?.textContent || "WAIT";
+
+      el.innerHTML =
+        `<span class="mini-ok">DISPLAY ONLINE</span>` +
+        `<span class="mini-dim">WEATHER ${escapeHtml(weather)}</span>` +
+        `<span class="mini-dim">MARKET ${escapeHtml(market)}</span>` +
+        `<span class="mini-dim">CAL ${escapeHtml(calendar)}</span>` +
+        `<span class="mini-warn">AC ONLY</span>`;
+    }
+
+
+    let photoWallItems = [];
+    let photoWallCursor = 0;
+    let photoWallTimer = null;
+
+    function shuffleArray(arr) {
+      const a = arr.slice();
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    }
+
+    function nextPhotoItem() {
+      if (!photoWallItems.length) return null;
+      const item = photoWallItems[photoWallCursor % photoWallItems.length];
+      photoWallCursor += 1;
+      return item;
+    }
+
+    function setPhotoCard(card, item) {
+      const inner = card.querySelector(".photo-flip-inner");
+      const caption = card.querySelector(".photo-flip-caption");
+      if (!inner || !caption || !item) return;
+
+      card.classList.add("flipping");
+      setTimeout(() => {
+        inner.style.backgroundImage = `url("${item.src}")`;
+        caption.textContent = item.name || "";
+        card.classList.remove("flipping");
+      }, 260);
+    }
+    async function loadPhotoWall() {
+      const wall = document.getElementById("photoFlipWall");
+      if (!wall) return;
+
+      try {
+        const res = await fetch("photos.json?_=" + Date.now());
+        const data = await res.json();
+        const items = data.items || [];
+
+        if (!items.length) {
+          wall.innerHTML = `<div class="photo-flip-empty">ADD PHOTOS TO ~/infoscreen/photos</div>`;
+          return;
+        }
+
+        photoWallItems = shuffleArray(items);
+        photoWallCursor = 0;
+
+        wall.innerHTML = `
+          <div class="photo-single-card" id="photoSingleCard">
+            <div class="photo-single-inner" id="photoSingleInner"></div>
+            <div class="photo-single-caption" id="photoSingleCaption"></div>
+          </div>
+        `;
+
+        function showNextSinglePhoto() {
+          const card = document.getElementById("photoSingleCard");
+          const inner = document.getElementById("photoSingleInner");
+          const caption = document.getElementById("photoSingleCaption");
+          if (!card || !inner || !caption || !photoWallItems.length) return;
+
+          const item = nextPhotoItem();
+          if (!item) return;
+
+          card.classList.add("flipping");
+
+          setTimeout(() => {
+            inner.style.backgroundImage = `url("${item.src}")`;
+            caption.textContent = item.name || "";
+            card.classList.remove("flipping");
+          }, 310);
+        }
+
+        showNextSinglePhoto();
+
+        if (photoWallTimer) clearInterval(photoWallTimer);
+
+        if (photoWallItems.length > 1) {
+          photoWallTimer = setInterval(showNextSinglePhoto, 9000);
+        }
+      } catch (err) {
+        wall.innerHTML = `<div class="photo-flip-empty">photos.json not loaded</div>`;
+      }
+    }
+
+
+
+
+
+
     updateClock();
-    rotateHeadline();
+    updateTimeMiniStatus();
     loadAgenda();
     loadWeather();
     loadMarket();
-    for (let i = 0; i < 12; i++) addLog();
+    setTimeout(() => duplicateTapeIfNeeded("globalMarketTapeTrack"), 500);
+    setTimeout(() => duplicateTapeIfNeeded("leftSyncTapeTrack"), 500);
+    loadEventStream();
+    loadPhotoWall();
+    loadSyncStatus();
+    loadTopMarketTape();
     setInterval(updateClock, 1000);
+    setInterval(updateTimeMiniStatus, 30 * 1000);
     setInterval(rotateHeadline, 4500);
-    setInterval(addLog, 2400);
     setInterval(updateMetrics, 3800);
     setInterval(loadAgenda, 5 * 60 * 1000);
     setInterval(loadWeather, 5 * 60 * 1000);
     setInterval(loadMarket, 5 * 60 * 1000);
+    setInterval(loadEventStream, 5 * 60 * 1000);
+    setInterval(loadPhotoWall, 5 * 60 * 1000);
+    setInterval(loadSyncStatus, 60 * 1000);
+    setInterval(loadTopMarketTape, 5 * 60 * 1000);
   </script>
 </body>
 </html>
