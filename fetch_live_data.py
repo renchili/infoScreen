@@ -82,7 +82,7 @@ def detect_session(meta: dict) -> str:
     if state == "CLOSED":
         return "CLOSED"
 
-    return state or "UNKNOWN"
+    return state or ""
 
 def fetch_one_quote(symbol: str) -> dict:
     url = (
