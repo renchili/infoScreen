@@ -971,7 +971,192 @@
       background: rgba(0,0,0,0.22);
     }
 
+    /* LOCAL_EVENT_STATIC_START */
+    .left {
+      grid-template-rows: 155px minmax(0, 1fr) 46px !important;
+      min-height: 0 !important;
+      overflow: hidden !important;
+    }
+
+    .left > .box[data-title="market"] {
+      height: 155px !important;
+      min-height: 155px !important;
+      max-height: 155px !important;
+      overflow: hidden !important;
+    }
+
+    .left > .box[data-title="market"] .inner {
+      height: 100% !important;
+      overflow: hidden !important;
+      padding: 5px 12px !important;
+    }
+
+    .left > .box[data-title="market"] .market-row {
+      min-height: 19px !important;
+      padding-bottom: 2px !important;
+    }
+
+    .left > .box[data-title="market"] .market-foot {
+      display: none !important;
+    }
+
+    .local-event-static {
+      min-height: 0 !important;
+      height: 100% !important;
+      overflow: hidden !important;
+      background:
+        radial-gradient(circle, rgba(215,221,217,0.055) 1px, transparent 1.3px),
+        var(--panel) !important;
+      background-size: 6px 6px !important;
+    }
+
+    .local-event-static .inner {
+      height: 100% !important;
+      padding: 8px 10px !important;
+      overflow: hidden !important;
+      display: grid !important;
+      grid-template-rows: 26px minmax(0, 1fr) !important;
+      gap: 7px !important;
+    }
+
+    .local-place-form {
+      height: 26px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 38px;
+      gap: 6px;
+      margin: 0;
+      min-width: 0;
+    }
+
+    .local-place-form input {
+      width: 100%;
+      height: 26px;
+      padding: 2px 8px;
+      border: 1px solid var(--line);
+      background: #050606;
+      color: var(--cyan);
+      font: inherit;
+      font-size: 12px;
+      font-weight: 850;
+      outline: none;
+      text-transform: uppercase;
+    }
+
+    .local-place-form button {
+      height: 26px;
+      border: 1px solid var(--line);
+      background: var(--panel2);
+      color: var(--yellow);
+      font: inherit;
+      font-size: 11px;
+      font-weight: 950;
+      cursor: pointer;
+    }
+
+    .local-notice-list {
+      height: 100%;
+      min-height: 0;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      background: rgba(5,6,6,0.82);
+      padding: 6px 8px;
+      display: grid;
+      gap: 5px;
+      align-content: start;
+    }
+
+    .local-notice-row {
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+      display: grid;
+      grid-template-columns: 70px minmax(0, 1fr) 82px;
+      gap: 7px;
+      align-items: center;
+      border-bottom: 1px dotted var(--line2);
+      padding-bottom: 4px;
+      color: var(--text);
+      text-decoration: none;
+      font-size: 10px;
+      line-height: 1.15;
+      text-transform: uppercase;
+    }
+
+    .local-notice-row:last-child {
+      border-bottom: 0;
+    }
+
+    .local-notice-when {
+      color: var(--cyan);
+      font-weight: 950;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .local-notice-title {
+      color: var(--yellow);
+      font-weight: 900;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .local-notice-src {
+      color: var(--green);
+      font-weight: 850;
+      text-align: right;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .local-notice-empty {
+      height: 100%;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    /* LOCAL_EVENT_STATIC_END */
+    
+
+
   </style>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<link rel="stylesheet" href="calendar_board.css?v=1781715981">
 </head>
 
 <body>
@@ -1022,6 +1207,26 @@
           </div>
         </div>
       </div>
+
+      <div class="box local-event-static" data-title="local event" id="localEventBox">
+        <div class="inner">
+          <form class="local-place-form" id="localPlaceForm">
+            <input id="localPlaceInput" autocomplete="off" spellcheck="false" placeholder="Punggol" />
+            <button type="submit">GO</button>
+          </form>
+
+          <div class="local-notice-list" id="localNoticeList">
+            <div class="local-notice-empty">LOADING LOCAL NOTICE</div>
+          </div>
+        </div>
+      </div>
+
+
+
+
+
+
+
 
       <div class="box left-ticker-tape" data-title="ticker tape">
         <div class="left-ticker-mask">
@@ -1082,9 +1287,13 @@
         </div>
       </div>
 
-      <div class="box" data-title="calendar">
-        <div class="inner agenda" id="agendaList">
-          <div class="event"><div class="event-time">LOAD</div><div class="event-title">loading calendar...</div></div>
+            <div class="box" data-title="calendar">
+        <div class="inner agenda calendar-board" id="agendaList">
+          <div class="calendar-board-head">
+            <span>TIME</span>
+            <span>EVENT</span>
+          </div>
+          <div class="calendar-board-rows" id="calendarBoardRows"></div>
         </div>
       </div>
     </section>
@@ -1172,22 +1381,23 @@
       return String(s).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
     }
 
-    async function loadAgenda() {
-      const box = document.getElementById("agendaList");
-      const count = document.getElementById("calendarCount");
-      try {
-        const res = await fetch("schedule.json?_=" + Date.now());
-        const data = await res.json();
-        const events = Array.isArray(data) ? data : (data.events || []);
-        if (count) count.textContent = `${events.length} upcoming`;
-        box.innerHTML = events.slice(0, 8).map(e => `<div class="event"><div class="event-time">${escapeHtml(e.time || "--:--")}</div><div class="event-title">${escapeHtml(e.text || e.title || "Untitled")}</div></div>`).join("");
-      } catch (err) {
-        if (count) count.textContent = "not configured";
-        box.innerHTML = `<div class="event"><div class="event-time">LOCAL</div><div class="event-title">schedule.json not loaded</div></div>`;
-      }
+    
+
+    
+
+    
+
+    
+    
+
+    
+    
+    
+        async function loadAgenda() {
+      if (window.__calendarBoardLoad) return window.__calendarBoardLoad();
     }
 
-    async function loadWeather() {
+async function loadWeather() {
       const temp = document.getElementById("weatherTemp");
       const desc = document.getElementById("weatherDesc");
       const summary = document.getElementById("summaryWeather");
@@ -1632,5 +1842,195 @@
     setInterval(loadSyncStatus, 60 * 1000);
     setInterval(loadTopMarketTape, 5 * 60 * 1000);
   </script>
+
+  <script id="local-event-inline-script">
+    (function () {
+      let localEvents = [];
+      let localOffset = 0;
+      let currentLocation = localStorage.getItem("local_event_location") || "Punggol Singapore";
+
+      function safe(v, fallback) {
+        return String(v || fallback || "").trim();
+      }
+
+      function cut(v, n) {
+        v = safe(v).replace(/\s+/g, " ");
+        return v.length > n ? v.slice(0, n - 1) + "…" : v;
+      }
+
+      function esc(v) {
+        return String(v || "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+
+      function domain(url) {
+        try {
+          return new URL(url).hostname.replace(/^www\./, "");
+        } catch (_) {
+          return "";
+        }
+      }
+
+      function cleanTitle(t) {
+        return safe(t)
+          .replace(/^Children.?s Season 2026(?: Signature Programme)?\s*[-:]\s*/i, "")
+          .replace(/^PLAY @ Children.?s Season 2026\s*[-:]?\s*/i, "")
+          .replace(/\s*[-|]\s*(NHB|Children.?s Museum Singapore|heritage\.sg).*$/i, "")
+          .trim();
+      }
+
+      function badEvent(ev) {
+        const title = cleanTitle(ev.title || ev.poster_title || ev.what || "");
+        const url = safe(ev.url, "").toLowerCase();
+        if (!title) return true;
+        if (url.endsWith(".pdf")) return true;
+        return /things to do|popular things|places to visit|natural escape|media release|press release|shavees|stands together/i.test(title);
+      }
+
+      function usableEvents() {
+        return localEvents.filter(ev => !badEvent(ev));
+      }
+
+      function rowHtml(ev) {
+        const title = cleanTitle(ev.title || ev.poster_title || ev.what || "LOCAL EVENT");
+        const when = safe(ev.when, "CHECK DATE");
+        const url = safe(ev.url, "");
+        const source = safe(ev.source_name || ev.source || domain(url), "ONLINE");
+        const href = url ? ` href="${esc(url)}" target="_blank" rel="noreferrer"` : "";
+        return `
+          <a class="local-notice-row"${href}>
+            <span class="local-notice-when">${esc(cut(when, 20))}</span>
+            <span class="local-notice-title">${esc(cut(title, 96))}</span>
+            <span class="local-notice-src">${esc(cut(source, 22))}</span>
+          </a>
+        `;
+      }
+
+      function capacity() {
+        const box = document.getElementById("localNoticeList");
+        if (!box) return 1;
+        const h = box.clientHeight || 80;
+        // row 约 18px + gap 5px；至少 1 条，最多 8 条
+        return Math.max(1, Math.min(8, Math.floor((h - 8) / 23)));
+      }
+
+      function renderList() {
+        const box = document.getElementById("localNoticeList");
+        if (!box) return;
+
+        const items = usableEvents();
+
+        if (!items.length) {
+          box.innerHTML = `<div class="local-notice-empty">${esc(currentLocation)}: NO VERIFIED LOCAL EVENT FOUND</div>`;
+          return;
+        }
+
+        const n = Math.min(capacity(), items.length);
+        const rows = [];
+        for (let i = 0; i < n; i++) {
+          rows.push(rowHtml(items[(localOffset + i) % items.length]));
+        }
+        box.innerHTML = rows.join("");
+      }
+
+      function rotateList() {
+        const items = usableEvents();
+        const n = Math.min(capacity(), items.length || 1);
+        if (items.length > n) {
+          localOffset = (localOffset + n) % items.length;
+        }
+        renderList();
+      }
+
+      async function loadCache() {
+        try {
+          const res = await fetch("local_event_search_results.json?_=" + Date.now());
+          const data = await res.json();
+          localEvents = Array.isArray(data.results) ? data.results : [];
+          localOffset = 0;
+          renderList();
+        } catch (err) {
+          localEvents = [];
+          renderList();
+        }
+      }
+
+      async function searchLocation(location) {
+        currentLocation = location;
+        localStorage.setItem("local_event_location", location);
+        const box = document.getElementById("localNoticeList");
+        if (box) box.innerHTML = `<div class="local-notice-empty">SEARCHING ${esc(location)}</div>`;
+
+        try {
+          const res = await fetch("/api/local-events/search", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({ location, limit: 12, force: true })
+          });
+
+          const data = await res.json();
+          localEvents = Array.isArray(data.results) ? data.results : [];
+          localOffset = 0;
+          renderList();
+        } catch (err) {
+          localEvents = [];
+          renderList();
+        }
+      }
+
+      function initLocalPlaceInput() {
+        const input = document.getElementById("localPlaceInput");
+        const form = document.getElementById("localPlaceForm");
+
+        if (input) input.value = currentLocation.replace(/ Singapore$/i, "");
+
+        if (form) {
+          form.addEventListener("submit", function (e) {
+            e.preventDefault();
+            const raw = safe(input && input.value, "");
+            if (!raw) return;
+            const loc = /singapore/i.test(raw) ? raw : raw + " Singapore";
+            searchLocation(loc);
+          });
+        }
+      }
+
+      initLocalPlaceInput();
+      loadCache();
+      setInterval(rotateList, 8000);
+      setInterval(loadCache, 10 * 60 * 1000);
+
+      if (window.ResizeObserver) {
+        new ResizeObserver(renderList).observe(document.getElementById("localNoticeList"));
+      } else {
+        window.addEventListener("resize", renderList);
+      }
+    })();
+  </script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<script src="calendar_board.js?v=1781715981"></script>
 </body>
 </html>
