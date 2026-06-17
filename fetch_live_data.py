@@ -11,7 +11,24 @@ MARKET_OUT = BASE / "market.json"
 
 LOCATION = "Singapore"
 
-SYMBOLS = ["AAPL", "NVDA", "TSLA", "SPY", "QQQ"]
+DEFAULT_SYMBOLS = ["AAPL", "NVDA", "TSLA", "SPY", "QQQ"]
+
+
+def load_symbols():
+    if not MARKET_CONFIG.exists():
+        return DEFAULT_SYMBOLS
+
+    try:
+        data = json.loads(MARKET_CONFIG.read_text())
+        symbols = data.get("symbols", [])
+        clean = []
+        for item in symbols:
+            symbol = str(item).upper().strip()
+            if symbol and symbol not in clean:
+                clean.append(symbol)
+        return clean[:20] or DEFAULT_SYMBOLS
+    except Exception:
+        return DEFAULT_SYMBOLS
 
 def fetch_url(url: str, timeout: int = 20) -> bytes:
     req = urllib.request.Request(
@@ -157,7 +174,7 @@ def fetch_one_quote(symbol: str) -> dict:
 def fetch_market():
     items = []
 
-    for symbol in SYMBOLS:
+    for symbol in load_symbols():
         try:
             item = fetch_one_quote(symbol)
         except Exception as e:

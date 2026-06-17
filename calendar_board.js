@@ -1,8 +1,30 @@
 (function () {
+  var CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   var items = [];
   var offset = 0;
   var timer = null;
   var empty = true;
+  var spinHandles = [];
+
+  function clearSpin() {
+    spinHandles.forEach(function (h) {
+      if (h.type === "timeout") clearTimeout(h.id);
+      if (h.type === "interval") clearInterval(h.id);
+    });
+    spinHandles = [];
+  }
+
+  function later(fn, ms) {
+    var id = setTimeout(fn, ms);
+    spinHandles.push({ type: "timeout", id: id });
+    return id;
+  }
+
+  function tick(fn, ms) {
+    var id = setInterval(fn, ms);
+    spinHandles.push({ type: "interval", id: id });
+    return id;
+  }
 
   function esc(v) {
     return String(v || "")
@@ -51,17 +73,15 @@
   function cells(text, pad) {
     var raw = normalize(text);
     var n = slotCount();
-
     if (raw.length > n) raw = raw.slice(0, n);
-    if (pad) raw = raw.padEnd(n, " ");
-
+    
     var html = "";
     for (var i = 0; i < raw.length; i++) {
       var ch = raw[i];
       if (ch === " ") {
         html += '<span class="calendar-board-cell blank">&nbsp;</span>';
       } else {
-        html += '<span class="calendar-board-cell">' + esc(ch) + '</span>';
+        html += '<span class="calendar-board-cell" data-final="' + esc(ch) + '">' + esc(ch) + '</span>';
       }
     }
     return html;
@@ -69,30 +89,66 @@
 
   function rowHtml(item) {
     return '<div class="calendar-board-row">' +
-      '<div class="calendar-board-time">' + esc(item.time || "") + '</div>' +
-      '<div class="calendar-board-event">' + cells(item.title || item.text || "NO SCHEDULE EVENTS", !empty) + '</div>' +
+      '<div class="calendar-board-time">' + cells(item.time || "", false) + '</div>' +
+      '<div class="calendar-board-event">' + cells(item.title || item.text || "NO SCHEDULE EVENTS", false) + '</div>' +
       '</div>';
   }
 
-  function render() {
+  function animateBoard(rows) {
+    var cells = Array.prototype.slice.call(
+      rows.querySelectorAll(".calendar-board-cell:not(.blank)")
+    );
+
+    cells.forEach(function (cell, idx) {
+      var finalChar = cell.getAttribute("data-final") || cell.textContent || "";
+      var delay = idx * 95;
+
+      later(function () {
+        var step = 0;
+        cell.classList.add("flipping");
+        cell.textContent = "A";
+
+        var id = tick(function () {
+          if (step < CHARSET.length) {
+            cell.textContent = CHARSET[step];
+            step++;
+            return;
+          }
+
+          clearInterval(id);
+          cell.textContent = finalChar;
+          cell.classList.remove("flipping");
+          cell.classList.add("settled");
+
+          later(function () {
+            cell.classList.remove("settled");
+          }, 140);
+        }, 26);
+      }, delay);
+    });
+  }
+
+  function render(animate) {
     var rows = ensure();
     if (!rows) return;
+
+    clearSpin();
 
     var list = empty ? [{ time: "", title: "NO SCHEDULE EVENTS" }] : items;
     var n = Math.min(capacity(), list.length);
     var html = "";
 
-    rows.querySelectorAll(".calendar-board-row").forEach(function (r) {
-      r.classList.add("flipping");
-    });
-
     for (var i = 0; i < n; i++) {
       html += rowHtml(list[(offset + i) % list.length]);
     }
 
-    setTimeout(function () {
-      rows.innerHTML = html;
-    }, 120);
+    rows.innerHTML = html;
+
+    if (animate !== false) {
+      requestAnimationFrame(function () {
+        animateBoard(rows);
+      });
+    }
   }
 
   function rotate() {
@@ -100,7 +156,7 @@
       var n = Math.min(capacity(), items.length || 1);
       if (items.length > n) offset = (offset + n) % items.length;
     }
-    render();
+    render(true);
   }
 
   async function load() {
@@ -118,14 +174,14 @@
 
       empty = items.length === 0;
       offset = 0;
-      render();
+      render(true);
 
       if (timer) clearInterval(timer);
       timer = setInterval(rotate, 7000);
     } catch (err) {
       items = [{ time: "", title: "SCHEDULE ERROR" }];
       empty = true;
-      render();
+      render(true);
     }
   }
 
@@ -140,6 +196,6 @@
 
   if (window.ResizeObserver) {
     var box = document.getElementById("agendaList");
-    if (box) new ResizeObserver(render).observe(box);
+    if (box) new ResizeObserver(function () { render(false); }).observe(box);
   }
 })();

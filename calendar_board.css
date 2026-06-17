@@ -160,3 +160,64 @@
   justify-self: center !important;
   justify-content: center !important;
 }
+
+
+/* CALENDAR_FLIP_ANIM_START */
+.calendar-board-cell.flipping {
+  animation: calendar-char-flip 120ms steps(2, end) infinite !important;
+  color: var(--yellow) !important;
+}
+
+.calendar-board-cell.settled {
+  color: var(--text) !important;
+  filter: brightness(1.25) !important;
+}
+
+@keyframes calendar-char-flip {
+  0% {
+    filter: brightness(1.45);
+    transform: scaleY(1);
+  }
+  49% {
+    filter: brightness(0.55);
+    transform: scaleY(0.72);
+  }
+  50% {
+    filter: brightness(1.25);
+    transform: scaleY(1);
+  }
+  100% {
+    filter: brightness(0.95);
+    transform: scaleY(1);
+  }
+}
+/* CALENDAR_FLIP_ANIM_END */
+
+
+/* CALENDAR_TIME_FLIP_START */
+.calendar-board-time {
+  --cell-w: 13px;
+  --cell-h: 18px;
+  display: grid !important;
+  grid-auto-flow: column !important;
+  grid-auto-columns: var(--cell-w) !important;
+  gap: 1px !important;
+  justify-content: start !important;
+  align-items: center !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  color: var(--cyan) !important;
+}
+
+.calendar-board-time .calendar-board-cell {
+  color: var(--cyan) !important;
+}
+
+.calendar-board-time .calendar-board-cell.flipping {
+  color: var(--yellow) !important;
+}
+
+#agendaList.calendar-board.empty-schedule .calendar-board-time {
+  display: none !important;
+}
+/* CALENDAR_TIME_FLIP_END */
