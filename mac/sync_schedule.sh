@@ -2,6 +2,7 @@
 set -euo pipefail
 
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+PYTHON_BIN="/Users/rody/homebrew/opt/python@3.14/bin/python3.14"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -23,7 +24,7 @@ mkdir -p "$LOG_DIR"
   cd "$SCRIPT_DIR"
 
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] export schedule"
-  python3 export.py "$LOCAL_SCHEDULE_JSON"
+  "$PYTHON_BIN" export.py "$LOCAL_SCHEDULE_JSON"
 
   if [ ! -f "$SCRIPT_DIR/$LOCAL_SCHEDULE_JSON" ]; then
     echo "ERROR: local schedule not found: $SCRIPT_DIR/$LOCAL_SCHEDULE_JSON"
