@@ -1,0 +1,53 @@
+name: Quality Gate
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  repository-quality:
+    name: repository-quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout pull request head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Check repository quality and content policy
+        run: |
+          python scripts/ci/check_repo.py \
+            --base "${{ github.event.pull_request.base.sha }}" \
+            --head "${{ github.event.pull_request.head.sha }}"
+
+      - name: Check external JavaScript syntax
+        shell: bash
+        run: |
+          while IFS= read -r -d '' js; do
+            node --check "$js"
+          done < <(git ls-files -z -- '*.js')
+
+      - name: Check inline JavaScript syntax
+        shell: bash
+        run: |
+          python scripts/ci/extract_inline_js.py index.html .ci-inline-js
+
+          while IFS= read -r -d '' js; do
+            node --check "$js"
+          done < <(find .ci-inline-js -type f -name '*.js' -print0)
