@@ -1,4 +1,4 @@
-name: Quality Gate
+name: Pull Request Gate
 
 on:
   pull_request:
@@ -9,9 +9,19 @@ permissions:
   contents: read
 
 jobs:
-  repository-quality:
-    name: repository-quality
+  repository-check:
+    name: pr-${{ matrix.check }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        check:
+          - paths
+          - content
+          - structure
+          - python
+          - shell
+          - javascript
 
     steps:
       - name: Checkout pull request head
@@ -30,24 +40,21 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Check repository quality and content policy
-        run: |
-          python scripts/ci/check_repo.py \
-            --base "${{ github.event.pull_request.base.sha }}" \
-            --head "${{ github.event.pull_request.head.sha }}"
-
-      - name: Check external JavaScript syntax
+      - name: Run selected check
         shell: bash
         run: |
-          while IFS= read -r -d '' js; do
-            node --check "$js"
-          done < <(git ls-files -z -- '*.js')
-
-      - name: Check inline JavaScript syntax
-        shell: bash
-        run: |
-          python scripts/ci/extract_inline_js.py index.html .ci-inline-js
-
-          while IFS= read -r -d '' js; do
-            node --check "$js"
-          done < <(find .ci-inline-js -type f -name '*.js' -print0)
+          case "${{ matrix.check }}" in
+            paths|content|structure|python)
+              python3 scripts/ci/check_repo.py \
+                --suite "${{ matrix.check }}" \
+                --scope changed \
+                --base "${{ github.event.pull_request.base.sha }}" \
+                --head "${{ github.event.pull_request.head.sha }}"
+              ;;
+            shell)
+              bash scripts/ci/check_shell_syntax.sh
+              ;;
+            javascript)
+              bash scripts/ci/check_javascript_syntax.sh
+              ;;
+          esac
