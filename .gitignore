@@ -14,3 +14,7 @@ chatgpt-ui-once/
 # system
 .DS_Store
 __pycache__/
+logs/
+ddg_debug*.html
+ddg_debug*.txt
+*.bak*
