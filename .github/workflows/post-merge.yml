@@ -1,0 +1,85 @@
+name: Post Merge Verification
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  repository-check:
+    name: post-merge-${{ matrix.check }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        check:
+          - paths
+          - content
+          - structure
+          - python
+          - shell
+          - javascript
+
+    steps:
+      - name: Checkout merged main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Run selected check against merged delta
+        shell: bash
+        run: |
+          case "${{ matrix.check }}" in
+            paths|content|structure|python)
+              python3 scripts/ci/check_repo.py \
+                --suite "${{ matrix.check }}" \
+                --scope changed \
+                --base "${{ github.event.before }}" \
+                --head "${{ github.sha }}"
+              ;;
+            shell)
+              bash scripts/ci/check_shell_syntax.sh
+              ;;
+            javascript)
+              bash scripts/ci/check_javascript_syntax.sh
+              ;;
+          esac
+
+  dashboard-http-smoke:
+    name: post-merge-http-smoke
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout merged main
+        uses: actions/checkout@v4
+
+      - name: Start static dashboard server
+        shell: bash
+        run: python3 -m http.server 8765 --bind 127.0.0.1 > server.log 2>&1 &
+
+      - name: Verify dashboard entry page
+        shell: bash
+        run: |
+          for attempt in $(seq 1 20); do
+            if curl --fail --silent --show-error http://127.0.0.1:8765/ > index-response.html; then
+              break
+            fi
+            sleep 1
+          done
+
+          test -s index-response.html
+          grep -qi '<html' index-response.html
+          grep -qi 'surface_info_tty' index-response.html
