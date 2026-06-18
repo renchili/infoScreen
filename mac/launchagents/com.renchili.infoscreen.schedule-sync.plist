@@ -1,28 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
- "http://www.apple.com/DTDs/PropertyList-1.0.dtd"\>
+ "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
   <dict>
     <key>Label</key>
     <string>com.renchili.infoscreen.schedule-sync</string>
 
-    <key>ProgramArguments</key>
-    <array>
-      <string>/bin/bash</string>
-      <string>-lc</string>
-      <string>export PATH="/Users/rody/homebrew/opt/python@3.14/bin:/Users/rody/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"; cd /Users/rody/project/infoScreen &amp;&amp; bash mac/sync_schedule.sh</string>
-    </array>
-
-    <key>StartInterval</key>
-    <integer>120</integer>
-
-    <key>RunAtLoad</key>
+    <key>Disabled</key>
     <true/>
 
-    <key>StandardOutPath</key>
-    <string>/Users/rody/Library/Logs/infoscreen-schedule-sync.out.log</string>
-
-    <key>StandardErrorPath</key>
-    <string>/Users/rody/Library/Logs/infoscreen-schedule-sync.err.log</string>
+    <key>Comment</key>
+    <string>Legacy placeholder. Do not load this file. Run mac/scripts/setup-schedule-sync.sh to generate the per-machine LaunchAgent under the user LaunchAgents directory.</string>
   </dict>
 </plist>
