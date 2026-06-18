@@ -16,3 +16,7 @@ chatgpt-ui-once/
 __pycache__/
 logs/
 *.bak*
+
+# Per-machine macOS schedule sync configuration
+mac/local.env
+mac/launchagents/*.plist
