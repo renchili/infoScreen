@@ -1,0 +1,7 @@
+[Unit]
+Description=Fetch weather and market data for InfoScreen
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/infoscreen
+ExecStart=/usr/bin/python3 %h/infoscreen/fetch_live_data.py

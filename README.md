@@ -1,312 +1,222 @@
-# Surface Info TTY
+# InfoScreen
 
-ASCII-style local information screen for an old Surface Go running Ubuntu. It is designed for Chromium kiosk mode and displays local schedule, weather, market quotes, multilingual rolling news, photo flip display, and basic device status.
+InfoScreen is a local dashboard for an always-on display. It shows schedule items, stock watchlist quotes, local event discovery, weather, photos, event streams, and system status.
 
-## What it does
-
-- Runs as a local HTTP dashboard on the Surface Go.
-- Opens in Chromium kiosk mode.
-- Reads Apple Calendar data from `schedule.json`.
-- Reads weather data from `weather.json`.
-- Reads market quote data from `market.json`.
-- Reads multilingual news data from `event_stream.json`.
-- Reads photo manifest data from `photos.json`.
-- Keeps Apple Calendar private: the Mac exports only `schedule.json`; the dashboard never connects to your personal calendar directly.
-- Surface fetches public weather, market, news, and photo manifest data by itself using systemd user timers.
+Runtime data is intentionally excluded from git.
 
 ## Architecture
 
-```text
-Mac
-  cybercalendar/export.py schedule.json
-  launchd every 5 minutes
-  scp schedule.json to Surface
+Mac side:
 
-Surface Go Ubuntu
-  ~/infoscreen/index.html
-  ~/infoscreen/fetch_live_data.py       -> weather.json + market.json
-  ~/infoscreen/fetch_event_stream.py    -> event_stream.json
-  ~/infoscreen/build_photos_json.py     -> photos.json + public_photos/
-  python3 -m http.server 8765
-  Chromium kiosk -> http://127.0.0.1:8765/
-```
+    mac/export.py
+    mac/sync_schedule.sh
+    launchd timer
+    schedule.json push over SSH
 
-## Surface Go Ubuntu install notes
+Surface / Ubuntu side:
 
-Recommended path for Surface Go:
+    serve_infoscreen.py
+    fetch_live_data.py
+    search_local_events.py
+    user systemd services
+    dashboard on port 8765
 
-1. Create an Ubuntu USB installer.
-2. Boot Surface Go from USB.
-3. Install Ubuntu normally.
-4. During install, enable Wi-Fi if possible.
-5. After first boot, update packages.
-6. Install Chromium and runtime tools.
-7. Clone this repo into `~/infoscreen`.
-8. Run the setup script in this repo.
+Browser side:
 
-Typical commands after Ubuntu is installed:
+    index.html
+    calendar_board.js
+    calendar_board.css
+    market_custom.js
+    market_custom.css
 
-```bash
-sudo apt update
-sudo apt upgrade -y
-sudo apt install -y git python3 curl ca-certificates chromium ffmpeg imagemagick
+Data flow:
 
-git clone git@github.com:renchili/infoScreen.git ~/infoscreen
-cd ~/infoscreen
-bash scripts/setup_surface_go.sh
-```
+    Mac Calendar
+      -> mac/export.py
+      -> schedule.json
+      -> pushed to Surface / Ubuntu
+      -> calendar_board.js renders it
 
-If SSH clone is not configured yet, use HTTPS:
+    Browser market controls
+      -> /api/market-config
+      -> market_config.json
+      -> fetch_live_data.py
+      -> market.json
+      -> index.html renders it
 
-```bash
-git clone https://github.com/renchili/infoScreen.git ~/infoscreen
-```
+## Quick Start
 
-The page must be served over HTTP. Do not open `index.html` with `file://`, because the page uses `fetch()` to read JSON files.
+Clone the repository on the Surface / Ubuntu host:
 
-## Surface quick start
+    git clone <repo-url> infoscreen
+    cd infoscreen
 
-```bash
-cd ~/infoscreen
-python3 -m http.server 8765 --bind 0.0.0.0
-```
+Install user services:
 
-Open:
+    bash deploy/scripts/install-user-systemd.sh
 
-```text
-http://127.0.0.1:8765/
-```
+Open the dashboard:
 
-On another device in the same LAN:
+    http://<surface-host>:8765/index.html
 
-```text
-http://<surface-ip>:8765/
-```
+## Surface / Ubuntu Services
 
-## One-command Surface service setup
+The Surface / Ubuntu host owns the HTTP server and live-data refresh jobs.
 
-Run:
+Expected services:
 
-```bash
-cd ~/infoscreen
-bash scripts/setup_surface_go.sh
-```
+    infoscreen-http.service
+    infoscreen-live-data.timer
+    infoscreen-event-stream.timer
+    infoscreen-local-events.timer
 
-The script creates and starts:
+Check status:
 
-```text
-infoscreen-http.service
-infoscreen-live-data.timer
-infoscreen-event-stream.timer
-infoscreen-photos.timer
-```
+    systemctl --user status infoscreen-http.service --no-pager -l
+    systemctl --user list-timers --all --no-pager | grep infoscreen
 
-It also creates a Chromium kiosk autostart entry under:
+View logs:
 
-```text
-~/.config/autostart/infoscreen-kiosk.desktop
-```
+    journalctl --user -u infoscreen-http.service -f
+    tail -f logs/http.log logs/http.err.log
 
-## Systemd user timers on Surface
+The Surface / Ubuntu host must not generate calendar data. It only receives schedule.json from the Mac.
 
-### HTTP server
+## Mac Schedule Sync
 
-```bash
-systemctl --user status infoscreen-http.service
-systemctl --user restart infoscreen-http.service
-journalctl --user -u infoscreen-http.service -n 80 --no-pager
-```
+The Mac exports calendar data and pushes schedule.json to the Surface / Ubuntu host.
 
-### Weather and market data
+Create local config:
 
-```bash
-systemctl --user status infoscreen-live-data.timer
-systemctl --user start infoscreen-live-data.service
-journalctl --user -u infoscreen-live-data.service -n 80 --no-pager
-```
+    cp mac/local.env.example mac/local.env
 
-Generated files:
+Edit mac/local.env locally:
 
-```text
-weather.json
-market.json
-```
+    SURFACE_USER="<surface-ssh-user>"
+    SURFACE_HOST="<surface-host-or-ip>"
+    REMOTE_SCHEDULE_JSON="<remote-repo-path>/schedule.json"
+    PYTHON_BIN="<python-with-eventkit>"
 
-### Multilingual news stream
+Install launchd:
 
-```bash
-systemctl --user status infoscreen-event-stream.timer
-systemctl --user start infoscreen-event-stream.service
-journalctl --user -u infoscreen-event-stream.service -n 80 --no-pager
-```
+    bash mac/scripts/install-launchd-schedule-sync.sh
 
-Generated file:
+Check status:
 
-```text
-event_stream.json
-```
+    launchctl print gui/$(id -u)/com.renchili.infoscreen.schedule-sync
 
-### Photos manifest
+Check logs:
 
-```bash
-systemctl --user status infoscreen-photos.timer
-systemctl --user start infoscreen-photos.service
-journalctl --user -u infoscreen-photos.service -n 80 --no-pager
-```
+    tail -n 80 ~/Library/Logs/infoscreen-schedule-sync.out.log
+    tail -n 80 ~/Library/Logs/infoscreen-schedule-sync.err.log
 
-Input folder:
+## Market Watchlist
 
-```text
-~/infoscreen/photos/
-```
+The watchlist is stored in market_config.json at runtime.
 
-Generated output:
+Use the dashboard controls:
 
-```text
-~/infoscreen/photos.json
-~/infoscreen/public_photos/
-```
+    SAVE
+    REFRESH
 
-For iPhone HEIC images, the safest workflow is to convert on macOS first:
+Or create a local config from the example:
 
-```bash
-sips -s format jpeg IMG_6338.HEIC --out IMG_6338.jpg
-scp IMG_6338.jpg rody@10.168.1.207:/home/rody/infoscreen/photos/
-```
+    cp examples/market_config.example.json market_config.json
 
-Then rebuild the manifest:
+Refresh manually:
 
-```bash
-cd ~/infoscreen
-python3 build_photos_json.py
-```
+    python3 fetch_live_data.py
 
-Linux HEIC decoding can produce the wrong tile or preview layer for some iPhone files. Prefer Mac-generated JPG for important photos.
+market.json is runtime data and must not be committed.
 
-## Mac schedule sync
+## Local Events
 
-The Mac owns Apple Calendar access. It runs your CyberCalendar export, then pushes the generated `schedule.json` to Surface.
+Local event discovery is handled by:
 
-Existing script:
+    search_local_events.py
+    local_event_search_results.json
 
-```text
-mac/sync_schedule.sh
-```
+Run manually:
 
-Important variables inside it:
+    python3 search_local_events.py "<location>"
 
-```bash
-SURFACE_USER="rody"
-SURFACE_HOST="10.168.1.207"
-REMOTE_SCHEDULE_JSON="/home/rody/infoscreen/schedule.json"
-```
+Refresh through API:
 
-The script runs:
+    curl -X POST http://127.0.0.1:8765/api/local-events/search -H 'Content-Type: application/json' -d '{"location":"<location>"}'
 
-```bash
-python3 export.py schedule.json
-scp schedule.json rody@10.168.1.207:/home/rody/infoscreen/schedule.json
-```
+local_event_search_results.json is runtime data and must not be committed.
 
-Install launchd plist on Mac:
+## Calendar Board
 
-```text
-~/Library/LaunchAgents/com.renchi.infoscreen.schedule-sync.plist
-```
+The calendar board is rendered by:
 
-Load it:
+    calendar_board.js
+    calendar_board.css
 
-```bash
-launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.renchi.infoscreen.schedule-sync.plist 2>/dev/null || true
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.renchi.infoscreen.schedule-sync.plist
-launchctl kickstart -k gui/$(id -u)/com.renchi.infoscreen.schedule-sync
-```
+It reads schedule.json generated by the Mac sync process.
 
-Check Mac sync log:
+## Privacy
 
-```bash
-tail -n 80 /Users/rody/infoscreen-sync/push_schedule.log
-```
+Do not commit runtime data, logs, backups, local env files, SSH keys, personal calendar exports, personal photos, private IP addresses, personal email addresses, absolute home paths, passwords, tokens, or API keys.
 
-## Maintenance commands
+Excluded runtime files include:
 
-### Check everything
+    schedule.json
+    market.json
+    market_config.json
+    weather.json
+    event_stream.json
+    local_event_search_results.json
+    photos/
+    public_photos/
+    logs/
+    *.bak*
 
-```bash
-cd ~/infoscreen
-bash scripts/infoscreen_status.sh
-```
+## CI
 
-### Restart kiosk browser
+Run locally:
 
-```bash
-cd ~/infoscreen
-bash scripts/restart_kiosk.sh
-```
+    bash scripts/ci_check.sh
 
-### Trigger all Surface refresh jobs once
+GitHub Actions runs the same check on push and pull request.
 
-```bash
-systemctl --user start infoscreen-live-data.service
-systemctl --user start infoscreen-event-stream.service
-systemctl --user start infoscreen-photos.service
-```
+Checks include:
 
-### List timers
+    Python syntax
+    JavaScript syntax
+    JSON example validity
+    README required sections
+    privacy leak scan
 
-```bash
-systemctl --user list-timers --all | grep infoscreen
-```
+## Troubleshooting
 
-### Follow logs
+API returns 501:
 
-```bash
-journalctl --user -u infoscreen-live-data.service -f
-journalctl --user -u infoscreen-event-stream.service -f
-journalctl --user -u infoscreen-photos.service -f
-```
+    systemctl --user restart infoscreen-http.service
+    curl -i http://127.0.0.1:8765/api/market-config
 
-### Rebuild photo manifest manually
+Market data is stale:
 
-```bash
-cd ~/infoscreen
-python3 build_photos_json.py
-cat photos.json
-```
+    python3 fetch_live_data.py
+    python3 -m json.tool market.json | head
+    journalctl --user -u infoscreen-live-data.service -n 120 --no-pager
 
-### Re-fetch public data manually
+Schedule is empty:
 
-```bash
-cd ~/infoscreen
-python3 fetch_live_data.py
-python3 fetch_event_stream.py
-```
+    Check Mac launchd logs first.
+    Then check schedule.json on the Surface / Ubuntu host.
 
-## Files
+Local events are poor quality:
 
-```text
-index.html                         Main dashboard page
-fetch_live_data.py                 Fetch weather.json and market.json
-fetch_event_stream.py              Fetch multilingual news event_stream.json
-build_photos_json.py               Build photos.json and public_photos/
-mac/sync_schedule.sh               Mac-side calendar export and scp sync
-scripts/setup_surface_go.sh        Create Surface services/timers/autostart
-scripts/infoscreen_status.sh       Diagnose timers, logs, JSON files, HTTP
-scripts/restart_kiosk.sh           Restart Chromium kiosk
-photos/                            Original user photos, ignored by git
-public_photos/                     Web-normalized generated photos, ignored by git
-```
+    python3 search_local_events.py "<location>"
+    python3 -m json.tool local_event_search_results.json | head -n 120
 
-## Runtime JSON files
+## Backup and Rollback
 
-These are generated on the Surface and should normally stay out of git:
+Create a backup tag:
 
-```text
-schedule.json
-weather.json
-market.json
-event_stream.json
-photos.json
-```
+    git tag "backup-$(date +%Y%m%d-%H%M%S)"
 
-The dashboard uses file `Last-Modified` headers to show sync status, so it should be served by the local HTTP server.
+Rollback to a tag:
+
+    git checkout <tag>

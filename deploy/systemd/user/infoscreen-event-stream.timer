@@ -1,0 +1,10 @@
+[Unit]
+Description=Run InfoScreen event stream fetch every 5 minutes
+
+[Timer]
+OnBootSec=40
+OnUnitActiveSec=5min
+Unit=infoscreen-event-stream.service
+
+[Install]
+WantedBy=timers.target

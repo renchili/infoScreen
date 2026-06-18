@@ -2,709 +2,558 @@
 import json
 import re
 import sys
-import html
-import time
 import urllib.parse
-import urllib.request
-from pathlib import Path
 from datetime import datetime, timezone
+from pathlib import Path
 
-import trafilatura
-import dateparser.search
+import requests
 from bs4 import BeautifulSoup
 
+LOCATION = " ".join(sys.argv[1:]).strip() or "Punggol Singapore"
+OUT = Path("local_event_search_results.json")
 
-BASE = Path(__file__).resolve().parent
-OUT = BASE / "local_event_search_results.json"
-
-SEARCH_URLS = [
-    "https://html.duckduckgo.com/html/",
-    "https://lite.duckduckgo.com/lite/",
+SOURCE_REGISTRY = [
+    {
+        "name": "Children's Museum Singapore",
+        "kind": "direct",
+        "url": "https://www.heritage.sg/childrensmuseum/whatson/childrens-season---listing-page",
+        "audience": "children and families",
+        "where": "Children's Museum Singapore / participating venues",
+    },
+    {
+        "name": "Children's Museum Singapore",
+        "kind": "site_query",
+        "site": "heritage.sg/childrensmuseum",
+        "queries": [
+            '"Children\'s Museum Singapore" "2026" "programme"',
+            '"Children\'s Season 2026" "Singapore"',
+            '"Children\'s Season 2026" "museum"',
+        ],
+        "audience": "children and families",
+    },
+    {
+        "name": "National Gallery Singapore",
+        "kind": "site_query",
+        "site": "nationalgallery.sg",
+        "queries": [
+            '"National Gallery Singapore" "family" "programme"',
+            '"National Gallery Singapore" "children" "workshop"',
+            '"National Gallery Singapore" "kids" "2026"',
+        ],
+        "audience": "children and families",
+    },
+    {
+        "name": "National Museum Singapore",
+        "kind": "site_query",
+        "site": "nhb.gov.sg/nationalmuseum",
+        "queries": [
+            '"National Museum Singapore" "children" "programme"',
+            '"National Museum Singapore" "family" "2026"',
+        ],
+        "audience": "children and families",
+    },
+    {
+        "name": "Asian Civilisations Museum",
+        "kind": "site_query",
+        "site": "nhb.gov.sg/acm",
+        "queries": [
+            '"Asian Civilisations Museum" "family" "programme"',
+            '"Asian Civilisations Museum" "children" "2026"',
+        ],
+        "audience": "children and families",
+    },
+    {
+        "name": "Peranakan Museum",
+        "kind": "site_query",
+        "site": "nhb.gov.sg/peranakanmuseum",
+        "queries": [
+            '"Peranakan Museum" "family" "programme"',
+            '"Peranakan Museum" "children" "2026"',
+        ],
+        "audience": "children and families",
+    },
+    {
+        "name": "ArtScience Museum",
+        "kind": "site_query",
+        "site": "marinabaysands.com/museum",
+        "queries": [
+            '"ArtScience Museum" "family" "workshop"',
+            '"ArtScience Museum" "children" "2026"',
+        ],
+        "audience": "children and families",
+    },
+    {
+        "name": "Science Centre Singapore",
+        "kind": "site_query",
+        "site": "science.edu.sg",
+        "queries": [
+            '"Science Centre Singapore" "children" "workshop"',
+            '"KidsSTOP" "2026" "programme"',
+        ],
+        "audience": "children and families",
+    },
+    {
+        "name": "NLB Punggol Regional Library",
+        "kind": "site_query",
+        "site": "eventbrite.sg",
+        "queries": [
+            '"Punggol Regional Library" "NLB" "event"',
+            '"Punggol Regional Library" "programme"',
+            '"NLB" "Punggol" "children"',
+        ],
+        "audience": "library visitors",
+        "where": "Punggol Regional Library",
+    },
+    {
+        "name": "One Punggol",
+        "kind": "site_query",
+        "site": "onepunggol.sg",
+        "queries": [
+            '"One Punggol" "event"',
+            '"One Punggol" "programme"',
+            '"One Punggol" "children"',
+        ],
+        "audience": "residents",
+        "where": "One Punggol",
+    },
+    {
+        "name": "onePA / People's Association",
+        "kind": "site_query",
+        "site": "onepa.gov.sg",
+        "queries": [
+            '"Punggol" "onePA" "event"',
+            '"Punggol" "People\'s Association" "event"',
+            '"Punggol CC" "event"',
+            '"Punggol West" "event"',
+        ],
+        "audience": "residents",
+    },
+    {
+        "name": "SAFRA Punggol",
+        "kind": "site_query",
+        "site": "safra.sg",
+        "queries": [
+            '"SAFRA Punggol" "event"',
+            '"SAFRA Punggol" "workshop"',
+            '"SAFRA Punggol" "children"',
+        ],
+        "audience": "families",
+        "where": "SAFRA Punggol",
+    },
+    {
+        "name": "Waterway Point",
+        "kind": "site_query",
+        "site": "waterwaypoint.com.sg",
+        "queries": [
+            '"Waterway Point" "event"',
+            '"Waterway Point" "children"',
+            '"Waterway Point" "workshop"',
+        ],
+        "audience": "shoppers and families",
+        "where": "Waterway Point",
+    },
 ]
 
-EVENT_WORDS = [
-    "event", "events", "festival", "concert", "market", "workshop",
-    "exhibition", "show", "performance", "screening", "fair", "expo",
-    "community", "family", "kids", "children", "music", "art",
-    "theatre", "theater", "food", "nightlife", "ticket", "tickets",
-    "register", "registration", "things to do", "what's on",
-    "activity", "activities", "open house", "celebration"
-]
+BAD_HOST = re.compile(
+    r"(duckduckgo|google|bing|facebook\.com|instagram\.com|youtube\.com|tiktok|"
+    r"sgmytaxi|taxi|propertyguru|99\.co|edgeprop|tripadvisor|booking|agoda|"
+    r"klook|kkday|travel|tourism|wanderlog|holidify|foodpanda|deliveroo)",
+    re.I,
+)
 
-BAD_WORDS = [
-    "job", "jobs", "career", "salary", "property", "real estate",
-    "hotel", "flight", "weather", "privacy policy", "terms of use",
-    "login", "sign in", "coupon", "promo code", "download app"
-]
+BAD_TITLE = re.compile(
+    r"(things to do|popular things|places to visit|attractions|natural escape|"
+    r"guide|tourist|travel|restaurant|food|condo|property|hotel|taxi|"
+    r"airport transfer|near me|map|weather|media release|press release|"
+    r"shavees|stands together)",
+    re.I,
+)
 
-BAD_URL_PARTS = [
-    "/search", "/tag/", "/category/", "/author/", "/privacy", "/terms",
-    "/login", "/signup", "/account", "/jobs", "/careers", "/cdn-cgi/"
-]
+GENERIC_TITLE = re.compile(
+    r"^\s*(events?|activities|calendar|programmes?|programs?|what.?s happening|"
+    r"onepa\s*\|\s*events|local events?|community events?|things to do|"
+    r"listing page|whatson|what.?s on)\s*$",
+    re.I,
+)
 
-BAD_NAV_TEXT = {
-    "next", "previous", "more", "images", "videos", "maps", "news",
-    "feedback", "settings", "privacy", "terms"
-}
+EVENT_HINT = re.compile(
+    r"(event|programme|program|workshop|register|registration|ticket|booking|"
+    r"class|festival|talk|tour|fair|market|screening|performance|concert|"
+    r"children|kids|family|museum|gallery|library|community|activity|session|"
+    r"open house|guided walk|sign up|signup|carnival|storytelling|craft|play)",
+    re.I,
+)
 
+DATE_RE = re.compile(
+    r"(\b\d{1,2}(?:,\s*\d{1,2})*(?:\s*(?:-|–|to)\s*\d{1,2})?\s+"
+    r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s+\d{4}\b|"
+    r"\b\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s*[-–]\s*"
+    r"\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s+\d{4}\b|"
+    r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4}\b|"
+    r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b)",
+    re.I,
+)
 
-def clean_text(text):
-    text = html.unescape(str(text or ""))
-    text = re.sub(r"<script[\s\S]*?</script>", " ", text, flags=re.I)
-    text = re.sub(r"<style[\s\S]*?</style>", " ", text, flags=re.I)
-    text = re.sub(r"<[^>]+>", " ", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
+def clean(s):
+    return re.sub(r"\s+", " ", str(s or "")).strip()
 
+def strip_brand(s):
+    s = clean(s)
+    s = re.sub(
+        r"\s*[-|]\s*(DuckDuckGo|Google|Facebook|Eventbrite|Peatix|Meetup|onePA|Allevents|People.?s Association|NLB|National Gallery Singapore).*$",
+        "",
+        s,
+        flags=re.I,
+    )
+    return s.strip()
 
-def fetch_html(url, timeout=18, max_bytes=1000000):
-    req = urllib.request.Request(
+def get(url, timeout=22):
+    return requests.get(
         url,
+        timeout=timeout,
         headers={
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-SG,en;q=0.9",
+            "User-Agent": "Mozilla/5.0 infoscreen-local-events-source-registry/5.0",
+            "Accept": "text/html,application/xhtml+xml,text/plain,*/*",
         },
+        allow_redirects=True,
     )
 
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        ctype = resp.headers.get("Content-Type", "")
-        raw = resp.read(max_bytes)
+def abs_url(base, href):
+    return urllib.parse.urljoin(base, href or "")
 
-    if ctype and any(x in ctype.lower() for x in ["image/", "application/pdf", "video/", "audio/"]):
-        raise RuntimeError(f"unsupported content-type: {ctype}")
-
-    return raw.decode("utf-8", errors="replace")
-
-
-def extract_target_url(href):
-    href = html.unescape(str(href or "")).strip()
+def unwrap_ddg_url(href):
     if not href:
         return ""
-
-    href = urllib.parse.urljoin("https://duckduckgo.com/", href)
-    parsed = urllib.parse.urlparse(href)
-    qs = urllib.parse.parse_qs(parsed.query)
-
-    if "uddg" in qs:
-        return qs["uddg"][0]
-
-    if "u" in qs and "duckduckgo.com" in parsed.netloc:
-        return qs["u"][0]
-
+    if href.startswith("//"):
+        href = "https:" + href
+    if "uddg=" in href:
+        try:
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(href).query)
+            return urllib.parse.unquote(qs.get("uddg", [""])[0])
+        except Exception:
+            return ""
     return href
 
-
-def is_external_url(url):
-    if not url.startswith("http"):
-        return False
-
+def is_bad_url_or_title(title, url):
     parsed = urllib.parse.urlparse(url)
     host = parsed.netloc.lower().replace("www.", "")
     path = parsed.path.lower()
 
-    if not host:
-        return False
-
-    if host in {"w3.org", "www.w3.org"}:
-        return False
-
-    if "duckduckgo.com" in host:
-        return False
-
-    if any(x in host for x in ["google.com", "bing.com", "yahoo.com"]):
-        return False
-
-    if "loose.dtd" in path or "/tr/html" in path:
-        return False
-
-    if any(x in path for x in BAD_URL_PARTS):
-        return False
-
-    if re.search(r"\.(png|jpg|jpeg|gif|svg|css|js|ico|pdf|dtd|xml)(\?|$)", url, re.I):
-        return False
-
-    return True
-
-
-def build_queries(location):
-    loc = str(location or "Singapore").strip()
-
-    parts = [x for x in re.split(r"\s+", loc) if x]
-    area = loc
-    if len(parts) >= 2 and parts[0].lower() in {"singapore", "sg"}:
-        area = " ".join(parts[1:])
-
-    # 少量高质量 query，避免 DDG anomaly / bot block
-    queries = [
-        f"{area} events Singapore",
-        f"{area} upcoming events Singapore",
-        f"{area} community events Singapore",
-        f"{area} onePA events",
-        f"{area} things to do Singapore",
-    ]
-
-    out = []
-    for q in queries:
-        q = re.sub(r"\s+", " ", q).strip()
-        if q and q not in out:
-            out.append(q)
-
-    return out
-
-
-
-def is_ddg_blocked(body):
-    low = body.lower()
-    if "anomaly" in low and "bot" in low:
+    if not url.startswith("http"):
         return True
-    if "captcha" in low:
+    if url.lower().endswith(".pdf"):
         return True
-    if "unusual traffic" in low:
+    if "/y.js" in path:
         return True
-    # 正常 DDG 结果页通常应该有结果链接或 uddg
-    if low.count("<a ") <= 3 and "uddg=" not in low and "result__a" not in low:
+    if BAD_HOST.search(host) or BAD_HOST.search(url) or BAD_TITLE.search(title):
+        return True
+    if GENERIC_TITLE.match(title):
+        return True
+    if re.search(r"(/search|/tag|/category|/categories|/directory|/things-to-do|/places|/attractions)", path):
         return True
     return False
 
+def search_ddg(query, site=None):
+    q = query
+    if site:
+        q = f'site:{site} {query}'
+    url = "https://html.duckduckgo.com/html/?" + urllib.parse.urlencode({"q": q})
+    r = get(url)
+    r.raise_for_status()
+    return r.text
 
-def ddg_request(query, query_idx):
-    bodies = []
+def parse_ddg(html):
+    soup = BeautifulSoup(html, "html.parser")
+    rows = []
 
-    for source_idx, base_url in enumerate(SEARCH_URLS):
-        url = base_url + "?" + urllib.parse.urlencode({
-            "q": query,
-            "kl": "sg-en",
-        })
-
-        req = urllib.request.Request(
-            url,
-            headers={
-                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Accept-Language": "en-SG,en;q=0.9",
-                "Referer": "https://duckduckgo.com/",
-            },
-        )
-
-        try:
-            with urllib.request.urlopen(req, timeout=20) as resp:
-                body = resp.read().decode("utf-8", errors="replace")
-                (BASE / f"ddg_debug_q{query_idx}_{source_idx}.html").write_text(
-                    body,
-                    encoding="utf-8",
-                    errors="ignore",
-                )
-                bodies.append(body)
-        except Exception as exc:
-            (BASE / f"ddg_debug_q{query_idx}_{source_idx}_error.txt").write_text(
-                str(exc),
-                encoding="utf-8",
-                errors="ignore",
-            )
-
-    return bodies
-
-
-def parse_ddg_results(body):
-    results = []
-    seen = set()
-    soup = BeautifulSoup(body, "html.parser")
-
-    def add_result(href, text):
-        text = clean_text(text)
-        if not text:
-            return
-
-        low = text.lower().strip()
-        if low in BAD_NAV_TEXT or len(low) < 4:
-            return
-
-        target = extract_target_url(href)
-        target = html.unescape(urllib.parse.unquote(target)).strip()
-
-        if not is_external_url(target):
-            return
-
-        key = target.split("?")[0].rstrip("/")
-        if key in seen:
-            return
-
-        seen.add(key)
-
-        host = urllib.parse.urlparse(target).netloc.lower().replace("www.", "")
-
-        results.append({
-            "title": text[:180],
-            "url": target[:1000],
-            "source": host[:100],
-            "summary": text[:300],
-        })
-
-    for a in soup.find_all("a", href=True):
-        href = a.get("href") or ""
-        cls = " ".join(a.get("class") or [])
-        text = a.get_text(" ", strip=True)
-
-        if "result__a" in cls or "result-link" in cls or "uddg=" in href:
-            add_result(href, text)
-
-    if results:
-        return results
-
-    for a in soup.find_all("a", href=True):
-        href = a.get("href") or ""
-        text = a.get_text(" ", strip=True)
-
-        if "uddg=" not in href and not href.startswith("http") and not href.startswith("//"):
+    for block in soup.select(".result, .web-result, .results_links, .result__body"):
+        a = block.select_one("a.result__a, .result__title a, a[href*='uddg=']")
+        if not a:
             continue
 
-        add_result(href, text)
+        raw_title = clean(a.get_text(" ", strip=True))
+        title = strip_brand(raw_title)
+        url = unwrap_ddg_url(a.get("href", ""))
 
-    return results
+        if is_bad_url_or_title(title, url):
+            continue
 
+        sn = block.select_one(".result__snippet, .snippet")
+        snippet = clean(sn.get_text(" ", strip=True)) if sn else ""
 
-def ddg_search(location, max_candidates=20):
-    candidates = []
+        rows.append({
+            "title": title,
+            "url": url,
+            "snippet": snippet[:320],
+            "source": urllib.parse.urlparse(url).netloc.lower().replace("www.", ""),
+        })
+
+    return dedupe_rows(rows)
+
+def parse_direct_listing(source):
+    base = source["url"]
+    r = get(base)
+    r.raise_for_status()
+    soup = BeautifulSoup(r.text, "html.parser")
+
+    for bad in soup(["script", "style", "noscript", "svg"]):
+        bad.decompose()
+
+    rows = []
+    for a in soup.find_all("a"):
+        raw_title = clean(a.get_text(" ", strip=True))
+        title = strip_brand(raw_title)
+        url = abs_url(base, a.get("href", ""))
+
+        if len(title) < 8:
+            continue
+        if is_bad_url_or_title(title, url):
+            continue
+
+        block = a
+        for _ in range(4):
+            if block.parent:
+                block = block.parent
+
+        text = clean(block.get_text(" ", strip=True))
+        if not EVENT_HINT.search(text + " " + title):
+            continue
+
+        rows.append({
+            "title": title,
+            "url": url,
+            "snippet": text[:360],
+            "source": urllib.parse.urlparse(url).netloc.lower().replace("www.", ""),
+            "source_name": source["name"],
+            "source_where": source.get("where", ""),
+            "source_audience": source.get("audience", ""),
+        })
+
+    return dedupe_rows(rows)
+
+def dedupe_rows(rows):
     seen = set()
-    queries = build_queries(location)
+    out = []
+    for r in rows:
+        key = r["url"].split("?")[0].rstrip("/")
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(r)
+    return out
 
-    for idx, query in enumerate(queries):
-        bodies = ddg_request(query, idx)
+def parse_date(blob):
+    m = DATE_RE.search(blob or "")
+    return m.group(0) if m else ""
 
-        for body in bodies:
-            if is_ddg_blocked(body):
-                # DDG 已经返回 anomaly/bot 页面，继续打只会更糟
-                return queries, candidates
-
-            for item in parse_ddg_results(body):
-                key = item["url"].split("?")[0].rstrip("/")
-                if key in seen:
+def jsonld_event(soup, row, source):
+    for script in soup.select('script[type="application/ld+json"]'):
+        try:
+            raw = script.string or script.get_text()
+            data = json.loads(raw)
+            stack = data if isinstance(data, list) else [data]
+            while stack:
+                obj = stack.pop(0)
+                if isinstance(obj, list):
+                    stack.extend(obj)
+                    continue
+                if not isinstance(obj, dict):
+                    continue
+                if "@graph" in obj and isinstance(obj["@graph"], list):
+                    stack.extend(obj["@graph"])
+                typ = obj.get("@type")
+                typ_s = " ".join(typ) if isinstance(typ, list) else str(typ)
+                if "event" not in typ_s.lower():
                     continue
 
-                seen.add(key)
-                candidates.append(item)
-
-                if len(candidates) >= max_candidates:
-                    return queries, candidates
-
-        time.sleep(1.5)
-
-    return queries, candidates
-
-
-def extract_page_info(page, url):
-    soup = BeautifulSoup(page, "html.parser")
-
-    title = ""
-
-    og_title = soup.find("meta", property="og:title")
-    if og_title and og_title.get("content"):
-        title = og_title["content"]
-
-    if not title and soup.title and soup.title.string:
-        title = soup.title.string
-
-    desc = ""
-
-    og_desc = soup.find("meta", property="og:description")
-    if og_desc and og_desc.get("content"):
-        desc = og_desc["content"]
-
-    if not desc:
-        meta_desc = soup.find("meta", attrs={"name": "description"})
-        if meta_desc and meta_desc.get("content"):
-            desc = meta_desc["content"]
-
-    readable = trafilatura.extract(
-        page,
-        url=url,
-        include_comments=False,
-        include_tables=True,
-        favor_precision=False,
-    )
-
-    text = clean_text(readable or soup.get_text(" "))
-
-    return clean_text(title), clean_text(desc), text[:12000]
-
-
-def find_dates(text):
-    try:
-        hits = dateparser.search.search_dates(
-            text[:8000],
-            settings={
-                "PREFER_DATES_FROM": "future",
-                "RELATIVE_BASE": datetime.now(),
-            },
-        )
-    except Exception:
-        return []
-
-    if not hits:
-        return []
-
-    out = []
-    seen = set()
-
-    for raw, dt in hits:
-        raw = clean_text(raw)
-        if not raw:
-            continue
-
-        key = raw.lower()
-        if key in seen:
-            continue
-
-        # 过滤明显无意义日期词
-        if key in {"login", "sign up", "search", "event", "events"}:
-            continue
-
-        seen.add(key)
-
-        out.append({
-            "raw": raw,
-            "iso": dt.isoformat(),
-        })
-
-        if len(out) >= 5:
-            break
-
-    return out
-
-
-def is_listing_page(url, title):
-    path = urllib.parse.urlparse(url).path.lower().rstrip("/")
-    text = f"{path} {title.lower()}"
-
-    markers = [
-        "/events", "/calendar", "/events-calendar", "/whats-on", "/whatson",
-        "/things-to-do", "/all-happenings", "/nightlife", "/concerts",
-        "/exhibitions", "/markets", "/workshops"
-    ]
-
-    if re.search(r"/d/[^/]+/events/?$", path):
-        return True
-
-    return any(x in text for x in markers)
-
-
-def contains_location(text, location):
-    low = text.lower()
-    loc = location.lower()
-
-    parts = [x for x in re.split(r"\W+", loc) if len(x) >= 3]
-
-    if loc in low:
-        return True
-
-    # Singapore Punggol 这种，命中 Punggol 就算本地相关
-    for p in parts:
-        if p not in {"singapore", "sg"} and p in low:
-            return True
-
-    return False
-
-
-def infer_event_type(text):
-    low = text.lower()
-
-    if any(x in low for x in ["concert", "music", "gig"]):
-        return "Live music event"
-    if any(x in low for x in ["workshop", "training", "class", "learn"]):
-        return "Workshop or learning activity"
-    if any(x in low for x in ["exhibition", "gallery", "art"]):
-        return "Exhibition or arts event"
-    if any(x in low for x in ["market", "fair", "food"]):
-        return "Market or food event"
-    if any(x in low for x in ["family", "kids", "children"]):
-        return "Family activity"
-    if any(x in low for x in ["community", "resident", "neighbourhood", "neighborhood", "cc"]):
-        return "Community event"
-    if "festival" in low:
-        return "Festival"
-
-    return "Local event"
-
-
-def infer_who(text):
-    low = text.lower()
-
-    if any(x in low for x in ["family", "kids", "children", "parent"]):
-        return "Families and children"
-    if any(x in low for x in ["resident", "community", "neighbourhood", "neighborhood", "cc"]):
-        return "Local residents"
-    if any(x in low for x in ["workshop", "training", "class"]):
-        return "Learners and participants"
-    if any(x in low for x in ["concert", "nightlife", "party", "music"]):
-        return "Music and nightlife visitors"
-
-    return "Local visitors"
-
-
-def infer_how(text):
-    low = text.lower()
-
-    if any(x in low for x in ["buy tickets", "ticket", "tickets"]):
-        return "Buy tickets online"
-    if any(x in low for x in ["register", "registration", "sign up", "rsvp"]):
-        return "Register online"
-    if any(x in low for x in ["free", "walk-in", "walk in"]):
-        return "Walk in or check details online"
-
-    return "Open link for details"
-
-
-def extract_where(text, location):
-    low = text.lower()
-
-    # 优先直接包含 Punggol / Singapore 的短句
-    sentences = re.split(r"(?<=[.!?])\s+|\n+", text)
-
-    for s in sentences:
-        if contains_location(s, location) and len(s) <= 180:
-            return clean_text(s)[:120]
-
-    if "punggol" in low:
-        return "Punggol, Singapore"
-
-    if "singapore" in low:
-        return "Singapore"
-
-    return location
-
-
-def build_poster(candidate, page_title, page_desc, page_text, location):
-    full_text = clean_text(" ".join([
-        candidate.get("title", ""),
-        candidate.get("summary", ""),
-        page_title,
-        page_desc,
-        page_text[:8000],
-    ]))
-
-    low = full_text.lower()
-
-    listing = is_listing_page(candidate["url"], candidate.get("title") or page_title)
-
-    event_hits = [w for w in EVENT_WORDS if w in low]
-    bad_hits = [w for w in BAD_WORDS if w in low[:2500]]
-    dates = find_dates(full_text)
-
-    title = candidate.get("title") or page_title or candidate.get("source") or "Local event"
-
-    what = infer_event_type(full_text)
-
-    if dates:
-        when = dates[0]["raw"]
-    else:
-        when = "Check date online"
-
-    where = extract_where(full_text, location)
-    who = infer_who(full_text)
-
-    why = "Discover local activities nearby"
-    if any(x in low for x in ["community", "resident", "neighbourhood", "neighborhood"]):
-        why = "Join nearby community activities"
-    elif any(x in low for x in ["concert", "music", "festival", "market", "food", "art", "exhibition"]):
-        why = "Enjoy local entertainment and activities"
-    elif any(x in low for x in ["workshop", "training", "class"]):
-        why = "Learn or participate in a local session"
-
-    how = infer_how(full_text)
-
-    if listing:
-        poster_title = f"{location} Local Events"
-    else:
-        poster_title = title
-
-    poster_subtitle = f"{when} · {where}"
-    poster_summary = f"{what} for {who.lower()}. {how}."
-
-    score = 0
-    reasons = []
-
-    if contains_location(full_text, location):
-        score += 35
-        reasons.append("location_match")
-
-    if event_hits:
-        score += min(len(event_hits) * 8, 35)
-        reasons.append("event_words")
-
-    if dates:
-        score += 10
-        reasons.append("date_detected")
-
-    if listing:
-        score += 10
-        reasons.append("listing_page")
-
-    if bad_hits:
-        score -= min(len(bad_hits) * 15, 45)
-        reasons.append("bad_words")
-
-    score = max(0, min(100, score))
-
-    is_event = score >= 35 and bool(event_hits or listing)
-
-    summary = page_desc or candidate.get("summary") or poster_summary
-
-    return {
-        "is_event": is_event,
-        "score": score,
-        "reasons": reasons,
-        "listing": listing,
-
-        "title": clean_text(title)[:120],
-        "summary": clean_text(summary)[:240],
-
-        "poster_title": clean_text(poster_title)[:80],
-        "poster_subtitle": clean_text(poster_subtitle)[:120],
-        "poster_summary": clean_text(poster_summary)[:180],
-
-        "what": clean_text(what)[:120],
-        "when": clean_text(when)[:100],
-        "where": clean_text(where)[:120],
-        "who": clean_text(who)[:100],
-        "why": clean_text(why)[:140],
-        "how": clean_text(how)[:140],
-    }
-
-
-def verify_candidate(candidate, location):
-    try:
-        page = fetch_html(candidate["url"])
-    except Exception as exc:
-        return None, {
-            "candidate": candidate,
-            "reason": f"fetch_failed: {exc}",
-        }
-
-    page_title, page_desc, page_text = extract_page_info(page, candidate["url"])
-
-    if len(page_title) + len(page_desc) + len(page_text) < 80:
-        return None, {
-            "candidate": candidate,
-            "reason": "thin_page",
-        }
-
-    poster = build_poster(
-        candidate=candidate,
-        page_title=page_title,
-        page_desc=page_desc,
-        page_text=page_text,
-        location=location,
-    )
-
-    if not poster["is_event"]:
-        return None, {
-            "candidate": candidate,
-            "reason": "rejected",
-            "score": poster["score"],
-            "reasons": poster["reasons"],
-            "title": poster["title"],
-        }
-
-    source = urllib.parse.urlparse(candidate["url"]).netloc.lower().replace("www.", "")
-
-    return {
-        "title": poster["title"],
-        "source": source,
-        "summary": poster["summary"],
-        "url": candidate["url"],
-        "tag": location[:60],
-        "score": poster["score"],
-        "verified": True,
-        "verify_reason": ",".join(poster["reasons"]),
-        "listing": poster["listing"],
-
-        "poster_title": poster["poster_title"],
-        "poster_subtitle": poster["poster_subtitle"],
-        "poster_summary": poster["poster_summary"],
-
-        "what": poster["what"],
-        "when": poster["when"],
-        "where": poster["where"],
-        "who": poster["who"],
-        "why": poster["why"],
-        "how": poster["how"],
-    }, None
-
-
-def main():
-    try:
-        payload = json.loads(sys.stdin.read() or "{}")
-    except Exception:
-        payload = {}
-
-    location = str(payload.get("location") or "Singapore").strip()[:100]
-
-    try:
-        limit = int(payload.get("limit", 8))
-    except Exception:
-        limit = 8
-
-    limit = max(3, min(limit, 12))
-
-    error = None
-    results = []
-    rejected = []
-
-    try:
-        queries, candidates = ddg_search(location, max_candidates=35)
-
-        seen_results = set()
-
-        for candidate in candidates[:18]:
-            item, reject = verify_candidate(candidate, location)
-
-            if item:
-                key = item["url"].split("?")[0].rstrip("/")
-                if key not in seen_results:
-                    seen_results.add(key)
-                    results.append(item)
-                    results.sort(key=lambda x: x.get("score", 0), reverse=True)
-
-            elif reject:
-                rejected.append(reject)
-
-            if len(results) >= limit:
-                break
-
-            time.sleep(0.08)
-
-    except Exception as exc:
-        queries = build_queries(location)
-        candidates = []
-        error = str(exc)
-
-    out = {
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-        "location": location,
-        "extractor": "minimal: bs4 + trafilatura + dateparser",
-        "queries": queries,
-        "results": results[:limit],
-        "candidates_checked": len(candidates),
-        "debug_candidates": candidates[:10],
-        "rejected_preview": rejected[:8],
-        "error": error,
-    }
-
-    # 如果这次 DDG 被挡导致完全没有结果，不要用空结果覆盖旧缓存
-    if not out.get("results") and OUT.exists():
-        try:
-            old = json.loads(OUT.read_text())
-            if old.get("results"):
-                out["results"] = old["results"]
-                out["fallback_cache"] = True
-                out["fallback_reason"] = "DDG returned anomaly/bot page or no candidates"
+                name = clean(obj.get("name"))
+                if not name or BAD_TITLE.search(name) or GENERIC_TITLE.match(name):
+                    continue
+
+                start = clean(obj.get("startDate"))
+                desc = clean(obj.get("description"))
+
+                where = source.get("where") or row.get("source_where") or LOCATION
+                loc = obj.get("location")
+                if isinstance(loc, dict):
+                    where = clean(loc.get("name") or loc.get("address") or where)
+
+                return {
+                    "title": name,
+                    "poster_title": name,
+                    "what": name,
+                    "when": start or "CHECK DATE",
+                    "where": where,
+                    "who": source.get("audience") or row.get("source_audience") or "visitors",
+                    "why": desc[:180] or row.get("snippet", "")[:180],
+                    "how": row["source"],
+                    "summary": desc[:220] or row.get("snippet", "")[:220],
+                    "poster_summary": desc[:220] or row.get("snippet", "")[:220],
+                    "source": row["source"],
+                    "url": row["url"],
+                    "source_name": source["name"],
+                }
         except Exception:
             pass
+    return None
 
-    OUT.write_text(json.dumps(out, ensure_ascii=False, indent=2))
-    print(json.dumps(out, ensure_ascii=False))
+def extract_detail(row, source):
+    try:
+        r = get(row["url"], timeout=18)
+        if r.status_code >= 400:
+            return None, "http_" + str(r.status_code)
+    except Exception:
+        return None, "fetch_failed"
 
+    soup = BeautifulSoup(r.text[:900000], "html.parser")
+
+    ev = jsonld_event(soup, row, source)
+    if ev:
+        return ev, "ok_jsonld"
+
+    for bad in soup(["script", "style", "noscript", "svg"]):
+        bad.decompose()
+
+    page_title = clean(soup.title.get_text(" ", strip=True) if soup.title else "")
+    h1 = soup.find(["h1", "h2"])
+    heading = clean(h1.get_text(" ", strip=True) if h1 else "")
+    text = clean(soup.get_text(" ", strip=True))
+
+    title = strip_brand(heading or row["title"] or page_title)
+    blob = f"{title} {row.get('snippet','')} {text[:6500]}"
+
+    if not title or GENERIC_TITLE.match(title):
+        return None, "generic_title"
+    if BAD_TITLE.search(title):
+        return None, "bad_title"
+    if not EVENT_HINT.search(blob):
+        return None, "no_event_hint"
+
+    # 直接机构源放宽地点限制；普通 site query 需要命中机构名/地点
+    low = blob.lower()
+    source_name = source["name"].lower()
+    if source["kind"] != "direct":
+        related = (
+            "punggol" in low
+            or "children" in low
+            or "family" in low
+            or "museum" in low
+            or "gallery" in low
+            or "library" in low
+            or any(part in low for part in source_name.split() if len(part) >= 5)
+        )
+        if not related:
+            return None, "not_source_related"
+
+    when = parse_date(blob)
+
+    strong = re.search(
+        r"(register|registration|ticket|booking|workshop|class|festival|talk|tour|screening|concert|children|kids|family|programme|program|library|museum|gallery|carnival|storytelling|craft|play)",
+        blob,
+        re.I,
+    )
+    if not when and not strong:
+        return None, "weak_no_date"
+
+    summary = clean(row.get("snippet", ""))
+    if not summary or BAD_TITLE.search(summary):
+        for part in re.split(r"(?<=[.!?。])\s+", text):
+            part = clean(part)
+            if 35 <= len(part) <= 200 and not re.search(r"(cookie|privacy|terms|copyright|login|subscribe|javascript)", part, re.I):
+                summary = part
+                break
+
+    where = source.get("where") or row.get("source_where") or LOCATION
+    who = source.get("audience") or row.get("source_audience") or "visitors"
+
+    return {
+        "title": title,
+        "poster_title": title,
+        "what": title,
+        "when": when or "CHECK DATE",
+        "where": where,
+        "who": who,
+        "why": summary[:180],
+        "how": row["source"],
+        "summary": summary[:220],
+        "poster_summary": summary[:220],
+        "source": row["source"],
+        "url": row["url"],
+        "source_name": source["name"],
+    }, "ok"
+
+def build_candidates():
+    all_rows = []
+    debug = []
+
+    for source in SOURCE_REGISTRY:
+        if source["kind"] == "direct":
+            try:
+                rows = parse_direct_listing(source)
+                debug.append({"source": source["name"], "kind": "direct", "candidates": len(rows)})
+                for r in rows:
+                    r["_source_cfg"] = source
+                all_rows.extend(rows)
+            except Exception as e:
+                debug.append({"source": source["name"], "kind": "direct", "error": str(e)})
+
+        elif source["kind"] == "site_query":
+            for q in source["queries"]:
+                try:
+                    html = search_ddg(q, source.get("site"))
+                    rows = parse_ddg(html)
+                    debug.append({"source": source["name"], "kind": "site_query", "query": q, "candidates": len(rows)})
+                    for r in rows:
+                        r["_source_cfg"] = source
+                    all_rows.extend(rows)
+                except Exception as e:
+                    debug.append({"source": source["name"], "kind": "site_query", "query": q, "error": str(e)})
+
+    return dedupe_rows(all_rows), debug
+
+def main():
+    rows, debug = build_candidates()
+    results = []
+    rejected = []
+    seen = set()
+
+    for row in rows:
+        source = row.pop("_source_cfg", None) or {"name": row.get("source", ""), "kind": "site_query"}
+        key = row["url"].split("?")[0].rstrip("/")
+        if key in seen:
+            continue
+        seen.add(key)
+
+        ev, reason = extract_detail(row, source)
+        if ev:
+            results.append(ev)
+        else:
+            rejected.append({
+                "reason": reason,
+                "title": row.get("title"),
+                "source": row.get("source"),
+                "url": row.get("url"),
+                "source_name": source.get("name"),
+            })
+
+        if len(results) >= 12:
+            break
+
+    data = {
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "location": LOCATION,
+        "extractor": "source-registry-institutions-detail-parser",
+        "sources": [s["name"] for s in SOURCE_REGISTRY],
+        "results": results,
+        "candidates_checked": len(rows),
+        "debug_candidates": debug[:80],
+        "rejected_preview": rejected[:40],
+        "error": None,
+        "from_cache": False,
+    }
+
+    OUT.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+    print(json.dumps(data, ensure_ascii=False, indent=2))
 
 if __name__ == "__main__":
     main()
