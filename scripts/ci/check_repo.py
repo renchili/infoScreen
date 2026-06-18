@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""Independent repository quality suites for local, PR, and post-merge checks."""
+
 import argparse
 import json
 import py_compile
@@ -69,12 +71,15 @@ SECRET_RE = re.compile(
     r")\b"
 )
 
-# Match only actual Git conflict-marker lines. Do not flag source code that
-# contains the marker text inside a quoted string.
+# Match only actual Git conflict-marker lines. Quoted strings containing these
+# characters in the checker itself are not conflicts.
 CONFLICT_RE = re.compile(
     r"^(?:<{7}[^\n]*|={7}|>{7}[^\n]*)$",
     re.MULTILINE,
 )
+
+SUITES = ("paths", "content", "structure", "python", "all")
+SCOPES = ("changed", "repository")
 
 
 def git_output(args):
@@ -92,23 +97,62 @@ def git_output(args):
     return result.stdout
 
 
+def split_null_output(text):
+    return [item for item in text.split("\0") if item]
+
+
 def changed_paths(base, head, include_working_tree):
-    names = set()
-
-    def add_lines(text):
-        for line in text.splitlines():
-            line = line.strip()
-            if line:
-                names.add(line)
-
-    add_lines(git_output(["diff", "--name-only", f"{base}...{head}"]))
+    names = set(split_null_output(git_output([
+        "diff",
+        "--name-only",
+        "-z",
+        f"{base}...{head}",
+    ])))
 
     if include_working_tree:
-        add_lines(git_output(["diff", "--name-only"]))
-        add_lines(git_output(["diff", "--cached", "--name-only"]))
-        add_lines(git_output(["ls-files", "--others", "--exclude-standard"]))
+        names.update(split_null_output(git_output([
+            "diff",
+            "--name-only",
+            "-z",
+        ])))
+        names.update(split_null_output(git_output([
+            "diff",
+            "--cached",
+            "--name-only",
+            "-z",
+        ])))
+        names.update(split_null_output(git_output([
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "-z",
+        ])))
 
     return sorted(names)
+
+
+def repository_paths(include_working_tree):
+    names = set(split_null_output(git_output(["ls-files", "-z"])))
+
+    if include_working_tree:
+        names.update(split_null_output(git_output([
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "-z",
+        ])))
+
+    return sorted(names)
+
+
+def selected_paths(args):
+    if args.scope == "repository":
+        return repository_paths(args.include_working_tree)
+
+    if not args.base:
+        raise ValueError("--base is required when --scope changed is selected")
+
+    return changed_paths(args.base, args.head, args.include_working_tree)
 
 
 def is_text_file(path):
@@ -195,14 +239,18 @@ def check_text_content(relative, text, errors):
                     f"obsolete Local Event layer reference detected: {token}",
                 )
 
-        if lowered.count("<html") != 1:
-            add_error(errors, relative, "expected exactly one <html> element")
 
-        if lowered.count("</html>") != 1:
-            add_error(errors, relative, "expected exactly one </html> element")
+def check_html_structure(relative, text, errors):
+    lowered = text.lower()
 
-        if "</head>" not in lowered or "</body>" not in lowered:
-            add_error(errors, relative, "missing </head> or </body>")
+    if lowered.count("<html") != 1:
+        add_error(errors, relative, "expected exactly one <html> element")
+
+    if lowered.count("</html>") != 1:
+        add_error(errors, relative, "expected exactly one </html> element")
+
+    if "</head>" not in lowered or "</body>" not in lowered:
+        add_error(errors, relative, "missing </head> or </body>")
 
 
 def check_json(relative, path, errors):
@@ -214,7 +262,7 @@ def check_json(relative, path, errors):
 
 def check_python_syntax(errors):
     raw = git_output(["ls-files", "-z", "--", "*.py"])
-    for relative in filter(None, raw.split("\0")):
+    for relative in split_null_output(raw):
         path = ROOT / relative
         if not path.is_file():
             continue
@@ -225,23 +273,23 @@ def check_python_syntax(errors):
             add_error(errors, relative, f"Python syntax error: {exc.msg}")
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--base", required=True)
-    parser.add_argument("--head", default="HEAD")
-    parser.add_argument("--include-working-tree", action="store_true")
-    args = parser.parse_args()
-
-    errors = []
-    paths = changed_paths(
-        args.base,
-        args.head,
-        args.include_working_tree,
-    )
-
+def run_paths_suite(paths, errors):
     for relative in paths:
         check_path_policy(relative, errors)
 
+
+def run_content_suite(paths, errors):
+    for relative in paths:
+        path = ROOT / relative
+        if not path.is_file() or not is_text_file(path):
+            continue
+
+        text = path.read_text(encoding="utf-8", errors="replace")
+        check_text_content(relative, text, errors)
+
+
+def run_structure_suite(paths, errors):
+    for relative in paths:
         path = ROOT / relative
         if not path.is_file():
             continue
@@ -249,21 +297,55 @@ def main():
         if path.suffix.lower() == ".json":
             check_json(relative, path, errors)
 
-        if not is_text_file(path):
-            continue
+        if relative == "index.html":
+            check_html_structure(
+                relative,
+                path.read_text(encoding="utf-8", errors="replace"),
+                errors,
+            )
 
-        text = path.read_text(encoding="utf-8", errors="replace")
-        check_text_content(relative, text, errors)
 
-    check_python_syntax(errors)
+def run_suite(name, paths, errors):
+    if name in ("paths", "all"):
+        run_paths_suite(paths, errors)
+
+    if name in ("content", "all"):
+        run_content_suite(paths, errors)
+
+    if name in ("structure", "all"):
+        run_structure_suite(paths, errors)
+
+    if name in ("python", "all"):
+        check_python_syntax(errors)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--suite", choices=SUITES, default="all")
+    parser.add_argument("--scope", choices=SCOPES, default="changed")
+    parser.add_argument("--base")
+    parser.add_argument("--head", default="HEAD")
+    parser.add_argument("--include-working-tree", action="store_true")
+    args = parser.parse_args()
+
+    try:
+        paths = selected_paths(args)
+    except (RuntimeError, ValueError) as exc:
+        parser.error(str(exc))
+
+    errors = []
+    run_suite(args.suite, paths, errors)
 
     if errors:
-        print("QUALITY GATE FAILED")
+        print(f"FAILED suite={args.suite} scope={args.scope}")
         for error in errors:
             print(f" - {error}")
         return 1
 
-    print(f"QUALITY GATE PASSED ({len(paths)} changed file(s) inspected)")
+    print(
+        f"PASSED suite={args.suite} scope={args.scope} "
+        f"files={len(paths)}"
+    )
     return 0
 
 
