@@ -69,10 +69,11 @@ SECRET_RE = re.compile(
     r")\b"
 )
 
-CONFLICT_MARKERS = (
-    "<<<<<<<",
-    "=======",
-    ">>>>>>>",
+# Match only actual Git conflict-marker lines. Do not flag source code that
+# contains the marker text inside a quoted string.
+CONFLICT_RE = re.compile(
+    r"^(?:<{7}[^\n]*|={7}|>{7}[^\n]*)$",
+    re.MULTILINE,
 )
 
 
@@ -156,10 +157,8 @@ def check_path_policy(relative, errors):
 
 
 def check_text_content(relative, text, errors):
-    for marker in CONFLICT_MARKERS:
-        if marker in text:
-            add_error(errors, relative, "unresolved merge-conflict marker found")
-            break
+    if CONFLICT_RE.search(text):
+        add_error(errors, relative, "unresolved merge-conflict marker found")
 
     for match in EMAIL_RE.finditer(text):
         email = match.group(0).lower()
