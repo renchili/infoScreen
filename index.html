@@ -1060,9 +1060,26 @@
       border: 1px solid var(--line);
       background: rgba(5,6,6,0.82);
       padding: 6px 8px;
+      display: block;
+    }
+
+    /*
+     * Local-event rotation: keep the existing row content intact.
+     * The viewport shows up to three original rows; the track moves
+     * one row at a time, then pauses on the next set.
+     */
+    .local-notice-viewport {
+      width: 100%;
+      max-height: 100%;
+      overflow: hidden;
+    }
+
+    .local-notice-track {
       display: grid;
       gap: 5px;
       align-content: start;
+      transform: translate3d(0, 0, 0);
+      will-change: transform;
     }
 
     .local-notice-row {
@@ -1126,30 +1143,6 @@
 
 
   </style>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1226,8 +1219,6 @@
 
 
 
-
-
       <div class="box left-ticker-tape" data-title="ticker tape">
         <div class="left-ticker-mask">
           <div class="left-ticker-track" id="leftSyncTapeTrack">
@@ -1248,375 +1239,311 @@
       </div>
     </section>
 
-    <section class="col center">
-      
-
-      <div class="box" data-title="event stream">
-        <div class="inner news-ticker-panel" id="eventFeed">
-          <div class="news-ticker-row">
-            <div class="news-ticker-track" id="newsTickerTrackEN"></div>
-          </div>
-          <div class="news-ticker-row">
-            <div class="news-ticker-track" id="newsTickerTrackFR"></div>
-          </div>
-          <div class="news-ticker-row">
-            <div class="news-ticker-track" id="newsTickerTrackZH"></div>
-          </div>
-
-          <div class="photo-flip-wall" id="photoFlipWall">
-            <div class="photo-flip-empty">ADD PHOTOS TO ~/infoscreen/photos</div>
-          </div>
+    <section class="box center" data-title="calendar">
+      <div class="inner">
+        <div class="agenda" id="agenda">
+          <div class="event"><div class="event-time">--:--</div><div class="event-title">loading schedule.json</div></div>
         </div>
       </div>
     </section>
 
     <section class="col right">
-      <div class="box" data-title="weather">
+      <section class="box" data-title="weather">
         <div class="inner weather">
           <div class="weather-temp" id="weatherTemp">--°C</div>
-          <div class="weather-desc" id="weatherDesc">loading weather...<br />source: weather.json</div>
-        </div>
-      </div>
-
-      <div class="box" data-title="metrics">
-        <div class="inner compact-metrics">
-          <div class="mini-metric"><div class="mini-label">CPU</div><div class="mini-bar"><div class="mini-fill" id="cpuBar" style="width: 28%"></div></div><div class="mini-value" id="cpuText">28%</div></div>
-          <div class="mini-metric"><div class="mini-label">MEM</div><div class="mini-bar"><div class="mini-fill" id="memBar" style="width: 51%"></div></div><div class="mini-value" id="memText">51%</div></div>
-          <div class="mini-metric"><div class="mini-label">DSK</div><div class="mini-bar"><div class="mini-fill" id="diskBar" style="width: 42%"></div></div><div class="mini-value" id="diskText">42%</div></div>
-          <div class="mini-metric"><div class="mini-label">NET</div><div class="mini-bar"><div class="mini-fill" id="netBar" style="width: 70%"></div></div><div class="mini-value ok" id="netText">OK</div></div>
-        </div>
-      </div>
-
-            <div class="box" data-title="calendar">
-        <div class="inner agenda calendar-board" id="agendaList">
-          <div class="calendar-board-head">
-            <span>TIME</span>
-            <span>EVENT</span>
+          <div class="weather-desc">
+            <div id="weatherDesc">loading weather.json</div>
+            <div id="weatherMeta">--</div>
           </div>
-          <div class="calendar-board-rows" id="calendarBoardRows"></div>
         </div>
-      </div>
+      </section>
+
+      <section class="box" data-title="metrics">
+        <div class="inner compact-metrics">
+          <div class="mini-metric">
+            <div class="mini-label">CPU</div>
+            <div class="mini-bar"><div class="mini-fill" id="cpuBar" style="width: 41%"></div></div>
+            <div class="mini-value" id="cpuVal">41%</div>
+          </div>
+          <div class="mini-metric">
+            <div class="mini-label">MEM</div>
+            <div class="mini-bar"><div class="mini-fill" id="memBar" style="width: 58%"></div></div>
+            <div class="mini-value" id="memVal">58%</div>
+          </div>
+          <div class="mini-metric">
+            <div class="mini-label">DISK</div>
+            <div class="mini-bar"><div class="mini-fill" id="diskBar" style="width: 35%"></div></div>
+            <div class="mini-value" id="diskVal">35%</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="box" data-title="event stream">
+        <div class="inner news-ticker-panel">
+          <div class="news-ticker-row">
+            <div class="news-ticker-track" id="newsEn"><span class="news-item"><span class="news-source">EN</span><span class="news-title">loading English stream</span><span class="news-sep">◆</span></span></div>
+          </div>
+          <div class="news-ticker-row">
+            <div class="news-ticker-track" id="newsFr"><span class="news-item"><span class="news-source">FR</span><span class="news-title">chargement du flux français</span><span class="news-sep">◆</span></span></div>
+          </div>
+          <div class="news-ticker-row">
+            <div class="news-ticker-track" id="newsZh"><span class="news-item"><span class="news-source">ZH</span><span class="news-title">加载中文信息流</span><span class="news-sep">◆</span></span></div>
+          </div>
+          <div class="news-ticker-row">
+            <div class="news-ticker-track" id="newsExtra"><span class="news-item"><span class="news-source">SYS</span><span class="news-title">multi-source synchronized stream</span><span class="news-sep">◆</span></span></div>
+          </div>
+        </div>
+      </section>
+    </section>
+
+    <section class="box photo-flip-wall" id="photoFlipWall" data-title="photo flip wall">
+      <div class="photo-flip-empty">LOADING PHOTOS</div>
     </section>
 
     <section class="bottom">
-      <div class="box stat"><div class="stat-label">POWER</div><div class="stat-value warn">AC_ONLY</div></div>
-      <div class="box stat"><div class="stat-label">DISPLAY</div><div class="stat-value ok">ONLINE</div></div>
-      <div class="box stat"><div class="stat-label">NETWORK</div><div class="stat-value cyan">LAN_OK</div></div>
-      <div class="box stat"><div class="stat-label">REFRESH</div><div class="stat-value" id="refresh">--:--</div></div>
-      <div class="box stat"><div class="stat-label">UPTIME</div><div class="stat-value" id="uptime">00:00</div></div>
+      <section class="box stat"><div class="stat-label">UPTIME</div><div class="stat-value" id="uptime">--</div></section>
+      <section class="box stat"><div class="stat-label">LOAD AVG</div><div class="stat-value" id="loadavg">--</div></section>
+      <section class="box stat"><div class="stat-label">MEMORY</div><div class="stat-value" id="memory">--</div></section>
+      <section class="box stat"><div class="stat-label">DISK</div><div class="stat-value" id="disk">--</div></section>
+      <section class="box stat"><div class="stat-label">NETWORK</div><div class="stat-value" id="network">--</div></section>
     </section>
   </main>
 
   <script>
-    const start = Date.now();
+    const $ = (id) => document.getElementById(id);
 
-    function pad(n) { return String(n).padStart(2, "0"); }
+    function escapeHtml(value) {
+      return String(value == null ? "" : value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function clamp(n, min, max) {
+      return Math.max(min, Math.min(max, n));
+    }
+
+    function setText(id, value) {
+      const el = $(id);
+      if (el) el.textContent = value;
+    }
+
+    function formatTime(date) {
+      return date.toLocaleTimeString("en-GB", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false
+      });
+    }
+
+    function formatDate(date) {
+      return date.toLocaleDateString("en-GB", {
+        weekday: "short",
+        day: "2-digit",
+        month: "short",
+        year: "numeric"
+      });
+    }
 
     function updateClock() {
       const now = new Date();
-      document.getElementById("time").textContent = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
-      document.getElementById("date").textContent = now.toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric", weekday: "long" });
-      document.getElementById("refresh").textContent = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
-      const diff = Math.floor((Date.now() - start) / 1000);
-      document.getElementById("uptime").textContent = `${pad(Math.floor(diff / 3600))}:${pad(Math.floor((diff % 3600) / 60))}`;
+      setText("time", formatTime(now));
+      setText("date", formatDate(now));
     }
 
-    const headlines = [
-      "Local dashboard is running",
-      "Calendar panel reserved for schedule events",
-      "Market panel active",
-      "Weather panel loading Surface-side data",
-      "Surface running on AC power",
-      "Next: refine live data sources"
-    ];
-    let headlineIndex = 0;
-
-    function rotateHeadline() {
-      const headline = document.getElementById("headline");
-      const cursor = document.getElementById("cursor");
-      if (!headline || !cursor) return;
-      document.getElementById("headline").innerHTML = headlines[headlineIndex] + '<span class="cursor"></span>';
-      headlineIndex = (headlineIndex + 1) % headlines.length;
+    function bytesToHuman(bytes) {
+      if (!Number.isFinite(bytes)) return "--";
+      const units = ["B", "KB", "MB", "GB", "TB"];
+      let idx = 0;
+      let value = bytes;
+      while (value >= 1024 && idx < units.length - 1) {
+        value /= 1024;
+        idx += 1;
+      }
+      return `${value.toFixed(idx === 0 ? 0 : 1)} ${units[idx]}`;
     }
 
-    const logMessages = [
-      ["OK", "loaded local dashboard"],
-      ["OK", "clock tick synchronized"],
-      ["INFO", "weather data from surface timer"],
-      ["INFO", "calendar data from schedule.json"],
-      ["WARN", "battery charge state pending"],
-      ["OK", "chromium kiosk session active"],
-      ["INFO", "market data from market.json"],
-      ["OK", "layout grid locked"],
-      ["OK", "display heartbeat"]
-    ];
+    async function loadMetrics() {
+      try {
+        const res = await fetch("metrics.json?_=" + Date.now());
+        const m = await res.json();
+        setText("uptime", m.uptime || "--");
+        setText("loadavg", m.loadavg || "--");
+        setText("memory", m.memory || "--");
+        setText("disk", m.disk || "--");
+        setText("network", m.network || "--");
 
-    function addLog() {
-      const logs = document.getElementById("logs");
-      const now = new Date();
-      const item = logMessages[Math.floor(Math.random() * logMessages.length)];
-      const cls = item[0] === "OK" ? "ok" : item[0] === "WARN" ? "warn" : "cyan";
-      const line = document.createElement("div");
-      line.className = "log-line";
-      line.innerHTML = `<span class="log-time">${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}</span> <span class="${cls}">[${item[0]}]</span> ${item[1]}`;
-      logs.prepend(line);
-      while (logs.children.length > 15) logs.removeChild(logs.lastChild);
+        const cpu = clamp(Number(m.cpu_pct || 0), 0, 100);
+        const mem = clamp(Number(m.mem_pct || 0), 0, 100);
+        const disk = clamp(Number(m.disk_pct || 0), 0, 100);
+
+        $("cpuBar").style.width = cpu + "%";
+        $("memBar").style.width = mem + "%";
+        $("diskBar").style.width = disk + "%";
+
+        setText("cpuVal", cpu + "%");
+        setText("memVal", mem + "%");
+        setText("diskVal", disk + "%");
+      } catch (err) {
+        setText("uptime", "metrics.json missing");
+      }
     }
 
-    function setMetric(barId, textId, value, suffix = "%") {
-      const bar = document.getElementById(barId);
-      const text = document.getElementById(textId);
-      if (bar) bar.style.width = value + "%";
-      if (text) text.textContent = suffix === "%" ? value + "%" : suffix;
+    function normalizeAgenda(raw) {
+      if (Array.isArray(raw)) return raw;
+      if (Array.isArray(raw.events)) return raw.events;
+      if (Array.isArray(raw.items)) return raw.items;
+      return [];
     }
 
-    function updateMetrics() {
-      setMetric("cpuBar", "cpuText", Math.floor(10 + Math.random() * 35));
-      setMetric("memBar", "memText", Math.floor(42 + Math.random() * 26));
-      setMetric("diskBar", "diskText", Math.floor(38 + Math.random() * 10));
-      setMetric("netBar", "netText", 70 + Math.floor(Math.random() * 20), "OK");
+    function escapeAgenda(value) {
+      return escapeHtml(value);
     }
 
-    function escapeHtml(s) {
-      return String(s).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
+    function normalizeEvent(event) {
+      const start = event.start || event.startDate || event.when || event.time || "--:--";
+      const title = event.title || event.name || event.summary || "untitled event";
+      return { start: String(start), title: String(title) };
     }
 
-    
+    function renderAgenda(events) {
+      const agenda = $("agenda");
+      if (!agenda) return;
 
-    
+      if (!events.length) {
+        agenda.innerHTML = `<div class="event"><div class="event-time">--</div><div class="event-title">NO SCHEDULE ITEM</div></div>`;
+        return;
+      }
 
-    
-
-    
-    
-
-    
-    
-    
-        async function loadAgenda() {
-      if (window.__calendarBoardLoad) return window.__calendarBoardLoad();
+      agenda.innerHTML = events.slice(0, 14).map((raw) => {
+        const event = normalizeEvent(raw);
+        return `<div class="event"><div class="event-time">${escapeAgenda(event.start)}</div><div class="event-title">${escapeAgenda(event.title)}</div></div>`;
+      }).join("");
     }
 
-async function loadWeather() {
-      const temp = document.getElementById("weatherTemp");
-      const desc = document.getElementById("weatherDesc");
-      const summary = document.getElementById("summaryWeather");
+    async function loadAgenda() {
+      try {
+        const res = await fetch("schedule.json?_=" + Date.now());
+        const raw = await res.json();
+        renderAgenda(normalizeAgenda(raw));
+      } catch (err) {
+        renderAgenda([]);
+      }
+    }
+
+    async function loadWeather() {
       try {
         const res = await fetch("weather.json?_=" + Date.now());
         const w = await res.json();
-        const tempText = `${w.temp_c ?? "--"}°C`;
-        if (temp) temp.textContent = tempText;
-        if (desc) desc.innerHTML = `${escapeHtml(w.location || "Singapore")}<br />${escapeHtml(w.desc || "unknown")} / humidity ${escapeHtml(w.humidity || "--")}%<br />feels ${escapeHtml(w.feels_like_c || "--")}°C · ${escapeHtml(w.source || "local")}`;
-        if (summary) summary.textContent = `${tempText} ${w.desc || ""}`;
-        const ws = document.getElementById("weatherStatus");
-        if (ws) ws.textContent = "OK";
+        const temp = w.temperature ?? w.temp ?? w.temperature_c;
+        const desc = w.description ?? w.condition ?? w.text ?? "--";
+        const humidity = w.humidity ?? w.rh;
+        const wind = w.wind_kph ?? w.wind ?? w.wind_speed;
+        setText("weatherTemp", temp == null ? "--°C" : `${temp}°C`);
+        setText("weatherDesc", desc);
+        setText("weatherMeta", `humidity ${humidity ?? "--"}% / wind ${wind ?? "--"}`);
       } catch (err) {
-        if (temp) temp.textContent = "--°C";
-        if (desc) desc.innerHTML = "weather.json not loaded<br />check Surface timer";
-        if (summary) summary.textContent = "weather not loaded";
-        const ws = document.getElementById("weatherStatus");
-        if (ws) ws.textContent = "ERR";
+        setText("weatherDesc", "weather.json missing");
       }
+    }
+
+    function marketClass(change) {
+      const text = String(change || "");
+      if (text.startsWith("+")) return "ok";
+      if (text.startsWith("-")) return "bad";
+      return "warn";
+    }
+
+    function normalizeMarketItems(raw) {
+      if (Array.isArray(raw)) return raw;
+      if (Array.isArray(raw.items)) return raw.items;
+      if (Array.isArray(raw.data)) return raw.data;
+      return [];
     }
 
     async function loadMarket() {
-      const box = document.getElementById("marketList");
-      const tape = document.getElementById("leftTickerTrack");
-
+      const list = $("marketList");
+      if (!list) return;
       try {
         const res = await fetch("market.json?_=" + Date.now());
-        const data = await res.json();
-        const items = data.items || [];
-        if (!items.length) throw new Error("empty market data");
-        const ms = document.getElementById("marketStatus");
-        if (ms) ms.textContent = "OK";
-
-        if (box) {
-          box.innerHTML = items.slice(0, 6).map(i => {
-            const pct = String(i.percent || "N/A");
-            const cls = pct.trim().startsWith("-") ? "warn" : "ok";
-            const price = i.price && i.price !== "N/D" ? `$${escapeHtml(i.price)}` : "N/A";
-            const session = i.session ? ` ${escapeHtml(i.session)}` : "";
-            return `<div class="market-row"><span class="ticker">${escapeHtml(i.symbol || "--")}</span><span class="price">${price}${session}</span><span class="chg ${cls}">${escapeHtml(pct)}</span></div>`;
-          }).join("") + `<div class="market-foot">source: ${escapeHtml(data.source || "market")} · ${escapeHtml(data.updated_at || "")}</div>`;
-        }
-
-        if (tape) {
-          const parts = items.slice(0, 10).map(i => {
-            const symbol = escapeHtml(i.symbol || "--");
-            const price = i.price && i.price !== "N/D" ? `$${escapeHtml(i.price)}` : "N/A";
-            const pct = String(i.percent || "N/A");
-            const session = i.session ? escapeHtml(i.session) : "";
-            const direction = pct.trim().startsWith("-") ? "down" : (pct === "N/A" ? "flat" : "up");
-            const arrow = direction === "down" ? "▼" : (direction === "up" ? "▲" : "◆");
-            return `<span><span class="symbol">${symbol}</span><span class="price">${price}</span>${session ? `<span class="session">${session}</span>` : ""}<span class="${direction}">${arrow} ${escapeHtml(pct)}</span></span>`;
-          });
-          tape.innerHTML = parts.join("") + parts.join("");
-        }
+        const raw = await res.json();
+        const items = normalizeMarketItems(raw);
+        if (!items.length) throw new Error("empty market");
+        list.innerHTML = items.slice(0, 8).map((item) => {
+          const symbol = item.symbol || item.ticker || "--";
+          const price = item.price ?? item.last ?? "--";
+          const change = item.change ?? item.percent ?? item.pct ?? "--";
+          return `<div class="market-row"><span class="ticker">${escapeHtml(symbol)}</span><span class="price">${escapeHtml(price)}</span><span class="chg ${marketClass(change)}">${escapeHtml(change)}</span></div>`;
+        }).join("");
       } catch (err) {
-        if (box) {
-          box.innerHTML = `<div class="market-row"><span class="ticker">ERR</span><span class="price">market.json</span><span class="chg warn">FAIL</span></div><div class="market-foot">check Surface timer</div>`;
-        }
+        list.innerHTML = `<div class="market-row"><span class="ticker">ERR</span><span class="price">market unavailable</span><span class="chg bad">--</span></div>`;
       }
     }
 
+    function normalizeTapeItems(raw) {
+      const items = normalizeMarketItems(raw);
+      return items.map((item) => {
+        const symbol = String(item.symbol || item.ticker || "--");
+        const price = String(item.price ?? item.last ?? "--");
+        const change = String(item.change ?? item.percent ?? item.pct ?? "--");
+        const session = String(item.session || item.market_state || item.provider || "");
+        const changeClass = change.startsWith("+") ? "up" : (change.startsWith("-") ? "down" : "flat");
+        return `<span><span class="symbol">${escapeHtml(symbol)}</span><span class="price">${escapeHtml(price)}</span><span class="${changeClass}">${escapeHtml(change)}</span><span class="session">${escapeHtml(session)}</span></span>`;
+      });
+    }
 
     async function loadTopMarketTape() {
-      const tape = document.getElementById("globalMarketTapeTrack");
-      if (!tape) return;
-
+      const track = $("globalMarketTapeTrack");
+      if (!track) return;
       try {
         const res = await fetch("market.json?_=" + Date.now());
-        const data = await res.json();
-        const items = data.items || [];
-
-        if (!items.length) throw new Error("empty market data");
-        const ms = document.getElementById("marketStatus");
-        if (ms) ms.textContent = "OK";
-
-        const parts = items.slice(0, 10).map(i => {
-          const symbol = escapeHtml(i.symbol || "--");
-          const price = i.price && i.price !== "N/D" ? `$${escapeHtml(i.price)}` : "N/A";
-          const pct = String(i.percent || "N/A");
-          const session = i.session ? escapeHtml(i.session) : "";
-          const direction = pct.trim().startsWith("-") ? "down" : (pct === "N/A" ? "flat" : "up");
-          const arrow = direction === "down" ? "▼" : (direction === "up" ? "▲" : "◆");
-
-          return `<span><span class="symbol">${symbol}</span><span class="price">${price}</span>${session ? `<span class="session">${session}</span>` : ""}<span class="${direction}">${arrow} ${escapeHtml(pct)}</span></span>`;
-        });
-
-        tape.innerHTML = parts.join("") + parts.join("");
+        const raw = await res.json();
+        const parts = normalizeTapeItems(raw);
+        if (!parts.length) throw new Error("no market items");
+        track.innerHTML = parts.join("") + parts.join("");
       } catch (err) {
-        tape.innerHTML =
-          `<span class="flat">MARKET DATA FAILED</span>` +
-          `<span class="flat">CHECK market.json</span>` +
-          `<span class="down">SURFACE TIMER ERROR</span>` +
-          `<span class="flat">MARKET DATA FAILED</span>` +
-          `<span class="flat">CHECK market.json</span>` +
-          `<span class="down">SURFACE TIMER ERROR</span>`;
+        const fallback = `<span class="flat">MARKET DATA UNAVAILABLE</span><span class="warn">CHECK FETCHER</span>`;
+        track.innerHTML = fallback + fallback;
       }
-    }
-
-
-
-
-
-
-    let newsTickerStartTs = null;
-    let newsTickerLoopWidth = 0;
-    let newsTickerRaf = null;
-
-    function startSyncedNewsTicker() {
-      const tracks = [
-        document.getElementById("newsTickerTrackEN"),
-        document.getElementById("newsTickerTrackFR"),
-        document.getElementById("newsTickerTrackZH"),
-      ].filter(Boolean);
-
-      if (tracks.length !== 3) return;
-
-      // 每条 760px，显示 8 条，所以一轮固定 6080px。
-      const itemWidth = 760;
-      const itemCount = 8;
-      newsTickerLoopWidth = itemWidth * itemCount;
-
-      // 每秒移动像素。越小越慢。
-      const pxPerSecond = 48;
-
-      newsTickerStartTs = performance.now();
-
-      if (newsTickerRaf) {
-        cancelAnimationFrame(newsTickerRaf);
-        newsTickerRaf = null;
-      }
-
-      function frame(now) {
-        const elapsed = (now - newsTickerStartTs) / 1000;
-        const x = -((elapsed * pxPerSecond) % newsTickerLoopWidth);
-
-        tracks.forEach(el => {
-          el.style.transform = `translate3d(${x}px,0,0)`;
-        });
-
-        newsTickerRaf = requestAnimationFrame(frame);
-      }
-
-      newsTickerRaf = requestAnimationFrame(frame);
     }
 
     async function loadEventStream() {
-      const en = document.getElementById("newsTickerTrackEN");
-      const fr = document.getElementById("newsTickerTrackFR");
-      const zh = document.getElementById("newsTickerTrackZH");
-      if (!en || !fr || !zh) return;
-
+      const en = $("newsEn");
+      const fr = $("newsFr");
+      const zh = $("newsZh");
+      const extra = $("newsExtra");
       try {
         const res = await fetch("event_stream.json?_=" + Date.now());
-        const data = await res.json();
-        const grouped = data.items_by_lang || {};
-        const enItems = grouped.en || [];
-        const frItems = grouped.fr || [];
-        const zhItems = grouped.zh || [];
-
-        const count = Math.min(8, enItems.length, frItems.length, zhItems.length);
-        if (count < 1) throw new Error("empty event stream");
-
-        function render(label, list) {
-          let html = "";
-          for (let i = 0; i < 8; i++) {
-            const item = list[i % count] || {};
-            html += `
-              <span class="news-item">
-                <span class="news-source">${escapeHtml(label)}</span>
-                <span class="news-title">${escapeHtml(item.title || "Untitled")}</span>
-                <span class="news-sep">◆</span>
-              </span>
-            `;
-          }
-          return html;
-        }
-
-        const enHtml = render("EN", enItems);
-        const frHtml = render("FR", frItems);
-        const zhHtml = render("中文", zhItems);
-
-        // 两份完全相同的固定宽度内容，三行宽度严格一致。
-        en.innerHTML = enHtml + enHtml;
-        fr.innerHTML = frHtml + frHtml;
-        zh.innerHTML = zhHtml + zhHtml;
-
-        startSyncedNewsTicker();
+        const raw = await res.json();
+        const byLang = raw.items_by_lang || {};
+        const enItems = byLang.en || raw.items || [];
+        const frItems = byLang.fr || raw.items || [];
+        const zhItems = byLang.zh || raw.items || [];
+        const extraItems = raw.items || [];
+        const renderNews = (items, fallback) => {
+          const source = items.length ? items : [{ source: "ERR", title: fallback }];
+          const rows = source.slice(0, 4).map((item) => {
+            const label = item.source || item.publisher || "SRC";
+            const title = item.title || item.headline || "--";
+            return `<span class="news-item"><span class="news-source">${escapeHtml(label)}</span><span class="news-title">${escapeHtml(title)}</span><span class="news-sep">◆</span></span>`;
+          }).join("");
+          return rows + rows;
+        };
+        en.innerHTML = renderNews(enItems, "English stream unavailable");
+        fr.innerHTML = renderNews(frItems, "French stream unavailable");
+        zh.innerHTML = renderNews(zhItems, "Chinese stream unavailable");
+        extra.innerHTML = renderNews(extraItems, "System stream unavailable");
       } catch (err) {
-        const fallback = `
-          <span class="news-item">
-            <span class="news-source">ERR</span>
-            <span class="news-title">event_stream.json not loaded</span>
-            <span class="news-sep">◆</span>
-          </span>
-          <span class="news-item">
-            <span class="news-source">ERR</span>
-            <span class="news-title">check fetch_event_stream.py</span>
-            <span class="news-sep">◆</span>
-          </span>
-          <span class="news-item">
-            <span class="news-source">ERR</span>
-            <span class="news-title">translation failed or feed empty</span>
-            <span class="news-sep">◆</span>
-          </span>
-          <span class="news-item">
-            <span class="news-source">ERR</span>
-            <span class="news-title">waiting for next refresh</span>
-            <span class="news-sep">◆</span>
-          </span>
-        `;
+        const fallback = `<span class="news-item"><span class="news-source">ERR</span><span class="news-title">translation failed or feed empty</span><span class="news-sep">◆</span></span><span class="news-item"><span class="news-source">ERR</span><span class="news-title">waiting for next refresh</span><span class="news-sep">◆</span></span>`;
         en.innerHTML = fallback + fallback;
         fr.innerHTML = fallback + fallback;
         zh.innerHTML = fallback + fallback;
-        startSyncedNewsTicker();
+        extra.innerHTML = fallback + fallback;
       }
     }
-
-
 
     function duplicateTapeIfNeeded(id) {
       const el = document.getElementById(id);
@@ -1683,7 +1610,6 @@ async function loadWeather() {
         };
       }
     }
-
 
 
 
@@ -1818,7 +1744,6 @@ async function loadWeather() {
 
 
 
-
     updateClock();
     updateTimeMiniStatus();
     loadAgenda();
@@ -1910,12 +1835,46 @@ async function loadWeather() {
         `;
       }
 
+      const LOCAL_VISIBLE_ROWS = 3;
+      const LOCAL_ROW_GAP = 5;
+      const LOCAL_STEP_MS = 460;
+      let localRotationInFlight = false;
+      let localRotationPaused = false;
+
       function capacity() {
         const box = document.getElementById("localNoticeList");
         if (!box) return 1;
+
         const h = box.clientHeight || 80;
-        // row 约 18px + gap 5px；至少 1 条，最多 8 条
-        return Math.max(1, Math.min(8, Math.floor((h - 8) / 23)));
+        const physicalRows = Math.max(1, Math.floor((h - 8) / 23));
+
+        // Keep the existing row text and styling; show at most three rows
+        // and rotate the remaining rows through the same viewport.
+        return Math.max(1, Math.min(LOCAL_VISIBLE_ROWS, physicalRows));
+      }
+
+      function fitLocalViewport(box, visibleRows) {
+        const viewport = box.querySelector(".local-notice-viewport");
+        const track = box.querySelector(".local-notice-track");
+        const firstRow = track && track.querySelector(".local-notice-row");
+
+        if (!viewport || !firstRow) return;
+
+        const rowHeight = firstRow.getBoundingClientRect().height;
+        const maxHeight = Math.max(rowHeight, box.clientHeight - 12);
+        const desiredHeight =
+          visibleRows * rowHeight +
+          Math.max(0, visibleRows - 1) * LOCAL_ROW_GAP;
+
+        viewport.style.height = Math.min(desiredHeight, maxHeight) + "px";
+
+        viewport.onmouseenter = function () {
+          localRotationPaused = true;
+        };
+
+        viewport.onmouseleave = function () {
+          localRotationPaused = false;
+        };
       }
 
       function renderList() {
@@ -1929,32 +1888,91 @@ async function loadWeather() {
           return;
         }
 
-        const n = Math.min(capacity(), items.length);
+        const visibleRows = Math.min(capacity(), items.length);
+        const renderRows =
+          items.length > visibleRows ? visibleRows + 1 : visibleRows;
         const rows = [];
-        for (let i = 0; i < n; i++) {
+
+        for (let i = 0; i < renderRows; i++) {
           rows.push(rowHtml(items[(localOffset + i) % items.length]));
         }
-        box.innerHTML = rows.join("");
+
+        box.innerHTML =
+          `<div class="local-notice-viewport">` +
+            `<div class="local-notice-track">${rows.join("")}</div>` +
+          `</div>`;
+
+        requestAnimationFrame(function () {
+          fitLocalViewport(box, visibleRows);
+        });
       }
 
       function rotateList() {
+        if (localRotationInFlight || localRotationPaused) return;
+
         const items = usableEvents();
-        const n = Math.min(capacity(), items.length || 1);
-        if (items.length > n) {
-          localOffset = (localOffset + n) % items.length;
+        const visibleRows = Math.min(capacity(), items.length || 1);
+
+        if (items.length <= visibleRows) return;
+
+        const box = document.getElementById("localNoticeList");
+        const track = box && box.querySelector(".local-notice-track");
+        const firstRow = track && track.querySelector(".local-notice-row");
+
+        if (!track || !firstRow) {
+          renderList();
+          return;
         }
-        renderList();
+
+        const step =
+          firstRow.getBoundingClientRect().height + LOCAL_ROW_GAP;
+
+        localRotationInFlight = true;
+        track.style.transition = `transform ${LOCAL_STEP_MS}ms ease`;
+        track.style.transform = `translate3d(0, -${step}px, 0)`;
+
+        window.setTimeout(function () {
+          localOffset = (localOffset + 1) % items.length;
+          localRotationInFlight = false;
+          renderList();
+        }, LOCAL_STEP_MS + 40);
+      }
+
+      function eventKey(ev) {
+        return safe(ev && (ev.url || ev.title || ev.poster_title || ev.what), "");
+      }
+
+      function replaceEvents(nextEvents, resetOffset) {
+        const currentItems = usableEvents();
+        const currentKey = eventKey(currentItems[localOffset]);
+
+        localEvents = Array.isArray(nextEvents) ? nextEvents : [];
+
+        const nextItems = usableEvents();
+
+        if (resetOffset || !currentKey || !nextItems.length) {
+          localOffset = 0;
+          return;
+        }
+
+        const nextIndex = nextItems.findIndex(function (ev) {
+          return eventKey(ev) === currentKey;
+        });
+
+        localOffset = nextIndex >= 0
+          ? nextIndex
+          : localOffset % nextItems.length;
       }
 
       async function loadCache() {
         try {
           const res = await fetch("local_event_search_results.json?_=" + Date.now());
           const data = await res.json();
-          localEvents = Array.isArray(data.results) ? data.results : [];
-          localOffset = 0;
+          replaceEvents(data.results, false);
           renderList();
         } catch (err) {
           localEvents = [];
+          localOffset = 0;
           renderList();
         }
       }
@@ -1973,8 +1991,7 @@ async function loadWeather() {
           });
 
           const data = await res.json();
-          localEvents = Array.isArray(data.results) ? data.results : [];
-          localOffset = 0;
+          replaceEvents(data.results, true);
           renderList();
         } catch (err) {
           localEvents = [];
@@ -2001,7 +2018,7 @@ async function loadWeather() {
 
       initLocalPlaceInput();
       loadCache();
-      setInterval(rotateList, 8000);
+      setInterval(rotateList, 6000);
       setInterval(loadCache, 10 * 60 * 1000);
 
       if (window.ResizeObserver) {
@@ -2011,19 +2028,6 @@ async function loadWeather() {
       }
     })();
   </script>
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
