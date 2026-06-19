@@ -1,559 +1,363 @@
 #!/usr/bin/env python3
+import html
 import json
 import re
 import sys
+import time
 import urllib.parse
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 
-import requests
-from bs4 import BeautifulSoup
+BASE = Path(__file__).resolve().parent
+OUT = BASE / "local_event_search_results.json"
 
-LOCATION = " ".join(sys.argv[1:]).strip() or "Punggol Singapore"
-OUT = Path("local_event_search_results.json")
+UA = (
+    "Mozilla/5.0 (X11; Linux x86_64) "
+    "AppleWebKit/537.36 Chrome/126 Safari/537.36"
+)
 
-SOURCE_REGISTRY = [
+DEFAULT_LOCATION = "Punggol Singapore"
+YEAR = str(datetime.now().year)
+
+OFFICIAL_SOURCES = [
     {
-        "name": "Children's Museum Singapore",
-        "kind": "direct",
-        "url": "https://www.heritage.sg/childrensmuseum/whatson/childrens-season---listing-page",
-        "audience": "children and families",
-        "where": "Children's Museum Singapore / participating venues",
-    },
-    {
-        "name": "Children's Museum Singapore",
-        "kind": "site_query",
-        "site": "heritage.sg/childrensmuseum",
-        "queries": [
-            '"Children\'s Museum Singapore" "2026" "programme"',
-            '"Children\'s Season 2026" "Singapore"',
-            '"Children\'s Season 2026" "museum"',
-        ],
-        "audience": "children and families",
-    },
-    {
-        "name": "National Gallery Singapore",
-        "kind": "site_query",
-        "site": "nationalgallery.sg",
-        "queries": [
-            '"National Gallery Singapore" "family" "programme"',
-            '"National Gallery Singapore" "children" "workshop"',
-            '"National Gallery Singapore" "kids" "2026"',
-        ],
-        "audience": "children and families",
-    },
-    {
-        "name": "National Museum Singapore",
-        "kind": "site_query",
-        "site": "nhb.gov.sg/nationalmuseum",
-        "queries": [
-            '"National Museum Singapore" "children" "programme"',
-            '"National Museum Singapore" "family" "2026"',
-        ],
-        "audience": "children and families",
-    },
-    {
-        "name": "Asian Civilisations Museum",
-        "kind": "site_query",
-        "site": "nhb.gov.sg/acm",
-        "queries": [
-            '"Asian Civilisations Museum" "family" "programme"',
-            '"Asian Civilisations Museum" "children" "2026"',
-        ],
-        "audience": "children and families",
-    },
-    {
-        "name": "Peranakan Museum",
-        "kind": "site_query",
-        "site": "nhb.gov.sg/peranakanmuseum",
-        "queries": [
-            '"Peranakan Museum" "family" "programme"',
-            '"Peranakan Museum" "children" "2026"',
-        ],
-        "audience": "children and families",
-    },
-    {
-        "name": "ArtScience Museum",
-        "kind": "site_query",
-        "site": "marinabaysands.com/museum",
-        "queries": [
-            '"ArtScience Museum" "family" "workshop"',
-            '"ArtScience Museum" "children" "2026"',
-        ],
-        "audience": "children and families",
-    },
-    {
-        "name": "Science Centre Singapore",
-        "kind": "site_query",
-        "site": "science.edu.sg",
-        "queries": [
-            '"Science Centre Singapore" "children" "workshop"',
-            '"KidsSTOP" "2026" "programme"',
-        ],
-        "audience": "children and families",
-    },
-    {
-        "name": "NLB Punggol Regional Library",
-        "kind": "site_query",
-        "site": "eventbrite.sg",
-        "queries": [
-            '"Punggol Regional Library" "NLB" "event"',
-            '"Punggol Regional Library" "programme"',
-            '"NLB" "Punggol" "children"',
-        ],
-        "audience": "library visitors",
-        "where": "Punggol Regional Library",
+        "name": "Punggol Regional Library",
+        "url": "https://www.nlb.gov.sg/main/visit-us/our-libraries-and-locations/punggol-regional-library",
+        "query": 'site:nlb.gov.sg "Punggol Regional Library" programme event children',
     },
     {
         "name": "One Punggol",
-        "kind": "site_query",
-        "site": "onepunggol.sg",
-        "queries": [
-            '"One Punggol" "event"',
-            '"One Punggol" "programme"',
-            '"One Punggol" "children"',
-        ],
-        "audience": "residents",
-        "where": "One Punggol",
+        "url": "https://www.onepunggol.sg/",
+        "query": 'site:onepunggol.sg Punggol event workshop family',
     },
     {
-        "name": "onePA / People's Association",
-        "kind": "site_query",
-        "site": "onepa.gov.sg",
-        "queries": [
-            '"Punggol" "onePA" "event"',
-            '"Punggol" "People\'s Association" "event"',
-            '"Punggol CC" "event"',
-            '"Punggol West" "event"',
-        ],
-        "audience": "residents",
+        "name": "onePA",
+        "url": "https://www.onepa.gov.sg/",
+        "query": 'site:onepa.gov.sg Punggol Sengkang event workshop family',
     },
     {
         "name": "SAFRA Punggol",
-        "kind": "site_query",
-        "site": "safra.sg",
-        "queries": [
-            '"SAFRA Punggol" "event"',
-            '"SAFRA Punggol" "workshop"',
-            '"SAFRA Punggol" "children"',
-        ],
-        "audience": "families",
-        "where": "SAFRA Punggol",
+        "url": "https://www.safra.sg/",
+        "query": 'site:safra.sg Punggol event family children',
     },
     {
-        "name": "Waterway Point",
-        "kind": "site_query",
-        "site": "waterwaypoint.com.sg",
-        "queries": [
-            '"Waterway Point" "event"',
-            '"Waterway Point" "children"',
-            '"Waterway Point" "workshop"',
-        ],
-        "audience": "shoppers and families",
-        "where": "Waterway Point",
+        "name": "Children’s Season",
+        "url": "https://www.nhb.gov.sg/",
+        "query": f'"Children\'s Season" Singapore {YEAR} programme event',
+    },
+    {
+        "name": "National Gallery Families",
+        "url": "https://www.nationalgallery.sg/",
+        "query": f'site:nationalgallery.sg family children programme Singapore {YEAR}',
     },
 ]
 
-BAD_HOST = re.compile(
-    r"(duckduckgo|google|bing|facebook\.com|instagram\.com|youtube\.com|tiktok|"
-    r"sgmytaxi|taxi|propertyguru|99\.co|edgeprop|tripadvisor|booking|agoda|"
-    r"klook|kkday|travel|tourism|wanderlog|holidify|foodpanda|deliveroo)",
-    re.I,
+ALLOW_HOSTS = (
+    "nlb.gov.sg",
+    "onepunggol.sg",
+    "onepa.gov.sg",
+    "safra.sg",
+    "nhb.gov.sg",
+    "heritage.sg",
+    "heritage.gov.sg",
+    "nationalgallery.sg",
+    "eventbrite.sg",
+    "eventbrite.com",
+    "esplanade.com",
+    "artscience.com",
+    "gardensbythebay.com.sg",
 )
 
-BAD_TITLE = re.compile(
-    r"(things to do|popular things|places to visit|attractions|natural escape|"
-    r"guide|tourist|travel|restaurant|food|condo|property|hotel|taxi|"
-    r"airport transfer|near me|map|weather|media release|press release|"
-    r"shavees|stands together)",
-    re.I,
+EVENT_WORDS = (
+    "event", "programme", "program", "workshop", "activity",
+    "festival", "season", "storytelling", "family", "children",
+    "kids", "course", "class", "talk", "tour", "performance",
 )
 
-GENERIC_TITLE = re.compile(
-    r"^\s*(events?|activities|calendar|programmes?|programs?|what.?s happening|"
-    r"onepa\s*\|\s*events|local events?|community events?|things to do|"
-    r"listing page|whatson|what.?s on)\s*$",
-    re.I,
-)
-
-EVENT_HINT = re.compile(
-    r"(event|programme|program|workshop|register|registration|ticket|booking|"
-    r"class|festival|talk|tour|fair|market|screening|performance|concert|"
-    r"children|kids|family|museum|gallery|library|community|activity|session|"
-    r"open house|guided walk|sign up|signup|carnival|storytelling|craft|play)",
-    re.I,
+BAD_WORDS = (
+    "top things to do",
+    "popular things to do",
+    "tripadvisor",
+    "klook",
+    "property",
+    "condo",
+    "rental",
+    "career",
+    "job",
+    "privacy policy",
+    "terms of use",
+    "facebook",
+    "instagram",
+    "youtube",
+    "pdf",
 )
 
 DATE_RE = re.compile(
-    r"(\b\d{1,2}(?:,\s*\d{1,2})*(?:\s*(?:-|–|to)\s*\d{1,2})?\s+"
-    r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s+\d{4}\b|"
-    r"\b\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s*[-–]\s*"
-    r"\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s+\d{4}\b|"
-    r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4}\b|"
-    r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b)",
+    r"("
+    r"\b\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{4}\b|"
+    r"\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{1,2},?\s+\d{4}\b|"
+    r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b|"
+    r"\bthis weekend\b|\btoday\b|\btomorrow\b"
+    r")",
     re.I,
 )
 
-def clean(s):
-    return re.sub(r"\s+", " ", str(s or "")).strip()
+def now_iso():
+    return datetime.now(timezone.utc).isoformat()
 
-def strip_brand(s):
-    s = clean(s)
-    s = re.sub(
-        r"\s*[-|]\s*(DuckDuckGo|Google|Facebook|Eventbrite|Peatix|Meetup|onePA|Allevents|People.?s Association|NLB|National Gallery Singapore).*$",
-        "",
-        s,
-        flags=re.I,
-    )
-    return s.strip()
+def textify(value):
+    value = html.unescape(value or "")
+    value = re.sub(r"<script[\s\S]*?</script>", " ", value, flags=re.I)
+    value = re.sub(r"<style[\s\S]*?</style>", " ", value, flags=re.I)
+    value = re.sub(r"<[^>]+>", " ", value)
+    return re.sub(r"\s+", " ", value).strip()
 
-def get(url, timeout=22):
-    return requests.get(
+def shorten(value, limit):
+    value = textify(value)
+    if len(value) <= limit:
+        return value
+    return value[: limit - 1].rstrip() + "…"
+
+def fetch(url, timeout=16):
+    req = urllib.request.Request(
         url,
-        timeout=timeout,
         headers={
-            "User-Agent": "Mozilla/5.0 infoscreen-local-events-source-registry/5.0",
+            "User-Agent": UA,
             "Accept": "text/html,application/xhtml+xml,text/plain,*/*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Connection": "close",
         },
-        allow_redirects=True,
     )
+    with urllib.request.urlopen(req, timeout=timeout) as response:
+        return response.read().decode("utf-8", "replace")
 
-def abs_url(base, href):
-    return urllib.parse.urljoin(base, href or "")
+def unwrap_ddg(url):
+    url = html.unescape(url)
+    if url.startswith("//"):
+        url = "https:" + url
 
-def unwrap_ddg_url(href):
-    if not href:
-        return ""
-    if href.startswith("//"):
-        href = "https:" + href
-    if "uddg=" in href:
-        try:
-            qs = urllib.parse.parse_qs(urllib.parse.urlparse(href).query)
-            return urllib.parse.unquote(qs.get("uddg", [""])[0])
-        except Exception:
-            return ""
-    return href
-
-def is_bad_url_or_title(title, url):
     parsed = urllib.parse.urlparse(url)
-    host = parsed.netloc.lower().replace("www.", "")
-    path = parsed.path.lower()
+    query = urllib.parse.parse_qs(parsed.query)
 
-    if not url.startswith("http"):
-        return True
-    if url.lower().endswith(".pdf"):
-        return True
-    if "/y.js" in path:
-        return True
-    if BAD_HOST.search(host) or BAD_HOST.search(url) or BAD_TITLE.search(title):
-        return True
-    if GENERIC_TITLE.match(title):
-        return True
-    if re.search(r"(/search|/tag|/category|/categories|/directory|/things-to-do|/places|/attractions)", path):
-        return True
-    return False
+    if "uddg" in query:
+        return query["uddg"][0]
 
-def search_ddg(query, site=None):
-    q = query
-    if site:
-        q = f'site:{site} {query}'
-    url = "https://html.duckduckgo.com/html/?" + urllib.parse.urlencode({"q": q})
-    r = get(url)
-    r.raise_for_status()
-    return r.text
+    return url
 
-def parse_ddg(html):
-    soup = BeautifulSoup(html, "html.parser")
-    rows = []
-
-    for block in soup.select(".result, .web-result, .results_links, .result__body"):
-        a = block.select_one("a.result__a, .result__title a, a[href*='uddg=']")
-        if not a:
-            continue
-
-        raw_title = clean(a.get_text(" ", strip=True))
-        title = strip_brand(raw_title)
-        url = unwrap_ddg_url(a.get("href", ""))
-
-        if is_bad_url_or_title(title, url):
-            continue
-
-        sn = block.select_one(".result__snippet, .snippet")
-        snippet = clean(sn.get_text(" ", strip=True)) if sn else ""
-
-        rows.append({
-            "title": title,
-            "url": url,
-            "snippet": snippet[:320],
-            "source": urllib.parse.urlparse(url).netloc.lower().replace("www.", ""),
-        })
-
-    return dedupe_rows(rows)
-
-def parse_direct_listing(source):
-    base = source["url"]
-    r = get(base)
-    r.raise_for_status()
-    soup = BeautifulSoup(r.text, "html.parser")
-
-    for bad in soup(["script", "style", "noscript", "svg"]):
-        bad.decompose()
-
-    rows = []
-    for a in soup.find_all("a"):
-        raw_title = clean(a.get_text(" ", strip=True))
-        title = strip_brand(raw_title)
-        url = abs_url(base, a.get("href", ""))
-
-        if len(title) < 8:
-            continue
-        if is_bad_url_or_title(title, url):
-            continue
-
-        block = a
-        for _ in range(4):
-            if block.parent:
-                block = block.parent
-
-        text = clean(block.get_text(" ", strip=True))
-        if not EVENT_HINT.search(text + " " + title):
-            continue
-
-        rows.append({
-            "title": title,
-            "url": url,
-            "snippet": text[:360],
-            "source": urllib.parse.urlparse(url).netloc.lower().replace("www.", ""),
-            "source_name": source["name"],
-            "source_where": source.get("where", ""),
-            "source_audience": source.get("audience", ""),
-        })
-
-    return dedupe_rows(rows)
-
-def dedupe_rows(rows):
-    seen = set()
+def search_ddg(query, limit=8):
+    url = "https://html.duckduckgo.com/html/?" + urllib.parse.urlencode({"q": query})
+    page = fetch(url)
     out = []
-    for r in rows:
-        key = r["url"].split("?")[0].rstrip("/")
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(r)
-    return out
 
-def parse_date(blob):
-    m = DATE_RE.search(blob or "")
-    return m.group(0) if m else ""
-
-def jsonld_event(soup, row, source):
-    for script in soup.select('script[type="application/ld+json"]'):
-        try:
-            raw = script.string or script.get_text()
-            data = json.loads(raw)
-            stack = data if isinstance(data, list) else [data]
-            while stack:
-                obj = stack.pop(0)
-                if isinstance(obj, list):
-                    stack.extend(obj)
-                    continue
-                if not isinstance(obj, dict):
-                    continue
-                if "@graph" in obj and isinstance(obj["@graph"], list):
-                    stack.extend(obj["@graph"])
-                typ = obj.get("@type")
-                typ_s = " ".join(typ) if isinstance(typ, list) else str(typ)
-                if "event" not in typ_s.lower():
-                    continue
-
-                name = clean(obj.get("name"))
-                if not name or BAD_TITLE.search(name) or GENERIC_TITLE.match(name):
-                    continue
-
-                start = clean(obj.get("startDate"))
-                desc = clean(obj.get("description"))
-
-                where = source.get("where") or row.get("source_where") or LOCATION
-                loc = obj.get("location")
-                if isinstance(loc, dict):
-                    where = clean(loc.get("name") or loc.get("address") or where)
-
-                return {
-                    "title": name,
-                    "poster_title": name,
-                    "what": name,
-                    "when": start or "CHECK DATE",
-                    "where": where,
-                    "who": source.get("audience") or row.get("source_audience") or "visitors",
-                    "why": desc[:180] or row.get("snippet", "")[:180],
-                    "how": row["source"],
-                    "summary": desc[:220] or row.get("snippet", "")[:220],
-                    "poster_summary": desc[:220] or row.get("snippet", "")[:220],
-                    "source": row["source"],
-                    "url": row["url"],
-                    "source_name": source["name"],
-                }
-        except Exception:
-            pass
-    return None
-
-def extract_detail(row, source):
-    try:
-        r = get(row["url"], timeout=18)
-        if r.status_code >= 400:
-            return None, "http_" + str(r.status_code)
-    except Exception:
-        return None, "fetch_failed"
-
-    soup = BeautifulSoup(r.text[:900000], "html.parser")
-
-    ev = jsonld_event(soup, row, source)
-    if ev:
-        return ev, "ok_jsonld"
-
-    for bad in soup(["script", "style", "noscript", "svg"]):
-        bad.decompose()
-
-    page_title = clean(soup.title.get_text(" ", strip=True) if soup.title else "")
-    h1 = soup.find(["h1", "h2"])
-    heading = clean(h1.get_text(" ", strip=True) if h1 else "")
-    text = clean(soup.get_text(" ", strip=True))
-
-    title = strip_brand(heading or row["title"] or page_title)
-    blob = f"{title} {row.get('snippet','')} {text[:6500]}"
-
-    if not title or GENERIC_TITLE.match(title):
-        return None, "generic_title"
-    if BAD_TITLE.search(title):
-        return None, "bad_title"
-    if not EVENT_HINT.search(blob):
-        return None, "no_event_hint"
-
-    # 直接机构源放宽地点限制；普通 site query 需要命中机构名/地点
-    low = blob.lower()
-    source_name = source["name"].lower()
-    if source["kind"] != "direct":
-        related = (
-            "punggol" in low
-            or "children" in low
-            or "family" in low
-            or "museum" in low
-            or "gallery" in low
-            or "library" in low
-            or any(part in low for part in source_name.split() if len(part) >= 5)
-        )
-        if not related:
-            return None, "not_source_related"
-
-    when = parse_date(blob)
-
-    strong = re.search(
-        r"(register|registration|ticket|booking|workshop|class|festival|talk|tour|screening|concert|children|kids|family|programme|program|library|museum|gallery|carnival|storytelling|craft|play)",
-        blob,
-        re.I,
+    pattern = re.compile(
+        r'<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>(.*?)</a>',
+        re.I | re.S,
     )
-    if not when and not strong:
-        return None, "weak_no_date"
 
-    summary = clean(row.get("snippet", ""))
-    if not summary or BAD_TITLE.search(summary):
-        for part in re.split(r"(?<=[.!?。])\s+", text):
-            part = clean(part)
-            if 35 <= len(part) <= 200 and not re.search(r"(cookie|privacy|terms|copyright|login|subscribe|javascript)", part, re.I):
-                summary = part
-                break
+    for match in pattern.finditer(page):
+        link = unwrap_ddg(match.group(1))
+        title = textify(match.group(2))
 
-    where = source.get("where") or row.get("source_where") or LOCATION
-    who = source.get("audience") or row.get("source_audience") or "visitors"
-
-    return {
-        "title": title,
-        "poster_title": title,
-        "what": title,
-        "when": when or "CHECK DATE",
-        "where": where,
-        "who": who,
-        "why": summary[:180],
-        "how": row["source"],
-        "summary": summary[:220],
-        "poster_summary": summary[:220],
-        "source": row["source"],
-        "url": row["url"],
-        "source_name": source["name"],
-    }, "ok"
-
-def build_candidates():
-    all_rows = []
-    debug = []
-
-    for source in SOURCE_REGISTRY:
-        if source["kind"] == "direct":
-            try:
-                rows = parse_direct_listing(source)
-                debug.append({"source": source["name"], "kind": "direct", "candidates": len(rows)})
-                for r in rows:
-                    r["_source_cfg"] = source
-                all_rows.extend(rows)
-            except Exception as e:
-                debug.append({"source": source["name"], "kind": "direct", "error": str(e)})
-
-        elif source["kind"] == "site_query":
-            for q in source["queries"]:
-                try:
-                    html = search_ddg(q, source.get("site"))
-                    rows = parse_ddg(html)
-                    debug.append({"source": source["name"], "kind": "site_query", "query": q, "candidates": len(rows)})
-                    for r in rows:
-                        r["_source_cfg"] = source
-                    all_rows.extend(rows)
-                except Exception as e:
-                    debug.append({"source": source["name"], "kind": "site_query", "query": q, "error": str(e)})
-
-    return dedupe_rows(all_rows), debug
-
-def main():
-    rows, debug = build_candidates()
-    results = []
-    rejected = []
-    seen = set()
-
-    for row in rows:
-        source = row.pop("_source_cfg", None) or {"name": row.get("source", ""), "kind": "site_query"}
-        key = row["url"].split("?")[0].rstrip("/")
-        if key in seen:
-            continue
-        seen.add(key)
-
-        ev, reason = extract_detail(row, source)
-        if ev:
-            results.append(ev)
-        else:
-            rejected.append({
-                "reason": reason,
-                "title": row.get("title"),
-                "source": row.get("source"),
-                "url": row.get("url"),
-                "source_name": source.get("name"),
+        if link.startswith("http") and title:
+            out.append({
+                "title": title,
+                "url": link,
+                "summary": "",
             })
 
-        if len(results) >= 12:
+        if len(out) >= limit:
             break
 
-    data = {
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-        "location": LOCATION,
-        "extractor": "source-registry-institutions-detail-parser",
-        "sources": [s["name"] for s in SOURCE_REGISTRY],
-        "results": results,
-        "candidates_checked": len(rows),
-        "debug_candidates": debug[:80],
-        "rejected_preview": rejected[:40],
-        "error": None,
-        "from_cache": False,
+    return out
+
+def search_bing(query, limit=8):
+    url = "https://www.bing.com/search?" + urllib.parse.urlencode({"q": query})
+    page = fetch(url)
+    out = []
+
+    pattern = re.compile(
+        r'<li[^>]+class="b_algo"[\s\S]*?<h2[^>]*><a[^>]+href="([^"]+)"[^>]*>(.*?)</a>[\s\S]*?</li>',
+        re.I,
+    )
+
+    for match in pattern.finditer(page):
+        block = match.group(0)
+        link = html.unescape(match.group(1))
+        title = textify(match.group(2))
+
+        desc_match = re.search(r"<p[^>]*>(.*?)</p>", block, re.I | re.S)
+        summary = textify(desc_match.group(1)) if desc_match else ""
+
+        if link.startswith("http") and title:
+            out.append({
+                "title": title,
+                "url": link,
+                "summary": summary,
+            })
+
+        if len(out) >= limit:
+            break
+
+    return out
+
+def source_from_url(url):
+    host = urlparse(url).netloc.lower().replace("www.", "")
+
+    names = {
+        "nlb.gov.sg": "NLB",
+        "onepunggol.sg": "One Punggol",
+        "onepa.gov.sg": "onePA",
+        "safra.sg": "SAFRA",
+        "nhb.gov.sg": "National Heritage Board",
+        "heritage.sg": "HeritageSG",
+        "heritage.gov.sg": "HeritageSG",
+        "nationalgallery.sg": "National Gallery",
+        "eventbrite.sg": "Eventbrite",
+        "eventbrite.com": "Eventbrite",
+        "esplanade.com": "Esplanade",
+        "artscience.com": "ArtScience Museum",
+        "gardensbythebay.com.sg": "Gardens by the Bay",
     }
 
-    OUT.write_text(json.dumps(data, ensure_ascii=False, indent=2))
-    print(json.dumps(data, ensure_ascii=False, indent=2))
+    for domain, name in names.items():
+        if host.endswith(domain):
+            return name
+
+    return host or "Official source"
+
+def allowed_url(url):
+    parsed = urlparse(url)
+    host = parsed.netloc.lower().replace("www.", "")
+
+    if not host:
+        return False
+
+    if url.lower().endswith(".pdf"):
+        return False
+
+    return any(host.endswith(domain) for domain in ALLOW_HOSTS)
+
+def item_score(title, summary, url, location):
+    blob = f"{title} {summary} {url}".lower()
+    score = 0
+
+    for word in EVENT_WORDS:
+        if word in blob:
+            score += 4
+
+    for word in ("punggol", "sengkang", "hougang"):
+        if word in blob:
+            score += 8
+
+    if DATE_RE.search(blob):
+        score += 10
+
+    for word in BAD_WORDS:
+        if word in blob:
+            score -= 60
+
+    location_words = [
+        word for word in re.split(r"\W+", location.lower())
+        if len(word) >= 4
+    ]
+    for word in location_words:
+        if word in blob:
+            score += 4
+
+    return score
+
+def event_date(title, summary):
+    match = DATE_RE.search(f"{title} {summary}")
+    return textify(match.group(1)) if match else "Check official page"
+
+def collect(location):
+    candidates = []
+    seen = set()
+
+    for source in OFFICIAL_SOURCES:
+        query = f'{location} {source["query"]} {YEAR}'
+
+        found = []
+        try:
+            found.extend(search_ddg(query))
+        except Exception:
+            pass
+
+        try:
+            found.extend(search_bing(query))
+        except Exception:
+            pass
+
+        for row in found:
+            url = row["url"]
+            title = shorten(row["title"], 150)
+            summary = shorten(row.get("summary", ""), 240)
+
+            if not title or not allowed_url(url):
+                continue
+
+            score = item_score(title, summary, url, location)
+            if score < 8:
+                continue
+
+            key = (url.split("#")[0].rstrip("/") or title).lower()
+            if key in seen:
+                continue
+            seen.add(key)
+
+            candidates.append({
+                "type": "event",
+                "title": title,
+                "url": url,
+                "source": source_from_url(url),
+                "date": event_date(title, summary),
+                "venue": location,
+                "summary": summary or "Open the official page for programme details.",
+                "score": score,
+            })
+
+        time.sleep(0.2)
+
+    candidates.sort(
+        key=lambda x: (-x["score"], x["title"].lower())
+    )
+
+    return candidates[:8]
+
+def main():
+    location = " ".join(sys.argv[1:]).strip() or DEFAULT_LOCATION
+    events = collect(location)
+
+    sources = [{
+        "type": "source",
+        "title": source["name"],
+        "url": source["url"],
+        "source": source["name"],
+    } for source in OFFICIAL_SOURCES]
+
+    payload = {
+        "version": 2,
+        "ok": True,
+        "updated_at": now_iso(),
+        "location": location,
+        "count": len(events),
+        "results": events,
+        "items": events,
+        "sources": sources,
+    }
+
+    OUT.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2)
+    )
+
+    print(
+        f"local events updated "
+        f"count={len(events)} "
+        f"sources={len(sources)} "
+        f"location={location}"
+    )
 
 if __name__ == "__main__":
     main()

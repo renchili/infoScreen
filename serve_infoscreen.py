@@ -2,11 +2,15 @@
 import json
 import subprocess
 import sys
+from datetime import datetime, timezone
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse
 
 BASE = Path(__file__).resolve().parent
+
+def now():
+    return datetime.now(timezone.utc).isoformat()
 
 def read_json(path, default):
     try:
@@ -27,7 +31,7 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def read_body_json(self):
+    def body_json(self):
         n = int(self.headers.get("Content-Length", "0") or "0")
         raw = self.rfile.read(n).decode("utf-8", "replace") if n else "{}"
         return json.loads(raw or "{}")
@@ -36,12 +40,14 @@ class Handler(SimpleHTTPRequestHandler):
         path = urlparse(self.path).path
 
         if path == "/api/market-config":
-            data = read_json(BASE / "market_config.json", {"symbols": ["AAPL", "NVDA", "MSFT", "TSLA"]})
-            return self.send_json(data)
+            return self.send_json(read_json(BASE / "market_config.json", {
+                "symbols": ["AAPL", "NVDA", "MSFT", "TSLA"]
+            }))
 
         if path == "/api/local-events/search":
-            cache = BASE / "local_event_search_results.json"
-            return self.send_json(read_json(cache, {"results": []}))
+            return self.send_json(read_json(BASE / "local_event_search_results.json", {
+                "results": []
+            }))
 
         return super().do_GET()
 
@@ -50,24 +56,24 @@ class Handler(SimpleHTTPRequestHandler):
 
         if path == "/api/market-config":
             try:
-                body = self.read_body_json()
-                symbols = body.get("symbols", [])
-                if not isinstance(symbols, list):
+                body = self.body_json()
+                raw = body.get("symbols", [])
+                if not isinstance(raw, list):
                     raise ValueError("symbols must be list")
 
-                clean = []
-                for s in symbols:
-                    s = str(s).strip().upper()
-                    if s and s not in clean:
-                        clean.append(s)
+                symbols = []
+                for x in raw:
+                    s = str(x).strip().upper()
+                    if s and s not in symbols:
+                        symbols.append(s)
 
-                clean = clean[:12]
-                if not clean:
+                symbols = symbols[:12]
+                if not symbols:
                     raise ValueError("empty symbols")
 
                 payload = {
-                    "symbols": clean,
-                    "updated_at": time_now(),
+                    "symbols": symbols,
+                    "updated_at": now()
                 }
                 (BASE / "market_config.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2))
                 return self.send_json({"ok": True, **payload})
@@ -81,27 +87,28 @@ class Handler(SimpleHTTPRequestHandler):
                     cwd=str(BASE),
                     text=True,
                     capture_output=True,
-                    timeout=40,
+                    timeout=60,
                 )
                 return self.send_json({
                     "ok": p.returncode == 0,
                     "returncode": p.returncode,
                     "stdout": p.stdout[-2000:],
                     "stderr": p.stderr[-2000:],
+                    "market": read_json(BASE / "market.json", {})
                 }, 200 if p.returncode == 0 else 500)
             except Exception as e:
                 return self.send_json({"ok": False, "error": str(e)}, 500)
 
         if path == "/api/local-events/search":
             try:
-                body = self.read_body_json()
+                body = self.body_json()
                 location = str(body.get("location") or "Punggol Singapore")
                 p = subprocess.run(
                     [sys.executable, str(BASE / "search_local_events.py"), location],
                     cwd=str(BASE),
                     text=True,
                     capture_output=True,
-                    timeout=80,
+                    timeout=90,
                 )
                 data = read_json(BASE / "local_event_search_results.json", {"results": []})
                 data["ok"] = p.returncode == 0
@@ -113,15 +120,9 @@ class Handler(SimpleHTTPRequestHandler):
 
         return self.send_json({"ok": False, "error": "not found"}, 404)
 
-def time_now():
-    from datetime import datetime, timezone
-    return datetime.now(timezone.utc).isoformat()
-
 def main():
-    host = "0.0.0.0"
-    port = 8765
-    print(f"InfoScreen serving http://{host}:{port}/ from {BASE}", flush=True)
-    ThreadingHTTPServer((host, port), Handler).serve_forever()
+    print(f"InfoScreen API server on 0.0.0.0:8765 from {BASE}", flush=True)
+    ThreadingHTTPServer(("0.0.0.0", 8765), Handler).serve_forever()
 
 if __name__ == "__main__":
     main()
