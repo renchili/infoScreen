@@ -1060,18 +1060,14 @@
       border: 1px solid var(--line);
       background: rgba(5,6,6,0.82);
       padding: 6px 8px;
-      display: block;
+      position: relative;
     }
 
-    /*
-     * Local-event rotation: keep the existing row content intact.
-     * The viewport shows up to three original rows; the track moves
-     * one row at a time, then pauses on the next set.
-     */
     .local-notice-viewport {
       width: 100%;
-      max-height: 100%;
+      height: 100%;
       overflow: hidden;
+      position: relative;
     }
 
     .local-notice-track {
@@ -1084,7 +1080,9 @@
 
     .local-notice-row {
       min-width: 0;
-      min-height: 0;
+      height: 22px;
+      min-height: 22px;
+      max-height: 22px;
       overflow: hidden;
       display: grid;
       grid-template-columns: 70px minmax(0, 1fr) 82px;
@@ -1097,10 +1095,6 @@
       font-size: 10px;
       line-height: 1.15;
       text-transform: uppercase;
-    }
-
-    .local-notice-row:last-child {
-      border-bottom: 0;
     }
 
     .local-notice-when {
@@ -1137,6 +1131,8 @@
       font-weight: 900;
       text-transform: uppercase;
       letter-spacing: 0.06em;
+      text-align: center;
+      padding: 10px;
     }
     /* LOCAL_EVENT_STATIC_END */
     
@@ -1825,6 +1821,46 @@
         }
       }
 
+      function titleOf(ev) {
+        return safe(
+          ev.title ||
+          ev.poster_title ||
+          ev.what ||
+          ev.name ||
+          ev.headline ||
+          ev.summary ||
+          "",
+          ""
+        );
+      }
+
+      function whenOf(ev) {
+        return safe(
+          ev.when ||
+          ev.date ||
+          ev.time ||
+          ev.start ||
+          ev.start_time ||
+          ev.period ||
+          "CHECK DATE",
+          "CHECK DATE"
+        );
+      }
+
+      function sourceOf(ev) {
+        return safe(
+          ev.source_name ||
+          ev.source ||
+          ev.publisher ||
+          domain(ev.url || ev.link || ""),
+          "ONLINE"
+        );
+      }
+
+      function urlOf(ev) {
+        return safe(ev.url || ev.link || "", "");
+      }
+
       function cleanTitle(t) {
         return safe(t)
           .replace(/^Children.?s Season 2026(?: Signature Programme)?\s*[-:]\s*/i, "")
@@ -1833,171 +1869,142 @@
           .trim();
       }
 
-      function badEvent(ev) {
-        const title = cleanTitle(ev.title || ev.poster_title || ev.what || "");
-        const url = safe(ev.url, "").toLowerCase();
+      function isBadEvent(ev) {
+        const title = cleanTitle(titleOf(ev));
+        const url = urlOf(ev).toLowerCase();
+
         if (!title) return true;
         if (url.endsWith(".pdf")) return true;
+
         return /things to do|popular things|places to visit|natural escape|media release|press release|shavees|stands together/i.test(title);
       }
 
-      function usableEvents() {
-        return localEvents.filter(ev => !badEvent(ev));
+      function readBuckets(data) {
+        const buckets = [];
+
+        if (Array.isArray(data)) buckets.push(data);
+
+        if (data && typeof data === "object") {
+          [
+            data.results,
+            data.items,
+            data.events,
+            data.debug_candidates,
+            data.candidates,
+            data.rejected_preview
+          ].forEach(function (x) {
+            if (Array.isArray(x)) buckets.push(x);
+          });
+        }
+
+        return buckets;
       }
 
-      function rowHtml(ev) {
-        const title = cleanTitle(ev.title || ev.poster_title || ev.what || "LOCAL EVENT");
-        const when = safe(ev.when, "CHECK DATE");
-        const url = safe(ev.url, "");
-        const source = safe(ev.source_name || ev.source || domain(url), "ONLINE");
-        const href = url ? ` href="${esc(url)}" target="_blank" rel="noreferrer"` : "";
-        return `
-          <a class="local-notice-row"${href}>
-            <span class="local-notice-when">${esc(cut(when, 20))}</span>
-            <span class="local-notice-title">${esc(cut(title, 96))}</span>
-            <span class="local-notice-src">${esc(cut(source, 22))}</span>
-          </a>
-        `;
-      }
+      function normalizeEvents(data) {
+        const primary = data && Array.isArray(data.results) ? data.results : [];
+        const buckets = primary.length >= 3 ? [primary] : readBuckets(data);
 
-      const LOCAL_VISIBLE_ROWS = 3;
-      const LOCAL_ROW_GAP = 5;
-      const LOCAL_STEP_MS = 460;
-      let localRotationInFlight = false;
-      let localRotationPaused = false;
+        const seen = new Set();
+        const out = [];
+
+        buckets.flat().forEach(function (ev) {
+          if (!ev || typeof ev !== "object") return;
+
+          const rawTitle = titleOf(ev);
+          const title = cleanTitle(rawTitle);
+          if (!title) return;
+
+          const url = urlOf(ev);
+          const key = (url || title + "|" + whenOf(ev) + "|" + sourceOf(ev)).toLowerCase();
+
+          if (seen.has(key)) return;
+          seen.add(key);
+
+          const item = Object.assign({}, ev, {
+            __title: title,
+            __when: whenOf(ev),
+            __source: sourceOf(ev),
+            __url: url
+          });
+
+          if (!isBadEvent(item)) out.push(item);
+        });
+
+        return out.slice(0, 24);
+      }
 
       function capacity() {
         const box = document.getElementById("localNoticeList");
         if (!box) return 1;
-
-        const h = box.clientHeight || 80;
-        const physicalRows = Math.max(1, Math.floor((h - 8) / 23));
-
-        // Keep the existing row text and styling; show at most three rows
-        // and rotate the remaining rows through the same viewport.
-        return Math.max(1, Math.min(LOCAL_VISIBLE_ROWS, physicalRows));
+        const h = box.clientHeight || 100;
+        return Math.max(1, Math.min(8, Math.floor((h - 8) / 27)));
       }
 
-      function fitLocalViewport(box, visibleRows) {
-        const viewport = box.querySelector(".local-notice-viewport");
-        const track = box.querySelector(".local-notice-track");
-        const firstRow = track && track.querySelector(".local-notice-row");
+      function rowHtml(ev) {
+        const url = ev.__url || "";
+        const href = url ? ` href="${esc(url)}" target="_blank" rel="noreferrer"` : "";
 
-        if (!viewport || !firstRow) return;
-
-        const rowHeight = firstRow.getBoundingClientRect().height;
-        const maxHeight = Math.max(rowHeight, box.clientHeight - 12);
-        const desiredHeight =
-          visibleRows * rowHeight +
-          Math.max(0, visibleRows - 1) * LOCAL_ROW_GAP;
-
-        viewport.style.height = Math.min(desiredHeight, maxHeight) + "px";
-
-        viewport.onmouseenter = function () {
-          localRotationPaused = true;
-        };
-
-        viewport.onmouseleave = function () {
-          localRotationPaused = false;
-        };
+        return `
+          <a class="local-notice-row"${href}>
+            <span class="local-notice-when">${esc(cut(ev.__when, 20))}</span>
+            <span class="local-notice-title">${esc(cut(ev.__title, 96))}</span>
+            <span class="local-notice-src">${esc(cut(ev.__source, 22))}</span>
+          </a>
+        `;
       }
 
       function renderList() {
         const box = document.getElementById("localNoticeList");
         if (!box) return;
 
-        const items = usableEvents();
-
-        if (!items.length) {
-          box.innerHTML = `<div class="local-notice-empty">${esc(currentLocation)}: NO VERIFIED LOCAL EVENT FOUND</div>`;
+        if (!localEvents.length) {
+          box.innerHTML = `<div class="local-notice-empty">${esc(currentLocation)}: NO LOCAL EVENT FOUND</div>`;
           return;
         }
 
-        const visibleRows = Math.min(capacity(), items.length);
-        const renderRows =
-          items.length > visibleRows ? visibleRows + 1 : visibleRows;
+        const visible = capacity();
         const rows = [];
 
-        for (let i = 0; i < renderRows; i++) {
-          rows.push(rowHtml(items[(localOffset + i) % items.length]));
+        for (let i = 0; i < Math.min(visible, localEvents.length); i++) {
+          rows.push(rowHtml(localEvents[(localOffset + i) % localEvents.length]));
         }
 
-        box.innerHTML =
-          `<div class="local-notice-viewport">` +
-            `<div class="local-notice-track">${rows.join("")}</div>` +
-          `</div>`;
-
-        requestAnimationFrame(function () {
-          fitLocalViewport(box, visibleRows);
-        });
+        box.innerHTML = `
+          <div class="local-notice-viewport">
+            <div class="local-notice-track">
+              ${rows.join("")}
+            </div>
+          </div>
+        `;
       }
 
       function rotateList() {
-        if (localRotationInFlight || localRotationPaused) return;
-
-        const items = usableEvents();
-        const visibleRows = Math.min(capacity(), items.length || 1);
-
-        if (items.length <= visibleRows) return;
-
-        const box = document.getElementById("localNoticeList");
-        const track = box && box.querySelector(".local-notice-track");
-        const firstRow = track && track.querySelector(".local-notice-row");
-
-        if (!track || !firstRow) {
+        if (!localEvents.length) {
           renderList();
           return;
         }
 
-        const step =
-          firstRow.getBoundingClientRect().height + LOCAL_ROW_GAP;
+        const visible = Math.min(capacity(), localEvents.length || 1);
 
-        localRotationInFlight = true;
-        track.style.transition = `transform ${LOCAL_STEP_MS}ms ease`;
-        track.style.transform = `translate3d(0, -${step}px, 0)`;
-
-        window.setTimeout(function () {
-          localOffset = (localOffset + 1) % items.length;
-          localRotationInFlight = false;
-          renderList();
-        }, LOCAL_STEP_MS + 40);
-      }
-
-      function eventKey(ev) {
-        return safe(ev && (ev.url || ev.title || ev.poster_title || ev.what), "");
-      }
-
-      function replaceEvents(nextEvents, resetOffset) {
-        const currentItems = usableEvents();
-        const currentKey = eventKey(currentItems[localOffset]);
-
-        localEvents = Array.isArray(nextEvents) ? nextEvents : [];
-
-        const nextItems = usableEvents();
-
-        if (resetOffset || !currentKey || !nextItems.length) {
-          localOffset = 0;
-          return;
+        if (localEvents.length > visible) {
+          localOffset = (localOffset + visible) % localEvents.length;
         }
 
-        const nextIndex = nextItems.findIndex(function (ev) {
-          return eventKey(ev) === currentKey;
-        });
-
-        localOffset = nextIndex >= 0
-          ? nextIndex
-          : localOffset % nextItems.length;
+        renderList();
       }
 
       async function loadCache() {
         try {
-          const res = await fetch("local_event_search_results.json?_=" + Date.now());
+          const res = await fetch("local_event_search_results.json?_=" + Date.now(), {
+            cache: "no-store"
+          });
           const data = await res.json();
-          replaceEvents(data.results, false);
+
+          localEvents = normalizeEvents(data);
+          localOffset = 0;
           renderList();
         } catch (err) {
           localEvents = [];
-          localOffset = 0;
           renderList();
         }
       }
@@ -2005,6 +2012,7 @@
       async function searchLocation(location) {
         currentLocation = location;
         localStorage.setItem("local_event_location", location);
+
         const box = document.getElementById("localNoticeList");
         if (box) box.innerHTML = `<div class="local-notice-empty">SEARCHING ${esc(location)}</div>`;
 
@@ -2016,7 +2024,8 @@
           });
 
           const data = await res.json();
-          replaceEvents(data.results, true);
+          localEvents = normalizeEvents(data);
+          localOffset = 0;
           renderList();
         } catch (err) {
           localEvents = [];
@@ -2043,11 +2052,12 @@
 
       initLocalPlaceInput();
       loadCache();
-      setInterval(rotateList, 6000);
+      setInterval(rotateList, 8000);
       setInterval(loadCache, 10 * 60 * 1000);
 
       if (window.ResizeObserver) {
-        new ResizeObserver(renderList).observe(document.getElementById("localNoticeList"));
+        const box = document.getElementById("localNoticeList");
+        if (box) new ResizeObserver(renderList).observe(box);
       } else {
         window.addEventListener("resize", renderList);
       }
