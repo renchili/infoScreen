@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+ "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>com.renchili.infoscreen.schedule-sync</string>
+
+    <key>Disabled</key>
+    <true/>
+
+    <key>Comment</key>
+    <string>Legacy placeholder. Do not load this file. Run mac/scripts/setup-schedule-sync.sh to generate the per-machine LaunchAgent under the user LaunchAgents directory.</string>
+  </dict>
+</plist>

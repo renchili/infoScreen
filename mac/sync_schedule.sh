@@ -1,37 +1,57 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
-export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_FILE="${INFOSCREEN_CONFIG:-$SCRIPT_DIR/local.env}"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ ! -r "$CONFIG_FILE" ]; then
+  echo "Missing local config: $CONFIG_FILE" >&2
+  echo "Run: bash mac/scripts/setup-schedule-sync.sh --host <ssh-host> --user <ssh-user>" >&2
+  exit 1
+fi
 
-SURFACE_USER="rody"
-SURFACE_HOST="10.168.1.207"
+# shellcheck disable=SC1090
+source "$CONFIG_FILE"
 
-LOCAL_SCHEDULE_JSON="schedule.json"
-REMOTE_SCHEDULE_JSON="/home/rody/infoscreen/schedule.json"
+: "${PYTHON_BIN:=python3}"
+: "${SURFACE_USER:?SURFACE_USER is required in mac/local.env}"
+: "${SURFACE_HOST:?SURFACE_HOST is required in mac/local.env}"
+: "${REMOTE_SCHEDULE_JSON:=~/infoscreen/schedule.json}"
+: "${LOCAL_SCHEDULE_JSON:=schedule.json}"
+: "${LOG_DIR:=$HOME/Library/Logs/infoscreen-sync}"
 
-LOG_DIR="/Users/rody/infoscreen-sync"
-LOG_FILE="$LOG_DIR/push_schedule.log"
+if [ -x "$PYTHON_BIN" ]; then
+  PYTHON_CMD="$PYTHON_BIN"
+elif command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+  PYTHON_CMD="$(command -v "$PYTHON_BIN")"
+else
+  echo "Python runtime not found: $PYTHON_BIN" >&2
+  exit 1
+fi
+
+if ! "$PYTHON_CMD" -c 'import EventKit' >/dev/null 2>&1; then
+  echo "Python cannot import EventKit: $PYTHON_CMD" >&2
+  echo "Run setup again with --python /path/to/python3" >&2
+  exit 1
+fi
 
 mkdir -p "$LOG_DIR"
+LOG_FILE="$LOG_DIR/push_schedule.log"
 
 {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] start"
-  echo "SCRIPT_DIR=$SCRIPT_DIR"
 
   cd "$SCRIPT_DIR"
-
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] export schedule"
-  python3 export.py "$LOCAL_SCHEDULE_JSON"
+  "$PYTHON_CMD" export.py "$LOCAL_SCHEDULE_JSON"
 
   if [ ! -f "$SCRIPT_DIR/$LOCAL_SCHEDULE_JSON" ]; then
-    echo "ERROR: local schedule not found: $SCRIPT_DIR/$LOCAL_SCHEDULE_JSON"
+    echo "Generated schedule file missing: $SCRIPT_DIR/$LOCAL_SCHEDULE_JSON"
     exit 1
   fi
 
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] push schedule to surface"
-  scp -q "$SCRIPT_DIR/$LOCAL_SCHEDULE_JSON" "${SURFACE_USER}@${SURFACE_HOST}:${REMOTE_SCHEDULE_JSON}"
+  scp -q \
+    "$SCRIPT_DIR/$LOCAL_SCHEDULE_JSON" \
+    "${SURFACE_USER}@${SURFACE_HOST}:${REMOTE_SCHEDULE_JSON}"
 
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] sync ok"
   echo

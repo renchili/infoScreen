@@ -15,6 +15,8 @@ chatgpt-ui-once/
 .DS_Store
 __pycache__/
 logs/
-ddg_debug*.html
-ddg_debug*.txt
 *.bak*
+
+# Per-machine macOS schedule sync configuration
+mac/local.env
+mac/launchagents/*.plist

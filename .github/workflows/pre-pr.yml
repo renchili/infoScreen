@@ -1,0 +1,63 @@
+name: Pre PR Verification
+
+on:
+  push:
+    branches-ignore:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repository-check:
+    name: pre-pr-${{ matrix.check }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        check:
+          - paths
+          - content
+          - structure
+          - python
+          - shell
+          - javascript
+
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Fetch main baseline
+        run: git fetch origin main --depth=1
+
+      - name: Run selected check
+        shell: bash
+        run: |
+          case "${{ matrix.check }}" in
+            paths|content|structure|python)
+              python3 scripts/ci/check_repo.py \
+                --suite "${{ matrix.check }}" \
+                --scope changed \
+                --base origin/main \
+                --head HEAD
+              ;;
+            shell)
+              bash scripts/ci/check_shell_syntax.sh
+              ;;
+            javascript)
+              bash scripts/ci/check_javascript_syntax.sh
+              ;;
+          esac
