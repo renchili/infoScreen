@@ -1,60 +1,21 @@
-name: Pull Request Gate
+name: Quality Gate
 
 on:
   pull_request:
     branches:
       - main
-
-permissions:
-  contents: read
+  push:
+    branches:
+      - main
 
 jobs:
-  repository-check:
-    name: pr-${{ matrix.check }}
+  docker-quality-gate:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        check:
-          - paths
-          - content
-          - structure
-          - python
-          - shell
-          - javascript
-
     steps:
-      - name: Checkout pull request head
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 0
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+      - name: Build CI image
+        run: docker build -f ci/Dockerfile -t infoscreen-ci .
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - name: Run selected check
-        shell: bash
-        run: |
-          case "${{ matrix.check }}" in
-            paths|content|structure|python)
-              python3 scripts/ci/check_repo.py \
-                --suite "${{ matrix.check }}" \
-                --scope changed \
-                --base "${{ github.event.pull_request.base.sha }}" \
-                --head "${{ github.event.pull_request.head.sha }}"
-              ;;
-            shell)
-              bash scripts/ci/check_shell_syntax.sh
-              ;;
-            javascript)
-              bash scripts/ci/check_javascript_syntax.sh
-              ;;
-          esac
+      - name: Run quality gate in Docker
+        run: docker run --rm -v "$PWD:/repo" -w /repo infoscreen-ci bash ci/run_all.sh
