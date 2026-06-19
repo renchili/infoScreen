@@ -20,3 +20,20 @@ logs/
 # Per-machine macOS schedule sync configuration
 mac/local.env
 mac/launchagents/*.plist
+
+# InfoScreen runtime state
+schedule.json
+weather.json
+market.json
+event_stream.json
+local_event_search_results.json
+photos.json
+index2.html
+logs/
+photos/
+public_photos/
+*.bak
+*.bak.*
+
+# Generated macOS LaunchAgent files
+mac/com.renchi.infoscreen.schedule-sync.plist
