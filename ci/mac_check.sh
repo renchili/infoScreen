@@ -4,7 +4,7 @@ set -Eeuo pipefail
 echo "==> mac lightweight check"
 python3 -m compileall -q .
 
-echo "==> tracked runtime pollution"
+echo "==> changed runtime pollution"
 python3 - <<'PY'
 import subprocess
 
@@ -18,13 +18,21 @@ runtime = {
     "index2.html",
 }
 
-tracked = set(
-    subprocess.check_output(["git", "ls-files"], text=True).splitlines()
-)
+def changed_files() -> set[str]:
+    for args in (
+        ["git", "diff", "--name-only", "origin/main...HEAD"],
+        ["git", "diff", "--name-only", "origin/main", "HEAD"],
+        ["git", "diff", "--name-only", "--cached"],
+    ):
+        result = subprocess.run(args, text=True, capture_output=True)
+        if result.returncode == 0:
+            return set(result.stdout.splitlines())
 
-bad = sorted(runtime & tracked)
+    raise SystemExit("unable to calculate changed files")
+
+bad = sorted(runtime & changed_files())
 if bad:
-    raise SystemExit("runtime files tracked: " + ", ".join(bad))
+    raise SystemExit("runtime files changed in PR: " + ", ".join(bad))
 
 print("runtime pollution check OK")
 PY

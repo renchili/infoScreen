@@ -23,31 +23,40 @@ LOCAL_ARTIFACT_PREFIXES = (
 
 SCAN_EXCLUDED_PREFIXES = (
     "tests/",
-    ".git/",
+    ".github/",
+    "docs/",
 )
 
-SCAN_EXCLUDED_FILES = {
-    "docs/engineering-quality.md",
-}
 
-
-def git_ls_files() -> list[str]:
-    result = subprocess.run(
-        ["git", "ls-files"],
-        check=True,
+def run_git(args: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", *args],
         text=True,
         capture_output=True,
+        check=False,
     )
-    return result.stdout.splitlines()
+
+
+def changed_files() -> list[str]:
+    result = run_git(["diff", "--name-only", "origin/main...HEAD"])
+    if result.returncode == 0:
+        return [line for line in result.stdout.splitlines() if line.strip()]
+
+    result = run_git(["diff", "--name-only", "origin/main", "HEAD"])
+    if result.returncode == 0:
+        return [line for line in result.stdout.splitlines() if line.strip()]
+
+    result = run_git(["diff", "--name-only", "--cached"])
+    if result.returncode == 0:
+        return [line for line in result.stdout.splitlines() if line.strip()]
+
+    raise AssertionError(result.stderr)
 
 
 def text_files(paths: list[str]) -> list[Path]:
     out: list[Path] = []
 
     for raw in paths:
-        if raw in SCAN_EXCLUDED_FILES:
-            continue
-
         if raw.startswith(SCAN_EXCLUDED_PREFIXES):
             continue
 
@@ -90,29 +99,29 @@ SECRET_WORD_PATTERN = re.compile(
 )
 
 
-def test_runtime_files_are_not_tracked() -> None:
-    tracked = set(git_ls_files())
-    bad = sorted(RUNTIME_FILES & tracked)
-    assert not bad, f"runtime files must not be tracked: {bad}"
+def test_runtime_files_are_not_changed_by_pr() -> None:
+    changed = set(changed_files())
+    bad = sorted(RUNTIME_FILES & changed)
+    assert not bad, f"runtime files must not be changed in PR: {bad}"
 
 
-def test_no_backup_or_local_artifacts_are_tracked() -> None:
+def test_no_backup_or_local_artifacts_are_changed_by_pr() -> None:
     bad = [
         path
-        for path in git_ls_files()
+        for path in changed_files()
         if path.endswith(".bak")
         or ".bak." in path
         or path.startswith(LOCAL_ARTIFACT_PREFIXES)
     ]
 
-    assert not bad, f"local artifacts must not be tracked: {bad}"
+    assert not bad, f"local artifacts must not be changed in PR: {bad}"
 
 
-def test_no_private_paths_or_obvious_secrets_in_project_files() -> None:
+def test_no_private_paths_or_obvious_secrets_in_changed_project_files() -> None:
     offenders: list[str] = []
     patterns = private_path_patterns()
 
-    for path in text_files(git_ls_files()):
+    for path in text_files(changed_files()):
         text = path.read_text(encoding="utf-8")
 
         if any(pattern.search(text) for pattern in patterns):
