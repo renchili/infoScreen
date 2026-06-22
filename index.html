@@ -971,141 +971,205 @@
       background: rgba(0,0,0,0.22);
     }
 
-    /* LOCAL_EVENT_COMPACT_START */
-#localEventBox {
-  position: relative;
-  overflow: hidden;
+    /* LOCAL_EVENT_STATIC_START */
+.left {
+  grid-template-rows: 155px minmax(0, 1fr) 46px !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
 }
 
-.local-event-compact-panel {
+.left > .box[data-title="market"] {
+  height: 155px !important;
+  min-height: 155px !important;
+  max-height: 155px !important;
+  overflow: hidden !important;
+}
+
+.left > .box[data-title="market"] .inner {
+  height: 100% !important;
+  overflow: hidden !important;
+  padding: 5px 12px !important;
+}
+
+.left > .box[data-title="market"] .market-row {
+  min-height: 19px !important;
+  padding-bottom: 2px !important;
+}
+
+.left > .box[data-title="market"] .market-foot {
+  display: none !important;
+}
+
+.local-event-static {
+  min-height: 0 !important;
+  height: 100% !important;
+  overflow: hidden !important;
+  background: var(--panel) !important;
+}
+
+.local-event-static .inner {
   position: relative;
-  min-height: 58px;
-  padding: 6px 8px 6px 8px;
-  box-sizing: border-box;
+  height: 100% !important;
+  padding: 8px 9px !important;
+  overflow: hidden !important;
+  display: block !important;
 }
 
 .local-event-toolbar {
   position: absolute;
-  top: 4px;
-  right: 6px;
+  top: 6px;
+  right: 7px;
   display: flex;
   align-items: center;
   gap: 5px;
-  z-index: 2;
+  z-index: 3;
 }
 
 #localEventCounter {
+  color: var(--muted);
   font-size: 10px;
-  opacity: 0.42;
-  letter-spacing: 0.03em;
-  line-height: 1;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  opacity: 0.75;
+  min-width: 34px;
+  text-align: right;
 }
 
-#localEventLocationButton {
+.local-event-icon-button {
   width: 22px;
   height: 22px;
-  border: 1px solid rgba(255,255,255,0.20);
+  border: 1px solid var(--line);
   border-radius: 999px;
-  background: rgba(255,255,255,0.04);
-  color: inherit;
+  background: #050606;
+  color: var(--cyan);
   cursor: pointer;
-  font-size: 12px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 950;
   line-height: 20px;
   padding: 0;
-  outline: none;
-  box-shadow: none;
 }
 
-#localEventLocationButton:hover {
-  background: rgba(255,255,255,0.12);
+.local-event-icon-button:disabled {
+  opacity: 0.28;
+  cursor: default;
 }
 
-#localEventLocationButton:focus {
-  outline: none;
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.22);
+.local-event-list {
+  height: 100%;
+  min-height: 0;
+  padding-top: 24px;
+  display: grid;
+  grid-template-rows: repeat(5, minmax(0, 1fr));
+  gap: 5px;
+  overflow: hidden;
 }
 
-.local-event-lines {
-  padding-right: 48px;
+.local-event-card {
+  min-height: 0;
+  overflow: hidden;
+  border-left: 2px solid var(--line2);
+  padding: 3px 7px 3px 8px;
+  background: rgba(255,255,255,0.012);
 }
 
-#localEventLine1,
-#localEventLine2,
-#localEventLine3 {
+.local-event-card.active {
+  border-left-color: var(--yellow);
+  background: rgba(255,224,138,0.035);
+}
+
+.local-event-main {
+  color: var(--yellow);
+  font-size: 12px;
+  font-weight: 950;
+  line-height: 1.14;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-#localEventLine1 {
-  font-size: 12px;
-  line-height: 1.18;
-  font-weight: 650;
-  margin-bottom: 3px;
-  opacity: 0.92;
-}
-
-#localEventLine2 {
-  font-size: 11px;
-  line-height: 1.16;
-  opacity: 0.72;
-  margin-bottom: 2px;
-}
-
-#localEventLine3 {
+.local-event-meta {
+  margin-top: 2px;
+  color: var(--cyan);
   font-size: 10px;
-  line-height: 1.14;
-  opacity: 0.50;
+  font-weight: 800;
+  line-height: 1.12;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-#localEventLine3[hidden] {
-  display: none;
+.local-event-note {
+  margin-top: 1px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.08;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.local-event-empty {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 .local-event-modal {
   position: fixed;
   inset: 0;
   z-index: 9999;
-  background: rgba(0,0,0,0.56);
+  background: rgba(0,0,0,0.58);
   display: grid;
   place-items: center;
 }
 
 .local-event-modal[hidden] {
-  display: none;
+  display: none !important;
 }
 
 .local-event-modal-card {
   width: min(320px, calc(100vw - 36px));
-  border-radius: 14px;
+  border: 1px solid var(--line);
   padding: 14px;
-  background: rgba(18, 22, 30, 0.96);
-  box-shadow: 0 18px 60px rgba(0,0,0,0.38);
+  background: #050606;
+  box-shadow: 0 18px 60px rgba(0,0,0,0.5);
 }
 
 .local-event-modal-title {
+  color: var(--yellow);
   font-size: 13px;
-  font-weight: 650;
-  margin-bottom: 9px;
+  font-weight: 950;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
 #localEventLocationInput {
   width: 100%;
-  box-sizing: border-box;
-  border: 1px solid rgba(255,255,255,0.16);
-  border-radius: 10px;
-  padding: 9px 10px;
-  background: rgba(255,255,255,0.08);
-  color: inherit;
+  height: 30px;
+  border: 1px solid var(--line);
+  background: var(--panel2);
+  color: var(--cyan);
   outline: none;
+  padding: 4px 8px;
+  font: inherit;
   font-size: 13px;
+  font-weight: 850;
 }
 
 #localEventModalError {
   min-height: 17px;
-  margin-top: 7px;
+  margin-top: 8px;
+  color: var(--red);
   font-size: 11px;
-  color: #ffb4b4;
+  font-weight: 850;
 }
 
 .local-event-modal-actions {
@@ -1116,23 +1180,22 @@
 }
 
 .local-event-modal-actions button {
-  border: 0;
-  border-radius: 9px;
-  padding: 7px 11px;
+  height: 28px;
+  border: 1px solid var(--line);
+  background: var(--panel2);
+  color: var(--text);
   cursor: pointer;
-}
-
-#localEventCancelButton {
-  background: rgba(255,255,255,0.10);
-  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 950;
+  padding: 0 12px;
+  text-transform: uppercase;
 }
 
 #localEventSearchButton {
-  background: rgba(255,255,255,0.22);
-  color: inherit;
-  font-weight: 650;
+  color: var(--yellow);
 }
-/* LOCAL_EVENT_COMPACT_END */
+/* LOCAL_EVENT_STATIC_END */
 </style>
 
 
@@ -1216,26 +1279,28 @@
         </div>
       </div>
 
-      <div id="localEventBox" class="local-event-compact-panel">
-  <div class="local-event-toolbar">
-    <span id="localEventCounter"></span>
-    <button id="localEventLocationButton" type="button" title="Search another place" aria-label="Search another place">⌕</button>
-  </div>
+      <div class="box local-event-static" data-title="local event" id="localEventBox">
+  <div class="inner">
+    <div class="local-event-toolbar">
+      <span id="localEventCounter"></span>
+      <button id="localEventPrevButton" class="local-event-icon-button" type="button" title="Previous page" aria-label="Previous page">‹</button>
+      <button id="localEventNextButton" class="local-event-icon-button" type="button" title="Next page" aria-label="Next page">›</button>
+      <button id="localEventLocationButton" class="local-event-icon-button" type="button" title="Search another place" aria-label="Search another place">⌕</button>
+    </div>
 
-  <div class="local-event-lines">
-    <div id="localEventLine1">Loading local events…</div>
-    <div id="localEventLine2"></div>
-    <div id="localEventLine3" hidden></div>
-  </div>
+    <div class="local-event-list" id="localEventList">
+      <div class="local-event-empty">LOADING LOCAL EVENTS</div>
+    </div>
 
-  <div id="localEventModal" class="local-event-modal" hidden>
-    <div class="local-event-modal-card" role="dialog" aria-modal="true" aria-label="Search local events">
-      <div class="local-event-modal-title">Search local events</div>
-      <input id="localEventLocationInput" type="text" placeholder="Punggol Singapore" autocomplete="off" />
-      <div id="localEventModalError"></div>
-      <div class="local-event-modal-actions">
-        <button id="localEventCancelButton" type="button">Cancel</button>
-        <button id="localEventSearchButton" type="button">Search</button>
+    <div id="localEventModal" class="local-event-modal" hidden>
+      <div class="local-event-modal-card" role="dialog" aria-modal="true" aria-label="Search local events">
+        <div class="local-event-modal-title">Search local events</div>
+        <input id="localEventLocationInput" type="text" placeholder="Punggol Singapore" autocomplete="off" spellcheck="false" />
+        <div id="localEventModalError"></div>
+        <div class="local-event-modal-actions">
+          <button id="localEventCancelButton" type="button">Cancel</button>
+          <button id="localEventSearchButton" type="button">Search</button>
+        </div>
       </div>
     </div>
   </div>
@@ -1866,10 +1931,11 @@ async function loadWeather() {
   <script id="local-event-inline-script">
 (function () {
   const API = "/api/local-events/search";
-  const ROTATE_MS = 8500;
+  const ROTATE_MS = 12000;
+  const VISIBLE = 5;
 
   let localEventItems = [];
-  let localEventIndex = 0;
+  let localEventPage = 0;
   let localEventTimer = null;
   let localEventLocation = "";
 
@@ -1877,120 +1943,136 @@ async function loadWeather() {
     return document.getElementById(id);
   }
 
-  function textValue(value) {
+  function clean(value) {
     return String(value || "").replace(/\s+/g, " ").trim();
   }
 
-  function compactJoin(parts, sep = " · ") {
-    return parts.map(textValue).filter(Boolean).join(sep);
-  }
-
-  function shortText(value, maxLen) {
-    const text = textValue(value);
+  function shorten(value, maxLen) {
+    const text = clean(value);
     if (!text) return "";
     if (text.length <= maxLen) return text;
     return text.slice(0, maxLen - 1).trimEnd() + "…";
   }
 
-  function firstValue(item, keys) {
+  function pick(item, keys) {
     for (const key of keys) {
-      const value = textValue(item && item[key]);
+      const value = clean(item && item[key]);
       if (value) return value;
     }
     return "";
   }
 
-  function isActionText(value) {
-    return /(official page|check official|view details|details|register|registration|ticket|tickets|book|booking|rsvp|sign up|join|报名|参加|详情)/i.test(textValue(value));
+  function join(parts, sep) {
+    return parts.map(clean).filter(Boolean).join(sep || " · ");
+  }
+
+  function isAction(value) {
+    return /(official page|check official|view details|details|register|registration|ticket|tickets|book|booking|rsvp|sign up|join|报名|参加|详情)/i.test(clean(value));
   }
 
   function isDateLike(value) {
-    const text = textValue(value);
-    if (!text || isActionText(text)) return false;
-
-    return /(\b(today|tomorrow|tonight|weekend|mon|tue|wed|thu|fri|sat|sun|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b|\d{1,2}[:.]\d{2}|\d{1,2}\s*(am|pm)|\d{4}-\d{1,2}-\d{1,2}|\d{1,2}\/\d{1,2})/i.test(text);
+    const text = clean(value);
+    if (!text || isAction(text)) return false;
+    return /(\b(today|tomorrow|tonight|weekend|mon|tue|wed|thu|fri|sat|sun|jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\b|\d{1,2}[:.]\d{2}|\d{1,2}\s*(am|pm)|\d{4}-\d{1,2}-\d{1,2}|\d{1,2}\/\d{1,2})/i.test(text);
   }
 
-  function cleanTitle(value) {
-    let text = textValue(value);
-    if (!text) return "";
+  function looksGenericPage(title, where, when) {
+    const text = clean([title, where].join(" ")).toLowerCase();
 
-    if (isActionText(text)) return "";
+    if (when) return false;
 
-    text = text.replace(/\s*\|\s*$/, "").trim();
-
-    if (/^(event|local event|official page)$/i.test(text)) return "";
-
-    return text;
+    return (
+      /^one punggol$/i.test(title) ||
+      /singaporium.*regional library/i.test(text) ||
+      /punggol regional library/i.test(title) ||
+      /library\s*(address|location|opening|hours|facilities)?$/i.test(title) ||
+      /\b(address|opening hours|directions|facilities|venue|location|contact us|about us)\b/i.test(title)
+    );
   }
 
-  function normalizeItem(raw) {
+  function normalize(raw) {
     const item = raw || {};
 
-    let title = cleanTitle(firstValue(item, ["title", "what_text", "name", "event", "summary"]));
-    let who = firstValue(item, ["who_text", "organizer", "host", "source_name", "source"]);
-    let where = firstValue(item, ["where_text", "venue", "place", "location", "address", "area"]);
-    let why = firstValue(item, ["why_text", "description", "desc"]);
-    let url = firstValue(item, ["url", "link", "href"]);
-    let how = firstValue(item, ["how_text", "how", "registration", "register_text", "ticket_text"]);
-
-    const dateCandidates = [
-      firstValue(item, ["when_text"]),
-      firstValue(item, ["date_text"]),
-      firstValue(item, ["time_text"]),
-      firstValue(item, ["datetime"]),
-      firstValue(item, ["when"]),
-      firstValue(item, ["date"]),
-      firstValue(item, ["time"])
-    ];
+    let title = pick(item, ["title", "what_text", "name", "event", "summary"]);
+    let who = pick(item, ["organizer", "host", "who_text", "source_name", "source"]);
+    let where = pick(item, ["venue", "place", "where_text", "location", "address", "area"]);
+    let why = pick(item, ["why_text", "description", "desc"]);
+    const url = pick(item, ["url", "link", "href"]);
+    let how = pick(item, ["how_text", "how", "registration", "register_text", "ticket_text"]);
 
     let when = "";
-    for (const candidate of dateCandidates) {
+    for (const candidate of [
+      pick(item, ["when_text"]),
+      pick(item, ["date_text"]),
+      pick(item, ["time_text"]),
+      pick(item, ["datetime"]),
+      pick(item, ["when"]),
+      pick(item, ["date"]),
+      pick(item, ["time"])
+    ]) {
       if (isDateLike(candidate)) {
-        when = candidate;
+        when = clean(candidate);
         break;
       }
-      if (!how && isActionText(candidate)) {
-        how = candidate;
-      }
+      if (!how && isAction(candidate)) how = clean(candidate);
     }
 
-    if (!how && url) {
-      how = "View details";
-    }
+    if (!how && url) how = "Official page";
 
-    if (!where && title.includes("|")) {
-      const parts = title.split("|").map(textValue).filter(Boolean);
+    if (title.includes("|")) {
+      const parts = title.split("|").map(clean).filter(Boolean);
       if (parts.length >= 2) {
-        const last = parts[parts.length - 1];
-        const first = parts[0];
-
-        if (who && last.toLowerCase() === who.toLowerCase()) {
-          where = first;
-          title = "";
-        } else {
-          title = first;
-          if (!who) who = last;
-        }
+        if (!where) where = parts[0];
+        if (!who) who = parts[parts.length - 1];
+        title = parts.slice(1, -1).join(" · ") || parts[0];
       }
     }
 
-    if (who && title && title.toLowerCase() === who.toLowerCase()) {
-      title = "";
-    }
+    title = clean(title)
+      .replace(/\s*-\s*Singapore$/i, "")
+      .replace(/\s*\|\s*$/, "");
 
-    if (where && title && where.toLowerCase() === title.toLowerCase()) {
-      title = "";
-    }
+    if (isAction(title)) title = "";
+    if (title && who && title.toLowerCase() === who.toLowerCase()) title = "";
+    if (title && where && title.toLowerCase() === where.toLowerCase()) title = "";
 
-    if (why && (why === title || why === where || isActionText(why))) {
-      why = "";
-    }
+    why = clean(why);
+    if (why === title || why === where || why === who || isAction(why)) why = "";
 
-    return { title, when, where, who, why, how, url };
+    return { when, who, title, where, how, why };
   }
 
-  function extractResults(payload) {
+  function isLikelyEvent(item) {
+    if (!item.title) return false;
+    if (looksGenericPage(item.title, item.where, item.when)) return false;
+
+    const title = item.title.toLowerCase();
+
+    if (/^(nlb|onepa|one punggol|official page|local event)$/i.test(item.title)) return false;
+
+    const activityWords = /(class|course|workshop|talk|story|storytelling|storytime|club|session|festival|concert|tour|market|fair|meet|meeting|programme|program|activity|training|conversation|cover|casual|reading|exhibition|表演|课程|活动|讲座|工作坊)/i;
+
+    if (item.when) return true;
+    if (activityWords.test(title)) return true;
+
+    return false;
+  }
+
+  function dedupe(items) {
+    const seen = new Set();
+    const out = [];
+
+    for (const item of items) {
+      const key = [item.when, item.who, item.title, item.where].map(v => clean(v).toLowerCase()).join("|");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(item);
+    }
+
+    return out;
+  }
+
+  function resultsFrom(payload) {
     if (Array.isArray(payload)) return payload;
     if (!payload || typeof payload !== "object") return [];
     if (Array.isArray(payload.results)) return payload.results;
@@ -1999,59 +2081,79 @@ async function loadWeather() {
     return [];
   }
 
-  function setLines(line1, line2, line3) {
-    const el1 = $("localEventLine1");
-    const el2 = $("localEventLine2");
-    const el3 = $("localEventLine3");
+  function escapeHtml(value) {
+    return clean(value).replace(/[&<>"']/g, function (ch) {
+      return {
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      }[ch];
+    });
+  }
 
-    if (el1) el1.textContent = line1 || "";
-    if (el2) el2.textContent = line2 || "";
-    if (el3) {
-      el3.textContent = line3 || "";
-      el3.hidden = !line3;
-    }
+  function pageCount() {
+    return Math.max(1, Math.ceil(localEventItems.length / VISIBLE));
+  }
+
+  function clampPage() {
+    const pages = pageCount();
+    if (localEventPage < 0) localEventPage = pages - 1;
+    if (localEventPage >= pages) localEventPage = 0;
   }
 
   function renderLocalEvent() {
+    const list = $("localEventList");
     const counter = $("localEventCounter");
+    const prev = $("localEventPrevButton");
+    const next = $("localEventNextButton");
+
+    if (!list) return;
 
     if (!localEventItems.length) {
-      setLines("No nearby events found", "Tap ⌕ to search another place", "");
+      list.innerHTML = '<div class="local-event-empty">NO CLEAR EVENTS · TAP ⌕ TO SEARCH</div>';
       if (counter) counter.textContent = "";
+      if (prev) prev.disabled = true;
+      if (next) next.disabled = true;
       stopLocalEventRotation();
       return;
     }
 
-    if (localEventIndex >= localEventItems.length) localEventIndex = 0;
+    clampPage();
 
-    const item = normalizeItem(localEventItems[localEventIndex]);
+    const totalPages = pageCount();
+    const start = localEventPage * VISIBLE;
+    const pageItems = localEventItems.slice(start, start + VISIBLE);
 
-    let main = "";
-    if (item.who && item.title) {
-      main = `${item.who} hosts ${item.title}`;
-    } else {
-      main = item.title || item.who || item.where || item.how || "Local event";
-    }
+    const rows = pageItems.map(function (item, offset) {
+      const main = shorten(join([
+        item.when,
+        item.title || "Local event"
+      ]), 78);
 
-    const line1 = shortText(compactJoin([item.when, main]), 86);
+      const meta = shorten(join([
+        item.who ? "Host " + item.who : "",
+        item.where ? "At " + item.where : "",
+        item.how
+      ]), 86);
 
-    const line2Parts = [];
-    if (item.where && item.where !== main) line2Parts.push(item.where);
-    if (item.how && item.how !== main) line2Parts.push(item.how);
-    const line2 = shortText(compactJoin(line2Parts), 78);
+      const note = shorten(item.why, 90);
 
-    let line3 = shortText(item.why, 82);
-    if (line3 === line1 || line3 === line2 || line3.length < 18) {
-      line3 = "";
-    }
+      return `
+        <div class="local-event-card ${offset === 0 ? "active" : ""}">
+          <div class="local-event-main">${escapeHtml(main)}</div>
+          <div class="local-event-meta">${escapeHtml(meta || "Details on official page")}</div>
+          ${note ? `<div class="local-event-note">${escapeHtml(note)}</div>` : ""}
+        </div>
+      `;
+    });
 
-    setLines(line1, line2, line3);
+    list.innerHTML = rows.join("");
 
-    if (counter) {
-      counter.textContent = localEventItems.length > 1
-        ? `${localEventIndex + 1}/${localEventItems.length}`
-        : "";
-    }
+    if (counter) counter.textContent = `${localEventPage + 1}/${totalPages}`;
+    if (prev) prev.disabled = totalPages <= 1;
+    if (next) next.disabled = totalPages <= 1;
   }
 
   function stopLocalEventRotation() {
@@ -2063,19 +2165,29 @@ async function loadWeather() {
 
   function startLocalEventRotation() {
     stopLocalEventRotation();
-
-    if (localEventItems.length <= 1) return;
+    if (pageCount() <= 1) return;
 
     localEventTimer = setInterval(function () {
-      localEventIndex = (localEventIndex + 1) % localEventItems.length;
+      localEventPage = (localEventPage + 1) % pageCount();
       renderLocalEvent();
     }, ROTATE_MS);
   }
 
-  function applyLocalEventPayload(payload) {
-    localEventLocation = textValue(payload && payload.location) || localEventLocation;
-    localEventItems = extractResults(payload);
-    localEventIndex = 0;
+  function movePage(delta) {
+    stopLocalEventRotation();
+    localEventPage += delta;
+    clampPage();
+    renderLocalEvent();
+    startLocalEventRotation();
+  }
+
+  function applyPayload(payload) {
+    localEventLocation = clean(payload && payload.location) || localEventLocation;
+
+    const normalized = resultsFrom(payload).map(normalize);
+    localEventItems = dedupe(normalized.filter(isLikelyEvent));
+
+    localEventPage = 0;
     renderLocalEvent();
     startLocalEventRotation();
   }
@@ -2084,15 +2196,15 @@ async function loadWeather() {
     try {
       const resp = await fetch(API, { cache: "no-store" });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const payload = await resp.json();
-      applyLocalEventPayload(payload);
+      applyPayload(await resp.json());
     } catch (err) {
-      setLines("Local events unavailable", "Tap ⌕ to search another place", "");
+      const list = $("localEventList");
+      if (list) list.innerHTML = '<div class="local-event-empty">LOCAL EVENTS UNAVAILABLE · TAP ⌕</div>';
       stopLocalEventRotation();
     }
   }
 
-  function openLocalEventModal() {
+  function openModal() {
     const modal = $("localEventModal");
     const input = $("localEventLocationInput");
     const err = $("localEventModalError");
@@ -2108,18 +2220,18 @@ async function loadWeather() {
     }
   }
 
-  function closeLocalEventModal() {
+  function closeModal() {
     const modal = $("localEventModal");
     const err = $("localEventModalError");
     if (err) err.textContent = "";
     if (modal) modal.hidden = true;
   }
 
-  async function searchLocalEventsFromModal() {
+  async function searchFromModal() {
     const input = $("localEventLocationInput");
     const err = $("localEventModalError");
     const button = $("localEventSearchButton");
-    const location = textValue(input && input.value);
+    const location = clean(input && input.value);
 
     if (!location) {
       if (err) err.textContent = "Enter a place.";
@@ -2133,18 +2245,13 @@ async function loadWeather() {
       const resp = await fetch(API, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          location: location,
-          query: location,
-          place: location
-        })
+        body: JSON.stringify({ location, query: location, place: location })
       });
 
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
-      const payload = await resp.json();
-      closeLocalEventModal();
-      applyLocalEventPayload(payload);
+      closeModal();
+      applyPayload(await resp.json());
     } catch (e) {
       if (err) err.textContent = "Search failed. Try another place.";
     } finally {
@@ -2152,33 +2259,37 @@ async function loadWeather() {
     }
   }
 
-  function bindLocalEventUi() {
+  function bind() {
     const openButton = $("localEventLocationButton");
+    const prevButton = $("localEventPrevButton");
+    const nextButton = $("localEventNextButton");
     const cancelButton = $("localEventCancelButton");
     const searchButton = $("localEventSearchButton");
     const input = $("localEventLocationInput");
     const modal = $("localEventModal");
 
-    if (openButton) openButton.addEventListener("click", openLocalEventModal);
-    if (cancelButton) cancelButton.addEventListener("click", closeLocalEventModal);
-    if (searchButton) searchButton.addEventListener("click", searchLocalEventsFromModal);
+    if (openButton) openButton.addEventListener("click", openModal);
+    if (prevButton) prevButton.addEventListener("click", function () { movePage(-1); });
+    if (nextButton) nextButton.addEventListener("click", function () { movePage(1); });
+    if (cancelButton) cancelButton.addEventListener("click", closeModal);
+    if (searchButton) searchButton.addEventListener("click", searchFromModal);
 
     if (input) {
       input.addEventListener("keydown", function (event) {
-        if (event.key === "Enter") searchLocalEventsFromModal();
-        if (event.key === "Escape") closeLocalEventModal();
+        if (event.key === "Enter") searchFromModal();
+        if (event.key === "Escape") closeModal();
       });
     }
 
     if (modal) {
       modal.addEventListener("click", function (event) {
-        if (event.target === modal) closeLocalEventModal();
+        if (event.target === modal) closeModal();
       });
     }
   }
 
   document.addEventListener("DOMContentLoaded", function () {
-    bindLocalEventUi();
+    bind();
     loadLocalEvents();
   });
 })();
