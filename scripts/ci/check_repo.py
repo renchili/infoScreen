@@ -82,14 +82,18 @@ SUITES = ("paths", "content", "structure", "python", "all")
 SCOPES = ("changed", "repository")
 
 
-def git_output(args):
-    result = subprocess.run(
+def git_result(args):
+    return subprocess.run(
         ["git", *args],
         cwd=ROOT,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
+
+
+def git_output(args):
+    result = git_result(args)
     if result.returncode != 0:
         raise RuntimeError(
             "git command failed: git " + " ".join(args) + "\n" + result.stderr
@@ -97,62 +101,130 @@ def git_output(args):
     return result.stdout
 
 
+def git_success(args):
+    return git_result(args).returncode == 0
+
+
 def split_null_output(text):
     return [item for item in text.split("\0") if item]
 
 
-def changed_paths(base, head, include_working_tree):
-    names = set(split_null_output(git_output([
-        "diff",
-        "--name-only",
-        "-z",
-        f"{base}...{head}",
-    ])))
+def diff_revision(base, head):
+    """Return a diff revision that works for both related and unrelated refs."""
+    if git_success(["merge-base", base, head]):
+        return f"{base}...{head}"
+    return f"{base}..{head}"
 
+
+def parse_name_status(raw):
+    """Parse `git diff --name-status -z` output into {status,path} dicts."""
+    parts = split_null_output(raw)
+    entries = []
+    i = 0
+
+    while i < len(parts):
+        status = parts[i]
+        i += 1
+        code = status[:1]
+
+        if code in {"R", "C"} and i + 1 < len(parts):
+            # Rename/copy output is: status, old path, new path.
+            i += 1
+            path = parts[i]
+            i += 1
+        elif i < len(parts):
+            path = parts[i]
+            i += 1
+        else:
+            break
+
+        entries.append({"status": code, "path": path})
+
+    return entries
+
+
+def merge_entries(*entry_lists):
+    merged = {}
+    priority = {"A": 5, "M": 4, "R": 4, "C": 4, "T": 3, "U": 3, "D": 1}
+
+    for entries in entry_lists:
+        for entry in entries:
+            path = entry["path"]
+            current = merged.get(path)
+            if current is None:
+                merged[path] = entry
+                continue
+
+            if priority.get(entry["status"], 2) >= priority.get(current["status"], 2):
+                merged[path] = entry
+
+    return [merged[path] for path in sorted(merged)]
+
+
+def changed_entries(base, head, include_working_tree):
+    revision = diff_revision(base, head)
+    entries = parse_name_status(git_output([
+        "diff",
+        "--name-status",
+        "-z",
+        revision,
+    ]))
+
+    extra = []
     if include_working_tree:
-        names.update(split_null_output(git_output([
+        extra.extend(parse_name_status(git_output([
             "diff",
-            "--name-only",
+            "--name-status",
             "-z",
         ])))
-        names.update(split_null_output(git_output([
+        extra.extend(parse_name_status(git_output([
             "diff",
             "--cached",
-            "--name-only",
+            "--name-status",
             "-z",
         ])))
-        names.update(split_null_output(git_output([
+        extra.extend({"status": "A", "path": item} for item in split_null_output(git_output([
             "ls-files",
             "--others",
             "--exclude-standard",
             "-z",
         ])))
 
-    return sorted(names)
+    return merge_entries(entries, extra)
 
 
-def repository_paths(include_working_tree):
-    names = set(split_null_output(git_output(["ls-files", "-z"])))
+def repository_entries(include_working_tree):
+    entries = [
+        {"status": "A", "path": item}
+        for item in split_null_output(git_output(["ls-files", "-z"]))
+    ]
 
     if include_working_tree:
-        names.update(split_null_output(git_output([
-            "ls-files",
-            "--others",
-            "--exclude-standard",
-            "-z",
-        ])))
+        entries.extend(
+            {"status": "A", "path": item}
+            for item in split_null_output(git_output([
+                "ls-files",
+                "--others",
+                "--exclude-standard",
+                "-z",
+            ]))
+        )
 
-    return sorted(names)
+    return merge_entries(entries)
 
 
-def selected_paths(args):
+def selected_entries(args):
     if args.scope == "repository":
-        return repository_paths(args.include_working_tree)
+        return repository_entries(args.include_working_tree)
 
     if not args.base:
         raise ValueError("--base is required when --scope changed is selected")
 
-    return changed_paths(args.base, args.head, args.include_working_tree)
+    return changed_entries(args.base, args.head, args.include_working_tree)
+
+
+def entry_paths(entries):
+    return sorted({entry["path"] for entry in entries})
 
 
 def is_text_file(path):
@@ -273,9 +345,13 @@ def check_python_syntax(errors):
             add_error(errors, relative, f"Python syntax error: {exc.msg}")
 
 
-def run_paths_suite(paths, errors):
-    for relative in paths:
-        check_path_policy(relative, errors)
+def run_paths_suite(entries, errors):
+    for entry in entries:
+        # Deleting a blocked runtime/generated file is allowed. Only additions,
+        # modifications, renames, copies, and unresolved changes should be blocked.
+        if entry["status"] == "D":
+            continue
+        check_path_policy(entry["path"], errors)
 
 
 def run_content_suite(paths, errors):
@@ -305,9 +381,9 @@ def run_structure_suite(paths, errors):
             )
 
 
-def run_suite(name, paths, errors):
+def run_suite(name, entries, paths, errors):
     if name in ("paths", "all"):
-        run_paths_suite(paths, errors)
+        run_paths_suite(entries, errors)
 
     if name in ("content", "all"):
         run_content_suite(paths, errors)
@@ -329,12 +405,13 @@ def main():
     args = parser.parse_args()
 
     try:
-        paths = selected_paths(args)
+        entries = selected_entries(args)
     except (RuntimeError, ValueError) as exc:
         parser.error(str(exc))
 
+    paths = entry_paths(entries)
     errors = []
-    run_suite(args.suite, paths, errors)
+    run_suite(args.suite, entries, paths, errors)
 
     if errors:
         print(f"FAILED suite={args.suite} scope={args.scope}")
