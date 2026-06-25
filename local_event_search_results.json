@@ -1,276 +1,240 @@
 {
-  "updated_at": "2026-06-17T02:26:54.359191+00:00",
+  "version": 3,
+  "ok": true,
+  "strategy": "institution-first-official-event-pages",
+  "updated_at": "2026-06-23T14:33:07.546106+00:00",
   "location": "Punggol Singapore",
-  "extractor": "source-registry-institutions-detail-parser",
-  "sources": [
-    "Children's Museum Singapore",
-    "Children's Museum Singapore",
-    "National Gallery Singapore",
-    "National Museum Singapore",
-    "Asian Civilisations Museum",
-    "Peranakan Museum",
-    "ArtScience Museum",
-    "Science Centre Singapore",
-    "NLB Punggol Regional Library",
-    "One Punggol",
-    "onePA / People's Association",
-    "SAFRA Punggol",
-    "Waterway Point"
-  ],
+  "count": 5,
   "results": [
     {
-      "title": "Children’s Season 2026 Signature Programme - The Four Harmonious Friends",
-      "poster_title": "Children’s Season 2026 Signature Programme - The Four Harmonious Friends",
-      "what": "Children’s Season 2026 Signature Programme - The Four Harmonious Friends",
-      "when": "19, 20, 26, 27 June 2026",
-      "where": "Punggol Singapore",
-      "who": "children and families",
-      "why": "This programme is part of the Children's Season 2026 Signature Programmes line-up, presented by Children's Museum Singapore, in collaboration with KidsSTOP™, Science Centre Singapo",
-      "how": "heritage.sg",
-      "summary": "This programme is part of the Children's Season 2026 Signature Programmes line-up, presented by Children's Museum Singapore, in collaboration with KidsSTOP™, Science Centre Singapore.",
-      "poster_summary": "This programme is part of the Children's Season 2026 Signature Programmes line-up, presented by Children's Museum Singapore, in collaboration with KidsSTOP™, Science Centre Singapore.",
-      "source": "heritage.sg",
-      "url": "https://www.heritage.sg/childrensmuseum/whatson/childrens-season---listing-page/the-four-harmonious-friends-cs2026",
-      "source_name": "Children's Museum Singapore"
-    }
-  ],
-  "candidates_checked": 6,
-  "debug_candidates": [
-    {
+      "type": "event",
+      "title": "PLAY @ Children’s Season 2026 - Let Loose! Play Workshop",
+      "url": "https://www.heritage.sg/childrensmuseum/whatson/childrens-season---listing-page/play-at-cs2026---let-loose-play-workshop",
       "source": "Children's Museum Singapore",
-      "kind": "direct",
-      "error": "HTTPSConnectionPool(host='www.heritage.sg', port=443): Read timed out. (read timeout=22)"
+      "date": "11 Jun 2026",
+      "venue": "Children's Museum Singapore",
+      "summary": "Be inspired by art this International Day of Play as we let loose and play together! This hands-on workshop is designed to invite children and families to explore loose parts play and creative processes in a joyful and…",
+      "score": 90
     },
     {
+      "type": "event",
+      "title": "PLAY @ Children’s Season 2026 - Bridging Generations Through Child-led Play Workshop",
+      "url": "https://www.heritage.sg/childrensmuseum/whatson/childrens-season---listing-page/play-at-cs2026---bridging-generations-through-child-led-play-workshop",
       "source": "Children's Museum Singapore",
-      "kind": "site_query",
-      "query": "\"Children's Museum Singapore\" \"2026\" \"programme\"",
-      "candidates": 0
+      "date": "13 Jun 2026",
+      "venue": "Children's Museum Singapore",
+      "summary": "Held in celebration of International Day of Play, this workshop on child-directed play and creativity is designed for educators, artists, caregivers and grandparents. Discover practical strategies for creating meaningfu…",
+      "score": 90
     },
     {
-      "source": "Children's Museum Singapore",
-      "kind": "site_query",
-      "query": "\"Children's Season 2026\" \"Singapore\"",
-      "candidates": 0
-    },
-    {
-      "source": "Children's Museum Singapore",
-      "kind": "site_query",
-      "query": "\"Children's Season 2026\" \"museum\"",
-      "candidates": 6
-    },
-    {
-      "source": "National Gallery Singapore",
-      "kind": "site_query",
-      "query": "\"National Gallery Singapore\" \"family\" \"programme\"",
-      "candidates": 0
-    },
-    {
-      "source": "National Gallery Singapore",
-      "kind": "site_query",
-      "query": "\"National Gallery Singapore\" \"children\" \"workshop\"",
-      "candidates": 0
-    },
-    {
-      "source": "National Gallery Singapore",
-      "kind": "site_query",
-      "query": "\"National Gallery Singapore\" \"kids\" \"2026\"",
-      "candidates": 0
-    },
-    {
-      "source": "National Museum Singapore",
-      "kind": "site_query",
-      "query": "\"National Museum Singapore\" \"children\" \"programme\"",
-      "candidates": 0
-    },
-    {
-      "source": "National Museum Singapore",
-      "kind": "site_query",
-      "query": "\"National Museum Singapore\" \"family\" \"2026\"",
-      "candidates": 0
-    },
-    {
-      "source": "Asian Civilisations Museum",
-      "kind": "site_query",
-      "query": "\"Asian Civilisations Museum\" \"family\" \"programme\"",
-      "candidates": 0
-    },
-    {
-      "source": "Asian Civilisations Museum",
-      "kind": "site_query",
-      "query": "\"Asian Civilisations Museum\" \"children\" \"2026\"",
-      "candidates": 0
-    },
-    {
-      "source": "Peranakan Museum",
-      "kind": "site_query",
-      "query": "\"Peranakan Museum\" \"family\" \"programme\"",
-      "candidates": 0
-    },
-    {
-      "source": "Peranakan Museum",
-      "kind": "site_query",
-      "query": "\"Peranakan Museum\" \"children\" \"2026\"",
-      "candidates": 0
-    },
-    {
-      "source": "ArtScience Museum",
-      "kind": "site_query",
-      "query": "\"ArtScience Museum\" \"family\" \"workshop\"",
-      "candidates": 0
-    },
-    {
-      "source": "ArtScience Museum",
-      "kind": "site_query",
-      "query": "\"ArtScience Museum\" \"children\" \"2026\"",
-      "candidates": 0
-    },
-    {
-      "source": "Science Centre Singapore",
-      "kind": "site_query",
-      "query": "\"Science Centre Singapore\" \"children\" \"workshop\"",
-      "candidates": 0
-    },
-    {
-      "source": "Science Centre Singapore",
-      "kind": "site_query",
-      "query": "\"KidsSTOP\" \"2026\" \"programme\"",
-      "candidates": 0
-    },
-    {
-      "source": "NLB Punggol Regional Library",
-      "kind": "site_query",
-      "query": "\"Punggol Regional Library\" \"NLB\" \"event\"",
-      "candidates": 0
-    },
-    {
-      "source": "NLB Punggol Regional Library",
-      "kind": "site_query",
-      "query": "\"Punggol Regional Library\" \"programme\"",
-      "candidates": 0
-    },
-    {
-      "source": "NLB Punggol Regional Library",
-      "kind": "site_query",
-      "query": "\"NLB\" \"Punggol\" \"children\"",
-      "candidates": 0
-    },
-    {
-      "source": "One Punggol",
-      "kind": "site_query",
-      "query": "\"One Punggol\" \"event\"",
-      "candidates": 0
-    },
-    {
-      "source": "One Punggol",
-      "kind": "site_query",
-      "query": "\"One Punggol\" \"programme\"",
-      "candidates": 0
-    },
-    {
-      "source": "One Punggol",
-      "kind": "site_query",
-      "query": "\"One Punggol\" \"children\"",
-      "candidates": 0
-    },
-    {
-      "source": "onePA / People's Association",
-      "kind": "site_query",
-      "query": "\"Punggol\" \"onePA\" \"event\"",
-      "candidates": 0
-    },
-    {
-      "source": "onePA / People's Association",
-      "kind": "site_query",
-      "query": "\"Punggol\" \"People's Association\" \"event\"",
-      "candidates": 0
-    },
-    {
-      "source": "onePA / People's Association",
-      "kind": "site_query",
-      "query": "\"Punggol CC\" \"event\"",
-      "candidates": 0
-    },
-    {
-      "source": "onePA / People's Association",
-      "kind": "site_query",
-      "query": "\"Punggol West\" \"event\"",
-      "candidates": 0
-    },
-    {
-      "source": "SAFRA Punggol",
-      "kind": "site_query",
-      "query": "\"SAFRA Punggol\" \"event\"",
-      "candidates": 0
-    },
-    {
-      "source": "SAFRA Punggol",
-      "kind": "site_query",
-      "query": "\"SAFRA Punggol\" \"workshop\"",
-      "candidates": 0
-    },
-    {
-      "source": "SAFRA Punggol",
-      "kind": "site_query",
-      "query": "\"SAFRA Punggol\" \"children\"",
-      "candidates": 0
-    },
-    {
-      "source": "Waterway Point",
-      "kind": "site_query",
-      "query": "\"Waterway Point\" \"event\"",
-      "candidates": 0
-    },
-    {
-      "source": "Waterway Point",
-      "kind": "site_query",
-      "query": "\"Waterway Point\" \"children\"",
-      "candidates": 0
-    },
-    {
-      "source": "Waterway Point",
-      "kind": "site_query",
-      "query": "\"Waterway Point\" \"workshop\"",
-      "candidates": 0
-    }
-  ],
-  "rejected_preview": [
-    {
-      "reason": "fetch_failed",
-      "title": "Children's Museum Singapore - NHB",
-      "source": "heritage.sg",
-      "url": "https://www.heritage.sg/childrensmuseum/",
-      "source_name": "Children's Museum Singapore"
-    },
-    {
-      "reason": "fetch_failed",
-      "title": "Children's Season 2026 - heritage.sg",
-      "source": "heritage.sg",
-      "url": "https://www.heritage.sg/childrensmuseum/whatson/childrens-season---listing-page?page=1",
-      "source_name": "Children's Museum Singapore"
-    },
-    {
-      "reason": "fetch_failed",
-      "title": "PLAY @ Children's Season 2026: Weekend Carnival",
-      "source": "heritage.sg",
+      "type": "event",
+      "title": "PLAY @ Children’s Season 2026: Weekend Carnival",
       "url": "https://www.heritage.sg/childrensmuseum/whatson/childrens-season---listing-page/play-at-cs2026-weekend-carnival",
-      "source_name": "Children's Museum Singapore"
+      "source": "Children's Museum Singapore",
+      "date": "14 Jun 2026",
+      "venue": "Children's Museum Singapore",
+      "summary": "In celebration of UNICEF’s International Day of Play, Children’s Museum Singapore, in collaboration with the Museum Roundtable and community partners, presents PLAY @ Children’s Season 2026 — a week-long line-up of work…",
+      "score": 90
     },
     {
-      "reason": "fetch_failed",
-      "title": "PLAY @ Children's Season 2026 - What Could it Be?",
-      "source": "heritage.sg",
-      "url": "https://www.heritage.sg/childrensmuseum/whatson/childrens-season---listing-page/play-at-cs2026-drop-in-activity---what-could-it-be",
-      "source_name": "Children's Museum Singapore"
-    },
-    {
-      "reason": "fetch_failed",
-      "title": "PLAY @ Children's Season 2026 - Let Loose & Play: Music Makers",
-      "source": "heritage.sg",
+      "type": "event",
+      "title": "PLAY @ Children’s Season 2026 - Let Loose & Play: Music Makers",
       "url": "https://www.heritage.sg/childrensmuseum/whatson/childrens-season---listing-page/play-at-cs2026-drop-in-activity---let-loose-and-play",
-      "source_name": "Children's Museum Singapore"
+      "source": "Children's Museum Singapore",
+      "date": "15 Jun 2026",
+      "venue": "Children's Museum Singapore",
+      "summary": "#{title}",
+      "score": 90
+    },
+    {
+      "type": "event",
+      "title": "Children's Season 2026",
+      "url": "https://www.heritage.sg/childrensmuseum/whatson/childrens-season---listing-page",
+      "source": "Children's Museum Singapore",
+      "date": "30 May",
+      "venue": "Children's Museum Singapore",
+      "summary": "#{title}",
+      "score": 90
     }
   ],
-  "error": null,
-  "from_cache": false
+  "items": [
+    {
+      "type": "event",
+      "title": "PLAY @ Children’s Season 2026 - Let Loose! Play Workshop",
+      "url": "https://www.heritage.sg/childrensmuseum/whatson/childrens-season---listing-page/play-at-cs2026---let-loose-play-workshop",
+      "source": "Children's Museum Singapore",
+      "date": "11 Jun 2026",
+      "venue": "Children's Museum Singapore",
+      "summary": "Be inspired by art this International Day of Play as we let loose and play together! This hands-on workshop is designed to invite children and families to explore loose parts play and creative processes in a joyful and…",
+      "score": 90
+    },
+    {
+      "type": "event",
+      "title": "PLAY @ Children’s Season 2026 - Bridging Generations Through Child-led Play Workshop",
+      "url": "https://www.heritage.sg/childrensmuseum/whatson/childrens-season---listing-page/play-at-cs2026---bridging-generations-through-child-led-play-workshop",
+      "source": "Children's Museum Singapore",
+      "date": "13 Jun 2026",
+      "venue": "Children's Museum Singapore",
+      "summary": "Held in celebration of International Day of Play, this workshop on child-directed play and creativity is designed for educators, artists, caregivers and grandparents. Discover practical strategies for creating meaningfu…",
+      "score": 90
+    },
+    {
+      "type": "event",
+      "title": "PLAY @ Children’s Season 2026: Weekend Carnival",
+      "url": "https://www.heritage.sg/childrensmuseum/whatson/childrens-season---listing-page/play-at-cs2026-weekend-carnival",
+      "source": "Children's Museum Singapore",
+      "date": "14 Jun 2026",
+      "venue": "Children's Museum Singapore",
+      "summary": "In celebration of UNICEF’s International Day of Play, Children’s Museum Singapore, in collaboration with the Museum Roundtable and community partners, presents PLAY @ Children’s Season 2026 — a week-long line-up of work…",
+      "score": 90
+    },
+    {
+      "type": "event",
+      "title": "PLAY @ Children’s Season 2026 - Let Loose & Play: Music Makers",
+      "url": "https://www.heritage.sg/childrensmuseum/whatson/childrens-season---listing-page/play-at-cs2026-drop-in-activity---let-loose-and-play",
+      "source": "Children's Museum Singapore",
+      "date": "15 Jun 2026",
+      "venue": "Children's Museum Singapore",
+      "summary": "#{title}",
+      "score": 90
+    },
+    {
+      "type": "event",
+      "title": "Children's Season 2026",
+      "url": "https://www.heritage.sg/childrensmuseum/whatson/childrens-season---listing-page",
+      "source": "Children's Museum Singapore",
+      "date": "30 May",
+      "venue": "Children's Museum Singapore",
+      "summary": "#{title}",
+      "score": 90
+    }
+  ],
+  "sources": [
+    {
+      "type": "source",
+      "title": "Children's Museum Singapore",
+      "url": "https://www.heritage.sg/childrensmuseum/",
+      "source": "Children's Museum Singapore",
+      "venue": "Children's Museum Singapore"
+    },
+    {
+      "type": "source",
+      "title": "National Gallery Singapore",
+      "url": "https://www.nationalgallery.sg/",
+      "source": "National Gallery Singapore",
+      "venue": "National Gallery Singapore"
+    },
+    {
+      "type": "source",
+      "title": "National Museum Singapore",
+      "url": "https://www.nhb.gov.sg/nationalmuseum/",
+      "source": "National Museum Singapore",
+      "venue": "National Museum Singapore"
+    },
+    {
+      "type": "source",
+      "title": "Asian Civilisations Museum",
+      "url": "https://www.nhb.gov.sg/acm/",
+      "source": "Asian Civilisations Museum",
+      "venue": "Asian Civilisations Museum"
+    },
+    {
+      "type": "source",
+      "title": "Peranakan Museum",
+      "url": "https://www.nhb.gov.sg/peranakanmuseum/",
+      "source": "Peranakan Museum",
+      "venue": "Peranakan Museum"
+    },
+    {
+      "type": "source",
+      "title": "ArtScience Museum",
+      "url": "https://www.marinabaysands.com/museum.html",
+      "source": "ArtScience Museum",
+      "venue": "ArtScience Museum"
+    },
+    {
+      "type": "source",
+      "title": "Science Centre Singapore",
+      "url": "https://www.science.edu.sg/",
+      "source": "Science Centre Singapore",
+      "venue": "Science Centre Singapore"
+    },
+    {
+      "type": "source",
+      "title": "NLB Punggol Regional Library",
+      "url": "https://www.nlb.gov.sg/main/visit-us/our-libraries-and-locations/punggol-regional-library",
+      "source": "NLB",
+      "venue": "Punggol Regional Library"
+    },
+    {
+      "type": "source",
+      "title": "One Punggol",
+      "url": "https://www.onepunggol.sg/",
+      "source": "One Punggol",
+      "venue": "One Punggol"
+    },
+    {
+      "type": "source",
+      "title": "onePA / People's Association",
+      "url": "https://www.onepa.gov.sg/",
+      "source": "onePA",
+      "venue": "People's Association CCs"
+    },
+    {
+      "type": "source",
+      "title": "SAFRA Punggol",
+      "url": "https://www.safra.sg/",
+      "source": "SAFRA Punggol",
+      "venue": "SAFRA Punggol"
+    },
+    {
+      "type": "source",
+      "title": "Waterway Point",
+      "url": "https://www.waterwaypoint.com.sg/",
+      "source": "Waterway Point",
+      "venue": "Waterway Point"
+    },
+    {
+      "type": "source",
+      "title": "Singapore Zoo",
+      "url": "https://www.mandai.com/en/singapore-zoo.html",
+      "source": "Mandai Wildlife Reserve",
+      "venue": "Singapore Zoo"
+    },
+    {
+      "type": "source",
+      "title": "River Wonders",
+      "url": "https://www.mandai.com/en/river-wonders.html",
+      "source": "Mandai Wildlife Reserve",
+      "venue": "River Wonders"
+    },
+    {
+      "type": "source",
+      "title": "Bird Paradise",
+      "url": "https://www.mandai.com/en/bird-paradise.html",
+      "source": "Mandai Wildlife Reserve",
+      "venue": "Bird Paradise"
+    },
+    {
+      "type": "source",
+      "title": "Night Safari",
+      "url": "https://www.mandai.com/en/night-safari.html",
+      "source": "Mandai Wildlife Reserve",
+      "venue": "Night Safari"
+    },
+    {
+      "type": "source",
+      "title": "Sentosa",
+      "url": "https://www.sentosa.com.sg/",
+      "source": "Sentosa",
+      "venue": "Sentosa"
+    },
+    {
+      "type": "source",
+      "title": "Resorts World Sentosa",
+      "url": "https://www.rwsentosa.com/",
+      "source": "Resorts World Sentosa",
+      "venue": "Resorts World Sentosa"
+    }
+  ]
 }

@@ -1156,6 +1156,7 @@
 
 
 
+<link rel="stylesheet" href="assets/css/app.css?v=restore-1782322472">
 <link rel="stylesheet" href="calendar_board.css?v=1781715981">
 </head>
 
@@ -1209,17 +1210,31 @@
       </div>
 
       <div class="box local-event-static" data-title="local event" id="localEventBox">
-        <div class="inner">
-          <form class="local-place-form" id="localPlaceForm">
-            <input id="localPlaceInput" autocomplete="off" spellcheck="false" placeholder="Punggol" />
-            <button type="submit">GO</button>
-          </form>
+  <div class="inner">
+    <div class="local-event-toolbar">
+      <span id="localEventCounter"></span>
+      <button id="localEventPrevButton" class="local-event-icon-button" type="button" title="Previous page" aria-label="Previous page">‹</button>
+      <button id="localEventNextButton" class="local-event-icon-button" type="button" title="Next page" aria-label="Next page">›</button>
+      <button id="localEventLocationButton" class="local-event-icon-button" type="button" title="Search another place" aria-label="Search another place">⌕</button>
+    </div>
 
-          <div class="local-notice-list" id="localNoticeList">
-            <div class="local-notice-empty">LOADING LOCAL NOTICE</div>
-          </div>
+    <div class="local-event-list" id="localEventList">
+      <div class="local-event-empty">LOADING LOCAL EVENTS</div>
+    </div>
+
+    <div id="localEventModal" class="local-event-modal" hidden>
+      <div class="local-event-modal-card" role="dialog" aria-modal="true" aria-label="Search local events">
+        <div class="local-event-modal-title">Search local events</div>
+        <input id="localEventLocationInput" type="text" placeholder="Punggol Singapore" autocomplete="off" spellcheck="false" />
+        <div id="localEventModalError"></div>
+        <div class="local-event-modal-actions">
+          <button id="localEventCancelButton" type="button">Cancel</button>
+          <button id="localEventSearchButton" type="button">Search</button>
         </div>
       </div>
+    </div>
+  </div>
+</div>
 
 
 
@@ -1842,184 +1857,372 @@ async function loadWeather() {
     setInterval(loadSyncStatus, 60 * 1000);
     setInterval(loadTopMarketTape, 5 * 60 * 1000);
   </script>
+<script id="local-event-inline-script">
+(function () {
+  const API = "/api/local-events/search";
+  const ROTATE_MS = 12000;
+  const VISIBLE = 5;
 
-  <script id="local-event-inline-script">
-    (function () {
-      let localEvents = [];
-      let localOffset = 0;
-      let currentLocation = localStorage.getItem("local_event_location") || "Punggol Singapore";
+  let localEventItems = [];
+  let localEventPage = 0;
+  let localEventTimer = null;
+  let localEventLocation = "";
 
-      function safe(v, fallback) {
-        return String(v || fallback || "").trim();
+  function $(id) {
+    return document.getElementById(id);
+  }
+
+  function clean(value) {
+    return String(value || "").replace(/\s+/g, " ").trim();
+  }
+
+  function shorten(value, maxLen) {
+    const text = clean(value);
+    if (!text) return "";
+    if (text.length <= maxLen) return text;
+    return text.slice(0, maxLen - 1).trimEnd() + "…";
+  }
+
+  function pick(item, keys) {
+    for (const key of keys) {
+      const value = clean(item && item[key]);
+      if (value) return value;
+    }
+    return "";
+  }
+
+  function join(parts, sep) {
+    return parts.map(clean).filter(Boolean).join(sep || " · ");
+  }
+
+  function isAction(value) {
+    return /(official page|check official|view details|details|register|registration|ticket|tickets|book|booking|rsvp|sign up|join|报名|参加|详情)/i.test(clean(value));
+  }
+
+  function isDateLike(value) {
+    const text = clean(value);
+    if (!text || isAction(text)) return false;
+    return /(\b(today|tomorrow|tonight|weekend|mon|tue|wed|thu|fri|sat|sun|jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\b|\d{1,2}[:.]\d{2}|\d{1,2}\s*(am|pm)|\d{4}-\d{1,2}-\d{1,2}|\d{1,2}\/\d{1,2})/i.test(text);
+  }
+
+  function looksGenericPage(title, where, when) {
+    const text = clean([title, where].join(" ")).toLowerCase();
+
+    if (when) return false;
+
+    return (
+      /^one punggol$/i.test(title) ||
+      /singaporium.*regional library/i.test(text) ||
+      /punggol regional library/i.test(title) ||
+      /library\s*(address|location|opening|hours|facilities)?$/i.test(title) ||
+      /\b(address|opening hours|directions|facilities|venue|location|contact us|about us)\b/i.test(title)
+    );
+  }
+
+  function normalize(raw) {
+    const item = raw || {};
+
+    let title = pick(item, ["title", "what_text", "name", "event", "summary"]);
+    let who = pick(item, ["organizer", "host", "who_text", "source_name", "source"]);
+    let where = pick(item, ["venue", "place", "where_text", "location", "address", "area"]);
+    let why = pick(item, ["why_text", "description", "desc"]);
+    const url = pick(item, ["url", "link", "href"]);
+    let how = pick(item, ["how_text", "how", "registration", "register_text", "ticket_text"]);
+
+    let when = "";
+    for (const candidate of [
+      pick(item, ["when_text"]),
+      pick(item, ["date_text"]),
+      pick(item, ["time_text"]),
+      pick(item, ["datetime"]),
+      pick(item, ["when"]),
+      pick(item, ["date"]),
+      pick(item, ["time"])
+    ]) {
+      if (isDateLike(candidate)) {
+        when = clean(candidate);
+        break;
       }
+      if (!how && isAction(candidate)) how = clean(candidate);
+    }
 
-      function cut(v, n) {
-        v = safe(v).replace(/\s+/g, " ");
-        return v.length > n ? v.slice(0, n - 1) + "…" : v;
+    if (!how && url) how = "Official page";
+
+    if (title.includes("|")) {
+      const parts = title.split("|").map(clean).filter(Boolean);
+      if (parts.length >= 2) {
+        if (!where) where = parts[0];
+        if (!who) who = parts[parts.length - 1];
+        title = parts.slice(1, -1).join(" · ") || parts[0];
       }
+    }
 
-      function esc(v) {
-        return String(v || "")
-          .replaceAll("&", "&amp;")
-          .replaceAll("<", "&lt;")
-          .replaceAll(">", "&gt;")
-          .replaceAll('"', "&quot;")
-          .replaceAll("'", "&#039;");
-      }
+    title = clean(title)
+      .replace(/\s*-\s*Singapore$/i, "")
+      .replace(/\s*\|\s*$/, "");
 
-      function domain(url) {
-        try {
-          return new URL(url).hostname.replace(/^www\./, "");
-        } catch (_) {
-          return "";
-        }
-      }
+    if (isAction(title)) title = "";
+    if (title && who && title.toLowerCase() === who.toLowerCase()) title = "";
+    if (title && where && title.toLowerCase() === where.toLowerCase()) title = "";
 
-      function cleanTitle(t) {
-        return safe(t)
-          .replace(/^Children.?s Season 2026(?: Signature Programme)?\s*[-:]\s*/i, "")
-          .replace(/^PLAY @ Children.?s Season 2026\s*[-:]?\s*/i, "")
-          .replace(/\s*[-|]\s*(NHB|Children.?s Museum Singapore|heritage\.sg).*$/i, "")
-          .trim();
-      }
+    why = clean(why);
+    if (why === title || why === where || why === who || isAction(why)) why = "";
 
-      function badEvent(ev) {
-        const title = cleanTitle(ev.title || ev.poster_title || ev.what || "");
-        const url = safe(ev.url, "").toLowerCase();
-        if (!title) return true;
-        if (url.endsWith(".pdf")) return true;
-        return /things to do|popular things|places to visit|natural escape|media release|press release|shavees|stands together/i.test(title);
-      }
+    return { when, who, title, where, how, why };
+  }
 
-      function usableEvents() {
-        return localEvents.filter(ev => !badEvent(ev));
-      }
+  function isLikelyEvent(item) {
+    if (!item.title) return false;
+    if (looksGenericPage(item.title, item.where, item.when)) return false;
 
-      function rowHtml(ev) {
-        const title = cleanTitle(ev.title || ev.poster_title || ev.what || "LOCAL EVENT");
-        const when = safe(ev.when, "CHECK DATE");
-        const url = safe(ev.url, "");
-        const source = safe(ev.source_name || ev.source || domain(url), "ONLINE");
-        const href = url ? ` href="${esc(url)}" target="_blank" rel="noreferrer"` : "";
+    const title = item.title.toLowerCase();
 
-        return `
-          <a class="local-notice-row"${href}>
-            <span class="local-notice-when">${esc(cut(when, 20))}</span>
-            <span class="local-notice-title">${esc(cut(title, 96))}</span>
-            <span class="local-notice-src">${esc(cut(source, 22))}</span>
-          </a>
-        `;
-      }
+    if (/^(nlb|onepa|one punggol|official page|local event)$/i.test(item.title)) return false;
 
-      function capacity() {
-        const box = document.getElementById("localNoticeList");
-        if (!box) return 1;
-        const h = box.clientHeight || 80;
-        return Math.max(1, Math.min(8, Math.floor((h - 8) / 23)));
-      }
+    const activityWords = /(class|course|workshop|talk|story|storytelling|storytime|club|session|festival|concert|tour|market|fair|meet|meeting|programme|program|activity|training|conversation|cover|casual|reading|exhibition|表演|课程|活动|讲座|工作坊)/i;
 
-      function renderList() {
-        const box = document.getElementById("localNoticeList");
-        if (!box) return;
+    if (item.when) return true;
+    if (activityWords.test(title)) return true;
 
-        const items = usableEvents();
+    return false;
+  }
 
-        if (!items.length) {
-          box.innerHTML = `<div class="local-notice-empty">${esc(currentLocation)}: NO VERIFIED LOCAL EVENT FOUND</div>`;
-          return;
-        }
+  function dedupe(items) {
+    const seen = new Set();
+    const out = [];
 
-        const n = Math.min(capacity(), items.length);
-        const rows = [];
+    for (const item of items) {
+      const key = [item.when, item.who, item.title, item.where].map(v => clean(v).toLowerCase()).join("|");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(item);
+    }
 
-        for (let i = 0; i < n; i++) {
-          rows.push(rowHtml(items[(localOffset + i) % items.length]));
-        }
+    return out;
+  }
 
-        box.innerHTML = rows.join("");
-      }
+  function resultsFrom(payload) {
+    if (Array.isArray(payload)) return payload;
+    if (!payload || typeof payload !== "object") return [];
+    if (Array.isArray(payload.results)) return payload.results;
+    if (Array.isArray(payload.events)) return payload.events;
+    if (Array.isArray(payload.items)) return payload.items;
+    return [];
+  }
 
-      function rotateList() {
-        const items = usableEvents();
-        const n = Math.min(capacity(), items.length || 1);
+  function escapeHtml(value) {
+    return clean(value).replace(/[&<>"']/g, function (ch) {
+      return {
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      }[ch];
+    });
+  }
 
-        if (items.length > n) {
-          localOffset = (localOffset + n) % items.length;
-        }
+  function pageCount() {
+    return Math.max(1, Math.ceil(localEventItems.length / VISIBLE));
+  }
 
-        renderList();
-      }
+  function clampPage() {
+    const pages = pageCount();
+    if (localEventPage < 0) localEventPage = pages - 1;
+    if (localEventPage >= pages) localEventPage = 0;
+  }
 
-      async function loadCache() {
-        try {
-          const res = await fetch("local_event_search_results.json?_=" + Date.now(), {
-            cache: "no-store"
-          });
-          const data = await res.json();
+  function renderLocalEvent() {
+    const list = $("localEventList");
+    const counter = $("localEventCounter");
+    const prev = $("localEventPrevButton");
+    const next = $("localEventNextButton");
 
-          localEvents = Array.isArray(data.results) ? data.results : [];
-          localOffset = 0;
-          renderList();
-        } catch (err) {
-          localEvents = [];
-          renderList();
-        }
-      }
+    if (!list) return;
 
-      async function searchLocation(location) {
-        currentLocation = location;
-        localStorage.setItem("local_event_location", location);
+    if (!localEventItems.length) {
+      list.innerHTML = '<div class="local-event-empty">NO CLEAR EVENTS · TAP ⌕ TO SEARCH</div>';
+      if (counter) counter.textContent = "";
+      if (prev) prev.disabled = true;
+      if (next) next.disabled = true;
+      stopLocalEventRotation();
+      return;
+    }
 
-        const box = document.getElementById("localNoticeList");
-        if (box) box.innerHTML = `<div class="local-notice-empty">SEARCHING ${esc(location)}</div>`;
+    clampPage();
 
-        try {
-          const res = await fetch("/api/local-events/search", {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({ location, limit: 12, force: true })
-          });
+    const totalPages = pageCount();
+    const start = localEventPage * VISIBLE;
+    const pageItems = localEventItems.slice(start, start + VISIBLE);
 
-          const data = await res.json();
-          localEvents = Array.isArray(data.results) ? data.results : [];
-          localOffset = 0;
-          renderList();
-        } catch (err) {
-          localEvents = [];
-          renderList();
-        }
-      }
+    const rows = pageItems.map(function (item, offset) {
+      const main = shorten(join([
+        item.when,
+        item.title || "Local event"
+      ]), 78);
 
-      function initLocalPlaceInput() {
-        const input = document.getElementById("localPlaceInput");
-        const form = document.getElementById("localPlaceForm");
+      const meta = shorten(join([
+        item.who ? "Host " + item.who : "",
+        item.where ? "At " + item.where : "",
+        item.how
+      ]), 86);
 
-        if (input) input.value = currentLocation.replace(/ Singapore$/i, "");
+      const note = shorten(item.why, 90);
 
-        if (form) {
-          form.addEventListener("submit", function (e) {
-            e.preventDefault();
-            const raw = safe(input && input.value, "");
-            if (!raw) return;
-            const loc = /singapore/i.test(raw) ? raw : raw + " Singapore";
-            searchLocation(loc);
-          });
-        }
-      }
+      return `
+        <div class="local-event-card ${offset === 0 ? "active" : ""}">
+          <div class="local-event-main">${escapeHtml(main)}</div>
+          <div class="local-event-meta">${escapeHtml(meta || "Details on official page")}</div>
+          ${note ? `<div class="local-event-note">${escapeHtml(note)}</div>` : ""}
+        </div>
+      `;
+    });
 
-      initLocalPlaceInput();
-      loadCache();
-      setInterval(rotateList, 8000);
-      setInterval(loadCache, 10 * 60 * 1000);
+    list.innerHTML = rows.join("");
 
-      if (window.ResizeObserver) {
-        const box = document.getElementById("localNoticeList");
-        if (box) new ResizeObserver(renderList).observe(box);
-      } else {
-        window.addEventListener("resize", renderList);
-      }
-    })();
-  </script>
+    if (counter) counter.textContent = `${localEventPage + 1}/${totalPages}`;
+    if (prev) prev.disabled = totalPages <= 1;
+    if (next) next.disabled = totalPages <= 1;
+  }
+
+  function stopLocalEventRotation() {
+    if (localEventTimer) {
+      clearInterval(localEventTimer);
+      localEventTimer = null;
+    }
+  }
+
+  function startLocalEventRotation() {
+    stopLocalEventRotation();
+    if (pageCount() <= 1) return;
+
+    localEventTimer = setInterval(function () {
+      localEventPage = (localEventPage + 1) % pageCount();
+      renderLocalEvent();
+    }, ROTATE_MS);
+  }
+
+  function movePage(delta) {
+    stopLocalEventRotation();
+    localEventPage += delta;
+    clampPage();
+    renderLocalEvent();
+    startLocalEventRotation();
+  }
+
+  function applyPayload(payload) {
+    localEventLocation = clean(payload && payload.location) || localEventLocation;
+
+    const normalized = resultsFrom(payload).map(normalize);
+    localEventItems = dedupe(normalized.filter(function (item) { return item && item.title; }));
+
+    localEventPage = 0;
+    renderLocalEvent();
+    startLocalEventRotation();
+  }
+
+  async function loadLocalEvents() {
+    try {
+      const resp = await fetch(API, { cache: "no-store" });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      applyPayload(await resp.json());
+    } catch (err) {
+      const list = $("localEventList");
+      if (list) list.innerHTML = '<div class="local-event-empty">LOCAL EVENTS UNAVAILABLE · TAP ⌕</div>';
+      stopLocalEventRotation();
+    }
+  }
+
+  function openModal() {
+    const modal = $("localEventModal");
+    const input = $("localEventLocationInput");
+    const err = $("localEventModalError");
+
+    if (err) err.textContent = "";
+    if (modal) modal.hidden = false;
+    if (input) {
+      input.value = localEventLocation || input.value || "";
+      setTimeout(function () {
+        input.focus();
+        input.select();
+      }, 30);
+    }
+  }
+
+  function closeModal() {
+    const modal = $("localEventModal");
+    const err = $("localEventModalError");
+    if (err) err.textContent = "";
+    if (modal) modal.hidden = true;
+  }
+
+  async function searchFromModal() {
+    const input = $("localEventLocationInput");
+    const err = $("localEventModalError");
+    const button = $("localEventSearchButton");
+    const location = clean(input && input.value);
+
+    if (!location) {
+      if (err) err.textContent = "Enter a place.";
+      return;
+    }
+
+    try {
+      if (err) err.textContent = "";
+      if (button) button.disabled = true;
+
+      const resp = await fetch(API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ location, query: location, place: location })
+      });
+
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+      closeModal();
+      applyPayload(await resp.json());
+    } catch (e) {
+      if (err) err.textContent = "Search failed. Try another place.";
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
+  function bind() {
+    const openButton = $("localEventLocationButton");
+    const prevButton = $("localEventPrevButton");
+    const nextButton = $("localEventNextButton");
+    const cancelButton = $("localEventCancelButton");
+    const searchButton = $("localEventSearchButton");
+    const input = $("localEventLocationInput");
+    const modal = $("localEventModal");
+
+    if (openButton) openButton.addEventListener("click", openModal);
+    if (prevButton) prevButton.addEventListener("click", function () { movePage(-1); });
+    if (nextButton) nextButton.addEventListener("click", function () { movePage(1); });
+    if (cancelButton) cancelButton.addEventListener("click", closeModal);
+    if (searchButton) searchButton.addEventListener("click", searchFromModal);
+
+    if (input) {
+      input.addEventListener("keydown", function (event) {
+        if (event.key === "Enter") searchFromModal();
+        if (event.key === "Escape") closeModal();
+      });
+    }
+
+    if (modal) {
+      modal.addEventListener("click", function (event) {
+        if (event.target === modal) closeModal();
+      });
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    bind();
+    loadLocalEvents();
+  });
+})();
+</script>
 
 
 
