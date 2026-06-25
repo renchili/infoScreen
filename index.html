@@ -1156,7 +1156,7 @@
 
 
 
-<link rel="stylesheet" href="assets/css/app.css?v=restore-1782322472">
+<link rel="stylesheet" href="assets/css/app.css?v=local-event-one-card-1782379391">
 <link rel="stylesheet" href="calendar_board.css?v=1781715981">
 </head>
 
@@ -1860,8 +1860,7 @@ async function loadWeather() {
 <script id="local-event-inline-script">
 (function () {
   const API = "/api/local-events/search";
-  const ROTATE_MS = 12000;
-  const VISIBLE = 5;
+  const ROTATE_MS = 15000;
 
   let localEventItems = [];
   let localEventPage = 0;
@@ -1874,6 +1873,10 @@ async function loadWeather() {
 
   function clean(value) {
     return String(value || "").replace(/\s+/g, " ").trim();
+  }
+
+  function lower(value) {
+    return clean(value).toLowerCase();
   }
 
   function shorten(value, maxLen) {
@@ -1891,8 +1894,22 @@ async function loadWeather() {
     return "";
   }
 
-  function join(parts, sep) {
-    return parts.map(clean).filter(Boolean).join(sep || " · ");
+  function escapeHtml(value) {
+    return clean(value).replace(/[&<>"']/g, function (ch) {
+      return {
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      }[ch];
+    });
+  }
+
+  function safeUrl(value) {
+    const url = clean(value);
+    if (!/^https?:\/\//i.test(url)) return "";
+    return url;
   }
 
   function isAction(value) {
@@ -1906,15 +1923,13 @@ async function loadWeather() {
   }
 
   function looksGenericPage(title, where, when) {
-    const text = clean([title, where].join(" ")).toLowerCase();
-
+    const text = lower([title, where].join(" "));
     if (when) return false;
 
     return (
       /^one punggol$/i.test(title) ||
-      /singaporium.*regional library/i.test(text) ||
       /punggol regional library/i.test(title) ||
-      /library\s*(address|location|opening|hours|facilities)?$/i.test(title) ||
+      /singaporium.*regional library/i.test(text) ||
       /\b(address|opening hours|directions|facilities|venue|location|contact us|about us)\b/i.test(title)
     );
   }
@@ -1925,16 +1940,18 @@ async function loadWeather() {
     let title = pick(item, ["title", "what_text", "name", "event", "summary"]);
     let who = pick(item, ["organizer", "host", "who_text", "source_name", "source"]);
     let where = pick(item, ["venue", "place", "where_text", "location", "address", "area"]);
-    let why = pick(item, ["why_text", "description", "desc"]);
-    const url = pick(item, ["url", "link", "href"]);
+    let why = pick(item, ["why_text", "description", "desc", "summary"]);
+    const url = safeUrl(pick(item, ["url", "link", "href", "official_url"]));
     let how = pick(item, ["how_text", "how", "registration", "register_text", "ticket_text"]);
-
     let when = "";
+
     for (const candidate of [
       pick(item, ["when_text"]),
       pick(item, ["date_text"]),
       pick(item, ["time_text"]),
       pick(item, ["datetime"]),
+      pick(item, ["start_time"]),
+      pick(item, ["start"]),
       pick(item, ["when"]),
       pick(item, ["date"]),
       pick(item, ["time"])
@@ -1962,20 +1979,20 @@ async function loadWeather() {
       .replace(/\s*\|\s*$/, "");
 
     if (isAction(title)) title = "";
-    if (title && who && title.toLowerCase() === who.toLowerCase()) title = "";
-    if (title && where && title.toLowerCase() === where.toLowerCase()) title = "";
+    if (title && who && lower(title) === lower(who)) title = "";
+    if (title && where && lower(title) === lower(where)) title = "";
 
     why = clean(why);
     if (why === title || why === where || why === who || isAction(why)) why = "";
 
-    return { when, who, title, where, how, why };
+    return { when, who, title, where, how, why, url };
   }
 
   function isLikelyEvent(item) {
     if (!item.title) return false;
     if (looksGenericPage(item.title, item.where, item.when)) return false;
 
-    const title = item.title.toLowerCase();
+    const title = lower(item.title);
 
     if (/^(nlb|onepa|one punggol|official page|local event)$/i.test(item.title)) return false;
 
@@ -1983,22 +2000,9 @@ async function loadWeather() {
 
     if (item.when) return true;
     if (activityWords.test(title)) return true;
+    if (item.url && item.why) return true;
 
     return false;
-  }
-
-  function dedupe(items) {
-    const seen = new Set();
-    const out = [];
-
-    for (const item of items) {
-      const key = [item.when, item.who, item.title, item.where].map(v => clean(v).toLowerCase()).join("|");
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push(item);
-    }
-
-    return out;
   }
 
   function resultsFrom(payload) {
@@ -2010,26 +2014,80 @@ async function loadWeather() {
     return [];
   }
 
-  function escapeHtml(value) {
-    return clean(value).replace(/[&<>"']/g, function (ch) {
-      return {
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#39;"
-      }[ch];
+  function canonicalTitle(value) {
+    return lower(value)
+      .replace(/\b\d{1,2}[:.]\d{2}\b/g, "")
+      .replace(/\b\d{1,2}\s*(am|pm)\b/g, "")
+      .replace(/\b(mon|tue|wed|thu|fri|sat|sun)\b/g, "")
+      .replace(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\b/g, "")
+      .replace(/\d{4}-\d{1,2}-\d{1,2}/g, "")
+      .replace(/\d{1,2}\/\d{1,2}/g, "")
+      .replace(/[^\p{L}\p{N}]+/gu, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function addUnique(list, value) {
+    const text = clean(value);
+    if (!text) return;
+    if (!list.some(x => lower(x) === lower(text))) list.push(text);
+  }
+
+  function groupEvents(items) {
+    const map = new Map();
+
+    for (const raw of items) {
+      const item = normalize(raw);
+      if (!isLikelyEvent(item)) continue;
+
+      const titleKey = canonicalTitle(item.title);
+      const key = item.url || [titleKey, lower(item.who), lower(item.where)].join("|");
+
+      if (!map.has(key)) {
+        map.set(key, {
+          title: item.title,
+          who: item.who,
+          where: item.where,
+          how: item.how,
+          why: item.why,
+          url: item.url,
+          dates: []
+        });
+      }
+
+      const existing = map.get(key);
+      if (!existing.url && item.url) existing.url = item.url;
+      if (!existing.who && item.who) existing.who = item.who;
+      if (!existing.where && item.where) existing.where = item.where;
+      if (!existing.how && item.how) existing.how = item.how;
+      if (!existing.why || item.why.length > existing.why.length) existing.why = item.why;
+
+      addUnique(existing.dates, item.when);
+    }
+
+    return Array.from(map.values()).sort(function (a, b) {
+      return clean(a.dates[0]).localeCompare(clean(b.dates[0]));
     });
   }
 
   function pageCount() {
-    return Math.max(1, Math.ceil(localEventItems.length / VISIBLE));
+    return Math.max(1, localEventItems.length);
   }
 
   function clampPage() {
     const pages = pageCount();
     if (localEventPage < 0) localEventPage = pages - 1;
     if (localEventPage >= pages) localEventPage = 0;
+  }
+
+  function dateText(item) {
+    const dates = item.dates || [];
+    if (!dates.length) return "Check official page";
+    if (dates.length === 1) return dates[0];
+
+    const shown = dates.slice(0, 4).join(" / ");
+    const more = dates.length > 4 ? ` / +${dates.length - 4} more` : "";
+    return `Multiple sessions: ${shown}${more}`;
   }
 
   function renderLocalEvent() {
@@ -2051,38 +2109,40 @@ async function loadWeather() {
 
     clampPage();
 
-    const totalPages = pageCount();
-    const start = localEventPage * VISIBLE;
-    const pageItems = localEventItems.slice(start, start + VISIBLE);
+    const item = localEventItems[localEventPage];
+    const total = pageCount();
 
-    const rows = pageItems.map(function (item, offset) {
-      const main = shorten(join([
-        item.when,
-        item.title || "Local event"
-      ]), 78);
+    list.innerHTML = `
+      <div class="local-event-card local-event-single active">
+        <div class="local-event-label">EVENT</div>
+        <div class="local-event-title">${escapeHtml(shorten(item.title || "Local event", 120))}</div>
 
-      const meta = shorten(join([
-        item.who ? "Host " + item.who : "",
-        item.where ? "At " + item.where : "",
-        item.how
-      ]), 86);
-
-      const note = shorten(item.why, 90);
-
-      return `
-        <div class="local-event-card ${offset === 0 ? "active" : ""}">
-          <div class="local-event-main">${escapeHtml(main)}</div>
-          <div class="local-event-meta">${escapeHtml(meta || "Details on official page")}</div>
-          ${note ? `<div class="local-event-note">${escapeHtml(note)}</div>` : ""}
+        <div class="local-event-kv">
+          <span>WHEN</span>
+          <b>${escapeHtml(shorten(dateText(item), 180))}</b>
         </div>
-      `;
-    });
 
-    list.innerHTML = rows.join("");
+        <div class="local-event-kv">
+          <span>WHERE</span>
+          <b>${escapeHtml(shorten(item.where || "Check official page", 160))}</b>
+        </div>
 
-    if (counter) counter.textContent = `${localEventPage + 1}/${totalPages}`;
-    if (prev) prev.disabled = totalPages <= 1;
-    if (next) next.disabled = totalPages <= 1;
+        <div class="local-event-kv">
+          <span>HOST</span>
+          <b>${escapeHtml(shorten(item.who || "Unknown organizer", 130))}</b>
+        </div>
+
+        ${item.why ? `<div class="local-event-desc">${escapeHtml(shorten(item.why, 260))}</div>` : ""}
+
+        <div class="local-event-actions">
+          ${item.url ? `<a class="local-event-link" href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">OPEN OFFICIAL LINK</a>` : `<span class="local-event-no-link">NO LINK IN SOURCE</span>`}
+        </div>
+      </div>
+    `;
+
+    if (counter) counter.textContent = `${localEventPage + 1}/${total}`;
+    if (prev) prev.disabled = total <= 1;
+    if (next) next.disabled = total <= 1;
   }
 
   function stopLocalEventRotation() {
@@ -2113,10 +2173,9 @@ async function loadWeather() {
   function applyPayload(payload) {
     localEventLocation = clean(payload && payload.location) || localEventLocation;
 
-    const normalized = resultsFrom(payload).map(normalize);
-    localEventItems = dedupe(normalized.filter(function (item) { return item && item.title; }));
-
+    localEventItems = groupEvents(resultsFrom(payload));
     localEventPage = 0;
+
     renderLocalEvent();
     startLocalEventRotation();
   }
