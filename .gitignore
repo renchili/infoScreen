@@ -20,3 +20,11 @@ logs/
 # Per-machine macOS schedule sync configuration
 mac/local.env
 mac/launchagents/*.plist
+
+# Surface runtime/generated data
+event_stream.json
+local_event_search_results.json
+photos.json
+sync_status.json
+photos/
+public_photos/
