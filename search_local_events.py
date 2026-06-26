@@ -19,15 +19,16 @@ UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/126 Safari/537.3
 DEFAULT_LOCATION = "Punggol Singapore"
 TODAY = date.today()
 YEAR = str(datetime.now().year)
-MAX_SECONDS = float(os.environ.get("LOCAL_EVENTS_MAX_SECONDS", "75"))
-MAX_PAGES_PER_SOURCE = int(os.environ.get("LOCAL_EVENTS_MAX_PAGES_PER_SOURCE", "10"))
+MAX_SECONDS = float(os.environ.get("LOCAL_EVENTS_MAX_SECONDS", "70"))
+MAX_PAGES_PER_SOURCE = int(os.environ.get("LOCAL_EVENTS_MAX_PAGES_PER_SOURCE", "12"))
 MAX_EVENTS_PER_SOURCE = int(os.environ.get("LOCAL_EVENTS_MAX_EVENTS_PER_SOURCE", "4"))
 PAST_GRACE_DAYS = int(os.environ.get("LOCAL_EVENTS_PAST_GRACE_DAYS", "1"))
 
 TEMPLATE_RE = re.compile(r"#\{[^}]+\}|\{\{[^}]+\}\}|\$\{[^}]+\}")
 TAG_RE = re.compile(r"<[^>]+>")
+BROKEN_ATTR_RE = re.compile(r"\b(?:hPriority|decoding|loading|alt|src|srcset|width|height|class|style|href|aria-[\w-]+|data-[\w-]+)=[\"'][^\"']*[\"']\s*/?", re.I)
 DATE_RE = re.compile(
-    r"(" 
+    r"("
     r"\b20\d{2}-\d{1,2}-\d{1,2}\b|"
     r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b|"
     r"\b\d{1,2}\s*(?:-|to|–|—)\s*\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s*\d{0,4}\b|"
@@ -58,18 +59,20 @@ SOURCES = [
     ("Waterway Point", "Waterway Point", "Waterway Point", ["waterwaypoint.com.sg"], ["https://www.waterwaypoint.com.sg/happenings"]),
 ]
 
-EVENT_WORDS = "event events programme program workshop activity course class club session talk tour story storytelling storytime family children kids festival performance concert carnival reading exhibition show camp meet meeting walk trail experience".split()
+EVENT_WORDS = set("event events programme program workshop activity course class club session talk tour story storytelling storytime family children kids festival performance concert carnival reading exhibition show camp meet meeting walk trail experience".split())
 GENERIC_TITLES = {
     "events", "event", "what's on", "whats on", "things to do", "programmes", "programs",
     "activities", "activities and events", "home", "homepage", "visit us", "contact us", "about us",
-    "children's season 2026", "childrens season 2026", "all events", "view all",
+    "children's season 2026", "childrens season 2026", "all events", "view all", "address",
+    "opening hours", "operating hours", "location", "directions", "getting here", "facilities",
 }
-BAD_PATH_PARTS = (
-    "/privacy", "/terms", "/contact", "/about", "/career", "/login", "/directions", "/parking",
+INFO_WORDS = (
+    "address", "opening hours", "operating hours", "closed for disinfection", "last entry",
+    "directions", "getting here", "visit us", "home visit us", "facilities", "amenities",
+    "parking", "contact us", "admission", "tickets and admission",
 )
-LISTING_PATH_PARTS = (
-    "/whatson/activities", "/whatson/childrens-season---listing-page", "/whats-on/view-all", "/whats-on/overview",
-)
+BAD_PATH_PARTS = ("/privacy", "/terms", "/contact", "/about", "/career", "/login", "/directions", "/parking")
+LISTING_PATH_PARTS = ("/whatson/activities", "/whatson/childrens-season---listing-page", "/whats-on/view-all", "/whats-on/overview")
 LISTING_EXACT = {"/events", "/event", "/happenings", "/whats-on", "/whatson", "/activities", "/things-to-do", "/programmes", "/programs"}
 BAD_EXT = (".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".ico", ".pdf", ".zip", ".mp4", ".mp3", ".css", ".js")
 ACTION_TEXT_RE = re.compile(r"\b(register|registration|book|booking|ticket|tickets|details|learn more|find out more|read more|view more|view all|open|share)\b", re.I)
@@ -84,6 +87,7 @@ def clean(value: object) -> str:
     text = re.sub(r"<script[\s\S]*?</script>", " ", text, flags=re.I)
     text = re.sub(r"<style[\s\S]*?</style>", " ", text, flags=re.I)
     text = TAG_RE.sub(" ", text)
+    text = BROKEN_ATTR_RE.sub(" ", text)
     text = TEMPLATE_RE.sub(" ", text)
     return re.sub(r"\s+", " ", text).strip()
 
@@ -158,7 +162,11 @@ def fetch(url: str, timeout: int = 8) -> str:
 def meta(page: str, names: list[str]) -> str:
     for name in names:
         e = re.escape(name)
-        for pat in (rf'<meta[^>]+(?:name|property)=["\']{e}["\'][^>]+content=["\']([^"\']+)["\']', rf'<meta[^>]+content=["\']([^"\']+)["\'][^>]+(?:name|property)=["\']{e}["\']'):
+        patterns = (
+            rf'<meta[^>]+(?:name|property)=["\']{e}["\'][^>]+content=["\']([^"\']+)["\']',
+            rf'<meta[^>]+content=["\']([^"\']+)["\'][^>]+(?:name|property)=["\']{e}["\']',
+        )
+        for pat in patterns:
             m = re.search(pat, page, re.I | re.S)
             if m and clean(m.group(1)):
                 return clean(m.group(1))
@@ -181,16 +189,11 @@ def extract_title(page: str, fallback: str = "") -> str:
     return ""
 
 
-def extract_summary(page: str, fallback: str = "") -> str:
-    for value in (meta(page, ["og:description", "description", "twitter:description"]), fallback):
+def extract_summary(page: str) -> str:
+    for value in (meta(page, ["og:description", "description", "twitter:description"]),):
         text = shorten(value, 260)
-        if text and not has_template(text):
+        if text and not has_template(text) and not looks_like_info_text(text):
             return text
-    plain = clean(page)
-    for word in EVENT_WORDS:
-        m = re.search(r"([^.。!?]*\b" + re.escape(word) + r"\b[^.。!?]*[.。!?]?)", plain, re.I)
-        if m:
-            return shorten(m.group(1), 260)
     return "Open the official page for details."
 
 
@@ -237,9 +240,7 @@ def future_label(label: str) -> bool:
     return bool(dates and max(dates) >= TODAY - timedelta(days=PAST_GRACE_DAYS))
 
 
-def extract_sessions(page: str, title: str, summary: str, url: str) -> list[dict]:
-    raw = html.unescape(page or "")
-    text = " ".join([clean(title), clean(summary), clean(raw[:160000]), raw[:160000]])
+def extract_sessions(text: str, url: str) -> list[dict]:
     labels = []
     seen = set()
     def add(value: object) -> None:
@@ -251,13 +252,13 @@ def extract_sessions(page: str, title: str, summary: str, url: str) -> list[dict
             return
         seen.add(key)
         labels.append(label)
-    for m in re.finditer(r"\b20\d{2}-\d{1,2}-\d{1,2}\b", raw):
+    for m in re.finditer(r"\b20\d{2}-\d{1,2}-\d{1,2}\b", text):
         add(m.group(0))
-        if len(labels) >= 16:
+        if len(labels) >= 8:
             break
     for m in DATE_RE.finditer(text):
         add(m.group(1))
-        if len(labels) >= 16:
+        if len(labels) >= 8:
             break
     sessions = []
     for label in labels:
@@ -289,18 +290,34 @@ def summarize_sessions(sessions: list[dict]) -> str:
     return f"{len(labels)} sessions: {shown}"
 
 
+def looks_like_info_text(text: object) -> bool:
+    lower = clean(text).lower()
+    return any(word in lower for word in INFO_WORDS) or "hpriority" in lower or "decoding=" in lower
+
+
+def title_is_event(title: str, url: str) -> bool:
+    title_key = canonical(title)
+    if not title or title_key in GENERIC_TITLES:
+        return False
+    if looks_like_info_text(title):
+        return False
+    if ACTION_TEXT_RE.fullmatch(title.strip()):
+        return False
+    blob = f"{title} {urlparse(url).path}".lower()
+    return any(word in blob for word in EVENT_WORDS)
+
+
 def make_event(name: str, source_name: str, venue: str, title: str, summary: str, sessions: list[dict], url: str, location: str, score_base: int = 60) -> dict | None:
     title = clean(title)
-    summary = clean(summary) or "Open the official page for details."
-    title_key = canonical(title)
-    if has_template({"title": title, "summary": summary}) or not title or title_key in GENERIC_TITLES or not sessions:
-        return None
-    blob = f"{title} {summary} {urlparse(url).path}".lower()
-    if any(word in blob for word in ("promotion", "privilege", "perks", "deals", "discount", "membership")) and not any(word in blob for word in EVENT_WORDS):
+    summary = clean(summary) if summary else "Open the official page for details."
+    if summary != "Open the official page for details." and looks_like_info_text(summary):
+        summary = "Open the official page for details."
+    if has_template({"title": title, "summary": summary}) or not title_is_event(title, url) or not sessions or is_listing(url):
         return None
     loc_words = [w for w in re.split(r"\W+", location.lower()) if len(w) >= 4]
+    blob = f"{title} {summary} {urlparse(url).path}".lower()
     priority = any(w in blob for w in loc_words)
-    score = score_base + len(sessions) + (12 if priority else 0) + (8 if any(w in blob for w in EVENT_WORDS) else 0)
+    score = score_base + len(sessions) + (12 if priority else 0)
     when = summarize_sessions(sessions)
     return {
         "type": "event",
@@ -328,63 +345,45 @@ def make_event(name: str, source_name: str, venue: str, title: str, summary: str
     }
 
 
-def build_event(name: str, source_name: str, venue: str, domains: list[str], url: str, page: str, location: str) -> dict | None:
+def build_detail_event(name: str, source_name: str, venue: str, domains: list[str], url: str, page: str, location: str) -> dict | None:
     url = normalize_url(url)
-    if not url or not same_domain(url, domains) or bad_url(url):
+    if not url or is_listing(url) or not same_domain(url, domains) or bad_url(url):
         return None
     title = extract_title(page)
     summary = extract_summary(page)
-    sessions = extract_sessions(page, title, summary, url)
-    if is_listing(url):
-        return None
-    return make_event(name, source_name, venue, title, summary, sessions, url, location, 62)
+    sessions = extract_sessions(" ".join([title, summary, clean(page[:90000])]), url)
+    return make_event(name, source_name, venue, title, summary, sessions, url, location, 70)
 
 
-def title_from_card(anchor_text: str, context: str) -> str:
-    candidates = [anchor_text]
-    for pat in (r"<h[1-4][^>]*>([\s\S]*?)</h[1-4]>", r"<(?:strong|b)[^>]*>([\s\S]*?)</(?:strong|b)>"):
-        for m in re.finditer(pat, context, re.I):
-            candidates.append(m.group(1))
-    for candidate in candidates:
-        title = clean(candidate)
-        if not title or len(title) < 4:
-            continue
-        if ACTION_TEXT_RE.search(title) and len(title.split()) <= 4:
-            continue
-        if canonical(title) in GENERIC_TITLES:
-            continue
-        if DATE_RE.fullmatch(title):
-            continue
-        return title
-    return ""
+def title_from_anchor(anchor_text: str, url: str) -> str:
+    title = clean(anchor_text)
+    if not title or len(title) < 4:
+        return ""
+    if ACTION_TEXT_RE.search(title) and len(title.split()) <= 5:
+        return ""
+    if not title_is_event(title, url):
+        return ""
+    return title
 
 
-def extract_listing_events(name: str, source_name: str, venue: str, domains: list[str], page_url: str, page: str, location: str) -> list[dict]:
-    events = []
+def extract_listing_candidates(page: str, base_url: str, domains: list[str]) -> list[tuple[str, str, list[dict]]]:
+    out = []
     seen = set()
     for m in re.finditer(r'<a\b[^>]*href=["\']([^"\']+)["\'][^>]*>([\s\S]*?)</a>', page, re.I):
-        url = normalize_url(m.group(1), page_url)
-        if not url or not same_domain(url, domains) or bad_url(url):
+        url = normalize_url(m.group(1), base_url)
+        if not url or is_listing(url) or url_key(url) in seen or not same_domain(url, domains) or bad_url(url):
             continue
-        context = page[max(0, m.start() - 1200): min(len(page), m.end() + 1800)]
-        if not DATE_RE.search(context):
-            continue
-        title = title_from_card(m.group(2), context)
+        context = page[max(0, m.start() - 700): min(len(page), m.end() + 900)]
+        title = title_from_anchor(m.group(2), url)
         if not title:
             continue
-        summary = shorten(clean(context), 260)
-        sessions = extract_sessions(context, title, summary, url)
+        # Keep only the local card date, never the whole HTML block as description.
+        sessions = extract_sessions(clean(context), url)
         if not sessions:
             continue
-        item = make_event(name, source_name, venue, title, summary, sessions, url, location, 78)
-        if not item:
-            continue
-        key = event_key(item)
-        if key in seen:
-            continue
-        seen.add(key)
-        events.append(item)
-    return events
+        seen.add(url_key(url))
+        out.append((url, title, sessions))
+    return out
 
 
 def extract_links(page: str, base_url: str, domains: list[str]) -> list[str]:
@@ -396,7 +395,6 @@ def extract_links(page: str, base_url: str, domains: list[str]) -> list[str]:
         if not url or url_key(url) in seen or not same_domain(url, domains) or bad_url(url):
             continue
         path = urlparse(url).path.lower()
-        # Listing pages are useful sources. Do not output them as events, but keep crawling them.
         if is_listing(url) or any(w in (path + " " + anchor) for w in EVENT_WORDS) or DATE_RE.search(anchor):
             seen.add(url_key(url))
             out.append(url)
@@ -424,10 +422,12 @@ def crawl_source(src: tuple, location: str, deadline: float) -> tuple[list[dict]
         except Exception:
             continue
         fetched.append({"url": url, "title": shorten(extract_title(page, url), 90)})
-        listing_items = extract_listing_events(name, source_name, venue, domains, url, page, location)
-        if listing_items:
-            events.extend(listing_items)
-        item = build_event(name, source_name, venue, domains, url, page, location)
+        for candidate_url, candidate_title, candidate_sessions in extract_listing_candidates(page, url, domains):
+            item = make_event(name, source_name, venue, candidate_title, "Open the official page for details.", candidate_sessions, candidate_url, location, 76)
+            if item:
+                events.append(item)
+                push(candidate_url)
+        item = build_detail_event(name, source_name, venue, domains, url, page, location)
         if item:
             events.append(item)
         for link in extract_links(page, url, domains):
@@ -443,14 +443,10 @@ def event_key(item: dict) -> str:
 def dedupe(events: list[dict]) -> list[dict]:
     grouped = {}
     for item in events:
-        if has_template(item) or not item.get("sessions") or canonical(item.get("title")) in GENERIC_TITLES:
+        if has_template(item) or is_listing(item.get("url") or "") or not item.get("sessions") or not title_is_event(clean(item.get("title")), item.get("url") or ""):
             continue
         key = event_key(item)
-        if key not in grouped:
-            grouped[key] = item
-            continue
-        old = grouped[key]
-        if int(item.get("score", 0)) > int(old.get("score", 0)):
+        if key not in grouped or int(item.get("score", 0)) > int(grouped[key].get("score", 0)):
             grouped[key] = item
     out = list(grouped.values())
     used_urls = {}
@@ -484,9 +480,9 @@ def main() -> None:
     location = " ".join(sys.argv[1:]).strip() or DEFAULT_LOCATION
     events, sources, debug = collect(location)
     payload = {
-        "version": 11,
+        "version": 12,
         "ok": True,
-        "extractor": "official-local-event-listing-card-v11",
+        "extractor": "official-local-event-conservative-v12",
         "updated_at": now_iso(),
         "location": location,
         "count": len(events),
@@ -494,7 +490,7 @@ def main() -> None:
         "items": events,
         "sources": sources,
         "debug_by_source": debug,
-        "settings": {"sanitize_template_placeholders": True, "listing_pages_are_sources": True},
+        "settings": {"listing_pages_are_sources_only": True, "no_html_context_summary": True},
     }
     OUT.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"local events updated count={len(events)} sources={len(sources)} location={location}")
