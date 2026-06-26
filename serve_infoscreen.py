@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import json
-import re
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -9,140 +8,15 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 BASE = Path(__file__).resolve().parent
-PLACEHOLDER_RE = re.compile(r"#\{[^}]+\}|\{\{[^}]+\}\}|\$\{[^}]+\}")
-LOCAL_EVENT_TEXT_FIELDS = {
-    "title",
-    "poster_title",
-    "what",
-    "what_text",
-    "name",
-    "event",
-    "summary",
-    "poster_summary",
-    "why",
-    "why_text",
-    "description",
-    "desc",
-    "when",
-    "when_text",
-    "date",
-    "date_text",
-    "time",
-    "time_text",
-    "venue",
-    "where",
-    "where_text",
-    "location",
-    "address",
-    "source",
-    "source_name",
-    "who",
-    "who_text",
-    "organizer",
-    "host",
-    "how",
-    "how_text",
-}
-
 
 def now():
     return datetime.now(timezone.utc).isoformat()
-
-
-def clean_text(value):
-    text = str(value or "")
-    text = PLACEHOLDER_RE.sub(" ", text)
-    return re.sub(r"\s+", " ", text).strip()
-
-
-def sanitize_value(value):
-    if isinstance(value, str):
-        return clean_text(value)
-    if isinstance(value, list):
-        return [sanitize_value(item) for item in value]
-    if isinstance(value, dict):
-        return sanitize_dict(value)
-    return value
-
-
-def sanitize_dict(obj):
-    out = {}
-    for key, value in obj.items():
-        if key in LOCAL_EVENT_TEXT_FIELDS:
-            out[key] = clean_text(value)
-        else:
-            out[key] = sanitize_value(value)
-    return out
-
-
-def has_placeholder(value):
-    if isinstance(value, str):
-        return bool(PLACEHOLDER_RE.search(value))
-    if isinstance(value, list):
-        return any(has_placeholder(item) for item in value)
-    if isinstance(value, dict):
-        return any(has_placeholder(item) for item in value.values())
-    return False
-
-
-def usable_event(item):
-    if not isinstance(item, dict):
-        return False
-    if item.get("type") == "source":
-        return True
-    title = clean_text(item.get("title") or item.get("what") or item.get("name") or item.get("event"))
-    url = clean_text(item.get("url") or item.get("link") or item.get("href"))
-    if has_placeholder(item):
-        return False
-    if not title and not url:
-        return False
-    return True
-
-
-def sanitize_local_events_payload(data):
-    if not isinstance(data, dict):
-        return {"results": []}
-
-    cleaned = sanitize_dict(data)
-
-    for field in ("results", "items", "events"):
-        rows = cleaned.get(field)
-        if isinstance(rows, list):
-            cleaned[field] = [item for item in rows if usable_event(item)]
-
-    if isinstance(cleaned.get("results"), list):
-        cleaned["count"] = len(cleaned["results"])
-        cleaned["items"] = cleaned["results"]
-    elif isinstance(cleaned.get("items"), list):
-        cleaned["count"] = len(cleaned["items"])
-        cleaned["results"] = cleaned["items"]
-
-    settings = cleaned.setdefault("settings", {})
-    if isinstance(settings, dict):
-        settings["api_sanitizes_template_placeholders"] = True
-
-    return cleaned
-
 
 def read_json(path, default):
     try:
         return json.loads(path.read_text())
     except Exception:
         return default
-
-
-def read_local_events():
-    return sanitize_local_events_payload(read_json(BASE / "local_event_search_results.json", {"results": []}))
-
-
-def write_local_events(data):
-    cleaned = sanitize_local_events_payload(data)
-    (BASE / "local_event_search_results.json").write_text(
-        json.dumps(cleaned, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    return cleaned
-
 
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -171,7 +45,9 @@ class Handler(SimpleHTTPRequestHandler):
             }))
 
         if path == "/api/local-events/search":
-            return self.send_json(read_local_events())
+            return self.send_json(read_json(BASE / "local_event_search_results.json", {
+                "results": []
+            }))
 
         return super().do_GET()
 
@@ -234,7 +110,7 @@ class Handler(SimpleHTTPRequestHandler):
                     capture_output=True,
                     timeout=90,
                 )
-                data = write_local_events(read_json(BASE / "local_event_search_results.json", {"results": []}))
+                data = read_json(BASE / "local_event_search_results.json", {"results": []})
                 data["ok"] = p.returncode == 0
                 data["stdout"] = p.stdout[-1000:]
                 data["stderr"] = p.stderr[-1000:]
@@ -244,11 +120,9 @@ class Handler(SimpleHTTPRequestHandler):
 
         return self.send_json({"ok": False, "error": "not found"}, 404)
 
-
 def main():
     print(f"InfoScreen API server on 0.0.0.0:8765 from {BASE}", flush=True)
     ThreadingHTTPServer(("0.0.0.0", 8765), Handler).serve_forever()
-
 
 if __name__ == "__main__":
     main()
