@@ -13,6 +13,7 @@ public_photos/
 # logs / backups
 *.log
 *.bak.*
+*.good
 index.html.bak.*
 
 # unrelated local tools
