@@ -126,12 +126,7 @@ SOURCE_REGISTRY = [
             "https://nlb.libcal.com/calendar?cid=11498",
         ],
         "aliases": ["National Library Board", "NLB", "public libraries", "library"],
-        "preferred_terms": [
-            "Punggol Regional Library",
-            "Punggol Library",
-            "NLB Punggol",
-            "Punggol",
-        ],
+        "preferred_terms": ["Punggol Regional Library", "Punggol Library", "NLB Punggol", "Punggol"],
         "verified": "2026-06-26",
     },
     {
@@ -141,14 +136,7 @@ SOURCE_REGISTRY = [
         "domains": ["onepa.gov.sg"],
         "seeds": ["https://www.onepa.gov.sg/events"],
         "aliases": ["onePA", "People's Association", "community club", "community centre"],
-        "preferred_terms": [
-            "Punggol",
-            "Punggol CC",
-            "Punggol 21 CC",
-            "Punggol West CC",
-            "Punggol Coast",
-            "One Punggol",
-        ],
+        "preferred_terms": ["Punggol", "Punggol CC", "Punggol 21 CC", "Punggol West CC", "Punggol Coast", "One Punggol"],
         "verified": "2026-06-26",
     },
     {
@@ -252,9 +240,21 @@ BAD_EXT = (
 )
 GENERIC_TITLES = {
     "events", "event", "what's on", "whats on", "things to do", "programmes",
-    "programs", "activities", "home", "homepage", "visit us", "contact us",
-    "about us", "calendar", "happenings",
+    "programs", "activities", "activities and events", "exhibitions & programmes",
+    "exhibitions and programmes", "what's on at acm", "home", "homepage",
+    "visit us", "contact us", "about us", "calendar", "happenings",
+    "children's season 2026", "childrens season 2026",
 }
+LISTING_PATH_MARKERS = (
+    "/whatson/activities",
+    "/whatson/childrens-season---listing-page",
+    "/whats-on/view-all",
+    "/whats-on/overview",
+    "/whatson/programmes",
+    "/main/whats-on",
+    "/museum/whats-on.html",
+)
+TEMPLATE_RE = re.compile(r"#\{[^}]+\}|\{\{[^}]+\}\}|\$\{[^}]+\}")
 DATE_RE = re.compile(
     r"("
     r"\b\d{1,2}\s*(?:-|to|–|—)\s*\d{1,2}\s+"
@@ -280,10 +280,15 @@ def now_iso() -> str:
 
 def textify(value: str) -> str:
     value = html.unescape(value or "")
+    value = TEMPLATE_RE.sub(" ", value)
     value = re.sub(r"<script[\s\S]*?</script>", " ", value, flags=re.I)
     value = re.sub(r"<style[\s\S]*?</style>", " ", value, flags=re.I)
     value = re.sub(r"<[^>]+>", " ", value)
     return re.sub(r"\s+", " ", value).strip()
+
+
+def has_template_placeholder(value: str) -> bool:
+    return bool(TEMPLATE_RE.search(value or ""))
 
 
 def shorten(value: str, limit: int) -> str:
@@ -411,8 +416,10 @@ def extract_summary(page: str, fallback: str = "") -> str:
             vals.append(m.group(1))
             break
     for v in vals:
+        if has_template_placeholder(v):
+            continue
         v = shorten(v, 220)
-        if v:
+        if v and v.lower() not in GENERIC_TITLES:
             return v
     return "Open the official page for details."
 
@@ -479,11 +486,16 @@ def extract_links(page: str, base_url: str, source: dict) -> list[tuple[int, str
     return out
 
 
+def is_listing_page_url(url: str) -> bool:
+    p = urlparse(url).path.lower().rstrip("/")
+    return any(p.endswith(marker.rstrip("/")) or marker in p for marker in LISTING_PATH_MARKERS)
+
+
 def is_generic_event_title(source: dict, title: str, date: str, url: str) -> bool:
     t = textify(title).lower()
     if not t:
         return True
-    if t in GENERIC_TITLES and date == "Check official page":
+    if t in GENERIC_TITLES:
         return True
     for name in [source["name"], source["source"], source["venue"]]:
         if t == textify(name).lower() and date == "Check official page":
@@ -510,7 +522,10 @@ def page_event_score(source: dict, url: str, title: str, summary: str, body: str
         if bad in blob:
             score -= 60
     generic_title = is_generic_event_title(source, title, date, url)
+    listing_page = is_listing_page_url(url)
     if generic_title:
+        score -= 90
+    if listing_page and not schema_event:
         score -= 80
     if not has_date and not schema_event:
         score -= 35
@@ -518,6 +533,7 @@ def page_event_score(source: dict, url: str, title: str, summary: str, body: str
         "has_date": has_date,
         "schema_event": schema_event,
         "generic_title": generic_title,
+        "listing_page": listing_page,
         "event_word_hits": event_word_hits[:8],
         "preferred_location_hits": preferred_hits,
     }
@@ -525,6 +541,8 @@ def page_event_score(source: dict, url: str, title: str, summary: str, body: str
 
 
 def build_event(source: dict, url: str, page: str, location: str, origin: str):
+    if has_template_placeholder(page[:20_000]):
+        page = TEMPLATE_RE.sub(" ", page)
     title = extract_title(page)
     summary = extract_summary(page)
     body = textify(page)
@@ -595,12 +613,16 @@ def crawl_source(source: dict, location: str, deadline: float) -> dict:
         if item:
             events.append(item)
         else:
+            title = extract_title(page)
+            summary = extract_summary(page)
             rejected.append({
                 "url": url,
                 "origin": origin,
                 "reason": "below_event_threshold",
-                "title": shorten(extract_title(page), 120),
-                "date": extract_date(extract_title(page), extract_summary(page), textify(page)[:4000]),
+                "title": shorten(title, 120),
+                "date": extract_date(title, summary, textify(page)[:4000]),
+                "listing_page": is_listing_page_url(url),
+                "generic_title": textify(title).lower() in GENERIC_TITLES,
             })
         if FOLLOW_LINKS:
             for score, link, _anchor in extract_links(page, url, source)[:24]:
@@ -675,7 +697,7 @@ def main():
     location = " ".join(sys.argv[1:]).strip() or DEFAULT_LOCATION
     events, sources, debug = collect(location)
     payload = {
-        "version": 8,
+        "version": 9,
         "ok": True,
         "extractor": "verified-source-preferred-location-crawler",
         "updated_at": now_iso(),
@@ -691,6 +713,7 @@ def main():
             "max_events_per_source": MAX_EVENTS_PER_SOURCE,
             "verified_source_count": len(SOURCE_REGISTRY),
             "location_is_preference_only": True,
+            "reject_generic_listing_pages": True,
         },
     }
     OUT.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
