@@ -66,10 +66,13 @@ GENERIC_TITLES = {
 }
 BAD_PATH_PARTS = (
     "/privacy", "/terms", "/contact", "/about", "/career", "/login", "/directions", "/parking",
+)
+LISTING_PATH_PARTS = (
     "/whatson/activities", "/whatson/childrens-season---listing-page", "/whats-on/view-all", "/whats-on/overview",
 )
 LISTING_EXACT = {"/events", "/event", "/happenings", "/whats-on", "/whatson", "/activities", "/things-to-do", "/programmes", "/programs"}
 BAD_EXT = (".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".ico", ".pdf", ".zip", ".mp4", ".mp3", ".css", ".js")
+ACTION_TEXT_RE = re.compile(r"\b(register|registration|book|booking|ticket|tickets|details|learn more|find out more|read more|view more|view all|open|share)\b", re.I)
 
 
 def now_iso() -> str:
@@ -134,7 +137,7 @@ def url_key(url: str) -> str:
 
 def is_listing(url: str) -> bool:
     p = urlparse(url).path.lower().rstrip("/")
-    return p in LISTING_EXACT or any(part in p for part in BAD_PATH_PARTS)
+    return p in LISTING_EXACT or any(part in p for part in LISTING_PATH_PARTS)
 
 
 def bad_url(url: str) -> bool:
@@ -286,26 +289,18 @@ def summarize_sessions(sessions: list[dict]) -> str:
     return f"{len(labels)} sessions: {shown}"
 
 
-def build_event(name: str, source_name: str, venue: str, domains: list[str], url: str, page: str, location: str) -> dict | None:
-    url = normalize_url(url)
-    if not url or not same_domain(url, domains) or bad_url(url):
-        return None
-    title = extract_title(page)
-    summary = extract_summary(page)
-    sessions = extract_sessions(page, title, summary, url)
+def make_event(name: str, source_name: str, venue: str, title: str, summary: str, sessions: list[dict], url: str, location: str, score_base: int = 60) -> dict | None:
+    title = clean(title)
+    summary = clean(summary) or "Open the official page for details."
     title_key = canonical(title)
+    if has_template({"title": title, "summary": summary}) or not title or title_key in GENERIC_TITLES or not sessions:
+        return None
     blob = f"{title} {summary} {urlparse(url).path}".lower()
-    if has_template(title) or has_template(summary) or not title or title_key in GENERIC_TITLES:
-        return None
-    if is_listing(url) and not sessions:
-        return None
-    if not sessions:
-        return None
     if any(word in blob for word in ("promotion", "privilege", "perks", "deals", "discount", "membership")) and not any(word in blob for word in EVENT_WORDS):
         return None
     loc_words = [w for w in re.split(r"\W+", location.lower()) if len(w) >= 4]
     priority = any(w in blob for w in loc_words)
-    score = 60 + len(sessions) + (12 if priority else 0) + (8 if any(w in blob for w in EVENT_WORDS) else 0)
+    score = score_base + len(sessions) + (12 if priority else 0) + (8 if any(w in blob for w in EVENT_WORDS) else 0)
     when = summarize_sessions(sessions)
     return {
         "type": "event",
@@ -333,6 +328,65 @@ def build_event(name: str, source_name: str, venue: str, domains: list[str], url
     }
 
 
+def build_event(name: str, source_name: str, venue: str, domains: list[str], url: str, page: str, location: str) -> dict | None:
+    url = normalize_url(url)
+    if not url or not same_domain(url, domains) or bad_url(url):
+        return None
+    title = extract_title(page)
+    summary = extract_summary(page)
+    sessions = extract_sessions(page, title, summary, url)
+    if is_listing(url):
+        return None
+    return make_event(name, source_name, venue, title, summary, sessions, url, location, 62)
+
+
+def title_from_card(anchor_text: str, context: str) -> str:
+    candidates = [anchor_text]
+    for pat in (r"<h[1-4][^>]*>([\s\S]*?)</h[1-4]>", r"<(?:strong|b)[^>]*>([\s\S]*?)</(?:strong|b)>"):
+        for m in re.finditer(pat, context, re.I):
+            candidates.append(m.group(1))
+    for candidate in candidates:
+        title = clean(candidate)
+        if not title or len(title) < 4:
+            continue
+        if ACTION_TEXT_RE.search(title) and len(title.split()) <= 4:
+            continue
+        if canonical(title) in GENERIC_TITLES:
+            continue
+        if DATE_RE.fullmatch(title):
+            continue
+        return title
+    return ""
+
+
+def extract_listing_events(name: str, source_name: str, venue: str, domains: list[str], page_url: str, page: str, location: str) -> list[dict]:
+    events = []
+    seen = set()
+    for m in re.finditer(r'<a\b[^>]*href=["\']([^"\']+)["\'][^>]*>([\s\S]*?)</a>', page, re.I):
+        url = normalize_url(m.group(1), page_url)
+        if not url or not same_domain(url, domains) or bad_url(url):
+            continue
+        context = page[max(0, m.start() - 1200): min(len(page), m.end() + 1800)]
+        if not DATE_RE.search(context):
+            continue
+        title = title_from_card(m.group(2), context)
+        if not title:
+            continue
+        summary = shorten(clean(context), 260)
+        sessions = extract_sessions(context, title, summary, url)
+        if not sessions:
+            continue
+        item = make_event(name, source_name, venue, title, summary, sessions, url, location, 78)
+        if not item:
+            continue
+        key = event_key(item)
+        if key in seen:
+            continue
+        seen.add(key)
+        events.append(item)
+    return events
+
+
 def extract_links(page: str, base_url: str, domains: list[str]) -> list[str]:
     out = []
     seen = set()
@@ -342,11 +396,11 @@ def extract_links(page: str, base_url: str, domains: list[str]) -> list[str]:
         if not url or url_key(url) in seen or not same_domain(url, domains) or bad_url(url):
             continue
         path = urlparse(url).path.lower()
-        if not any(w in (path + " " + anchor) for w in EVENT_WORDS):
-            continue
-        seen.add(url_key(url))
-        out.append(url)
-    return out[:32]
+        # Listing pages are useful sources. Do not output them as events, but keep crawling them.
+        if is_listing(url) or any(w in (path + " " + anchor) for w in EVENT_WORDS) or DATE_RE.search(anchor):
+            seen.add(url_key(url))
+            out.append(url)
+    return out[:40]
 
 
 def crawl_source(src: tuple, location: str, deadline: float) -> tuple[list[dict], dict]:
@@ -370,6 +424,9 @@ def crawl_source(src: tuple, location: str, deadline: float) -> tuple[list[dict]
         except Exception:
             continue
         fetched.append({"url": url, "title": shorten(extract_title(page, url), 90)})
+        listing_items = extract_listing_events(name, source_name, venue, domains, url, page, location)
+        if listing_items:
+            events.extend(listing_items)
         item = build_event(name, source_name, venue, domains, url, page, location)
         if item:
             events.append(item)
@@ -427,9 +484,9 @@ def main() -> None:
     location = " ".join(sys.argv[1:]).strip() or DEFAULT_LOCATION
     events, sources, debug = collect(location)
     payload = {
-        "version": 10,
+        "version": 11,
         "ok": True,
-        "extractor": "official-local-event-clean-v10",
+        "extractor": "official-local-event-listing-card-v11",
         "updated_at": now_iso(),
         "location": location,
         "count": len(events),
@@ -437,7 +494,7 @@ def main() -> None:
         "items": events,
         "sources": sources,
         "debug_by_source": debug,
-        "settings": {"sanitize_template_placeholders": True, "reject_generic_listing_pages": True},
+        "settings": {"sanitize_template_placeholders": True, "listing_pages_are_sources": True},
     }
     OUT.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"local events updated count={len(events)} sources={len(sources)} location={location}")
