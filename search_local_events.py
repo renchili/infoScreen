@@ -19,8 +19,8 @@ UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/126 Safari/537.3
 DEFAULT_LOCATION = "Punggol Singapore"
 TODAY = date.today()
 MAX_SECONDS = float(os.environ.get("LOCAL_EVENTS_MAX_SECONDS", "85"))
-MAX_PAGES_PER_SOURCE = int(os.environ.get("LOCAL_EVENTS_MAX_PAGES_PER_SOURCE", "18"))
-MAX_EVENTS_PER_SOURCE = int(os.environ.get("LOCAL_EVENTS_MAX_EVENTS_PER_SOURCE", "5"))
+MAX_PAGES_PER_SOURCE = int(os.environ.get("LOCAL_EVENTS_MAX_PAGES_PER_SOURCE", "20"))
+MAX_EVENTS_PER_SOURCE = int(os.environ.get("LOCAL_EVENTS_MAX_EVENTS_PER_SOURCE", "6"))
 MAX_TOTAL_EVENTS = int(os.environ.get("LOCAL_EVENTS_MAX_TOTAL_EVENTS", "60"))
 PAST_GRACE_DAYS = int(os.environ.get("LOCAL_EVENTS_PAST_GRACE_DAYS", "1"))
 
@@ -28,26 +28,72 @@ TEMPLATE_RE = re.compile(r"#\{[^}]+\}|\{\{[^}]+\}\}|\$\{[^}]+\}")
 SCRIPT_STYLE_RE = re.compile(r"<script[\s\S]*?</script>|<style[\s\S]*?</style>", re.I)
 TAG_RE = re.compile(r"<[^>]+>")
 BROKEN_ATTR_RE = re.compile(r"\b(?:hPriority|decoding|loading|alt|src|srcset|width|height|class|style|href|aria-[\w-]+|data-[\w-]+)=[\"'][^\"']*[\"']\s*/?", re.I)
-DATE_RE = re.compile(r"\b20\d{2}-\d{1,2}-\d{1,2}\b|\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b|\b\d{1,2}\s+(?:jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)[a-z]*\s*(?:-|to|–|—|until|till)?\s*\d{0,2}\s*(?:jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)?[a-z]*\s*\d{0,4}\b|\b\d{1,2}\s*(?:-|to|–|—|until|till)\s*\d{1,2}\s+(?:jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)[a-z]*\s*\d{0,4}\b|\b(?:jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)[a-z]*\s+\d{1,2},?\s*\d{0,4}\b", re.I)
-MONTHS = {"jan": 1, "january": 1, "feb": 2, "february": 2, "mar": 3, "march": 3, "apr": 4, "april": 4, "may": 5, "jun": 6, "june": 6, "jul": 7, "july": 7, "aug": 8, "august": 8, "sep": 9, "sept": 9, "september": 9, "oct": 10, "october": 10, "nov": 11, "november": 11, "dec": 12, "december": 12}
-EVENT_TERMS = ("event", "programme", "program", "workshop", "activity", "course", "class", "club", "session", "talk", "tour", "story", "storytelling", "storytime", "family", "children", "kids", "festival", "performance", "concert", "carnival", "reading", "exhibition", "show", "camp", "walk", "trail", "experience", "drop-in", "holiday", "screening", "guided", "open house")
+DATE_RE = re.compile(
+    r"\b20\d{2}-\d{1,2}-\d{1,2}\b|"
+    r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b|"
+    r"\b\d{1,2}\s+(?:jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)[a-z]*\s*(?:-|to|–|—|until|till)?\s*\d{0,2}\s*(?:jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)?[a-z]*\s*\d{0,4}\b|"
+    r"\b\d{1,2}\s*(?:-|to|–|—|until|till)\s*\d{1,2}\s+(?:jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)[a-z]*\s*\d{0,4}\b|"
+    r"\b(?:jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)[a-z]*\s+\d{1,2},?\s*\d{0,4}\b",
+    re.I,
+)
+MONTHS = {
+    "jan": 1, "january": 1, "feb": 2, "february": 2, "mar": 3, "march": 3,
+    "apr": 4, "april": 4, "may": 5, "jun": 6, "june": 6,
+    "jul": 7, "july": 7, "aug": 8, "august": 8,
+    "sep": 9, "sept": 9, "september": 9, "oct": 10, "october": 10,
+    "nov": 11, "november": 11, "dec": 12, "december": 12,
+}
+EVENT_TERMS = (
+    "event", "programme", "program", "workshop", "activity", "course", "class",
+    "club", "session", "talk", "tour", "story", "storytelling", "storytime",
+    "family", "children", "kids", "festival", "performance", "concert", "carnival",
+    "reading", "exhibition", "show", "camp", "walk", "trail", "experience",
+    "drop-in", "holiday", "screening", "guided", "open house",
+)
 EVENT_TERM_RE = re.compile(r"\b(" + "|".join(re.escape(x) for x in EVENT_TERMS) + r")\b", re.I)
 ACTION_TITLE_RE = re.compile(r"^(register|registration|book|booking|ticket|tickets|details|learn more|find out more|read more|view more|view all|open|share)$", re.I)
 BAD_TITLE_PREFIX_RE = re.compile(r"^(about|visit|address|opening hours|operating hours|get(?:ting)? here|directions|contact|facilities|amenities|parking)\b", re.I)
-GENERIC_TITLES = {"events", "event", "what s on", "whats on", "activities", "activities and events", "things to do", "programmes", "programs", "home", "homepage", "visit us", "contact us", "about us", "all events", "view all", "address", "opening hours", "operating hours", "location", "directions", "getting here", "facilities"}
-INFO_WORDS = ("address", "opening hours", "operating hours", "closed for disinfection", "last entry", "directions", "getting here", "visit us", "facilities", "amenities", "parking", "contact us", "admission")
-BAD_PATH_PARTS = ("/privacy", "/terms", "/contact", "/about", "/career", "/login", "/directions", "/parking", "/getting-here", "/visit-us", "/address", "/opening-hours")
-BAD_EXT = (".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".ico", ".pdf", ".zip", ".mp4", ".mp3", ".css", ".js", ".woff", ".woff2")
-CONTAINER_EXACT = {"/events", "/event", "/happenings", "/whats-on", "/whatson", "/activities", "/things-to-do", "/programmes", "/programs", "/courses", "/course"}
+GENERIC_TITLES = {
+    "events", "event", "what s on", "whats on", "activities", "activities and events",
+    "things to do", "programmes", "programs", "home", "homepage", "visit us",
+    "contact us", "about us", "all events", "view all", "address", "opening hours",
+    "operating hours", "location", "directions", "getting here", "facilities",
+}
+INFO_WORDS = (
+    "address", "opening hours", "operating hours", "closed for disinfection", "last entry",
+    "directions", "getting here", "visit us", "facilities", "amenities", "parking",
+    "contact us", "admission",
+)
+BAD_PATH_PARTS = (
+    "/privacy", "/terms", "/contact", "/about", "/career", "/login", "/directions",
+    "/parking", "/getting-here", "/visit-us", "/address", "/opening-hours",
+)
+BAD_EXT = (
+    ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".ico", ".pdf",
+    ".zip", ".mp4", ".mp3", ".css", ".js", ".woff", ".woff2",
+)
+CONTAINER_EXACT = {
+    "/events", "/event", "/happenings", "/whats-on", "/whatson", "/activities",
+    "/things-to-do", "/programmes", "/programs", "/courses", "/course",
+}
 CONTAINER_FILES = {"whats-on.html", "events.html", "happenings.html", "activities.html"}
 LOCAL_PRIORITY_TERMS = ("punggol", "waterway", "one punggol", "punggol regional library", "safra punggol")
-VENUES = ["Children's Museum Singapore", "National Gallery Singapore", "National Museum Singapore", "Asian Civilisations Museum", "Peranakan Museum", "ArtScience Museum", "Science Centre Singapore", "KidsSTOP", "Punggol Regional Library", "One Punggol", "Waterway Point", "SAFRA Punggol", "SAFRA Choa Chu Kang", "SAFRA Toa Payoh", "SAFRA Tampines", "SAFRA Mount Faber", "SAFRA Yishun", "SAFRA Jurong", "Choa Chu Kang Public Library", "Tampines Regional Library", "Jurong Regional Library", "Woodlands Regional Library", "Sengkang Public Library"]
+VENUES = [
+    "Children's Museum Singapore", "National Gallery Singapore", "National Museum Singapore",
+    "Asian Civilisations Museum", "Peranakan Museum", "ArtScience Museum",
+    "Science Centre Singapore", "KidsSTOP", "Punggol Regional Library", "One Punggol",
+    "Waterway Point", "SAFRA Punggol", "SAFRA Choa Chu Kang", "SAFRA Toa Payoh",
+    "SAFRA Tampines", "SAFRA Mount Faber", "SAFRA Yishun", "SAFRA Jurong",
+    "Choa Chu Kang Public Library", "Tampines Regional Library", "Jurong Regional Library",
+    "Woodlands Regional Library", "Sengkang Public Library",
+]
+VENUE_ONLY_KEYS = {re.sub(r"[^a-z0-9]+", " ", v.lower()).strip() for v in VENUES}
 
 SOURCES = [
     {"name": "Children's Museum Singapore", "source": "Children's Museum Singapore", "default_venue": "Children's Museum Singapore", "domains": ["heritage.sg"], "seeds": ["https://www.heritage.sg/childrensmuseum/whatson"], "event_prefixes": ["/childrensmuseum/whatson/"], "container_paths": ["/childrensmuseum/whatson"]},
     {"name": "National Gallery Singapore", "source": "National Gallery Singapore", "default_venue": "National Gallery Singapore", "domains": ["nationalgallery.sg"], "seeds": ["https://www.nationalgallery.sg/sg/en/whats-on.html"], "event_prefixes": ["/sg/en/whats-on/"], "container_paths": ["/sg/en/whats-on.html", "/whats-on"]},
     {"name": "National Museum Singapore", "source": "National Museum Singapore", "default_venue": "National Museum Singapore", "domains": ["nhb.gov.sg"], "seeds": ["https://www.nhb.gov.sg/nationalmuseum/whats-on"], "event_prefixes": ["/nationalmuseum/whats-on/"], "container_paths": ["/nationalmuseum/whats-on"]},
-    {"name": "Asian Civilisations Museum", "source": "Asian Civilisations Museum", "default_venue": "Asian Civilisations Museum", "domains": ["nhb.gov.sg"], "seeds": ["https://www.nhb.gov.sg/acm/whats-on"], "event_prefixes": ["/acm/whats-on/"], "container_paths": ["/acm/whats-on"]},
+    {"name": "Asian Civilisations Museum", "source": "Asian Civilisations Museum", "default_venue": "Asian Civilisations Museum", "domains": ["nhb.gov.sg"], "seeds": ["https://www.nhb.gov.sg/acm/whats-on"], "event_prefixes": ["/acm/whats-on/", "/acm/whatson/"], "container_paths": ["/acm/whats-on", "/acm/whatson"]},
     {"name": "Peranakan Museum", "source": "Peranakan Museum", "default_venue": "Peranakan Museum", "domains": ["nhb.gov.sg"], "seeds": ["https://www.nhb.gov.sg/peranakanmuseum/whats-on"], "event_prefixes": ["/peranakanmuseum/whats-on/"], "container_paths": ["/peranakanmuseum/whats-on"]},
     {"name": "ArtScience Museum", "source": "ArtScience Museum", "default_venue": "ArtScience Museum", "domains": ["marinabaysands.com"], "seeds": ["https://www.marinabaysands.com/museum/events.html", "https://www.marinabaysands.com/museum/exhibitions.html"], "event_prefixes": ["/museum/events/", "/museum/exhibitions/"], "container_paths": ["/museum/events.html", "/museum/exhibitions.html"]},
     {"name": "Science Centre Singapore", "source": "Science Centre Singapore", "default_venue": "Science Centre Singapore", "domains": ["science.edu.sg"], "seeds": ["https://www.science.edu.sg/whats-on"], "event_prefixes": ["/whats-on/"], "container_paths": ["/whats-on"]},
@@ -65,6 +111,7 @@ def now_iso():
 
 def clean(value):
     text = html.unescape(str(value or ""))
+    text = text.replace("\\/", "/")
     text = SCRIPT_STYLE_RE.sub(" ", text)
     text = TAG_RE.sub(" ", text)
     text = BROKEN_ATTR_RE.sub(" ", text)
@@ -84,7 +131,8 @@ def shorten(value, limit):
 
 
 def normalize_url(url, base=""):
-    raw = html.unescape(str(url or "")).strip()
+    raw = html.unescape(str(url or "")).strip().replace("\\/", "/")
+    raw = raw.replace("\\u002F", "/").replace("\\u002f", "/")
     if base:
         raw = urljoin(base, raw)
     if raw.startswith("//"):
@@ -93,12 +141,12 @@ def normalize_url(url, base=""):
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         return ""
     query = [(k, v) for k, v in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True) if not k.lower().startswith("utm_") and k.lower() not in {"fbclid", "gclid"}]
-    return urllib.parse.urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", urllib.parse.urlencode(query), ""))
+    return urllib.parse.urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", urllib.parse.urlencode(query), parsed.fragment))
 
 
 def url_key(url):
     parsed = urlparse(url)
-    return urllib.parse.urlunparse((parsed.scheme, parsed.netloc.lower(), parsed.path.rstrip("/"), "", parsed.query, "")).lower()
+    return urllib.parse.urlunparse((parsed.scheme, parsed.netloc.lower(), parsed.path.rstrip("/"), "", parsed.query, parsed.fragment)).lower()
 
 
 def host(url):
@@ -116,7 +164,10 @@ def path_norm(url):
 
 
 def source_container(source, url):
-    path = path_norm(url)
+    parsed = urlparse(url)
+    path = parsed.path.lower().rstrip("/") or "/"
+    if parsed.query or parsed.fragment:
+        return False
     filename = path.rsplit("/", 1)[-1]
     if path in CONTAINER_EXACT or filename in CONTAINER_FILES:
         return True
@@ -128,6 +179,8 @@ def source_detail_signal(source, url):
         return False
     path = path_norm(url) + "/"
     if any(path.startswith(prefix.lower()) for prefix in source.get("event_prefixes", [])):
+        return True
+    if urlparse(url).query and any(path_norm(url) == p.lower().rstrip("/") for p in source.get("container_paths", [])):
         return True
     return any(root in path for root in ("/events/", "/event/", "/happenings/", "/whats-on/", "/whatson/", "/activities/", "/activity/", "/programmes/", "/programs/", "/courses/", "/course/"))
 
@@ -145,7 +198,15 @@ def info_text(value):
 def title_is_bad(title):
     title = clean(title)
     key = canonical(title)
-    return not title or key in GENERIC_TITLES or BAD_TITLE_PREFIX_RE.search(title) is not None or ACTION_TITLE_RE.match(title.strip()) is not None or info_text(title) or TEMPLATE_RE.search(title) is not None
+    return (
+        not title
+        or key in GENERIC_TITLES
+        or key in VENUE_ONLY_KEYS
+        or BAD_TITLE_PREFIX_RE.search(title) is not None
+        or ACTION_TITLE_RE.match(title.strip()) is not None
+        or info_text(title)
+        or TEMPLATE_RE.search(title) is not None
+    )
 
 
 def has_event_term(text):
@@ -426,25 +487,50 @@ def link_candidate_score(source, base_url, url, anchor, context):
     return score
 
 
+def json_link_candidates(page):
+    candidates = []
+    for pattern in (
+        r'["\'](?:href|url|link|path|slug)["\']\s*:\s*["\']([^"\']+)["\']',
+        r'(?:href|url|link|path|slug)=\\?["\']([^"\']+)\\?["\']',
+    ):
+        for match in re.finditer(pattern, page, re.I):
+            raw = match.group(1).replace("\\/", "/").replace("\\u002F", "/").replace("\\u002f", "/")
+            if raw.startswith("http") or raw.startswith("/"):
+                candidates.append(raw)
+    for match in re.finditer(r'/(?:acm|nationalmuseum|peranakanmuseum|childrensmuseum|main|museum)/(?:what(?:s-on|son)|events|happenings|activities|programmes|courses)/[^"\'<>\\\s]+', page, re.I):
+        candidates.append(match.group(0).replace("\\/", "/"))
+    return candidates
+
+
 def discover_links(source, page, base_url):
     found = {}
-    for match in re.finditer(r'<a\b[^>]*href=["\']([^"\']+)["\'][^>]*>([\s\S]*?)</a>', page, re.I):
-        url = normalize_url(match.group(1), base_url)
+
+    def add(url, anchor, context, bonus=0):
+        url = normalize_url(url, base_url)
         if not url:
-            continue
-        context = page[max(0, match.start() - 700): min(len(page), match.end() + 1000)]
-        score = link_candidate_score(source, base_url, url, match.group(2), context)
+            return
+        score = link_candidate_score(source, base_url, url, anchor, context) + bonus
         if score < 20:
-            continue
+            return
         key = url_key(url)
         if score > found.get(key, (-999, ""))[0]:
             found[key] = (score, url)
-    return sorted(found.values(), key=lambda item: -item[0])[:60]
+
+    for match in re.finditer(r'<a\b[^>]*href=["\']([^"\']+)["\'][^>]*>([\s\S]*?)</a>', page, re.I):
+        context = page[max(0, match.start() - 700): min(len(page), match.end() + 1000)]
+        add(match.group(1), match.group(2), context)
+
+    for raw in json_link_candidates(page):
+        # JSON links do not carry anchor text, so rely on URL shape and nearby page text.
+        add(raw, raw, page[:2500], bonus=8)
+
+    return sorted(found.values(), key=lambda item: -item[0])[:80]
 
 
 def crawl_source(source, location, deadline):
     queue, events, fetched_preview, rejected_preview = [], [], [], []
     queued, fetched = set(), set()
+
     def push(url, score):
         url = normalize_url(url)
         key = url_key(url)
@@ -452,8 +538,10 @@ def crawl_source(source, location, deadline):
             return
         queued.add(key)
         queue.append((score, url))
+
     for seed in source.get("seeds", []):
         push(seed, 90)
+
     while queue and len(fetched) < MAX_PAGES_PER_SOURCE and len(events) < MAX_EVENTS_PER_SOURCE and time.monotonic() < deadline:
         queue.sort(key=lambda item: -item[0])
         _score, url = queue.pop(0)
@@ -470,6 +558,7 @@ def crawl_source(source, location, deadline):
         events.extend(analyze_detail_page(source, url, page, location))
         for link_score, link in discover_links(source, page, url):
             push(link, link_score)
+
     return {"events": events, "debug": {"source": source["name"], "pages_fetched": len(fetched), "queue_seen": len(queued), "accepted": len(events), "fetched_preview": fetched_preview[:10], "accepted_preview": [{"title": item.get("title"), "when": item.get("when"), "where": item.get("where"), "url": item.get("url")} for item in events[:8]], "rejected_preview": rejected_preview[:8]}}
 
 
@@ -516,7 +605,7 @@ def collect(location):
 def main():
     location = " ".join(sys.argv[1:]).strip() or DEFAULT_LOCATION
     events, sources, debug = collect(location)
-    payload = {"version": 15, "ok": True, "extractor": "institution-detail-crawler-v15", "updated_at": now_iso(), "location": location, "count": len(events), "results": events, "items": events, "sources": sources, "debug_by_source": debug, "settings": {"local_terms_are_priority_not_filter": True, "source_is_institution_not_fixed_venue": True, "emit_detail_pages_only": True, "word_boundary_event_terms": True}}
+    payload = {"version": 16, "ok": True, "extractor": "institution-detail-crawler-v16", "updated_at": now_iso(), "location": location, "count": len(events), "results": events, "items": events, "sources": sources, "debug_by_source": debug, "settings": {"local_terms_are_priority_not_filter": True, "source_is_institution_not_fixed_venue": True, "emit_detail_pages_only": True, "discover_json_links": True, "reject_venue_only_titles": True}}
     OUT.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"local events updated count={len(events)} sources={len(sources)} location={location}")
 
