@@ -1,4 +1,17 @@
 #!/usr/bin/env python3
+"""
+Strict local-event discovery for InfoScreen.
+
+Design:
+- Start from a small, explicit official-source registry.
+- Discover candidate URLs with DuckDuckGo site: queries instead of inventing paths.
+- Crawl only URLs that stay on the source's official domains.
+- Reject generic home/category pages unless they have concrete event evidence.
+- Keep rich debug data in local_event_search_results.json so bad sources can be fixed.
+
+No runtime output is committed; local_event_search_results.json stays ignored.
+"""
+
 import html
 import json
 import os
@@ -9,18 +22,25 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urlparse, urljoin
+from urllib.parse import urljoin, urlparse
+
 
 BASE = Path(__file__).resolve().parent
 OUT = BASE / "local_event_search_results.json"
 
-UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/126 Safari/537.36"
+UA = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "Chrome/126 Safari/537.36"
+)
 DEFAULT_LOCATION = "Punggol Singapore"
 YEAR = str(datetime.now().year)
 
 MAX_SECONDS = float(os.environ.get("LOCAL_EVENTS_MAX_SECONDS", "78"))
 MAX_PAGES_PER_SOURCE = int(os.environ.get("LOCAL_EVENTS_MAX_PAGES_PER_SOURCE", "8"))
 MAX_EVENTS_PER_SOURCE = int(os.environ.get("LOCAL_EVENTS_MAX_EVENTS_PER_SOURCE", "8"))
+MAX_DDG_RESULTS_PER_SOURCE = int(os.environ.get("LOCAL_EVENTS_MAX_DDG_RESULTS_PER_SOURCE", "8"))
+ENABLE_DDG_DISCOVERY = os.environ.get("LOCAL_EVENTS_ENABLE_DDG", "1") != "0"
+ALLOW_COMMON_PATH_GUESSES = os.environ.get("LOCAL_EVENTS_ALLOW_COMMON_PATHS", "0") == "1"
 
 SOURCE_REGISTRY = [
     {
@@ -28,81 +48,86 @@ SOURCE_REGISTRY = [
         "source": "Children's Museum Singapore",
         "domains": ["heritage.sg"],
         "venue": "Children's Museum Singapore",
-        "seeds": [
-            "https://www.heritage.sg/childrensmuseum/",
-            "https://www.heritage.sg/childrensmuseum/whatson",
-            "https://www.heritage.sg/childrensmuseum/whatson/childrens-season---listing-page",
+        "seeds": ["https://www.heritage.sg/childrensmuseum/"],
+        "aliases": [
+            "Children's Museum Singapore",
+            "Children's Season Singapore",
+            "Children's Season",
         ],
-        "aliases": ["Children's Museum Singapore", "Children's Season Singapore", "Children's Season"],
     },
     {
         "name": "National Gallery Singapore",
         "source": "National Gallery Singapore",
         "domains": ["nationalgallery.sg"],
         "venue": "National Gallery Singapore",
-        "seeds": [
-            "https://www.nationalgallery.sg/",
-            "https://www.nationalgallery.sg/whats-on",
-            "https://www.nationalgallery.sg/sg/en/whats-on.html",
+        "seeds": ["https://www.nationalgallery.sg/"],
+        "aliases": [
+            "National Gallery Singapore",
+            "National Gallery family",
+            "National Gallery children",
         ],
-        "aliases": ["National Gallery Singapore", "National Gallery family", "National Gallery children"],
     },
     {
         "name": "National Museum Singapore",
         "source": "National Museum Singapore",
         "domains": ["nhb.gov.sg"],
         "venue": "National Museum Singapore",
-        "seeds": [
-            "https://www.nhb.gov.sg/nationalmuseum/",
-            "https://www.nhb.gov.sg/nationalmuseum/whats-on",
+        "seeds": ["https://www.nhb.gov.sg/nationalmuseum/"],
+        "aliases": [
+            "National Museum Singapore",
+            "National Museum of Singapore",
+            "National Museum family",
+            "National Museum children",
         ],
-        "aliases": ["National Museum Singapore", "National Museum family", "National Museum children"],
     },
     {
         "name": "Asian Civilisations Museum",
         "source": "Asian Civilisations Museum",
         "domains": ["nhb.gov.sg"],
         "venue": "Asian Civilisations Museum",
-        "seeds": [
-            "https://www.nhb.gov.sg/acm/",
-            "https://www.nhb.gov.sg/acm/whats-on",
+        "seeds": ["https://www.nhb.gov.sg/acm/"],
+        "aliases": [
+            "Asian Civilisations Museum",
+            "ACM Singapore",
+            "ACM family",
+            "ACM children",
         ],
-        "aliases": ["Asian Civilisations Museum", "ACM family", "ACM children"],
     },
     {
         "name": "Peranakan Museum",
         "source": "Peranakan Museum",
         "domains": ["nhb.gov.sg"],
         "venue": "Peranakan Museum",
-        "seeds": [
-            "https://www.nhb.gov.sg/peranakanmuseum/",
-            "https://www.nhb.gov.sg/peranakanmuseum/whats-on",
+        "seeds": ["https://www.nhb.gov.sg/peranakanmuseum/"],
+        "aliases": [
+            "Peranakan Museum",
+            "Peranakan Museum family",
+            "Peranakan Museum children",
         ],
-        "aliases": ["Peranakan Museum", "Peranakan Museum family", "Peranakan Museum children"],
     },
     {
         "name": "ArtScience Museum",
         "source": "ArtScience Museum",
         "domains": ["marinabaysands.com"],
         "venue": "ArtScience Museum",
-        "seeds": [
-            "https://www.marinabaysands.com/museum.html",
-            "https://www.marinabaysands.com/museum/events.html",
-            "https://www.marinabaysands.com/museum/exhibitions.html",
+        "seeds": ["https://www.marinabaysands.com/museum.html"],
+        "aliases": [
+            "ArtScience Museum",
+            "ArtScience family",
+            "ArtScience children",
         ],
-        "aliases": ["ArtScience Museum", "ArtScience family", "ArtScience children"],
     },
     {
         "name": "Science Centre Singapore",
         "source": "Science Centre Singapore",
         "domains": ["science.edu.sg"],
         "venue": "Science Centre Singapore",
-        "seeds": [
-            "https://www.science.edu.sg/",
-            "https://www.science.edu.sg/whats-on",
-            "https://www.science.edu.sg/for-schools/programmes",
+        "seeds": ["https://www.science.edu.sg/"],
+        "aliases": [
+            "Science Centre Singapore",
+            "KidsSTOP",
+            "Science Centre kids",
         ],
-        "aliases": ["Science Centre Singapore", "KidsSTOP", "Science Centre kids"],
     },
     {
         "name": "NLB Punggol Regional Library",
@@ -110,69 +135,68 @@ SOURCE_REGISTRY = [
         "domains": ["nlb.gov.sg"],
         "venue": "Punggol Regional Library",
         "seeds": [
-            "https://www.nlb.gov.sg/main/visit-us/our-libraries-and-locations/punggol-regional-library",
-            "https://www.nlb.gov.sg/main/whats-on",
+            "https://www.nlb.gov.sg/main/visit-us/our-libraries-and-locations/punggol-regional-library"
         ],
-        "aliases": ["Punggol Regional Library", "NLB Punggol", "library@punggol"],
+        "aliases": [
+            "Punggol Regional Library",
+            "NLB Punggol",
+            "library@punggol",
+            "National Library Board Punggol events",
+        ],
+        "local": True,
     },
     {
         "name": "One Punggol",
         "source": "One Punggol",
         "domains": ["onepunggol.sg"],
         "venue": "One Punggol",
-        "seeds": [
-            "https://www.onepunggol.sg/",
-            "https://www.onepunggol.sg/events",
-            "https://www.onepunggol.sg/happenings",
-        ],
+        "seeds": ["https://www.onepunggol.sg/"],
         "aliases": ["One Punggol"],
+        "local": True,
     },
     {
         "name": "onePA / People's Association",
         "source": "onePA",
         "domains": ["onepa.gov.sg"],
         "venue": "People's Association CCs",
-        "seeds": [
-            "https://www.onepa.gov.sg/",
-            "https://www.onepa.gov.sg/courses",
-            "https://www.onepa.gov.sg/events",
+        "seeds": ["https://www.onepa.gov.sg/"],
+        "aliases": [
+            "Punggol onePA",
+            "Punggol CC",
+            "Punggol 21 CC",
+            "Punggol West CC",
+            "People's Association",
         ],
-        "aliases": ["Punggol onePA", "Punggol CC", "Punggol 21 CC", "Punggol West CC", "People's Association"],
+        "local": True,
     },
     {
         "name": "SAFRA Punggol",
         "source": "SAFRA Punggol",
         "domains": ["safra.sg"],
         "venue": "SAFRA Punggol",
-        "seeds": [
-            "https://www.safra.sg/",
-            "https://www.safra.sg/whats-on",
-            "https://www.safra.sg/amenities-offerings/safra-punggol",
+        "seeds": ["https://www.safra.sg/amenities-offerings/safra-punggol"],
+        "aliases": [
+            "SAFRA Punggol",
+            "SAFRA family",
+            "SAFRA children",
         ],
-        "aliases": ["SAFRA Punggol", "SAFRA family", "SAFRA children"],
+        "local": True,
     },
     {
         "name": "Waterway Point",
         "source": "Waterway Point",
         "domains": ["waterwaypoint.com.sg"],
         "venue": "Waterway Point",
-        "seeds": [
-            "https://www.waterwaypoint.com.sg/",
-            "https://www.waterwaypoint.com.sg/happenings",
-            "https://www.waterwaypoint.com.sg/promotions",
-        ],
+        "seeds": ["https://www.waterwaypoint.com.sg/"],
         "aliases": ["Waterway Point"],
+        "local": True,
     },
     {
         "name": "Singapore Zoo",
         "source": "Mandai Wildlife Reserve",
         "domains": ["mandai.com"],
         "venue": "Singapore Zoo",
-        "seeds": [
-            "https://www.mandai.com/en/singapore-zoo.html",
-            "https://www.mandai.com/en/things-to-do.html",
-            "https://www.mandai.com/en/singapore-zoo/things-to-do.html",
-        ],
+        "seeds": ["https://www.mandai.com/en/singapore-zoo.html"],
         "aliases": ["Singapore Zoo", "Mandai Singapore Zoo"],
     },
     {
@@ -180,44 +204,31 @@ SOURCE_REGISTRY = [
         "source": "Mandai Wildlife Reserve",
         "domains": ["mandai.com"],
         "venue": "River Wonders",
-        "seeds": [
-            "https://www.mandai.com/en/river-wonders.html",
-            "https://www.mandai.com/en/river-wonders/things-to-do.html",
-        ],
-        "aliases": ["River Wonders"],
+        "seeds": ["https://www.mandai.com/en/river-wonders.html"],
+        "aliases": ["River Wonders", "Mandai River Wonders"],
     },
     {
         "name": "Bird Paradise",
         "source": "Mandai Wildlife Reserve",
         "domains": ["mandai.com"],
         "venue": "Bird Paradise",
-        "seeds": [
-            "https://www.mandai.com/en/bird-paradise.html",
-            "https://www.mandai.com/en/bird-paradise/things-to-do.html",
-        ],
-        "aliases": ["Bird Paradise"],
+        "seeds": ["https://www.mandai.com/en/bird-paradise.html"],
+        "aliases": ["Bird Paradise", "Mandai Bird Paradise"],
     },
     {
         "name": "Night Safari",
         "source": "Mandai Wildlife Reserve",
         "domains": ["mandai.com"],
         "venue": "Night Safari",
-        "seeds": [
-            "https://www.mandai.com/en/night-safari.html",
-            "https://www.mandai.com/en/night-safari/things-to-do.html",
-        ],
-        "aliases": ["Night Safari"],
+        "seeds": ["https://www.mandai.com/en/night-safari.html"],
+        "aliases": ["Night Safari", "Mandai Night Safari"],
     },
     {
         "name": "Sentosa",
         "source": "Sentosa",
         "domains": ["sentosa.com.sg"],
         "venue": "Sentosa",
-        "seeds": [
-            "https://www.sentosa.com.sg/",
-            "https://www.sentosa.com.sg/en/things-to-do/events/",
-            "https://www.sentosa.com.sg/en/things-to-do/",
-        ],
+        "seeds": ["https://www.sentosa.com.sg/"],
         "aliases": ["Sentosa", "Sentosa family", "Sentosa kids"],
     },
     {
@@ -225,16 +236,17 @@ SOURCE_REGISTRY = [
         "source": "Resorts World Sentosa",
         "domains": ["rwsentosa.com"],
         "venue": "Resorts World Sentosa",
-        "seeds": [
-            "https://www.rwsentosa.com/",
-            "https://www.rwsentosa.com/en/events",
-            "https://www.rwsentosa.com/en/attractions",
+        "seeds": ["https://www.rwsentosa.com/"],
+        "aliases": [
+            "Resorts World Sentosa",
+            "RWS",
+            "Universal Studios Singapore",
+            "SEA Aquarium",
         ],
-        "aliases": ["Resorts World Sentosa", "RWS", "Universal Studios Singapore", "SEA Aquarium"],
     },
 ]
 
-COMMON_SEED_PATHS = [
+COMMON_SEED_PATHS = (
     "/events",
     "/event",
     "/whats-on",
@@ -247,47 +259,145 @@ COMMON_SEED_PATHS = [
     "/activities",
     "/family",
     "/kids",
-]
+)
 
 EVENT_WORDS = (
-    "event", "events", "programme", "program", "programmes", "programs",
-    "workshop", "workshops", "activity", "activities", "course", "class",
-    "club", "session", "talk", "tour", "story", "storytelling", "storytime",
-    "family", "children", "kids", "festival", "performance", "carnival",
-    "conversation", "training", "reading", "exhibition", "show", "camp",
-    "meet", "meeting", "walk", "trail", "experience", "experiences",
+    "event",
+    "events",
+    "programme",
+    "program",
+    "programmes",
+    "programs",
+    "workshop",
+    "workshops",
+    "activity",
+    "activities",
+    "course",
+    "class",
+    "club",
+    "session",
+    "talk",
+    "tour",
+    "story",
+    "storytelling",
+    "storytime",
+    "family",
+    "children",
+    "kids",
+    "festival",
+    "performance",
+    "carnival",
+    "conversation",
+    "training",
+    "reading",
+    "exhibition",
+    "show",
+    "camp",
+    "meet",
+    "meeting",
+    "walk",
+    "trail",
+    "experience",
+    "experiences",
+    "drop-in",
+    "drop in",
+    "screening",
 )
 
 EVENT_PATH_HINTS = (
-    "/event", "/events", "/programme", "/programmes", "/program",
-    "/programs", "/course", "/courses", "/workshop", "/activities",
-    "/activity", "/whats-on", "/whatson", "/happenings", "/happening",
-    "/things-to-do", "/experiences", "/experience", "/family", "/kids",
-    "/children", "/calendar",
+    "/event",
+    "/events",
+    "/programme",
+    "/programmes",
+    "/program",
+    "/programs",
+    "/course",
+    "/courses",
+    "/workshop",
+    "/activities",
+    "/activity",
+    "/whats-on",
+    "/whatson",
+    "/happenings",
+    "/happening",
+    "/things-to-do",
+    "/experiences",
+    "/experience",
+    "/family",
+    "/kids",
+    "/children",
+    "/calendar",
 )
 
 BAD_WORDS = (
-    "privacy policy", "terms of use", "cookie", "facebook", "instagram",
-    "youtube", "linkedin", "pdf", "career", "job", "property", "condo",
-    "rental", "parking", "directions", "opening hours", "contact us",
-    "about us", "venue hire", "press release",
+    "privacy policy",
+    "terms of use",
+    "cookie",
+    "facebook",
+    "instagram",
+    "youtube",
+    "linkedin",
+    "pdf",
+    "career",
+    "job",
+    "property",
+    "condo",
+    "rental",
+    "parking",
+    "directions",
+    "opening hours",
+    "contact us",
+    "about us",
+    "venue hire",
+    "press release",
+    "annual report",
+    "media release",
 )
 
 BAD_EXT = (
-    ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".ico", ".pdf",
-    ".zip", ".mp4", ".mp3", ".css", ".js", ".woff", ".woff2",
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".gif",
+    ".webp",
+    ".svg",
+    ".ico",
+    ".pdf",
+    ".zip",
+    ".mp4",
+    ".mp3",
+    ".css",
+    ".js",
+    ".woff",
+    ".woff2",
 )
 
 GENERIC_TITLES = {
-    "events", "event", "what's on", "whats on", "things to do",
-    "programmes", "programs", "activities", "home", "homepage",
-    "visit us", "contact us", "about us",
+    "events",
+    "event",
+    "what's on",
+    "whats on",
+    "things to do",
+    "programmes",
+    "programs",
+    "activities",
+    "home",
+    "homepage",
+    "visit us",
+    "contact us",
+    "about us",
+    "calendar",
+    "happenings",
 }
 
 DATE_RE = re.compile(
     r"("
-    r"\b\d{1,2}\s*(?:-|to|–|—)\s*\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{4}\b|"
-    r"\b\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s*(?:-|to|–|—)?\s*\d{0,2}\s*(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)?[a-z]*\s+\d{4}\b|"
+    r"\b\d{1,2}\s*(?:-|to|–|—)\s*\d{1,2}\s+"
+    r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{4}\b|"
+    r"\b\d{1,2}\s+"
+    r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*"
+    r"\s*(?:-|to|–|—)?\s*\d{0,2}\s*"
+    r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)?[a-z]*\s+\d{4}\b|"
     r"\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{1,2},?\s+\d{4}\b|"
     r"\b\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\b|"
     r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b|"
@@ -296,8 +406,15 @@ DATE_RE = re.compile(
     re.I,
 )
 
+JSON_LD_EVENT_RE = re.compile(
+    r'"@type"\s*:\s*(?:"Event"|\[[^\]]*"Event"[^\]]*\])',
+    re.I,
+)
+
+
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
+
 
 def textify(value):
     value = html.unescape(value or "")
@@ -306,16 +423,20 @@ def textify(value):
     value = re.sub(r"<[^>]+>", " ", value)
     return re.sub(r"\s+", " ", value).strip()
 
+
 def shorten(value, limit):
     value = textify(value)
-    return value if len(value) <= limit else value[:limit - 1].rstrip() + "…"
+    return value if len(value) <= limit else value[: limit - 1].rstrip() + "…"
+
 
 def host(url):
     return urlparse(url).netloc.lower().replace("www.", "")
 
+
 def same_source_domain(url, source):
     h = host(url)
     return bool(h) and any(h.endswith(d) for d in source["domains"])
+
 
 def normalize_url(url, base=None):
     if not url:
@@ -332,24 +453,32 @@ def normalize_url(url, base=None):
 
     query = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
     query = [
-        (k, v) for k, v in query
-        if not k.lower().startswith("utm_") and k.lower() not in ("fbclid", "gclid")
+        (k, v)
+        for k, v in query
+        if not k.lower().startswith("utm_")
+        and k.lower() not in ("fbclid", "gclid", "cmpid")
     ]
 
-    return urllib.parse.urlunparse((
-        parsed.scheme,
-        parsed.netloc,
-        parsed.path,
-        "",
-        urllib.parse.urlencode(query),
-        "",
-    ))
+    return urllib.parse.urlunparse(
+        (
+            parsed.scheme,
+            parsed.netloc.lower(),
+            parsed.path or "/",
+            "",
+            urllib.parse.urlencode(query),
+            "",
+        )
+    )
+
 
 def url_key(url):
     p = urlparse(url)
-    return urllib.parse.urlunparse((p.scheme, p.netloc, p.path.rstrip("/"), "", p.query, "")).lower()
+    return urllib.parse.urlunparse(
+        (p.scheme, p.netloc, p.path.rstrip("/"), "", p.query, "")
+    ).lower()
 
-def fetch(url, timeout=7):
+
+def fetch(url, timeout=8):
     req = urllib.request.Request(
         url,
         headers={
@@ -366,6 +495,7 @@ def fetch(url, timeout=7):
         enc = m.group(1) if m else "utf-8"
         return raw.decode(enc, "replace")
 
+
 def meta_content(page, names):
     for name in names:
         e = re.escape(name)
@@ -381,15 +511,19 @@ def meta_content(page, names):
                     return v
     return ""
 
+
 def strip_title_suffix(title):
     title = textify(title)
     title = re.sub(
-        r"\s*[\|\-–]\s*(NLB|National Library Board|onePA|One Punggol|SAFRA|Mandai|Sentosa|Resorts World Sentosa|Singapore)\s*$",
+        r"\s*[\|\-–]\s*"
+        r"(NLB|National Library Board|onePA|One Punggol|SAFRA|Mandai|"
+        r"Sentosa|Resorts World Sentosa|Singapore|National Heritage Board)\s*$",
         "",
         title,
         flags=re.I,
     )
     return textify(title)
+
 
 def extract_title(page, fallback):
     vals = [
@@ -412,6 +546,7 @@ def extract_title(page, fallback):
             return t
     return ""
 
+
 def extract_summary(page, fallback):
     vals = [
         meta_content(page, ["og:description", "description", "twitter:description"]),
@@ -432,14 +567,21 @@ def extract_summary(page, fallback):
 
     return "Open the official page for details."
 
+
 def extract_date(*vals):
     blob = " ".join(textify(v) for v in vals if v)
     m = DATE_RE.search(blob)
     return textify(m.group(1)) if m else "Check official page"
 
+
+def has_event_schema(page):
+    return bool(JSON_LD_EVENT_RE.search(page[:500_000]))
+
+
 def has_any(text, words):
     text = textify(text).lower()
     return any(w.lower() in text for w in words)
+
 
 def event_path_score(url):
     p = urlparse(url).path.lower()
@@ -451,13 +593,37 @@ def event_path_score(url):
         score += 4
     return score
 
+
 def bad_url(url):
     p = urlparse(url).path.lower()
     if any(p.endswith(ext) for ext in BAD_EXT):
         return True
-    if any(x in p for x in ("/privacy", "/terms", "/contact", "/about", "/career", "/login", "/register/login")):
+    if any(
+        x in p
+        for x in (
+            "/privacy",
+            "/terms",
+            "/contact",
+            "/about",
+            "/career",
+            "/login",
+            "/register/login",
+            "/cart",
+            "/checkout",
+        )
+    ):
         return True
     return False
+
+
+def alias_score(source, blob):
+    score = 0
+    for alias in source.get("aliases", []):
+        for part in re.split(r"\W+", alias.lower()):
+            if len(part) >= 4 and part in blob:
+                score += 2
+    return score
+
 
 def link_score(source, url, anchor):
     if not url or bad_url(url) or not same_source_domain(url, source):
@@ -470,10 +636,7 @@ def link_score(source, url, anchor):
         if w in blob:
             score += 5
 
-    for alias in source.get("aliases", []):
-        for part in re.split(r"\W+", alias.lower()):
-            if len(part) >= 4 and part in blob:
-                score += 2
+    score += alias_score(source, blob)
 
     if YEAR in blob:
         score += 4
@@ -483,6 +646,7 @@ def link_score(source, url, anchor):
             score -= 40
 
     return score
+
 
 def extract_links(page, base_url, source):
     out = []
@@ -495,6 +659,7 @@ def extract_links(page, base_url, source):
 
     out.sort(key=lambda x: -x[0])
     return out
+
 
 def is_generic_event_title(source, title, date, url):
     t = textify(title).lower()
@@ -514,22 +679,23 @@ def is_generic_event_title(source, title, date, url):
 
     return False
 
-def page_event_score(source, url, title, summary, body, location):
+
+def page_event_score(source, url, title, summary, body, location, schema_event):
     blob = f"{title} {summary} {url} {body[:5000]}".lower()
     score = event_path_score(url)
 
-    for w in EVENT_WORDS:
-        if w in blob:
-            score += 4
+    event_word_hits = [w for w in EVENT_WORDS if w in blob]
+    score += min(len(event_word_hits), 10) * 4
 
     date = extract_date(title, summary, body[:4000])
-    if date != "Check official page":
-        score += 22
+    has_date = date != "Check official page"
+    if has_date:
+        score += 25
 
-    for alias in source.get("aliases", []):
-        for part in re.split(r"\W+", alias.lower()):
-            if len(part) >= 4 and part in blob:
-                score += 2
+    if schema_event:
+        score += 30
+
+    score += alias_score(source, blob)
 
     loc_words = [w for w in re.split(r"\W+", location.lower()) if len(w) >= 4]
     priority = any(w in blob for w in loc_words)
@@ -541,19 +707,34 @@ def page_event_score(source, url, title, summary, body, location):
         if bad in blob:
             score -= 70
 
-    if is_generic_event_title(source, title, date, url):
-        score -= 80
+    generic = is_generic_event_title(source, title, date, url)
+    if generic:
+        score -= 90
 
-    return score, date, priority
+    # Strict guardrail: generic pages without a date or Event schema are not events,
+    # even if they contain many event-ish words.
+    if not has_date and not schema_event:
+        score -= 35
 
-def build_event(source, url, page, location):
+    return score, date, priority, {
+        "has_date": has_date,
+        "schema_event": schema_event,
+        "generic_title": generic,
+        "event_word_hits": event_word_hits[:8],
+    }
+
+
+def build_event(source, url, page, location, seed_origin):
     title = extract_title(page, "")
     summary = extract_summary(page, "")
     body = textify(page)
+    schema_event = has_event_schema(page)
 
-    score, date, priority_location = page_event_score(source, url, title, summary, body, location)
+    score, date, priority_location, evidence = page_event_score(
+        source, url, title, summary, body, location, schema_event
+    )
 
-    if score < 35:
+    if score < 45:
         return None
 
     return {
@@ -575,25 +756,114 @@ def build_event(source, url, page, location):
         "url": url,
         "score": score,
         "priority_location": priority_location,
+        "seed_origin": seed_origin,
+        "evidence": evidence,
     }
 
-def source_seed_urls(source):
-    seeds = list(source.get("seeds", []))
 
-    for seed in source.get("seeds", [])[:2]:
-        p = urlparse(seed)
-        root = f"{p.scheme}://{p.netloc}"
-        for path in COMMON_SEED_PATHS:
-            seeds.append(root + path)
+def ddg_result_url(href):
+    href = html.unescape(href or "")
+    parsed = urlparse(href)
+    if parsed.netloc.endswith("duckduckgo.com"):
+        qs = urllib.parse.parse_qs(parsed.query)
+        if "uddg" in qs:
+            return qs["uddg"][0]
+    return href
+
+
+def ddg_search(query, deadline):
+    if not ENABLE_DDG_DISCOVERY or time.monotonic() >= deadline:
+        return []
+
+    url = "https://duckduckgo.com/html/?" + urllib.parse.urlencode({"q": query})
+    try:
+        page = fetch(url, timeout=8)
+    except Exception:
+        return []
+
+    urls = []
+    seen = set()
+    for m in re.finditer(r'href=["\']([^"\']+)["\']', page, re.I):
+        u = normalize_url(ddg_result_url(m.group(1)))
+        if not u or "duckduckgo.com" in host(u):
+            continue
+        k = url_key(u)
+        if k in seen:
+            continue
+        seen.add(k)
+        urls.append(u)
+    return urls
+
+
+def discovery_queries(source, location):
+    domains = " OR ".join(f"site:{d}" for d in source["domains"])
+    aliases = [source["name"]] + source.get("aliases", [])[:3]
+    terms = [
+        "events",
+        "what's on",
+        "programmes",
+        "kids family events",
+    ]
+    if source.get("local"):
+        terms.insert(0, f"{location} events")
+
+    out = []
+    for alias in aliases[:4]:
+        for term in terms[:3]:
+            out.append(f'"{alias}" {term} {domains}')
+    return out[:8]
+
+
+def discovered_seed_urls(source, location, deadline):
+    out = []
+    seen = set()
+
+    for query in discovery_queries(source, location):
+        if time.monotonic() >= deadline or len(out) >= MAX_DDG_RESULTS_PER_SOURCE:
+            break
+        for url in ddg_search(query, deadline):
+            if len(out) >= MAX_DDG_RESULTS_PER_SOURCE:
+                break
+            if not same_source_domain(url, source) or bad_url(url):
+                continue
+            k = url_key(url)
+            if k in seen:
+                continue
+            seen.add(k)
+            score = 90 + event_path_score(url)
+            out.append((score, url, f"ddg:{query}"))
+    return out
+
+
+def source_seed_urls(source, location, deadline):
+    seeds = []
+
+    for seed in source.get("seeds", []):
+        u = normalize_url(seed)
+        if u and same_source_domain(u, source) and not bad_url(u):
+            seeds.append((70 + event_path_score(u), u, "explicit_seed"))
+
+    if ALLOW_COMMON_PATH_GUESSES:
+        for seed in source.get("seeds", [])[:1]:
+            p = urlparse(seed)
+            root = f"{p.scheme}://{p.netloc}"
+            for path in COMMON_SEED_PATHS:
+                u = normalize_url(root + path)
+                if u and same_source_domain(u, source) and not bad_url(u):
+                    seeds.append((45 + event_path_score(u), u, "optional_common_path"))
+
+    seeds.extend(discovered_seed_urls(source, location, deadline))
 
     out = []
     seen = set()
-    for u in seeds:
-        u = normalize_url(u)
-        if u and u not in seen and same_source_domain(u, source) and not bad_url(u):
-            seen.add(u)
-            out.append(u)
+    for score, u, origin in sorted(seeds, key=lambda x: -x[0]):
+        k = url_key(u)
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append((score, u, origin))
     return out
+
 
 def crawl_source(source, location, deadline):
     queue = []
@@ -601,24 +871,31 @@ def crawl_source(source, location, deadline):
     fetched = set()
     events = []
     rejected = []
+    seed_debug = []
 
-    def push(url, score):
+    def push(url, score, origin):
         if not url or url_key(url) in queued or url_key(url) in fetched:
             return
         if not same_source_domain(url, source) or bad_url(url):
             return
         queued.add(url_key(url))
-        queue.append((score, url))
+        queue.append((score, url, origin))
 
-    for seed in source_seed_urls(source):
-        push(seed, 50 + event_path_score(seed))
+    for score, seed, origin in source_seed_urls(source, location, deadline):
+        seed_debug.append({"url": seed, "origin": origin, "score": score})
+        push(seed, score, origin)
 
     pages = 0
     candidates = 0
 
-    while queue and pages < MAX_PAGES_PER_SOURCE and len(events) < MAX_EVENTS_PER_SOURCE and time.monotonic() < deadline:
+    while (
+        queue
+        and pages < MAX_PAGES_PER_SOURCE
+        and len(events) < MAX_EVENTS_PER_SOURCE
+        and time.monotonic() < deadline
+    ):
         queue.sort(key=lambda x: -x[0])
-        _, url = queue.pop(0)
+        _, url, origin = queue.pop(0)
         key = url_key(url)
         if key in fetched:
             continue
@@ -627,18 +904,34 @@ def crawl_source(source, location, deadline):
         try:
             page = fetch(url)
         except Exception as e:
-            rejected.append({"url": url, "reason": f"fetch_failed: {type(e).__name__}"})
+            rejected.append(
+                {
+                    "url": url,
+                    "origin": origin,
+                    "reason": f"fetch_failed: {type(e).__name__}",
+                }
+            )
             continue
 
         pages += 1
 
-        item = build_event(source, url, page, location)
+        item = build_event(source, url, page, location, origin)
         if item:
             candidates += 1
             events.append(item)
+        else:
+            rejected.append(
+                {
+                    "url": url,
+                    "origin": origin,
+                    "reason": "below_event_threshold",
+                    "title": shorten(extract_title(page, ""), 120),
+                    "date": extract_date(extract_title(page, ""), extract_summary(page, ""), textify(page)[:4000]),
+                }
+            )
 
         for score, link, _anchor in extract_links(page, url, source)[:28]:
-            push(link, score)
+            push(link, score, f"linked_from:{host(url)}")
 
         if len(queue) > 160:
             queue.sort(key=lambda x: -x[0])
@@ -652,7 +945,8 @@ def crawl_source(source, location, deadline):
             "queue_seen": len(queued),
             "accepted": len(events),
             "candidates": candidates,
-            "rejected_preview": rejected[:5],
+            "seed_preview": seed_debug[:12],
+            "rejected_preview": rejected[:8],
         },
         "source_card": {
             "type": "source",
@@ -662,6 +956,7 @@ def crawl_source(source, location, deadline):
             "venue": source["venue"],
         },
     }
+
 
 def dedupe_events(events):
     out = []
@@ -680,6 +975,7 @@ def dedupe_events(events):
 
     return out
 
+
 def collect(location):
     deadline = time.monotonic() + MAX_SECONDS
     events = []
@@ -697,24 +993,27 @@ def collect(location):
 
     events = dedupe_events(events)
 
-    events.sort(key=lambda x: (
-        not bool(x.get("priority_location")),
-        -int(x.get("score", 0)),
-        x.get("when", ""),
-        x.get("source_name", ""),
-        x.get("title", "").lower(),
-    ))
+    events.sort(
+        key=lambda x: (
+            not bool(x.get("priority_location")),
+            -int(x.get("score", 0)),
+            x.get("when", ""),
+            x.get("source_name", ""),
+            x.get("title", "").lower(),
+        )
+    )
 
     return events[:80], sources, debug
+
 
 def main():
     location = " ".join(sys.argv[1:]).strip() or DEFAULT_LOCATION
     events, sources, debug = collect(location)
 
     payload = {
-        "version": 4,
+        "version": 5,
         "ok": True,
-        "extractor": "official-site-crawler-source-registry",
+        "extractor": "official-source-discovery-ddg-strict",
         "updated_at": now_iso(),
         "location": location,
         "count": len(events),
@@ -722,10 +1021,20 @@ def main():
         "items": events,
         "sources": sources,
         "debug_by_source": debug,
+        "settings": {
+            "ddg_discovery": ENABLE_DDG_DISCOVERY,
+            "allow_common_path_guesses": ALLOW_COMMON_PATH_GUESSES,
+            "max_pages_per_source": MAX_PAGES_PER_SOURCE,
+            "max_events_per_source": MAX_EVENTS_PER_SOURCE,
+        },
     }
 
     OUT.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
-    print(f"local events updated count={len(events)} sources={len(sources)} location={location}")
+    print(
+        f"local events updated count={len(events)} "
+        f"sources={len(sources)} location={location}"
+    )
+
 
 if __name__ == "__main__":
     main()
