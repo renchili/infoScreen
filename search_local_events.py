@@ -21,6 +21,7 @@ DEFAULT_LOCATION = "Punggol Singapore"
 MAX_SECONDS = float(os.environ.get("LOCAL_EVENTS_MAX_SECONDS", "80"))
 MAX_PAGES_PER_SOURCE = int(os.environ.get("LOCAL_EVENTS_MAX_PAGES_PER_SOURCE", "14"))
 MAX_EVENTS_PER_SOURCE = int(os.environ.get("LOCAL_EVENTS_MAX_EVENTS_PER_SOURCE", "4"))
+PAST_GRACE_DAYS = int(os.environ.get("LOCAL_EVENTS_PAST_GRACE_DAYS", "1"))
 
 TEMPLATE_RE = re.compile(r"#\{[^}]+\}|\{\{[^}]+\}\}|\$\{[^}]+\}")
 TAG_RE = re.compile(r"<[^>]+>")
