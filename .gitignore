@@ -2,6 +2,13 @@
 schedule.json
 weather.json
 market.json
+market_config.json
+event_stream.json
+local_event_search_results.json
+
+# local photos
+photos/
+public_photos/
 
 # logs / backups
 *.log
