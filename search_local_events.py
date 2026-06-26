@@ -38,6 +38,9 @@ BAD_PATHS = ("/privacy", "/terms", "/contact", "/about", "/career", "/login", "/
 BAD_EXT = (".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".ico", ".pdf", ".zip", ".mp4", ".mp3", ".css", ".js")
 ACTION_RE = re.compile(r"\b(register|registration|book|booking|ticket|tickets|details|learn more|find out more|read more|view more|view all|open|share)\b", re.I)
 
+OTHER_SAFRA_VENUES = ["toa payoh", "tampines", "mount faber", "yishun", "jurong", "choa chu kang", "cck"]
+OTHER_NLB_VENUES = ["ang mo kio", "bedok", "bishan", "bukit batok", "bukit merah", "bukit panjang", "choa chu kang", "clementi", "geylang east", "jurong", "marine parade", "pasir ris", "queenstown", "sengkang", "serangoon", "tampines", "toa payoh", "woodlands", "yishun"]
+
 SOURCES = [
     {"name": "Children's Museum Singapore", "source": "Children's Museum Singapore", "venue": "Children's Museum Singapore", "domains": ["heritage.sg"], "seeds": ["https://www.heritage.sg/childrensmuseum/whatson"]},
     {"name": "National Gallery Singapore", "source": "National Gallery Singapore", "venue": "National Gallery Singapore", "domains": ["nationalgallery.sg"], "seeds": ["https://www.nationalgallery.sg/sg/en/whats-on.html"]},
@@ -46,11 +49,11 @@ SOURCES = [
     {"name": "Peranakan Museum", "source": "Peranakan Museum", "venue": "Peranakan Museum", "domains": ["nhb.gov.sg"], "seeds": ["https://www.nhb.gov.sg/peranakanmuseum/whats-on"]},
     {"name": "ArtScience Museum", "source": "ArtScience Museum", "venue": "ArtScience Museum", "domains": ["marinabaysands.com"], "seeds": ["https://www.marinabaysands.com/museum/events.html", "https://www.marinabaysands.com/museum/exhibitions.html"]},
     {"name": "Science Centre Singapore", "source": "Science Centre Singapore", "venue": "Science Centre Singapore", "domains": ["science.edu.sg"], "seeds": ["https://www.science.edu.sg/whats-on"]},
-    {"name": "NLB Punggol Regional Library", "source": "NLB", "venue": "Punggol Regional Library", "domains": ["nlb.gov.sg"], "seeds": ["https://www.nlb.gov.sg/main/whats-on"]},
-    {"name": "One Punggol", "source": "One Punggol", "venue": "One Punggol", "domains": ["onepunggol.sg"], "seeds": ["https://www.onepunggol.sg/events", "https://www.onepunggol.sg/happenings"]},
-    {"name": "onePA / People's Association", "source": "onePA", "venue": "People's Association CCs", "domains": ["onepa.gov.sg"], "seeds": ["https://www.onepa.gov.sg/events", "https://www.onepa.gov.sg/courses"]},
-    {"name": "SAFRA Punggol", "source": "SAFRA Punggol", "venue": "SAFRA Punggol", "domains": ["safra.sg"], "seeds": ["https://www.safra.sg/whats-on"]},
-    {"name": "Waterway Point", "source": "Waterway Point", "venue": "Waterway Point", "domains": ["waterwaypoint.com.sg"], "seeds": ["https://www.waterwaypoint.com.sg/happenings"]},
+    {"name": "NLB Punggol Regional Library", "source": "NLB", "venue": "Punggol Regional Library", "domains": ["nlb.gov.sg"], "seeds": ["https://www.nlb.gov.sg/main/whats-on"], "local_terms": ["punggol", "punggol regional library"], "blocked_terms": OTHER_NLB_VENUES},
+    {"name": "One Punggol", "source": "One Punggol", "venue": "One Punggol", "domains": ["onepunggol.sg"], "seeds": ["https://www.onepunggol.sg/events", "https://www.onepunggol.sg/happenings"], "local_terms": ["punggol", "one punggol"]},
+    {"name": "onePA / People's Association", "source": "onePA", "venue": "People's Association CCs", "domains": ["onepa.gov.sg"], "seeds": ["https://www.onepa.gov.sg/events", "https://www.onepa.gov.sg/courses"], "local_terms": ["punggol", "punggol west", "punggol 21", "one punggol"], "blocked_terms": ["choa chu kang", "tampines", "toa payoh", "jurong", "bedok", "pasir ris", "woodlands", "yishun", "sengkang", "ang mo kio"]},
+    {"name": "SAFRA Punggol", "source": "SAFRA Punggol", "venue": "SAFRA Punggol", "domains": ["safra.sg"], "seeds": ["https://www.safra.sg/whats-on"], "local_terms": ["punggol", "safra punggol"], "blocked_terms": OTHER_SAFRA_VENUES},
+    {"name": "Waterway Point", "source": "Waterway Point", "venue": "Waterway Point", "domains": ["waterwaypoint.com.sg"], "seeds": ["https://www.waterwaypoint.com.sg/happenings"], "local_terms": ["waterway", "punggol", "waterway point"]},
 ]
 
 
@@ -170,6 +173,21 @@ def summary_from_detail(page):
     return shorten(text, 260) if text and not info_text(text) else "Open the official page for details."
 
 
+def venue_matches_source(source, title, summary, url):
+    local_terms = [t.lower() for t in source.get("local_terms", [])]
+    blocked_terms = [t.lower() for t in source.get("blocked_terms", [])]
+    if not local_terms and not blocked_terms:
+        return True
+    blob = f"{title} {summary} {url}".lower().replace("-", " ").replace("_", " ")
+    has_local = any(t in blob for t in local_terms)
+    has_blocked = any(t in blob for t in blocked_terms)
+    if has_blocked and not has_local:
+        return False
+    if local_terms and not has_local:
+        return False
+    return True
+
+
 def parse_dates(label):
     text = clean(label).lower()
     out = []
@@ -256,6 +274,8 @@ def make_event(source, url, title, summary, sessions, location, score):
     if summary != "Open the official page for details." and info_text(summary):
         summary = "Open the official page for details."
     if not url or is_container_url(url) or not sessions or not title_valid(title, url):
+        return None
+    if not venue_matches_source(source, title, summary, url):
         return None
     loc_words = [w for w in re.split(r"\W+", location.lower()) if len(w) >= 4]
     priority = any(w in f"{title} {summary} {url}".lower() for w in loc_words)
@@ -422,7 +442,7 @@ def collect(location):
 def main():
     location = " ".join(sys.argv[1:]).strip() or DEFAULT_LOCATION
     events, sources, debug = collect(location)
-    payload = {"version": 13, "ok": True, "extractor": "detail-page-analyzing-crawler-v13", "updated_at": now_iso(), "location": location, "count": len(events), "results": events, "items": events, "sources": sources, "debug_by_source": debug, "settings": {"listing_pages_are_frontier_only": True, "emit_detail_pages_only": True, "summary_uses_detail_metadata_only": True}}
+    payload = {"version": 14, "ok": True, "extractor": "detail-page-analyzing-crawler-v14", "updated_at": now_iso(), "location": location, "count": len(events), "results": events, "items": events, "sources": sources, "debug_by_source": debug, "settings": {"listing_pages_are_frontier_only": True, "emit_detail_pages_only": True, "venue_consistency_check": True}}
     OUT.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"local events updated count={len(events)} sources={len(sources)} location={location}")
 
