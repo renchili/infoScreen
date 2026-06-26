@@ -2,8 +2,12 @@
 """
 Strict local-event discovery for InfoScreen.
 
-The important rule is: source URLs must be verified official institution URLs.
-Do not invent /events, /whatson, /happenings paths by default.
+Source URLs must be verified official institution URLs. Do not invent branch
+websites for Singapore outlets: many branches are represented inside the
+institution's central event system.
+
+The requested location, for example "Punggol Singapore", is a preference signal
+for ranking and highlighting only. It must not be treated as a hard filter.
 
 Runtime output:
     local_event_search_results.json
@@ -113,17 +117,21 @@ SOURCE_REGISTRY = [
         "verified": "2026-06-26",
     },
     {
-        "name": "NLB / Punggol Regional Library",
-        "source": "NLB",
-        "venue": "Punggol Regional Library",
+        "name": "National Library Board",
+        "source": "National Library Board",
+        "venue": "NLB Libraries",
         "domains": ["nlb.gov.sg", "nlb.libcal.com"],
         "seeds": [
             "https://www.nlb.gov.sg/main/whats-on",
             "https://nlb.libcal.com/calendar?cid=11498",
-            "https://www.nlb.gov.sg/main/visit-us/our-libraries-and-locations/punggol-regional-library",
         ],
-        "aliases": ["Punggol Regional Library", "Punggol Library", "NLB Punggol", "National Library Board"],
-        "local": True,
+        "aliases": ["National Library Board", "NLB", "public libraries", "library"],
+        "preferred_terms": [
+            "Punggol Regional Library",
+            "Punggol Library",
+            "NLB Punggol",
+            "Punggol",
+        ],
         "verified": "2026-06-26",
     },
     {
@@ -132,18 +140,53 @@ SOURCE_REGISTRY = [
         "venue": "People's Association CCs",
         "domains": ["onepa.gov.sg"],
         "seeds": ["https://www.onepa.gov.sg/events"],
-        "aliases": ["onePA", "People's Association", "Punggol CC", "Punggol 21 CC", "Punggol West CC"],
-        "local": True,
+        "aliases": ["onePA", "People's Association", "community club", "community centre"],
+        "preferred_terms": [
+            "Punggol",
+            "Punggol CC",
+            "Punggol 21 CC",
+            "Punggol West CC",
+            "Punggol Coast",
+            "One Punggol",
+        ],
         "verified": "2026-06-26",
     },
     {
-        "name": "SAFRA Punggol",
+        "name": "SAFRA",
         "source": "SAFRA",
-        "venue": "SAFRA Punggol",
+        "venue": "SAFRA Clubs",
         "domains": ["safra.sg"],
         "seeds": ["https://www.safra.sg/whats-on"],
-        "aliases": ["SAFRA Punggol", "SAFRA", "with my family"],
-        "local": True,
+        "aliases": ["SAFRA", "SAFRA events", "with my family"],
+        "preferred_terms": ["SAFRA Punggol", "Punggol"],
+        "verified": "2026-06-26",
+    },
+    {
+        "name": "One Punggol",
+        "source": "One Punggol",
+        "venue": "One Punggol",
+        "domains": ["onepunggol.sg"],
+        "seeds": [
+            "https://www.onepunggol.sg/events",
+            "https://www.onepunggol.sg/happenings",
+            "https://www.onepunggol.sg/",
+        ],
+        "aliases": ["One Punggol", "Punggol Town Hub"],
+        "preferred_terms": ["Punggol", "One Punggol"],
+        "verified": "2026-06-26",
+    },
+    {
+        "name": "Waterway Point",
+        "source": "Waterway Point",
+        "venue": "Waterway Point",
+        "domains": ["waterwaypoint.com.sg", "frasersproperty.com"],
+        "seeds": [
+            "https://www.waterwaypoint.com.sg/happenings",
+            "https://www.waterwaypoint.com.sg/promotions",
+            "https://www.waterwaypoint.com.sg/",
+        ],
+        "aliases": ["Waterway Point", "Frasers Property"],
+        "preferred_terms": ["Punggol", "Waterway Point"],
         "verified": "2026-06-26",
     },
     {
@@ -398,6 +441,24 @@ def alias_score(source: dict, blob: str) -> int:
     return score
 
 
+def preferred_terms(source: dict, location: str) -> list[str]:
+    terms = []
+    for raw in [location, *source.get("preferred_terms", [])]:
+        value = textify(raw).lower()
+        if not value:
+            continue
+        terms.append(value)
+        for part in re.split(r"\W+", value):
+            if len(part) >= 4 and part not in terms:
+                terms.append(part)
+    return terms
+
+
+def preferred_location_match(source: dict, location: str, blob: str) -> tuple[bool, list[str]]:
+    hits = [term for term in preferred_terms(source, location) if term in blob]
+    return bool(hits), hits[:8]
+
+
 def has_event_schema(page: str) -> bool:
     return bool(JSON_LD_EVENT_RE.search(page[:500_000]))
 
@@ -442,10 +503,9 @@ def page_event_score(source: dict, url: str, title: str, summary: str, body: str
         score += 28
     if schema_event:
         score += 30
-    loc_words = [w for w in re.split(r"\W+", location.lower()) if len(w) >= 4]
-    priority_location = any(w in blob for w in loc_words)
+    priority_location, preferred_hits = preferred_location_match(source, location, blob)
     if priority_location:
-        score += 14
+        score += 18
     for bad in BAD_WORDS:
         if bad in blob:
             score -= 60
@@ -459,6 +519,7 @@ def page_event_score(source: dict, url: str, title: str, summary: str, body: str
         "schema_event": schema_event,
         "generic_title": generic_title,
         "event_word_hits": event_word_hits[:8],
+        "preferred_location_hits": preferred_hits,
     }
     return score, date, priority_location, evidence
 
@@ -558,6 +619,7 @@ def crawl_source(source: dict, location: str, deadline: float) -> dict:
             "queue_seen": len(queued),
             "accepted": len(events),
             "verified_seeds": source.get("seeds", []),
+            "preferred_terms": source.get("preferred_terms", []),
             "rejected_preview": rejected[:8],
         },
         "source_card": {
@@ -567,6 +629,7 @@ def crawl_source(source: dict, location: str, deadline: float) -> dict:
             "source": source["source"],
             "venue": source["venue"],
             "verified": source.get("verified"),
+            "preferred_terms": source.get("preferred_terms", []),
         },
     }
 
@@ -612,9 +675,9 @@ def main():
     location = " ".join(sys.argv[1:]).strip() or DEFAULT_LOCATION
     events, sources, debug = collect(location)
     payload = {
-        "version": 7,
+        "version": 8,
         "ok": True,
-        "extractor": "verified-official-source-crawler",
+        "extractor": "verified-source-preferred-location-crawler",
         "updated_at": now_iso(),
         "location": location,
         "count": len(events),
@@ -627,6 +690,7 @@ def main():
             "max_pages_per_source": MAX_PAGES_PER_SOURCE,
             "max_events_per_source": MAX_EVENTS_PER_SOURCE,
             "verified_source_count": len(SOURCE_REGISTRY),
+            "location_is_preference_only": True,
         },
     }
     OUT.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
