@@ -1,0 +1,18 @@
+# One institution per line.
+# Flow: discover -> manual confirm -> register in event_source_registry.json -> production crawler reads registry only.
+# Do not put third-party guides or aggregators here.
+
+Asian Civilisations Museum
+National Gallery Singapore
+National Museum Singapore
+Peranakan Museum
+ArtScience Museum
+Science Centre Singapore
+NLB
+One Punggol
+onePA
+SAFRA
+Waterway Point
+Sentosa
+Singapore Zoo
+Mandai Wildlife Reserve
