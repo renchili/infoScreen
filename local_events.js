@@ -60,10 +60,13 @@
           title: clean(item.title, 145),
           url: clean(item.url, 500),
           source: clean(item.source_name || item.host || item.source || "Official source", 52),
-          date: clean(item.when || item.date || "Check official page", 72),
+          date: clean(item.when || item.date || "", 72),
           venue: clean(item.where || item.venue || "", 96),
           summary: clean(item.summary || "", 220)
         };
+      })
+      .filter(function (item) {
+        return item.title && item.url && item.date;
       });
   }
 
@@ -157,7 +160,7 @@
 
     var eventHtml = events.length
       ? groups.map(eventGroup).join("")
-      : '<div class="le2-empty">No confirmed event cards found yet. Use the official calendars below.</div>';
+      : '<div class="le2-empty">No confirmed event cards found yet. Use the official sources below.</div>';
 
     var sourceHtml = sources.length
       ? '<div class="le2-official-title">OFFICIAL SOURCES</div>' +
