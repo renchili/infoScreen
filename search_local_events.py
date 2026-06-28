@@ -71,7 +71,13 @@ EVENT_MARKER_RE = re.compile(r"\b(" + "|".join(re.escape(x) for x in EVENT_MARKE
 LOCAL_PRIORITY_TERMS = ("punggol", "waterway", "one punggol", "punggol regional library", "safra punggol")
 LISTING_ROUTE_RE = re.compile(r"/(?:whats-on|whatson|events?|overview|view-all|programmes?|programs?|activities?)/?$", re.I)
 DETAIL_ROUTE_RE = re.compile(
-    r"/(?:whats-on|whatson|events?|exhibitions?|programmes?|programs?|activities?|happenings?|courses|workshops?)/.+",
+    r"/(?:whats-on|whatson|events?|exhibitions?|exhibition|programmes?|programs?|activities?|happenings?|courses|workshops?)/.+",
+    re.I,
+)
+LOCATION_KEY_RE = re.compile(r"\b(?:venue|location|where|place|gallery|room|level|floor)\b", re.I)
+LOCATION_VALUE_RE = re.compile(r"\b(?:gallery|galleries|room|theatre|theater|hall|salon|concourse|foyer|atrium|lawn|level|floor|basement|museum|centre|center|library|zoo)\b", re.I)
+LOCATION_LABEL_RE = re.compile(
+    r"\b(?:venue|location|where|place)\s*[:\-–—]\s*([^\n|•<>]{2,140})",
     re.I,
 )
 
@@ -84,6 +90,14 @@ def clean(value):
     text = html.unescape(str(value or ""))
     text = text.replace("\\/", "/").replace("\\u002F", "/").replace("\\u002f", "/")
     text = SCRIPT_STYLE_RE.sub(" ", text)
+    text = TAG_RE.sub(" ", text)
+    text = TEMPLATE_RE.sub(" ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def clean_keep_text(value):
+    text = html.unescape(str(value or ""))
+    text = text.replace("\\/", "/").replace("\\u002F", "/").replace("\\u002f", "/")
     text = TAG_RE.sub(" ", text)
     text = TEMPLATE_RE.sub(" ", text)
     return re.sub(r"\s+", " ", text).strip()
@@ -304,10 +318,74 @@ def location_from_value(value):
     if isinstance(value, dict):
         loc = value.get("location")
         if isinstance(loc, str):
-            return clean(loc)
+            return clean_location(loc)
         if isinstance(loc, dict):
-            return clean(loc.get("name") or loc.get("address") or "")
+            return clean_location(loc.get("name") or loc.get("address") or "")
     return ""
+
+
+def clean_location(value):
+    text = clean_keep_text(value)
+    text = re.sub(r"\b(?:venue|location|where|place)\b\s*[:\-–—]?\s*", "", text, flags=re.I).strip()
+    text = re.split(r"\b(?:admission|ticket|tickets|date|time|opening hours|operating hours|about|description)\b", text, 1, flags=re.I)[0].strip(" |•,;:-–—")
+    if not text or len(text) < 2 or len(text) > 140:
+        return ""
+    if re.search(r"https?://|@|\.(?:com|sg|org|net)\b", text, re.I):
+        return ""
+    if DATE_RE.search(text):
+        return ""
+    return shorten(text, 120)
+
+
+def json_location_candidates(page):
+    candidates = []
+    keys = (
+        "venue", "venueName", "venueTitle", "eventVenue", "location", "locationName",
+        "place", "placeName", "room", "gallery", "floor", "level",
+    )
+    for obj in load_json_objects(page):
+        for node in walk_json(obj):
+            if not isinstance(node, dict):
+                continue
+            for key, value in node.items():
+                if key not in keys and not LOCATION_KEY_RE.search(str(key)):
+                    continue
+                if isinstance(value, str):
+                    loc = clean_location(value)
+                    if loc and (LOCATION_VALUE_RE.search(loc) or len(loc.split()) <= 8):
+                        candidates.append(loc)
+                elif isinstance(value, dict):
+                    loc = clean_location(value.get("name") or value.get("title") or value.get("label") or value.get("address") or "")
+                    if loc:
+                        candidates.append(loc)
+    out = []
+    for item in candidates:
+        if item not in out:
+            out.append(item)
+    return out
+
+
+def labeled_location_candidates(page):
+    candidates = []
+    visible = clean_keep_text(SCRIPT_STYLE_RE.sub(" ", page[:250000]))
+    for match in LOCATION_LABEL_RE.finditer(visible):
+        loc = clean_location(match.group(1))
+        if loc:
+            candidates.append(loc)
+    # Common rendered HTML shape: <div>Venue</div><div>The Salon, Level 1</div>
+    html_text = html.unescape(page[:250000]).replace("\\/", "/")
+    for match in re.finditer(r">\s*(Venue|Location|Where|Place)\s*<([\s\S]{0,900})", html_text, re.I):
+        tail = match.group(2)
+        values = [clean_location(x) for x in re.findall(r">\s*([^<>]{2,160})\s*<", tail)]
+        for value in values:
+            if value and value.lower() not in {"venue", "location", "where", "place"}:
+                candidates.append(value)
+                break
+    out = []
+    for item in candidates:
+        if item not in out:
+            out.append(item)
+    return out
 
 
 def sessions_from_value(value):
@@ -336,8 +414,12 @@ def extract_location(source, page, event_obj=None):
     if event_obj:
         loc = location_from_value(event_obj)
         if loc:
-            return shorten(loc, 120)
-    text = clean(page[:80000])
+            return loc
+    for loc in json_location_candidates(page) + labeled_location_candidates(page):
+        low = loc.lower()
+        if low not in {"venue", "location", "where", "place"}:
+            return loc
+    text = clean(page[:120000])
     for name in source_venue_names(source):
         if re.search(r"\b" + re.escape(name) + r"\b", text, re.I):
             return name
@@ -528,6 +610,14 @@ def load_sources():
     return sources
 
 
+def source_cards(sources):
+    return [
+        {"title": source.get("name"), "url": source.get("official_site")}
+        for source in sources
+        if source.get("name") and source.get("official_site")
+    ]
+
+
 def crawl_source(source, location, deadline):
     queue = []
     queued = set()
@@ -574,7 +664,12 @@ def crawl_source(source, location, deadline):
             if event_key not in result_keys:
                 result_keys.add(event_key)
                 results.append(event)
-                debug["accepted_preview"].append({"title": event["title"], "url": event["url"], "when": event["when"]})
+                debug["accepted_preview"].append({
+                    "title": event["title"],
+                    "url": event["url"],
+                    "when": event["when"],
+                    "where": event.get("where"),
+                })
                 if len(results) >= MAX_EVENTS_PER_SOURCE:
                     break
 
@@ -598,7 +693,7 @@ def sort_results(items, location):
         text = " ".join(str(item.get(k, "")) for k in ("title", "where", "summary", "source_name")).lower()
         return sum(1 for term in LOCAL_PRIORITY_TERMS if term in text)
 
-    return sorted(items, key=lambda x: (-local_score(x), x.get("start_date", ""), x.get("title", "")))
+    return sorted(items, key=lambda x: (-local_score(x), x.get("source_name", ""), x.get("start_date", ""), x.get("title", "")))
 
 
 def main():
@@ -626,13 +721,15 @@ def main():
     all_results = sort_results(all_results, location)[:MAX_TOTAL_EVENTS]
     payload = {
         "ok": True,
-        "version": 18,
-        "extractor": "official-registry-event-crawler-v18",
+        "version": 19,
+        "extractor": "official-registry-event-crawler-v19",
         "updated_at": now_iso(),
         "location": location,
         "source_registry": str(OFFICIAL_REGISTRY.name),
         "source_count": len(sources),
+        "per_source_limit": MAX_EVENTS_PER_SOURCE,
         "count": len(all_results),
+        "sources": source_cards(sources),
         "results": all_results,
         "debug_by_source": debug_by_source,
     }
