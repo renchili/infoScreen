@@ -157,8 +157,6 @@
   var page = 0;
   var items = [];
   var lastPayload = null;
-  var observer = null;
-  var restoring = false;
 
   function byId(id) { return document.getElementById(id); }
   function clean(value) { return String(value == null ? "" : value).replace(/\s+/g, " ").trim(); }
@@ -199,10 +197,7 @@
     var counter = byId("localEventCounter");
     var prev = byId("localEventPrevButton");
     var next = byId("localEventNextButton");
-    if (list) {
-      list.dataset.owner = "external-local-events";
-      list.innerHTML = '<div class="local-event-empty">' + esc(text) + '</div>';
-    }
+    if (list) list.innerHTML = '<div class="local-event-empty">' + esc(text) + '</div>';
     if (counter) counter.textContent = "";
     if (prev) prev.disabled = true;
     if (next) next.disabled = true;
@@ -213,7 +208,6 @@
     var prev = byId("localEventPrevButton");
     var next = byId("localEventNextButton");
     if (!list) return;
-    list.dataset.owner = "external-local-events";
     if (!items.length) {
       var rawCount = lastPayload && typeof lastPayload.count !== "undefined" ? lastPayload.count : rows(lastPayload).length;
       renderEmpty("NO RENDERABLE EVENTS · RAW " + rawCount);
@@ -222,7 +216,6 @@
     if (page < 0) page = items.length - 1;
     if (page >= items.length) page = 0;
     var item = items[page];
-    restoring = true;
     list.innerHTML = [
       '<div class="local-event-card local-event-single active">',
       '<div class="local-event-label">EVENT</div>',
@@ -235,7 +228,6 @@
       item.url ? '<a class="local-event-link" href="' + esc(item.url) + '" target="_blank" rel="noopener noreferrer">OPEN OFFICIAL LINK</a>' : '<span class="local-event-no-link">NO LINK IN SOURCE</span>',
       '</div></div>'
     ].join("");
-    restoring = false;
     if (counter) counter.textContent = (page + 1) + "/" + items.length;
     if (prev) prev.disabled = items.length <= 1;
     if (next) next.disabled = items.length <= 1;
@@ -282,20 +274,12 @@
       if (modal) modal.hidden = true;
       if (err) err.textContent = "";
       apply(payload);
-      setTimeout(function () { apply(payload); }, 500);
-      setTimeout(function () { apply(payload); }, 1500);
     } catch (e) {
       if (err) err.textContent = "Search failed: " + e.message;
       renderEmpty("LOCAL EVENT SEARCH FAILED · " + e.message);
     } finally {
       if (button) button.disabled = false;
     }
-  }
-  function eat(e) {
-    if (!e) return;
-    e.preventDefault();
-    e.stopPropagation();
-    e.stopImmediatePropagation();
   }
   function bind() {
     var openButton = byId("localEventLocationButton");
@@ -306,58 +290,34 @@
     var modal = byId("localEventModal");
     var input = byId("localEventLocationInput");
     if (openButton) openButton.addEventListener("click", function (e) {
-      eat(e);
+      e.preventDefault();
       if (modal) modal.hidden = false;
       if (input) {
         input.value = clean(input.value) || "Punggol Singapore";
         setTimeout(function () { input.focus(); input.select(); }, 20);
       }
-    }, true);
+    });
     if (cancelButton) cancelButton.addEventListener("click", function (e) {
-      eat(e);
+      e.preventDefault();
       if (modal) modal.hidden = true;
-    }, true);
-    if (searchButton) searchButton.addEventListener("click", searchLocalEvents, true);
+    });
+    if (searchButton) searchButton.addEventListener("click", searchLocalEvents);
     if (input) input.addEventListener("keydown", function (e) {
       if (e.key === "Enter") searchLocalEvents(e);
       if (e.key === "Escape" && modal) modal.hidden = true;
-    }, true);
-    if (prevButton) prevButton.addEventListener("click", function (e) { eat(e); page -= 1; render(); }, true);
-    if (nextButton) nextButton.addEventListener("click", function (e) { eat(e); page += 1; render(); }, true);
-  }
-  function watchdog() {
-    var list = byId("localEventList");
-    if (!list || !items.length) return;
-    if (list.dataset.owner !== "external-local-events") render();
-  }
-  function observe() {
-    var list = byId("localEventList");
-    if (!list || !window.MutationObserver || observer) return;
-    observer = new MutationObserver(function () {
-      if (restoring) return;
-      if (list.dataset.owner !== "external-local-events") setTimeout(render, 0);
     });
-    observer.observe(list, { childList: true, subtree: false, attributes: true, attributeFilter: ["data-owner"] });
+    if (prevButton) prevButton.addEventListener("click", function (e) { e.preventDefault(); page -= 1; render(); });
+    if (nextButton) nextButton.addEventListener("click", function (e) { e.preventDefault(); page += 1; render(); });
   }
   window.__localEventReload = loadLocalEvents;
   window.__localEventSearch = searchLocalEvents;
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", function () {
       bind();
-      observe();
       loadLocalEvents();
-      setTimeout(loadLocalEvents, 500);
-      setTimeout(loadLocalEvents, 1500);
-      setTimeout(loadLocalEvents, 3000);
-      setInterval(watchdog, 2000);
     });
   } else {
     bind();
-    observe();
     loadLocalEvents();
-    setTimeout(loadLocalEvents, 500);
-    setTimeout(loadLocalEvents, 1500);
-    setTimeout(loadLocalEvents, 3000);
-    setInterval(watchdog, 2000);
   }
 })();
