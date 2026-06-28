@@ -3,15 +3,21 @@ schedule.json
 weather.json
 market.json
 
+# Surface runtime/generated data
+event_stream.json
+local_event_search_results*.json
+photos.json
+sync_status.json
+photos/
+public_photos/
+
 # local event generated/debug outputs
-local_event_search_results.json
-local_event_search_results.json.*
-search_local_events.py.good
-discovered_event_sources.json
+discovered_event_sources*.json
+*.good
 
 # logs / backups
 *.log
-*.bak.*
+*.bak*
 index.html.bak.*
 
 # unrelated local tools
@@ -21,16 +27,7 @@ chatgpt-ui-once/
 .DS_Store
 __pycache__/
 logs/
-*.bak*
 
 # Per-machine macOS schedule sync configuration
 mac/local.env
 mac/launchagents/*.plist
-
-# Surface runtime/generated data
-event_stream.json
-photos.json
-sync_status.json
-photos/
-public_photos/
-# InfoScreen runtime/generated data
