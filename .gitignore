@@ -1,7 +1,8 @@
 # local machine configuration and runtime state
 .env/
+surface/.env/
 
-# generated runtime directories
+# legacy/generated runtime directories
 logs/
 photos/
 public_photos/
