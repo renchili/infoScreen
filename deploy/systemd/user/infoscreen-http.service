@@ -1,9 +1,9 @@
 [Unit]
-Description=InfoScreen HTTP API server
+Description=InfoScreen HTTP server
 
 [Service]
 WorkingDirectory=%h/infoscreen
-ExecStart=/usr/bin/python3 %h/infoscreen/serve_infoscreen.py
+ExecStart=/usr/bin/python3 %h/infoscreen/surface/serve_infoscreen.py
 Restart=always
 RestartSec=2
 StandardOutput=append:%h/infoscreen/logs/http.log
