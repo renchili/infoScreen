@@ -2,12 +2,12 @@
 Description=InfoScreen HTTP server
 
 [Service]
-WorkingDirectory=%h/infoscreen
+WorkingDirectory=%h/infoscreen/surface
 ExecStart=/usr/bin/python3 %h/infoscreen/surface/serve_infoscreen.py
 Restart=always
 RestartSec=2
-StandardOutput=append:%h/infoscreen/logs/http.log
-StandardError=append:%h/infoscreen/logs/http.err.log
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=default.target
