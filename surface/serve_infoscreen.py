@@ -11,7 +11,6 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 SURFACE_DIR = Path(__file__).resolve().parent
-REPO_DIR = SURFACE_DIR.parent
 WEB_DIR = SURFACE_DIR / "web"
 ENV_DIR = SURFACE_DIR / ".env"
 CONF_DIR = SURFACE_DIR / "conf"
@@ -41,20 +40,24 @@ def read_json(path: Path, default):
 
 def runtime_json(name: str):
     default = JSON_DEFAULTS.get(name, {})
-    primary = ENV_DIR / name
-    legacy = REPO_DIR / name
-    if primary.exists():
-        return read_json(primary, default)
-    if legacy.exists():
-        return read_json(legacy, default)
-    return default
+    path = ENV_DIR / name
+    if path.exists():
+        return read_json(path, default)
+    payload = dict(default) if isinstance(default, dict) else default
+    if isinstance(payload, dict):
+        payload = {
+            **payload,
+            "ok": False,
+            "error": "missing_runtime_json",
+            "expected_path": str(path),
+        }
+    return payload
 
 
 def market_config_json():
-    if (ENV_DIR / "market_config.json").exists():
-        return read_json(ENV_DIR / "market_config.json", JSON_DEFAULTS["market_config.json"])
-    if (REPO_DIR / "market_config.json").exists():
-        return read_json(REPO_DIR / "market_config.json", JSON_DEFAULTS["market_config.json"])
+    path = ENV_DIR / "market_config.json"
+    if path.exists():
+        return read_json(path, JSON_DEFAULTS["market_config.json"])
     return read_json(CONF_DIR / "market_config.default.json", JSON_DEFAULTS["market_config.json"])
 
 
@@ -71,14 +74,13 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def send_env_file(self, path: Path, legacy: Path | None = None) -> None:
-        target = path if path.exists() else legacy
-        if not target or not target.exists() or not target.is_file():
+    def send_env_file(self, path: Path) -> None:
+        if not path.exists() or not path.is_file():
             self.send_error(404, "not found")
             return
-        data = target.read_bytes()
+        data = path.read_bytes()
         self.send_response(200)
-        self.send_header("Content-Type", mimetypes.guess_type(str(target))[0] or "application/octet-stream")
+        self.send_header("Content-Type", mimetypes.guess_type(str(path))[0] or "application/octet-stream")
         self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
@@ -103,7 +105,7 @@ class Handler(SimpleHTTPRequestHandler):
 
         if path.startswith("/public_photos/"):
             rel = unquote(path.removeprefix("/public_photos/")).lstrip("/")
-            return self.send_env_file(ENV_DIR / "public_photos" / rel, REPO_DIR / "public_photos" / rel)
+            return self.send_env_file(ENV_DIR / "public_photos" / rel)
 
         return super().do_GET()
 
