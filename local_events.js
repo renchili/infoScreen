@@ -5,7 +5,6 @@
   var API_URL = "/api/local-events/search";
   var LOCATION_KEY = "infoscreen.local-event.location";
   var DEFAULT_LOCATION = "Punggol Singapore";
-  var DISPLAY_EVENTS_PER_SOURCE = 3;
 
   function q(selector, root) {
     return (root || document).querySelector(selector);
@@ -101,12 +100,6 @@
     });
   }
 
-  function visibleCount(groups) {
-    return groups.reduce(function (sum, group) {
-      return sum + Math.min(group.items.length, DISPLAY_EVENTS_PER_SOURCE);
-    }, 0);
-  }
-
   function eventCard(item) {
     return [
       '<article class="le2-card">',
@@ -129,17 +122,12 @@
   }
 
   function eventGroup(group) {
-    var visible = group.items.slice(0, DISPLAY_EVENTS_PER_SOURCE);
-    var hidden = group.items.length - visible.length;
     return [
       '<section class="le2-group">',
       '<div class="le2-group-title">', esc(group.source),
-      '<span>', esc(visible.length + '/' + group.items.length), '</span>',
+      '<span>', esc(group.items.length + ' item' + (group.items.length === 1 ? '' : 's')), '</span>',
       '</div>',
-      visible.map(eventCard).join(""),
-      hidden > 0
-        ? '<div class="le2-more">+' + esc(hidden) + ' more from this source</div>'
-        : '',
+      group.items.map(eventCard).join(""),
       '</section>'
     ].join("");
   }
@@ -165,7 +153,6 @@
     var events = normalizeEvents(data);
     var sources = normalizeSources(data);
     var groups = groupEvents(events);
-    var shown = visibleCount(groups);
     var count = events.length;
 
     var eventHtml = events.length
@@ -186,7 +173,7 @@
       '<div class="le2-title">Nearby Picks</div>',
       '</div>',
       '<div class="le2-status">',
-      esc(status || (shown + '/' + count + ' shown / ' + groups.length + ' source' + (groups.length === 1 ? '' : 's'))),
+      esc(status || (count + ' event' + (count === 1 ? '' : 's') + ' / ' + groups.length + ' source' + (groups.length === 1 ? '' : 's'))),
       '</div>',
       '</div>',
 
