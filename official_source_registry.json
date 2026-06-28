@@ -30,6 +30,30 @@
       ]
     },
     {
+      "name": "Mandai Wildlife Group",
+      "aliases": [
+        "Mandai Wildlife Reserve",
+        "Singapore Zoo"
+      ],
+      "official_site": "https://www.mandai.com/",
+      "allowed_domains": [
+        "mandai.com"
+      ],
+      "official_subsites": [
+        {
+          "name": "Singapore Zoo",
+          "url": "https://www.mandai.com/en/singapore-zoo.html"
+        }
+      ],
+      "status": "confirmed",
+      "score": 98,
+      "evidence": [
+        "User confirmed Mandai Wildlife Reserve / Mandai Wildlife Group uses https://www.mandai.com/.",
+        "Singapore Zoo is a subsite under the same official Mandai domain, not a separate source.",
+        "Deduplicate by parent official domain mandai.com."
+      ]
+    },
+    {
       "name": "National Museum Singapore",
       "official_site": "https://www.nationalmuseum.nhb.gov.sg/",
       "allowed_domains": [
