@@ -70,11 +70,14 @@ class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(WEB_DIR), **kwargs)
 
+    def end_headers(self):
+        self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+
     def send_json(self, obj, status: int = 200) -> None:
         data = json.dumps(obj, ensure_ascii=False, indent=2).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
@@ -83,14 +86,12 @@ class Handler(SimpleHTTPRequestHandler):
         path = runtime_path(name)
         if not path.exists() or not path.is_file():
             self.send_response(404)
-            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             return
 
         stat = path.stat()
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(stat.st_size))
         self.send_header("Last-Modified", email.utils.formatdate(stat.st_mtime, usegmt=True))
         self.end_headers()
@@ -102,7 +103,6 @@ class Handler(SimpleHTTPRequestHandler):
         data = path.read_bytes()
         self.send_response(200)
         self.send_header("Content-Type", mimetypes.guess_type(str(path))[0] or "application/octet-stream")
-        self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Last-Modified", email.utils.formatdate(path.stat().st_mtime, usegmt=True))
         self.end_headers()
@@ -126,13 +126,11 @@ class Handler(SimpleHTTPRequestHandler):
             if target.exists() and target.is_file():
                 self.send_response(200)
                 self.send_header("Content-Type", mimetypes.guess_type(str(target))[0] or "application/octet-stream")
-                self.send_header("Cache-Control", "no-store")
                 self.send_header("Content-Length", str(target.stat().st_size))
                 self.send_header("Last-Modified", email.utils.formatdate(target.stat().st_mtime, usegmt=True))
                 self.end_headers()
                 return
             self.send_response(404)
-            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             return
 
