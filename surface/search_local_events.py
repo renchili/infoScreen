@@ -5,22 +5,23 @@ import argparse
 import json
 from pathlib import Path
 
-from local_events_adapters import collect_events
+from local_events_runtime import collect_events
 
 SURFACE_DIR = Path(__file__).resolve().parent
 ENV_DIR = SURFACE_DIR / ".env"
 CONF_DIR = SURFACE_DIR / "conf"
 CONFIG = CONF_DIR / "event_sources.json"
 OUT = ENV_DIR / "local_event_search_results.json"
+DEBUG_DIR = ENV_DIR / "local_event_debug_cards"
 DEFAULT_LOCATION = "Punggol Singapore"
 
 
 def self_test() -> int:
-    payload = collect_events(CONFIG, DEFAULT_LOCATION)
-    assert payload["extractor"] == "verified-source-adapters-v31"
+    payload = collect_events(CONFIG, DEFAULT_LOCATION, DEBUG_DIR)
+    assert payload["extractor"] == "rendered-dom-card-v40"
     assert isinstance(payload.get("results"), list)
     assert isinstance(payload.get("debug_by_source"), list)
-    print("local-event adapter self-test passed")
+    print("local-event rendered DOM self-test passed")
     return 0
 
 
@@ -35,7 +36,8 @@ def main(argv: list[str] | None = None) -> int:
 
     location = " ".join(args.location).strip() or DEFAULT_LOCATION
     ENV_DIR.mkdir(exist_ok=True)
-    payload = collect_events(CONFIG, location)
+    DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+    payload = collect_events(CONFIG, location, DEBUG_DIR)
     OUT.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0
