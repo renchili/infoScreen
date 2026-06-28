@@ -54,14 +54,14 @@
       .filter(function (item) {
         return item && item.type !== "source" && item.title && item.url;
       })
-      .slice(0, 6)
+      .slice(0, 64)
       .map(function (item) {
         return {
           title: clean(item.title, 145),
           url: clean(item.url, 500),
-          source: clean(item.source || "Official source", 40),
-          date: clean(item.date || "Check official page", 54),
-          venue: clean(item.venue || "", 80),
+          source: clean(item.source_name || item.host || item.source || "Official source", 52),
+          date: clean(item.when || item.date || "Check official page", 72),
+          venue: clean(item.where || item.venue || "", 96),
           summary: clean(item.summary || "", 220)
         };
       });
@@ -75,13 +75,29 @@
       .filter(function (item) {
         return item && item.title && item.url;
       })
-      .slice(0, 8)
+      .slice(0, 12)
       .map(function (item) {
         return {
-          title: clean(item.title, 34),
+          title: clean(item.title, 38),
           url: clean(item.url, 500)
         };
       });
+  }
+
+  function groupEvents(events) {
+    var order = [];
+    var groups = {};
+    events.forEach(function (item) {
+      var key = item.source || "Official source";
+      if (!groups[key]) {
+        groups[key] = [];
+        order.push(key);
+      }
+      groups[key].push(item);
+    });
+    return order.map(function (key) {
+      return { source: key, items: groups[key] };
+    });
   }
 
   function eventCard(item) {
@@ -95,10 +111,24 @@
       '" target="_blank" rel="noopener noreferrer">',
       esc(item.title),
       '</a>',
+      item.venue
+        ? '<div class="le2-venue">WHERE ' + esc(item.venue) + '</div>'
+        : '',
       item.summary
         ? '<p class="le2-summary">' + esc(item.summary) + '</p>'
         : '',
       '</article>'
+    ].join("");
+  }
+
+  function eventGroup(group) {
+    return [
+      '<section class="le2-group">',
+      '<div class="le2-group-title">', esc(group.source),
+      '<span>', esc(group.items.length + ' item' + (group.items.length === 1 ? '' : 's')), '</span>',
+      '</div>',
+      group.items.map(eventCard).join(""),
+      '</section>'
     ].join("");
   }
 
@@ -121,15 +151,16 @@
     );
 
     var events = normalizeEvents(data);
-    var sources = [];
+    var sources = normalizeSources(data);
     var count = events.length;
+    var groups = groupEvents(events);
 
     var eventHtml = events.length
-      ? events.map(eventCard).join("")
+      ? groups.map(eventGroup).join("")
       : '<div class="le2-empty">No confirmed event cards found yet. Use the official calendars below.</div>';
 
     var sourceHtml = sources.length
-      ? '<div class="le2-official-title">OFFICIAL CALENDARS</div>' +
+      ? '<div class="le2-official-title">OFFICIAL SOURCES</div>' +
         '<div class="le2-source-list">' +
         sources.map(sourceCard).join("") +
         '</div>'
@@ -142,7 +173,7 @@
       '<div class="le2-title">Nearby Picks</div>',
       '</div>',
       '<div class="le2-status">',
-      esc(status || (count + ' event' + (count === 1 ? '' : 's'))),
+      esc(status || (count + ' event' + (count === 1 ? '' : 's') + ' / ' + groups.length + ' source' + (groups.length === 1 ? '' : 's'))),
       '</div>',
       '</div>',
 
