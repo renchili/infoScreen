@@ -55,6 +55,9 @@
     },
     {
       "name": "National Museum Singapore",
+      "aliases": [
+        "National Museum of Singapore"
+      ],
       "official_site": "https://www.nationalmuseum.nhb.gov.sg/",
       "allowed_domains": [
         "nationalmuseum.nhb.gov.sg"
