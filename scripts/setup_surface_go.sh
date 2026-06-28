@@ -15,9 +15,11 @@ if command -v apt >/dev/null 2>&1; then
   sudo apt install -y python3 curl ca-certificates ffmpeg imagemagick chromium || true
 fi
 
-chmod +x "$APP_DIR/fetch_live_data.py" 2>/dev/null || true
-chmod +x "$APP_DIR/fetch_event_stream.py" 2>/dev/null || true
-chmod +x "$APP_DIR/build_photos_json.py" 2>/dev/null || true
+chmod +x "$APP_DIR/surface/fetch_live_data.py" 2>/dev/null || true
+chmod +x "$APP_DIR/surface/fetch_event_stream.py" 2>/dev/null || true
+chmod +x "$APP_DIR/surface/build_photos_json.py" 2>/dev/null || true
+chmod +x "$APP_DIR/surface/search_local_events.py" 2>/dev/null || true
+chmod +x "$APP_DIR/surface/serve_infoscreen.py" 2>/dev/null || true
 
 cat > "$HOME/.config/systemd/user/infoscreen-http.service" <<EOF
 [Unit]
@@ -27,7 +29,7 @@ After=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=$APP_DIR
-ExecStart=$PYTHON_BIN -m http.server $PORT --bind 0.0.0.0
+ExecStart=$PYTHON_BIN $APP_DIR/surface/serve_infoscreen.py
 Restart=always
 RestartSec=3
 
@@ -43,7 +45,7 @@ After=network-online.target
 [Service]
 Type=oneshot
 WorkingDirectory=$APP_DIR
-ExecStart=$PYTHON_BIN $APP_DIR/fetch_live_data.py
+ExecStart=$PYTHON_BIN $APP_DIR/surface/fetch_live_data.py
 EOF
 
 cat > "$HOME/.config/systemd/user/infoscreen-live-data.timer" <<'EOF'
@@ -67,7 +69,7 @@ After=network-online.target
 [Service]
 Type=oneshot
 WorkingDirectory=$APP_DIR
-ExecStart=$PYTHON_BIN $APP_DIR/fetch_event_stream.py
+ExecStart=$PYTHON_BIN $APP_DIR/surface/fetch_event_stream.py
 EOF
 
 cat > "$HOME/.config/systemd/user/infoscreen-event-stream.timer" <<'EOF'
@@ -83,6 +85,30 @@ Unit=infoscreen-event-stream.service
 WantedBy=timers.target
 EOF
 
+cat > "$HOME/.config/systemd/user/infoscreen-local-events.service" <<EOF
+[Unit]
+Description=Fetch InfoScreen local events
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=$APP_DIR
+ExecStart=$PYTHON_BIN $APP_DIR/surface/search_local_events.py "Punggol Singapore"
+EOF
+
+cat > "$HOME/.config/systemd/user/infoscreen-local-events.timer" <<'EOF'
+[Unit]
+Description=Run InfoScreen local event fetch every 6 hours
+
+[Timer]
+OnBootSec=90
+OnUnitActiveSec=6h
+Unit=infoscreen-local-events.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
 cat > "$HOME/.config/systemd/user/infoscreen-photos.service" <<EOF
 [Unit]
 Description=Build InfoScreen photo manifest
@@ -90,7 +116,7 @@ Description=Build InfoScreen photo manifest
 [Service]
 Type=oneshot
 WorkingDirectory=$APP_DIR
-ExecStart=$PYTHON_BIN $APP_DIR/build_photos_json.py
+ExecStart=$PYTHON_BIN $APP_DIR/surface/build_photos_json.py
 EOF
 
 cat > "$HOME/.config/systemd/user/infoscreen-photos.timer" <<'EOF'
@@ -118,10 +144,12 @@ systemctl --user daemon-reload
 systemctl --user enable --now infoscreen-http.service
 systemctl --user enable --now infoscreen-live-data.timer
 systemctl --user enable --now infoscreen-event-stream.timer
+systemctl --user enable --now infoscreen-local-events.timer
 systemctl --user enable --now infoscreen-photos.timer
 
 systemctl --user start infoscreen-live-data.service || true
 systemctl --user start infoscreen-event-stream.service || true
+systemctl --user start infoscreen-local-events.service || true
 systemctl --user start infoscreen-photos.service || true
 
 sudo loginctl enable-linger "$USER" || true
