@@ -9,8 +9,10 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-APP_ROOT = Path(__file__).resolve().parents[1]
-SURFACE_DIR = APP_ROOT / "surface"
+SURFACE_DIR = Path(__file__).resolve().parent
+WEB_DIR = SURFACE_DIR / "web"
+ENV_DIR = SURFACE_DIR / ".env"
+CONF_DIR = SURFACE_DIR / "conf"
 
 
 def now() -> str:
@@ -26,7 +28,7 @@ def read_json(path: Path, default):
 
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, directory=str(APP_ROOT), **kwargs)
+        super().__init__(*args, directory=str(WEB_DIR), **kwargs)
 
     def send_json(self, obj, status: int = 200) -> None:
         data = json.dumps(obj, ensure_ascii=False, indent=2).encode("utf-8")
@@ -45,15 +47,26 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         path = urlparse(self.path).path
         if path == "/api/market-config":
-            return self.send_json(read_json(APP_ROOT / "market_config.json", {"symbols": ["AAPL", "NVDA", "MSFT", "TSLA"]}))
+            return self.send_json(
+                read_json(ENV_DIR / "market_config.json", read_json(CONF_DIR / "market_config.default.json", {"symbols": ["AAPL", "NVDA", "MSFT", "TSLA"]}))
+            )
         if path == "/api/local-events/search":
-            return self.send_json(read_json(APP_ROOT / "local_event_search_results.json", {"results": []}))
+            return self.send_json(read_json(ENV_DIR / "local_event_search_results.json", {"results": []}))
+        if path == "/market.json":
+            return self.send_json(read_json(ENV_DIR / "market.json", {}))
+        if path == "/event_stream.json":
+            return self.send_json(read_json(ENV_DIR / "event_stream.json", {"items": []}))
+        if path == "/local_event_search_results.json":
+            return self.send_json(read_json(ENV_DIR / "local_event_search_results.json", {"results": []}))
+        if path == "/photos.json":
+            return self.send_json(read_json(ENV_DIR / "photos.json", {"items": []}))
         return super().do_GET()
 
     def do_POST(self):
         path = urlparse(self.path).path
         if path == "/api/market-config":
             try:
+                ENV_DIR.mkdir(exist_ok=True)
                 body = self.body_json()
                 raw = body.get("symbols", [])
                 if not isinstance(raw, list):
@@ -67,15 +80,15 @@ class Handler(SimpleHTTPRequestHandler):
                 if not symbols:
                     raise ValueError("empty symbols")
                 payload = {"symbols": symbols, "updated_at": now()}
-                (APP_ROOT / "market_config.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+                (ENV_DIR / "market_config.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
                 return self.send_json({"ok": True, **payload})
             except Exception as exc:
                 return self.send_json({"ok": False, "error": str(exc)}, 400)
 
         if path == "/api/market-refresh":
             try:
-                proc = subprocess.run([sys.executable, str(SURFACE_DIR / "fetch_live_data.py")], cwd=str(APP_ROOT), text=True, capture_output=True, timeout=60)
-                return self.send_json({"ok": proc.returncode == 0, "returncode": proc.returncode, "stdout": proc.stdout[-2000:], "stderr": proc.stderr[-2000:], "market": read_json(APP_ROOT / "market.json", {})}, 200 if proc.returncode == 0 else 500)
+                proc = subprocess.run([sys.executable, str(SURFACE_DIR / "fetch_live_data.py")], cwd=str(SURFACE_DIR), text=True, capture_output=True, timeout=60)
+                return self.send_json({"ok": proc.returncode == 0, "returncode": proc.returncode, "stdout": proc.stdout[-2000:], "stderr": proc.stderr[-2000:], "market": read_json(ENV_DIR / "market.json", {})}, 200 if proc.returncode == 0 else 500)
             except Exception as exc:
                 return self.send_json({"ok": False, "error": str(exc)}, 500)
 
@@ -83,8 +96,8 @@ class Handler(SimpleHTTPRequestHandler):
             try:
                 body = self.body_json()
                 location = str(body.get("location") or "Punggol Singapore")
-                proc = subprocess.run([sys.executable, str(SURFACE_DIR / "search_local_events.py"), location], cwd=str(APP_ROOT), text=True, capture_output=True, timeout=90)
-                data = read_json(APP_ROOT / "local_event_search_results.json", {"results": []})
+                proc = subprocess.run([sys.executable, str(SURFACE_DIR / "search_local_events.py"), location], cwd=str(SURFACE_DIR), text=True, capture_output=True, timeout=90)
+                data = read_json(ENV_DIR / "local_event_search_results.json", {"results": []})
                 data["ok"] = proc.returncode == 0
                 data["stdout"] = proc.stdout[-1000:]
                 data["stderr"] = proc.stderr[-1000:]
@@ -96,7 +109,8 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 def main() -> None:
-    print(f"InfoScreen server on 0.0.0.0:8765 from {APP_ROOT}", flush=True)
+    ENV_DIR.mkdir(exist_ok=True)
+    print(f"InfoScreen server on 0.0.0.0:8765 from {WEB_DIR}", flush=True)
     ThreadingHTTPServer(("0.0.0.0", 8765), Handler).serve_forever()
 
 
