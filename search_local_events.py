@@ -22,28 +22,21 @@ DEFAULT_LOCATION = "Punggol Singapore"
 TODAY = date.today()
 
 MAX_SECONDS = float(os.environ.get("LOCAL_EVENTS_MAX_SECONDS", "85"))
-MAX_PAGES_PER_SOURCE = int(os.environ.get("LOCAL_EVENTS_MAX_PAGES_PER_SOURCE", "24"))
+MAX_PAGES_PER_SOURCE = int(os.environ.get("LOCAL_EVENTS_MAX_PAGES_PER_SOURCE", "30"))
 MAX_EVENTS_PER_SOURCE = int(os.environ.get("LOCAL_EVENTS_MAX_EVENTS_PER_SOURCE", "8"))
 MAX_TOTAL_EVENTS = int(os.environ.get("LOCAL_EVENTS_MAX_TOTAL_EVENTS", "60"))
 PAST_GRACE_DAYS = int(os.environ.get("LOCAL_EVENTS_PAST_GRACE_DAYS", "1"))
 
 TEMPLATE_RE = re.compile(r"#\{[^}]+\}|\{\{[^}]+\}\}|\$\{[^}]+\}")
 SCRIPT_STYLE_RE = re.compile(r"<script[\s\S]*?</script>|<style[\s\S]*?</style>", re.I)
-SCRIPT_JSON_RE = re.compile(
-    r"<script[^>]+type=[\"']application/(?:ld\+)?json[\"'][^>]*>([\s\S]*?)</script>",
-    re.I,
-)
+SCRIPT_JSON_RE = re.compile(r"<script[^>]+type=[\"']application/(?:ld\+)?json[\"'][^>]*>([\s\S]*?)</script>", re.I)
 TAG_RE = re.compile(r"<[^>]+>")
 HTML_HREF_RE = re.compile(r"<a\b[^>]*href=[\"']([^\"']+)[\"'][^>]*>([\s\S]*?)</a>", re.I)
-JSON_URL_RE = re.compile(
-    r"[\"'](?:href|url|link|path|slug|canonicalUrl|pageUrl)[\"']\s*:\s*[\"']([^\"']+)[\"']",
-    re.I,
-)
-RAW_PATH_RE = re.compile(
-    r"/(?:whats-on|whatson|events?|exhibitions?|programmes?|programs?|activities?|happenings?|courses|workshops?)/[^\"'<>\\\s]+",
-    re.I,
-)
+JSON_URL_RE = re.compile(r"[\"'](?:href|url|link|path|slug|canonicalUrl|pageUrl)[\"']\s*:\s*[\"']([^\"']+)[\"']", re.I)
+RAW_PATH_RE = re.compile(r"/(?:whats-on|whatson|events?|event|exhibitions?|exhibition|programmes?|programs?|activities?|happenings?|courses|workshops?|things-to-do)/[^\"'<>\\\s]+", re.I)
 ABS_URL_RE = re.compile(r"https?://[^\"'<>\\\s]+", re.I)
+LOC_RE = re.compile(r"<loc>\s*([^<]+)\s*</loc>", re.I)
+SITEMAP_RE = re.compile(r"^\s*Sitemap:\s*(\S+)\s*$", re.I | re.M)
 
 DATE_RE = re.compile(
     r"\b20\d{2}-\d{1,2}-\d{1,2}\b|"
@@ -53,32 +46,23 @@ DATE_RE = re.compile(
     r"\b(?:jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)[a-z]*\s+\d{1,2},?\s*\d{0,4}\b",
     re.I,
 )
-MONTHS = {
-    "jan": 1, "january": 1, "feb": 2, "february": 2, "mar": 3, "march": 3,
-    "apr": 4, "april": 4, "may": 5, "jun": 6, "june": 6,
-    "jul": 7, "july": 7, "aug": 8, "august": 8,
-    "sep": 9, "sept": 9, "september": 9, "oct": 10, "october": 10,
-    "nov": 11, "november": 11, "dec": 12, "december": 12,
-}
-EVENT_MARKERS = (
-    "event", "programme", "program", "workshop", "activity", "course", "class",
-    "session", "talk", "tour", "storytelling", "storytime", "festival",
-    "performance", "concert", "carnival", "reading", "exhibition", "show",
-    "camp", "walk", "trail", "experience", "drop-in", "holiday", "screening",
-    "guided", "open house", "lecture",
-)
+MONTHS = {"jan": 1, "january": 1, "feb": 2, "february": 2, "mar": 3, "march": 3, "apr": 4, "april": 4, "may": 5, "jun": 6, "june": 6, "jul": 7, "july": 7, "aug": 8, "august": 8, "sep": 9, "sept": 9, "september": 9, "oct": 10, "october": 10, "nov": 11, "november": 11, "dec": 12, "december": 12}
+EVENT_MARKERS = ("event", "programme", "program", "workshop", "activity", "course", "class", "session", "talk", "tour", "storytelling", "storytime", "festival", "performance", "concert", "carnival", "reading", "exhibition", "show", "camp", "walk", "trail", "experience", "drop-in", "holiday", "screening", "guided", "open house", "lecture")
 EVENT_MARKER_RE = re.compile(r"\b(" + "|".join(re.escape(x) for x in EVENT_MARKERS) + r")\b", re.I)
 LOCAL_PRIORITY_TERMS = ("punggol", "waterway", "one punggol", "punggol regional library", "safra punggol")
-LISTING_ROUTE_RE = re.compile(r"/(?:whats-on|whatson|events?|overview|view-all|programmes?|programs?|activities?)/?$", re.I)
-DETAIL_ROUTE_RE = re.compile(
-    r"/(?:whats-on|whatson|events?|exhibitions?|exhibition|programmes?|programs?|activities?|happenings?|courses|workshops?)/.+",
-    re.I,
-)
+LISTING_ROUTE_RE = re.compile(r"/(?:whats-on|whatson|events?|overview|view-all|exhibitions?|exhibition|programmes?|programs?|activities?|happenings?|courses|workshops?)/?$", re.I)
+DETAIL_ROUTE_RE = re.compile(r"/(?:whats-on|whatson|events?|event|exhibitions?|exhibition|programmes?|programs?|activities?|happenings?|courses|workshops?)/.+", re.I)
 LOCATION_KEY_RE = re.compile(r"\b(?:venue|location|where|place|gallery|room|level|floor)\b", re.I)
 LOCATION_VALUE_RE = re.compile(r"\b(?:gallery|galleries|room|theatre|theater|hall|salon|concourse|foyer|atrium|lawn|level|floor|basement|museum|centre|center|library|zoo)\b", re.I)
-LOCATION_LABEL_RE = re.compile(
-    r"\b(?:venue|location|where|place)\s*[:\-–—]\s*([^\n|•<>]{2,140})",
-    re.I,
+LOCATION_LABEL_RE = re.compile(r"\b(?:venue|location|where|place)\s*[:\-–—]\s*([^\n|•<>]{2,140})", re.I)
+
+COMMON_EVENT_ENTRY_PATHS = (
+    "/whats-on", "/whats-on/", "/whats-on/overview", "/whats-on/view-all", "/whatson",
+    "/events", "/events/", "/event", "/event/", "/exhibition", "/exhibition/", "/exhibitions", "/exhibitions/",
+    "/programmes", "/programmes/", "/programs", "/programs/", "/activities", "/activities/",
+    "/happenings", "/happenings/", "/courses", "/courses/", "/workshops", "/workshops/",
+    "/en/whats-on", "/en/whats-on.html", "/en/events", "/en/events.html", "/en/exhibitions", "/en/exhibitions.html",
+    "/en/things-to-do/whats-on.html", "/en/things-to-do/events.html", "/en/see-and-do/whats-on.html",
 )
 
 
@@ -118,25 +102,22 @@ def normalize_url(url, base=""):
     parsed = urlparse(raw)
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         return ""
-    query = [
-        (k, v)
-        for k, v in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
-        if not k.lower().startswith("utm_")
-    ]
-    return urllib.parse.urlunparse(
-        (parsed.scheme, parsed.netloc.lower(), parsed.path or "/", "", urllib.parse.urlencode(query), "")
-    )
+    query = [(k, v) for k, v in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True) if not k.lower().startswith("utm_")]
+    return urllib.parse.urlunparse((parsed.scheme, parsed.netloc.lower(), parsed.path or "/", "", urllib.parse.urlencode(query), ""))
 
 
 def url_key(url):
     parsed = urlparse(url)
-    return urllib.parse.urlunparse(
-        (parsed.scheme, parsed.netloc.lower(), parsed.path.rstrip("/"), "", parsed.query, "")
-    ).lower()
+    return urllib.parse.urlunparse((parsed.scheme, parsed.netloc.lower(), parsed.path.rstrip("/"), "", parsed.query, "")).lower()
 
 
 def host(url):
     return urlparse(url).netloc.lower().replace("www.", "")
+
+
+def root_url(url):
+    parsed = urlparse(url)
+    return urllib.parse.urlunparse((parsed.scheme, parsed.netloc.lower(), "/", "", "", ""))
 
 
 def same_domain(url, domains):
@@ -144,10 +125,10 @@ def same_domain(url, domains):
     return bool(h) and any(h == d or h.endswith("." + d) for d in domains)
 
 
-def fetch(url, timeout=10):
+def fetch(url, timeout=10, max_bytes=2_500_000):
     req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept-Language": "en-US,en;q=0.9"})
     with urllib.request.urlopen(req, timeout=timeout) as response:
-        raw = response.read(2_500_000)
+        raw = response.read(max_bytes)
         match = re.search(r"charset=([\w.-]+)", response.headers.get("Content-Type", ""), re.I)
         return raw.decode(match.group(1) if match else "utf-8", "replace")
 
@@ -155,10 +136,7 @@ def fetch(url, timeout=10):
 def meta_content(page, names):
     for name in names:
         escaped = re.escape(name)
-        patterns = (
-            rf'<meta[^>]+(?:name|property)=["\']{escaped}["\'][^>]+content=["\']([^"\']+)["\']',
-            rf'<meta[^>]+content=["\']([^"\']+)["\'][^>]+(?:name|property)=["\']{escaped}["\']',
-        )
+        patterns = (rf'<meta[^>]+(?:name|property)=["\']{escaped}["\'][^>]+content=["\']([^"\']+)["\']', rf'<meta[^>]+content=["\']([^"\']+)["\'][^>]+(?:name|property)=["\']{escaped}["\']')
         for pattern in patterns:
             match = re.search(pattern, page, re.I | re.S)
             if match and clean(match.group(1)):
@@ -211,22 +189,11 @@ def label_to_dates(label):
             dates.append(date(int(y), int(m), int(d)))
         except ValueError:
             pass
-    for d, m, y in re.findall(
-        r"\b(\d{1,2})\s+"
-        r"(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)[a-z]*"
-        r"\s*(20\d{2})?\b",
-        text,
-        re.I,
-    ):
+    for d, m, y in re.findall(r"\b(\d{1,2})\s+(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)[a-z]*\s*(20\d{2})?\b", text, re.I):
         parsed = parse_one(d, m, y)
         if parsed:
             dates.append(parsed)
-    for m, d, y in re.findall(
-        r"\b(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)[a-z]*"
-        r"\s+(\d{1,2}),?\s*(20\d{2})?\b",
-        text,
-        re.I,
-    ):
+    for m, d, y in re.findall(r"\b(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)[a-z]*\s+(\d{1,2}),?\s*(20\d{2})?\b", text, re.I):
         parsed = parse_one(d, m, y)
         if parsed:
             dates.append(parsed)
@@ -314,16 +281,6 @@ def event_type(value):
     return any(str(item).lower() == "event" for item in items)
 
 
-def location_from_value(value):
-    if isinstance(value, dict):
-        loc = value.get("location")
-        if isinstance(loc, str):
-            return clean_location(loc)
-        if isinstance(loc, dict):
-            return clean_location(loc.get("name") or loc.get("address") or "")
-    return ""
-
-
 def clean_location(value):
     text = clean_keep_text(value)
     text = re.sub(r"\b(?:venue|location|where|place)\b\s*[:\-–—]?\s*", "", text, flags=re.I).strip()
@@ -337,12 +294,19 @@ def clean_location(value):
     return shorten(text, 120)
 
 
+def location_from_value(value):
+    if isinstance(value, dict):
+        loc = value.get("location")
+        if isinstance(loc, str):
+            return clean_location(loc)
+        if isinstance(loc, dict):
+            return clean_location(loc.get("name") or loc.get("address") or "")
+    return ""
+
+
 def json_location_candidates(page):
     candidates = []
-    keys = (
-        "venue", "venueName", "venueTitle", "eventVenue", "location", "locationName",
-        "place", "placeName", "room", "gallery", "floor", "level",
-    )
+    keys = ("venue", "venueName", "venueTitle", "eventVenue", "location", "locationName", "place", "placeName", "room", "gallery", "floor", "level")
     for obj in load_json_objects(page):
         for node in walk_json(obj):
             if not isinstance(node, dict):
@@ -372,7 +336,6 @@ def labeled_location_candidates(page):
         loc = clean_location(match.group(1))
         if loc:
             candidates.append(loc)
-    # Common rendered HTML shape: <div>Venue</div><div>The Salon, Level 1</div>
     html_text = html.unescape(page[:250000]).replace("\\/", "/")
     for match in re.finditer(r">\s*(Venue|Location|Where|Place)\s*<([\s\S]{0,900})", html_text, re.I):
         tail = match.group(2)
@@ -396,9 +359,7 @@ def sessions_from_value(value):
         raw = value.get(key)
         if raw:
             labels.append(str(raw))
-    joined = " - ".join(labels)
-    sessions = sessions_from_text(joined, limit=3)
-    return sessions
+    return sessions_from_text(" - ".join(labels), limit=3)
 
 
 def source_venue_names(source):
@@ -431,9 +392,7 @@ def route_looks_listing(url):
     path = parsed.path.lower().rstrip("/") or "/"
     if parsed.query and re.search(r"\b(category|filter|time|date|type|page)=", parsed.query, re.I):
         return True
-    if LISTING_ROUTE_RE.search(path):
-        return True
-    return False
+    return bool(LISTING_ROUTE_RE.search(path))
 
 
 def route_looks_event_detail(url):
@@ -462,19 +421,7 @@ def make_event(source, url, title, sessions, page, event_obj=None, structured=Fa
         return None
     if not structured and not valid_unstructured_event(title, url, page):
         return None
-    return {
-        "title": shorten(title, 140),
-        "when": format_when(sessions),
-        "where": extract_location(source, page, event_obj),
-        "host": source.get("source") or source.get("name"),
-        "source_name": source.get("source") or source.get("name"),
-        "url": url,
-        "summary": page_summary(page),
-        "start_date": best_date(sessions).isoformat(),
-        "kind": "event",
-        "source_type": "official_registry",
-        "structured": bool(structured),
-    }
+    return {"title": shorten(title, 140), "when": format_when(sessions), "where": extract_location(source, page, event_obj), "host": source.get("source") or source.get("name"), "source_name": source.get("source") or source.get("name"), "url": url, "summary": page_summary(page), "start_date": best_date(sessions).isoformat(), "kind": "event", "source_type": "official_registry", "structured": bool(structured)}
 
 
 def structured_events(source, url, page):
@@ -525,7 +472,6 @@ def score_link(source, url, label, context):
 
 def discover_links(source, page, base_url):
     found = {}
-
     def add(raw, label, context):
         url = normalize_url(raw, base_url)
         if not url:
@@ -537,21 +483,17 @@ def discover_links(source, page, base_url):
         item = (score, url, clean(label)[:120])
         if key not in found or item[0] > found[key][0]:
             found[key] = item
-
     for match in HTML_HREF_RE.finditer(page):
         context = page[max(0, match.start() - 900): min(len(page), match.end() + 1400)]
         add(match.group(1), match.group(2), context)
-
     decoded = html.unescape(page).replace("\\/", "/").replace("\\u002F", "/").replace("\\u002f", "/")
     for match in JSON_URL_RE.finditer(decoded):
         context = decoded[max(0, match.start() - 700): min(len(decoded), match.end() + 1000)]
         add(match.group(1), match.group(1), context)
-
     for regex in (RAW_PATH_RE, ABS_URL_RE):
         for match in regex.finditer(decoded):
             context = decoded[max(0, match.start() - 700): min(len(decoded), match.end() + 1000)]
             add(match.group(0), match.group(0), context)
-
     return sorted(found.values(), key=lambda x: (-x[0], x[1]))
 
 
@@ -560,6 +502,71 @@ def analyze_page(source, url, page, location=DEFAULT_LOCATION, fallback_title=""
     if not events:
         events = unstructured_event(source, url, page, fallback_title)
     return events
+
+
+def sitemap_urls_for_source(source):
+    root = root_url(source["official_site"])
+    urls = [urljoin(root, "/sitemap.xml"), urljoin(root, "/sitemap_index.xml")]
+    try:
+        robots = fetch(urljoin(root, "/robots.txt"), timeout=6, max_bytes=400000)
+        urls.extend(normalize_url(x, root) for x in SITEMAP_RE.findall(robots))
+    except Exception:
+        pass
+    out = []
+    for url in urls:
+        if url and same_domain(url, source.get("domains") or []) and url not in out:
+            out.append(url)
+    return out[:8]
+
+
+def sitemap_event_links(source, deadline):
+    found = {}
+    pending = [(url, 0) for url in sitemap_urls_for_source(source)]
+    seen = set()
+    while pending and time.time() < deadline and len(seen) < 18 and len(found) < 80:
+        url, depth = pending.pop(0)
+        key = url_key(url)
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            xml = fetch(url, timeout=8, max_bytes=2_500_000)
+        except Exception:
+            continue
+        for loc in LOC_RE.findall(xml):
+            loc_url = normalize_url(loc, url)
+            if not loc_url or not same_domain(loc_url, source.get("domains") or []):
+                continue
+            if (loc_url.lower().endswith(".xml") or "sitemap" in loc_url.lower()) and depth < 1:
+                pending.append((loc_url, depth + 1))
+                continue
+            score = score_link(source, loc_url, loc_url, "")
+            if score >= 35:
+                found[url_key(loc_url)] = (score + 10, loc_url, "sitemap")
+    return sorted(found.values(), key=lambda x: (-x[0], x[1]))
+
+
+def common_entry_links(source):
+    found = {}
+    bases = [source.get("official_site")]
+    bases.extend(sub.get("url") for sub in source.get("official_subsites") or [] if isinstance(sub, dict))
+    roots = []
+    for base in bases:
+        base = normalize_url(base)
+        if not base:
+            continue
+        root = root_url(base)
+        if root and root not in roots:
+            roots.append(root)
+    for root in roots:
+        for path in COMMON_EVENT_ENTRY_PATHS:
+            url = normalize_url(path, root)
+            if not same_domain(url, source.get("domains") or []):
+                continue
+            score = score_link(source, url, path, "")
+            if score >= 35:
+                found[url_key(url)] = (score + 5, url, "common-entry")
+    return sorted(found.values(), key=lambda x: (-x[0], x[1]))
 
 
 def registry_source_from_entry(entry):
@@ -572,26 +579,13 @@ def registry_source_from_entry(entry):
         d = str(d).lower().replace("www.", "").strip()
         if d and d not in domains:
             domains.append(d)
-
     seeds = [official_site]
     for sub in entry.get("official_subsites") or []:
         if isinstance(sub, dict):
             url = normalize_url(sub.get("url"))
             if url and same_domain(url, domains) and url not in seeds:
                 seeds.append(url)
-
-    return {
-        "name": name,
-        "source": name,
-        "default_venue": name,
-        "aliases": [clean(x) for x in entry.get("aliases") or [] if clean(x)],
-        "official_subsites": entry.get("official_subsites") or [],
-        "domains": domains,
-        "seeds": seeds,
-        "official_site": official_site,
-        "registry_status": entry.get("status"),
-        "registry_score": entry.get("score"),
-    }
+    return {"name": name, "source": name, "default_venue": name, "aliases": [clean(x) for x in entry.get("aliases") or [] if clean(x)], "official_subsites": entry.get("official_subsites") or [], "domains": domains, "seeds": seeds, "official_site": official_site, "registry_status": entry.get("status"), "registry_score": entry.get("score")}
 
 
 def load_sources():
@@ -611,38 +605,38 @@ def load_sources():
 
 
 def source_cards(sources):
-    return [
-        {"title": source.get("name"), "url": source.get("official_site")}
-        for source in sources
-        if source.get("name") and source.get("official_site")
-    ]
+    return [{"title": source.get("name"), "url": source.get("official_site")} for source in sources if source.get("name") and source.get("official_site")]
+
+
+def push_queue(queue, queued, url, score, label, source):
+    url = normalize_url(url)
+    if not url or not same_domain(url, source.get("domains") or []):
+        return False
+    key = url_key(url)
+    if key in queued:
+        return False
+    queued.add(key)
+    queue.append((score, url, label))
+    return True
 
 
 def crawl_source(source, location, deadline):
     queue = []
     queued = set()
+    debug = {"source": source.get("name"), "official_site": source.get("official_site"), "domains": source.get("domains"), "seeds": [], "runtime_entry_preview": [], "sitemap_preview": [], "pages_fetched": 0, "queue_seen": 0, "discovered_preview": [], "fetched_preview": [], "accepted_preview": [], "rejected_preview": []}
     for seed in source.get("seeds") or []:
-        seed = normalize_url(seed)
-        if seed and same_domain(seed, source.get("domains") or []):
-            queue.append((100, seed, ""))
-            queued.add(url_key(seed))
-
+        if push_queue(queue, queued, seed, 100, "official-site", source):
+            debug["seeds"].append(seed)
+    for score, url, label in common_entry_links(source):
+        if push_queue(queue, queued, url, score, label, source) and len(debug["runtime_entry_preview"]) < 30:
+            debug["runtime_entry_preview"].append({"score": score, "url": url, "label": label})
+    for score, url, label in sitemap_event_links(source, deadline):
+        if push_queue(queue, queued, url, score, label, source) and len(debug["sitemap_preview"]) < 30:
+            debug["sitemap_preview"].append({"score": score, "url": url, "label": label})
     fetched = set()
     results = []
     result_keys = set()
-    debug = {
-        "source": source.get("name"),
-        "official_site": source.get("official_site"),
-        "domains": source.get("domains"),
-        "seeds": source.get("seeds"),
-        "pages_fetched": 0,
-        "queue_seen": len(queue),
-        "discovered_preview": [],
-        "fetched_preview": [],
-        "accepted_preview": [],
-        "rejected_preview": [],
-    }
-
+    debug["queue_seen"] = len(queued)
     while queue and time.time() < deadline and len(fetched) < MAX_PAGES_PER_SOURCE and len(results) < MAX_EVENTS_PER_SOURCE:
         queue.sort(key=lambda x: (-x[0], x[1]))
         score, url, label = queue.pop(0)
@@ -653,37 +647,30 @@ def crawl_source(source, location, deadline):
         try:
             page = fetch(url)
         except Exception as exc:
-            debug["rejected_preview"].append({"url": url, "reason": f"fetch:{type(exc).__name__}"})
+            if len(debug["rejected_preview"]) < 30:
+                debug["rejected_preview"].append({"url": url, "reason": f"fetch:{type(exc).__name__}", "label": label})
             continue
-
         debug["pages_fetched"] += 1
-        debug["fetched_preview"].append({"url": url, "score": score, "label": label})
-
+        if len(debug["fetched_preview"]) < 40:
+            debug["fetched_preview"].append({"url": url, "score": score, "label": label})
         for event in analyze_page(source, url, page, location, label):
             event_key = url_key(event["url"]) + "::" + event["title"].lower()
-            if event_key not in result_keys:
-                result_keys.add(event_key)
-                results.append(event)
-                debug["accepted_preview"].append({
-                    "title": event["title"],
-                    "url": event["url"],
-                    "when": event["when"],
-                    "where": event.get("where"),
-                })
-                if len(results) >= MAX_EVENTS_PER_SOURCE:
-                    break
-
+            if event_key in result_keys:
+                continue
+            result_keys.add(event_key)
+            results.append(event)
+            debug["accepted_preview"].append({"title": event["title"], "url": event["url"], "when": event["when"], "where": event.get("where")})
+            if len(results) >= MAX_EVENTS_PER_SOURCE:
+                break
         for link_score_value, link_url, link_label in discover_links(source, page, url):
             link_key = url_key(link_url)
             if link_key in fetched or link_key in queued:
                 continue
             queued.add(link_key)
             queue.append((link_score_value, link_url, link_label))
-            if len(debug["discovered_preview"]) < 30:
+            if len(debug["discovered_preview"]) < 40:
                 debug["discovered_preview"].append({"score": link_score_value, "url": link_url, "label": link_label})
-
         debug["queue_seen"] = len(queued)
-
     debug["accepted"] = len(results)
     return results, debug
 
@@ -692,7 +679,6 @@ def sort_results(items, location):
     def local_score(item):
         text = " ".join(str(item.get(k, "")) for k in ("title", "where", "summary", "source_name")).lower()
         return sum(1 for term in LOCAL_PRIORITY_TERMS if term in text)
-
     return sorted(items, key=lambda x: (-local_score(x), x.get("source_name", ""), x.get("start_date", ""), x.get("title", "")))
 
 
@@ -700,7 +686,6 @@ def main():
     location = " ".join(sys.argv[1:]).strip() or DEFAULT_LOCATION
     deadline = time.time() + MAX_SECONDS
     sources = load_sources()
-
     all_results = []
     debug_by_source = []
     seen = set()
@@ -717,22 +702,8 @@ def main():
             all_results.append(item)
             if len(all_results) >= MAX_TOTAL_EVENTS:
                 break
-
     all_results = sort_results(all_results, location)[:MAX_TOTAL_EVENTS]
-    payload = {
-        "ok": True,
-        "version": 19,
-        "extractor": "official-registry-event-crawler-v19",
-        "updated_at": now_iso(),
-        "location": location,
-        "source_registry": str(OFFICIAL_REGISTRY.name),
-        "source_count": len(sources),
-        "per_source_limit": MAX_EVENTS_PER_SOURCE,
-        "count": len(all_results),
-        "sources": source_cards(sources),
-        "results": all_results,
-        "debug_by_source": debug_by_source,
-    }
+    payload = {"ok": True, "version": 20, "extractor": "official-registry-runtime-discovery-v20", "updated_at": now_iso(), "location": location, "source_registry": str(OFFICIAL_REGISTRY.name), "source_count": len(sources), "per_source_limit": MAX_EVENTS_PER_SOURCE, "count": len(all_results), "sources": source_cards(sources), "results": all_results, "debug_by_source": debug_by_source}
     OUT.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(payload, ensure_ascii=False, indent=2))
 
