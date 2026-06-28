@@ -4,6 +4,7 @@ from __future__ import annotations
 import email.utils
 import json
 import mimetypes
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -26,6 +27,11 @@ JSON_DEFAULTS = {
     "photos.json": {"items": []},
     "sync_status.json": {},
 }
+
+LEGACY_LOCAL_EVENT_INLINE_RE = re.compile(
+    r"\n?<script\s+id=[\"']local-event-inline-script[\"'][^>]*>[\s\S]*?</script>\s*",
+    re.I,
+)
 
 
 def now() -> str:
@@ -66,6 +72,13 @@ def market_config_json():
     return read_json(CONF_DIR / "market_config.default.json", JSON_DEFAULTS["market_config.json"])
 
 
+def clean_index_html() -> bytes:
+    raw = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    cleaned = LEGACY_LOCAL_EVENT_INLINE_RE.sub("\n", raw)
+    cleaned = cleaned.replace('calendar_board.js?v=1781715981', 'calendar_board.js?v=front-clean-1')
+    return cleaned.encode("utf-8")
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(WEB_DIR), **kwargs)
@@ -81,6 +94,16 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+
+    def send_index(self, head_only: bool = False) -> None:
+        data = clean_index_html()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Last-Modified", email.utils.formatdate((WEB_DIR / "index.html").stat().st_mtime, usegmt=True))
+        self.end_headers()
+        if not head_only:
+            self.wfile.write(data)
 
     def send_json_head(self, name: str) -> None:
         path = runtime_path(name)
@@ -117,6 +140,9 @@ class Handler(SimpleHTTPRequestHandler):
         path = urlparse(self.path).path
         name = path.lstrip("/")
 
+        if path in {"/", "/index.html"}:
+            return self.send_index(head_only=True)
+
         if name in JSON_DEFAULTS:
             return self.send_json_head(name)
 
@@ -139,6 +165,9 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         path = urlparse(self.path).path
         name = path.lstrip("/")
+
+        if path in {"/", "/index.html"}:
+            return self.send_index()
 
         if path == "/api/market-config":
             return self.send_json(market_config_json())
