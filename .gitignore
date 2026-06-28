@@ -1,33 +1,18 @@
-# runtime data
-schedule.json
-weather.json
-market.json
+# local machine configuration and runtime state
+.env/
 
-# Surface runtime/generated data
-event_stream.json
-local_event_search_results*.json
-photos.json
-sync_status.json
+# generated runtime directories
+logs/
 photos/
 public_photos/
+__pycache__/
 
-# local event generated/debug outputs
-discovered_event_sources*.json
-*.good
-
-# logs / backups
-*.log
+# local backups / editor artifacts
 *.bak*
-index.html.bak.*
+*.backup*
+*.tmp
+*.log
+.DS_Store
 
 # unrelated local tools
 chatgpt-ui-once/
-
-# system
-.DS_Store
-__pycache__/
-logs/
-
-# Per-machine macOS schedule sync configuration
-mac/local.env
-mac/launchagents/*.plist
