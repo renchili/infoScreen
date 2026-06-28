@@ -41,6 +41,8 @@ SCRIPT_JSON_RE = re.compile(r"<script[^>]+type=[\"']application/(?:ld\+)?json[\"
 TAG_RE = re.compile(r"<[^>]+>")
 HREF_RE = re.compile(r"<a\b[^>]*href=[\"']([^\"']+)[\"'][^>]*>([\s\S]*?)</a>", re.I)
 META_RE = re.compile(r"<meta[^>]+(?:name|property)=[\"']([^\"']+)[\"'][^>]+content=[\"']([^\"']+)[\"']", re.I | re.S)
+OPEN_CONTAINER_RE = re.compile(r"<(?P<tag>article|li|div)\b(?P<attrs>[^>]*)>", re.I)
+CARD_ATTR_RE = re.compile(r"\b(card|tile|item|event|programme|program|exhibition|listing|result)\b", re.I)
 FULL_RANGE_RE = re.compile(rf"\b(\d{{1,2}})\s+({MONTH_WORD})[a-z]*\s+(20\d{{2}})\s*{SEP}\s*(\d{{1,2}})\s+({MONTH_WORD})[a-z]*\s+(20\d{{2}})\b", re.I)
 END_YEAR_RANGE_RE = re.compile(rf"\b(\d{{1,2}})\s+({MONTH_WORD})[a-z]*\s*{SEP}\s*(\d{{1,2}})\s+({MONTH_WORD})[a-z]*\s+(20\d{{2}})\b", re.I)
 SAME_MONTH_RANGE_RE = re.compile(rf"\b(\d{{1,2}})\s*{SEP}\s*(\d{{1,2}})\s+({MONTH_WORD})[a-z]*\s*(20\d{{2}})?\b", re.I)
@@ -49,9 +51,9 @@ ISO_DATE_RE = re.compile(r"\b(20\d{2})-(\d{1,2})-(\d{1,2})\b")
 DATE_HINT_RE = re.compile(r"\b20\d{2}-\d{1,2}-\d{1,2}\b|" + rf"\b\d{{1,2}}\s+(?:{MONTH_WORD})[a-z]*\s*(?:{SEP})?\s*\d{{0,2}}\s*(?:{MONTH_WORD})?[a-z]*\s*\d{{0,4}}\b", re.I)
 TIME_HINT_RE = re.compile(r"\b(?:\d{1,2}(?::|\.)\d{2}\s*(?:am|pm)?|\d{1,2}\s*(?:am|pm)|daily|selected dates|all day|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun)\b", re.I)
 EVENT_PATH_RE = re.compile(r"/(?:whats-on|whatson|events?|event|exhibitions?|exhibition|programmes?|programs?|activities?|guided-tours|discover-mandai/events)/", re.I)
-LISTING_PATH_RE = re.compile(r"/(?:whats-on/(?:overview|view-all|exhibition|exhibitions|programmes?|events?)|events?|exhibition|exhibitions|programmes?|activities?)/?$", re.I)
 BAD_CONTEXT_RE = re.compile(r"\b(previous programme|next programme|related|recommended|last updated|newsletter|privacy|terms of use|copyright|©)\b", re.I)
-GENERIC_TITLE_RE = re.compile(r"^(events?|exhibitions?|programmes?|programs?|activities?|view all|overview|what'?s on|read more|learn more|find out more|view details|details|more)$", re.I)
+GENERIC_TITLE_RE = re.compile(r"^(events?|exhibitions?(?:\s*&\s*programmes?)?|programmes?|programs?|activities?|view all|overview|what'?s on|read more|learn more|find out more|view details|details|more)$", re.I)
+GENERIC_PATH_LEAFS = {"", "whats-on", "whatson", "overview", "view-all", "events", "event", "exhibition", "exhibitions", "programme", "programmes", "program", "programs", "activities", "activity", "guided-tours"}
 
 
 def now_iso() -> str:
@@ -98,14 +100,22 @@ def key_url(url: str) -> str:
     return urllib.parse.urlunparse((parsed.scheme, parsed.netloc.lower(), parsed.path.rstrip("/"), "", parsed.query, "")).lower()
 
 
-def is_detail_url(url: str) -> bool:
+def url_role(url: str) -> str:
     parsed = urlparse(url)
-    path = urllib.parse.unquote(parsed.path.lower()).rstrip("/") or "/"
+    path = urllib.parse.unquote(parsed.path.lower()).rstrip("/")
+    parts = [part for part in path.split("/") if part]
+    leaf = re.sub(r"\.html$", "", parts[-1] if parts else "")
     if parsed.query and re.search(r"\b(category|filter|time|date|type|page)=", parsed.query, re.I):
-        return False
-    if LISTING_PATH_RE.search(path):
-        return False
-    return bool(EVENT_PATH_RE.search(path))
+        return "listing"
+    if leaf in GENERIC_PATH_LEAFS:
+        return "listing"
+    if EVENT_PATH_RE.search(path + "/"):
+        return "detail"
+    return "other"
+
+
+def is_detail_url(url: str) -> bool:
+    return url_role(url) == "detail"
 
 
 def fetch_text(url: str, timeout: int = 12, max_bytes: int = 2_500_000) -> str:
@@ -244,6 +254,26 @@ def title_from_page(page: str, fallback: str = "", url: str = "") -> str:
     return ""
 
 
+def title_from_card(fragment: str, link_label: str, url: str) -> str:
+    candidates = []
+    for tag in ("h1", "h2", "h3", "h4"):
+        candidates.extend(tag_texts(fragment, tag))
+    candidates.append(link_label)
+    for line in visible_lines(fragment):
+        if DATE_HINT_RE.search(line) or TIME_HINT_RE.search(line) or BAD_CONTEXT_RE.search(line):
+            continue
+        if len(line) < 4:
+            continue
+        candidates.append(line)
+    candidates.append(title_from_url(url))
+    for item in candidates:
+        title = clean(item)
+        title = re.sub(r"^(previous programme|next programme)\s+", "", title, flags=re.I)
+        if title and not GENERIC_TITLE_RE.match(title):
+            return short(title, 140)
+    return ""
+
+
 def venue_from_text(source: dict, text: str) -> str:
     source_name = source.get("default_venue") or source.get("name") or ""
     for line in visible_lines(text)[:120]:
@@ -328,15 +358,61 @@ def event_from_page(source: dict, url: str, page: str, fallback_title: str = "",
 def event_from_card(source: dict, url: str, title: str, context: str) -> dict | None:
     if not is_detail_url(url):
         return None
-    title = re.sub(r"^(previous programme|next programme)\s+", "", clean(title), flags=re.I)
-    if not title or GENERIC_TITLE_RE.match(title) or BAD_CONTEXT_RE.search(title):
-        title = title_from_url(url)
-    if not title or GENERIC_TITLE_RE.match(title):
-        return None
+    title = title_from_card(context, title, url)
     date_label = best_date_label(context)
-    if not date_label or not is_current_date_label(date_label):
+    if not title or not date_label or not is_current_date_label(date_label):
         return None
     return make_event(source, url, title, date_label, venue_from_text(source, context), context)
+
+
+def merge_card_with_detail(card_event: dict | None, detail_event: dict | None) -> dict | None:
+    if not card_event:
+        return detail_event
+    if not detail_event:
+        return card_event
+    merged = dict(card_event)
+    if detail_event.get("title") and len(str(detail_event["title"])) > len(str(merged.get("title", ""))) + 8:
+        merged["title"] = detail_event["title"]
+    if detail_event.get("when") and (has_explicit_year(str(detail_event["when"])) or not has_explicit_year(str(merged.get("when", "")))):
+        merged["when"] = detail_event["when"]
+        merged["start_date"] = detail_event["start_date"]
+    if detail_event.get("where") and len(str(detail_event["where"])) > len(str(merged.get("where", ""))):
+        merged["where"] = detail_event["where"]
+    if detail_event.get("summary") and len(str(detail_event["summary"])) > len(str(merged.get("summary", ""))):
+        merged["summary"] = detail_event["summary"]
+    return merged
+
+
+def card_fragment_for_anchor(decoded: str, start: int, end: int) -> str:
+    candidates: list[tuple[int, int, str]] = []
+    lower_limit = max(0, start - 9000)
+    for match in OPEN_CONTAINER_RE.finditer(decoded, lower_limit, start):
+        tag = match.group("tag").lower()
+        attrs = match.group("attrs") or ""
+        if tag == "div" and not CARD_ATTR_RE.search(attrs):
+            continue
+        close = decoded.find(f"</{tag}>", end)
+        if close == -1:
+            continue
+        close += len(tag) + 3
+        if close - match.start() > 14000:
+            continue
+        fragment = decoded[match.start():close]
+        score = 0
+        if DATE_HINT_RE.search(fragment):
+            score += 80
+        if TIME_HINT_RE.search(fragment):
+            score += 8
+        if re.search(r"<h[1-4]\b", fragment, re.I):
+            score += 25
+        if CARD_ATTR_RE.search(attrs):
+            score += 15
+        score -= min(30, max(0, len(fragment) - 5000) // 300)
+        candidates.append((score, match.start(), fragment))
+    if candidates:
+        candidates.sort(key=lambda item: (-item[0], -item[1]))
+        return candidates[0][2]
+    return decoded[max(0, start - 700): min(len(decoded), end + 900)]
 
 
 def extract_link_cards(page: str, base_url: str, source: dict) -> list[dict]:
@@ -348,18 +424,20 @@ def extract_link_cards(page: str, base_url: str, source: dict) -> list[dict]:
         if not url or not same_domain(url, domains) or not is_detail_url(url):
             continue
         label = clean(match.group(2))
-        context = decoded[max(0, match.start() - 1200):match.end() + 1600]
+        fragment = card_fragment_for_anchor(decoded, match.start(), match.end())
+        title = title_from_card(fragment, label, url)
+        date_label = best_date_label(fragment)
         score = 0
-        if label and not GENERIC_TITLE_RE.match(label):
+        if title:
             score += 30
-        if DATE_HINT_RE.search(context):
-            score += 50
-        if TIME_HINT_RE.search(context):
+        if date_label:
+            score += 70
+        if TIME_HINT_RE.search(fragment):
             score += 8
         if BAD_CONTEXT_RE.search(label):
-            score -= 80
+            score -= 50
         key = key_url(url)
-        item = {"url": url, "label": label, "context": context, "score": score}
+        item = {"url": url, "label": title or label, "context": fragment, "score": score, "date_label": date_label}
         if key not in found or score > found[key]["score"]:
             found[key] = item
     return sorted(found.values(), key=lambda item: (-item["score"], item["url"]))
@@ -400,22 +478,22 @@ def collect_source(source: dict, deadline: float) -> tuple[list[dict], dict]:
                 continue
             seen.add(key)
 
-            event = event_from_card(source, url, card.get("label", ""), card.get("context", ""))
-            reason = "card_missing_current_date"
+            card_event = event_from_card(source, url, card.get("label", ""), card.get("context", ""))
+            detail_event = None
+            reason = "card_or_detail_missing_current_date"
             try:
                 detail = fetch_text(url)
                 debug["detail_fetched"] += 1
                 detail_event = event_from_page(source, url, detail, card.get("label", ""), card.get("context", ""))
-                if detail_event:
-                    event = detail_event
             except Exception as exc:
                 reason = f"detail_fetch_error:{type(exc).__name__}"
+            event = merge_card_with_detail(card_event, detail_event)
 
             if event:
                 accepted.append(event)
                 debug["accepted_preview"].append({"title": event["title"], "url": event["url"], "when": event["when"]})
             elif len(debug["not_output_preview"]) < 30:
-                debug["not_output_preview"].append({"url": url, "label": card.get("label"), "reason": reason})
+                debug["not_output_preview"].append({"url": url, "label": card.get("label"), "date_label": card.get("date_label"), "reason": reason})
 
     debug["accepted"] = len(accepted)
     return accepted, debug
@@ -451,8 +529,8 @@ def collect_events(config_path: Path, location: str) -> dict:
     all_items.sort(key=lambda item: (-source_local_score(item, location), str(item.get("source_name", "")), str(item.get("start_date", "")), str(item.get("title", ""))))
     return {
         "ok": True,
-        "version": 32,
-        "extractor": "verified-source-adapters-v32",
+        "version": 33,
+        "extractor": "verified-listing-card-adapters-v33",
         "updated_at": now_iso(),
         "location": location,
         "event_source_config": config_path.name,
