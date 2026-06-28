@@ -49,8 +49,9 @@ ISO_DATE_RE = re.compile(r"\b(20\d{2})-(\d{1,2})-(\d{1,2})\b")
 DATE_HINT_RE = re.compile(r"\b20\d{2}-\d{1,2}-\d{1,2}\b|" + rf"\b\d{{1,2}}\s+(?:{MONTH_WORD})[a-z]*\s*(?:{SEP})?\s*\d{{0,2}}\s*(?:{MONTH_WORD})?[a-z]*\s*\d{{0,4}}\b", re.I)
 TIME_HINT_RE = re.compile(r"\b(?:\d{1,2}(?::|\.)\d{2}\s*(?:am|pm)?|\d{1,2}\s*(?:am|pm)|daily|selected dates|all day|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun)\b", re.I)
 EVENT_PATH_RE = re.compile(r"/(?:whats-on|whatson|events?|event|exhibitions?|exhibition|programmes?|programs?|activities?|guided-tours|discover-mandai/events)/", re.I)
+LISTING_PATH_RE = re.compile(r"/(?:whats-on/(?:overview|view-all|exhibition|exhibitions|programmes?|events?)|events?|exhibition|exhibitions|programmes?|activities?)/?$", re.I)
 BAD_CONTEXT_RE = re.compile(r"\b(previous programme|next programme|related|recommended|last updated|newsletter|privacy|terms of use|copyright|©)\b", re.I)
-GENERIC_TITLE_RE = re.compile(r"^(events?|exhibitions?|programmes?|programs?|activities?|view all|overview|what'?s on|read more|learn more|find out more)$", re.I)
+GENERIC_TITLE_RE = re.compile(r"^(events?|exhibitions?|programmes?|programs?|activities?|view all|overview|what'?s on|read more|learn more|find out more|view details|details|more)$", re.I)
 
 
 def now_iso() -> str:
@@ -97,6 +98,16 @@ def key_url(url: str) -> str:
     return urllib.parse.urlunparse((parsed.scheme, parsed.netloc.lower(), parsed.path.rstrip("/"), "", parsed.query, "")).lower()
 
 
+def is_detail_url(url: str) -> bool:
+    parsed = urlparse(url)
+    path = urllib.parse.unquote(parsed.path.lower()).rstrip("/") or "/"
+    if parsed.query and re.search(r"\b(category|filter|time|date|type|page)=", parsed.query, re.I):
+        return False
+    if LISTING_PATH_RE.search(path):
+        return False
+    return bool(EVENT_PATH_RE.search(path))
+
+
 def fetch_text(url: str, timeout: int = 12, max_bytes: int = 2_500_000) -> str:
     req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept-Language": "en-SG,en-US;q=0.9,en;q=0.8"})
     with urllib.request.urlopen(req, timeout=timeout) as response:
@@ -130,21 +141,15 @@ def tag_texts(page: str, tag: str) -> list[str]:
     return [clean(match.group(1)) for match in re.finditer(rf"<{tag}\b[^>]*>([\s\S]*?)</{tag}>", page, re.I) if clean(match.group(1))]
 
 
-def parse_date(day: str, month_name: str, year: str | int | None = None, roll: bool = True) -> date | None:
+def parse_date(day: str, month_name: str, year: str | int | None = None) -> date | None:
     month = MONTHS.get(str(month_name).lower()[:3])
     if not month:
         return None
     full_year = int(year) if year else TODAY.year
     try:
-        parsed = date(full_year, month, int(day))
+        return date(full_year, month, int(day))
     except ValueError:
         return None
-    if roll and not year and parsed < TODAY - timedelta(days=PAST_GRACE_DAYS):
-        try:
-            parsed = date(full_year + 1, month, int(day))
-        except ValueError:
-            return None
-    return parsed
 
 
 def label_dates(label: str) -> list[date]:
@@ -160,21 +165,25 @@ def label_dates(label: str) -> list[date]:
             out.append(value)
 
     for d1, m1, y1, d2, m2, y2 in FULL_RANGE_RE.findall(text):
-        add(parse_date(d1, m1, y1, False)); add(parse_date(d2, m2, y2, False))
+        add(parse_date(d1, m1, y1)); add(parse_date(d2, m2, y2))
     for d1, m1, d2, m2, y in END_YEAR_RANGE_RE.findall(text):
-        add(parse_date(d1, m1, y, False)); add(parse_date(d2, m2, y, False))
+        add(parse_date(d1, m1, y)); add(parse_date(d2, m2, y))
     for d1, d2, m, y in SAME_MONTH_RANGE_RE.findall(text):
         year = y or inherited
-        add(parse_date(d1, m, year, not bool(year))); add(parse_date(d2, m, year, not bool(year)))
+        add(parse_date(d1, m, year)); add(parse_date(d2, m, year))
     for d, m, y in TEXT_DATE_RE.findall(text):
         year = y or inherited
-        add(parse_date(d, m, year, not bool(year)))
+        add(parse_date(d, m, year))
     for y, m, d in ISO_DATE_RE.findall(text):
         try:
             add(date(int(y), int(m), int(d)))
         except ValueError:
             pass
     return sorted(out)
+
+
+def has_explicit_year(label: str) -> bool:
+    return bool(re.search(r"\b20\d{2}\b", clean(label)))
 
 
 def is_current_date_label(label: str) -> bool:
@@ -201,15 +210,15 @@ def best_date_label(text: str) -> str:
             chunks.insert(0, value)
     scored: list[tuple[int, str]] = []
     for chunk in chunks:
-        if not label_dates(chunk):
+        if not label_dates(chunk) or not is_current_date_label(chunk):
             continue
         score = 10
+        if has_explicit_year(chunk):
+            score += 35
         if FULL_RANGE_RE.search(chunk) or END_YEAR_RANGE_RE.search(chunk):
             score += 50
         if TIME_HINT_RE.search(chunk):
             score += 8
-        if is_current_date_label(chunk):
-            score += 30
         scored.append((score, chunk))
     if not scored:
         return ""
@@ -217,9 +226,16 @@ def best_date_label(text: str) -> str:
     return short(scored[0][1], 180)
 
 
-def title_from_page(page: str, fallback: str = "") -> str:
+def title_from_url(url: str) -> str:
+    stem = urllib.parse.unquote(urlparse(url).path.rstrip("/").split("/")[-1])
+    stem = re.sub(r"\.html$", "", stem)
+    words = [part for part in re.split(r"[-_]+", stem) if part and not part.isdigit()]
+    return " ".join(word.capitalize() for word in words)
+
+
+def title_from_page(page: str, fallback: str = "", url: str = "") -> str:
     metas = meta_map(page)
-    candidates = [metas.get("og:title", ""), metas.get("twitter:title", ""), *tag_texts(page, "h1")[:2], *tag_texts(page, "title")[:1], fallback]
+    candidates = [metas.get("og:title", ""), metas.get("twitter:title", ""), *tag_texts(page, "h1")[:2], *tag_texts(page, "title")[:1], fallback, title_from_url(url)]
     for item in candidates:
         title = re.sub(r"\s*[|–-]\s*(Asian Civilisations Museum|ACM|National Museum of Singapore|Mandai|Singapore)\s*$", "", clean(item), flags=re.I)
         title = re.sub(r"^(previous programme|next programme)\s+", "", title, flags=re.I)
@@ -268,7 +284,7 @@ def event_from_json_ld(source: dict, url: str, page: str) -> list[dict]:
         start = clean(obj.get("startDate") or obj.get("start_date") or "")
         end = clean(obj.get("endDate") or obj.get("end_date") or "")
         label = " - ".join(item for item in [start, end] if item)
-        if not title or not label or not label_dates(label) or not is_current_date_label(label):
+        if not title or GENERIC_TITLE_RE.match(title) or not label or not label_dates(label) or not is_current_date_label(label):
             continue
         location = obj.get("location") or {}
         if isinstance(location, dict):
@@ -295,10 +311,12 @@ def make_event(source: dict, url: str, title: str, when: str, where: str, summar
 
 
 def event_from_page(source: dict, url: str, page: str, fallback_title: str = "", fallback_context: str = "") -> dict | None:
+    if not is_detail_url(url):
+        return None
     structured = event_from_json_ld(source, url, page)
     if structured:
         return structured[0]
-    title = title_from_page(page, fallback_title)
+    title = title_from_page(page, fallback_title, url)
     date_label = best_date_label(page)
     if not title or not date_label or not is_current_date_label(date_label):
         return None
@@ -308,8 +326,12 @@ def event_from_page(source: dict, url: str, page: str, fallback_title: str = "",
 
 
 def event_from_card(source: dict, url: str, title: str, context: str) -> dict | None:
+    if not is_detail_url(url):
+        return None
     title = re.sub(r"^(previous programme|next programme)\s+", "", clean(title), flags=re.I)
     if not title or GENERIC_TITLE_RE.match(title) or BAD_CONTEXT_RE.search(title):
+        title = title_from_url(url)
+    if not title or GENERIC_TITLE_RE.match(title):
         return None
     date_label = best_date_label(context)
     if not date_label or not is_current_date_label(date_label):
@@ -323,10 +345,7 @@ def extract_link_cards(page: str, base_url: str, source: dict) -> list[dict]:
     decoded = html.unescape(page).replace("\\/", "/").replace("\\u002F", "/")
     for match in HREF_RE.finditer(decoded):
         url = norm_url(match.group(1), base_url)
-        if not url or not same_domain(url, domains):
-            continue
-        path = urllib.parse.unquote(urlparse(url).path)
-        if not EVENT_PATH_RE.search(path):
+        if not url or not same_domain(url, domains) or not is_detail_url(url):
             continue
         label = clean(match.group(2))
         context = decoded[max(0, match.start() - 1200):match.end() + 1600]
@@ -432,8 +451,8 @@ def collect_events(config_path: Path, location: str) -> dict:
     all_items.sort(key=lambda item: (-source_local_score(item, location), str(item.get("source_name", "")), str(item.get("start_date", "")), str(item.get("title", ""))))
     return {
         "ok": True,
-        "version": 31,
-        "extractor": "verified-source-adapters-v31",
+        "version": 32,
+        "extractor": "verified-source-adapters-v32",
         "updated_at": now_iso(),
         "location": location,
         "event_source_config": config_path.name,
