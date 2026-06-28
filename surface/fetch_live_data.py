@@ -10,9 +10,12 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-APP_ROOT = Path(__file__).resolve().parents[1]
-CONFIG = APP_ROOT / "market_config.json"
-MARKET = APP_ROOT / "market.json"
+SURFACE_DIR = Path(__file__).resolve().parent
+ENV_DIR = SURFACE_DIR / ".env"
+CONF_DIR = SURFACE_DIR / "conf"
+CONFIG = ENV_DIR / "market_config.json"
+DEFAULT_CONFIG = CONF_DIR / "market_config.default.json"
+MARKET = ENV_DIR / "market.json"
 DEFAULT_SYMBOLS = ["AAPL", "NVDA", "MSFT", "TSLA"]
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/126 Safari/537.36"
 
@@ -25,7 +28,7 @@ def read_json(path, default):
 
 
 def load_symbols():
-    data = read_json(CONFIG, {})
+    data = read_json(CONFIG, read_json(DEFAULT_CONFIG, {}))
     raw = data.get("symbols", DEFAULT_SYMBOLS)
     if not isinstance(raw, list):
         raw = DEFAULT_SYMBOLS
@@ -202,12 +205,13 @@ def quote_one(symbol):
 
 
 def main() -> None:
+    ENV_DIR.mkdir(exist_ok=True)
     symbols = load_symbols()
     items = [quote_one(symbol) for symbol in symbols]
     ok_count = sum(1 for item in items if item.get("price") != "N/A")
     payload = {"updated_at": datetime.now(timezone.utc).isoformat(), "source": "nasdaq+cnbc+stooq+yahoo", "symbols": symbols, "status": "OK" if ok_count else "ERR", "error": None if ok_count else "all quote providers failed", "items": items}
     MARKET.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"market updated status={payload['status']} ok={ok_count}/{len(symbols)} symbols={','.join(symbols)}")
+    print(f"market updated status={payload['status']} ok={ok_count}/{len(symbols)} symbols={','.join(symbols)} -> {MARKET}")
 
 
 if __name__ == "__main__":
