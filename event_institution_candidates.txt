@@ -1,6 +1,7 @@
 # One institution per line.
 # Flow: discover -> manual confirm -> register in event_source_registry.json -> production crawler reads registry only.
 # Do not put third-party guides or aggregators here.
+# Prefer full institution names. Short acronyms such as NLB are ambiguous in web search.
 
 Asian Civilisations Museum
 National Gallery Singapore
@@ -8,7 +9,7 @@ National Museum Singapore
 Peranakan Museum
 ArtScience Museum
 Science Centre Singapore
-NLB
+National Library Board Singapore
 One Punggol
 onePA
 SAFRA
