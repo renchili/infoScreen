@@ -7,13 +7,14 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
-APP_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = APP_ROOT / "photos"
-OUT_DIR = APP_ROOT / "public_photos"
-OUT_JSON = APP_ROOT / "photos.json"
+SURFACE_DIR = Path(__file__).resolve().parent
+ENV_DIR = SURFACE_DIR / ".env"
+SRC_DIR = ENV_DIR / "photos"
+OUT_DIR = ENV_DIR / "public_photos"
+OUT_JSON = ENV_DIR / "photos.json"
 
-SRC_DIR.mkdir(exist_ok=True)
-OUT_DIR.mkdir(exist_ok=True)
+SRC_DIR.mkdir(parents=True, exist_ok=True)
+OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 NATIVE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 GIF_EXTS = {".gif"}
