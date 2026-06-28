@@ -74,7 +74,7 @@
     var raw = normalize(text);
     var n = slotCount();
     if (raw.length > n) raw = raw.slice(0, n);
-    
+
     var html = "";
     for (var i = 0; i < raw.length; i++) {
       var ch = raw[i];
@@ -197,5 +197,215 @@
   if (window.ResizeObserver) {
     var box = document.getElementById("agendaList");
     if (box) new ResizeObserver(function () { render(false); }).observe(box);
+  }
+})();
+
+(function () {
+  var API = "/api/local-events/search";
+  var page = 0;
+  var items = [];
+
+  function byId(id) { return document.getElementById(id); }
+
+  function clean(value) {
+    return String(value == null ? "" : value).replace(/\s+/g, " ").trim();
+  }
+
+  function esc(value) {
+    return clean(value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  function shorten(value, n) {
+    var text = clean(value);
+    return text.length <= n ? text : text.slice(0, n - 1).trimEnd() + "…";
+  }
+
+  function rows(payload) {
+    if (Array.isArray(payload)) return payload;
+    if (!payload || typeof payload !== "object") return [];
+    if (Array.isArray(payload.results)) return payload.results;
+    if (Array.isArray(payload.events)) return payload.events;
+    if (Array.isArray(payload.items)) return payload.items;
+    return [];
+  }
+
+  function normalize(raw) {
+    raw = raw || {};
+    return {
+      title: clean(raw.title || raw.name || raw.summary || ""),
+      when: clean(raw.when || raw.date || raw.date_text || raw.when_text || ""),
+      where: clean(raw.where || raw.venue || raw.location || raw.place || ""),
+      source: clean(raw.source_name || raw.host || raw.source || raw.organizer || "Official source"),
+      summary: clean(raw.summary || raw.description || raw.why_text || ""),
+      url: /^https?:\/\//i.test(clean(raw.url || raw.link || raw.href || "")) ? clean(raw.url || raw.link || raw.href || "") : ""
+    };
+  }
+
+  function renderEmpty(text) {
+    var list = byId("localEventList");
+    var counter = byId("localEventCounter");
+    var prev = byId("localEventPrevButton");
+    var next = byId("localEventNextButton");
+    if (list) list.innerHTML = '<div class="local-event-empty">' + esc(text) + '</div>';
+    if (counter) counter.textContent = "";
+    if (prev) prev.disabled = true;
+    if (next) next.disabled = true;
+  }
+
+  function render() {
+    var list = byId("localEventList");
+    var counter = byId("localEventCounter");
+    var prev = byId("localEventPrevButton");
+    var next = byId("localEventNextButton");
+    if (!list) return;
+
+    if (!items.length) {
+      renderEmpty("NO CLEAR EVENTS · TAP ⌕ TO SEARCH");
+      return;
+    }
+
+    if (page < 0) page = items.length - 1;
+    if (page >= items.length) page = 0;
+
+    var item = items[page];
+    list.innerHTML = [
+      '<div class="local-event-card local-event-single active">',
+      '<div class="local-event-label">EVENT</div>',
+      '<div class="local-event-title">', esc(shorten(item.title || "Local event", 120)), '</div>',
+      item.when ? '<div class="local-event-kv"><span>WHEN</span><b>' + esc(shorten(item.when, 180)) + '</b></div>' : '',
+      item.where ? '<div class="local-event-kv"><span>WHERE</span><b>' + esc(shorten(item.where, 160)) + '</b></div>' : '',
+      item.source ? '<div class="local-event-kv"><span>HOST</span><b>' + esc(shorten(item.source, 130)) + '</b></div>' : '',
+      item.summary ? '<div class="local-event-desc">' + esc(shorten(item.summary, 260)) + '</div>' : '',
+      '<div class="local-event-actions">',
+      item.url ? '<a class="local-event-link" href="' + esc(item.url) + '" target="_blank" rel="noopener noreferrer">OPEN OFFICIAL LINK</a>' : '<span class="local-event-no-link">NO LINK IN SOURCE</span>',
+      '</div></div>'
+    ].join("");
+
+    if (counter) counter.textContent = (page + 1) + "/" + items.length;
+    if (prev) prev.disabled = items.length <= 1;
+    if (next) next.disabled = items.length <= 1;
+  }
+
+  function apply(payload) {
+    items = rows(payload).map(normalize).filter(function (item) {
+      return item.title && item.url && item.when;
+    });
+    page = 0;
+
+    if (!items.length) {
+      var count = payload && typeof payload.count !== "undefined" ? payload.count : 0;
+      var reason = payload && payload.error ? payload.error : "crawler returned " + count + " event(s)";
+      renderEmpty("NO CLEAR EVENTS · " + reason);
+      return;
+    }
+
+    render();
+  }
+
+  async function loadLocalEvents() {
+    try {
+      var resp = await fetch(API + "?_=" + Date.now(), { cache: "no-store" });
+      var payload = await resp.json();
+      if (!resp.ok) throw new Error(payload.error || ("HTTP " + resp.status));
+      apply(payload);
+    } catch (err) {
+      renderEmpty("LOCAL EVENTS UNAVAILABLE · " + err.message);
+    }
+  }
+
+  async function searchLocalEvents(event) {
+    if (event) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
+
+    var input = byId("localEventLocationInput");
+    var err = byId("localEventModalError");
+    var button = byId("localEventSearchButton");
+    var location = clean(input && input.value) || "Punggol Singapore";
+
+    if (err) err.textContent = "Searching official sources…";
+    if (button) button.disabled = true;
+    renderEmpty("SEARCHING OFFICIAL SOURCES…");
+
+    try {
+      var resp = await fetch(API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ location: location })
+      });
+      var payload = await resp.json();
+      if (!resp.ok) throw new Error(payload.error || payload.stderr || ("HTTP " + resp.status));
+      var modal = byId("localEventModal");
+      if (modal) modal.hidden = true;
+      if (err) err.textContent = "";
+      apply(payload);
+    } catch (e) {
+      if (err) err.textContent = "Search failed: " + e.message;
+      renderEmpty("LOCAL EVENT SEARCH FAILED · CHECK JOURNAL");
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
+  function bind() {
+    var openButton = byId("localEventLocationButton");
+    var cancelButton = byId("localEventCancelButton");
+    var searchButton = byId("localEventSearchButton");
+    var prevButton = byId("localEventPrevButton");
+    var nextButton = byId("localEventNextButton");
+    var modal = byId("localEventModal");
+    var input = byId("localEventLocationInput");
+
+    if (openButton) openButton.addEventListener("click", function (e) {
+      e.preventDefault();
+      if (modal) modal.hidden = false;
+      if (input) {
+        input.value = clean(input.value) || "Punggol Singapore";
+        setTimeout(function () { input.focus(); input.select(); }, 20);
+      }
+    }, true);
+
+    if (cancelButton) cancelButton.addEventListener("click", function (e) {
+      e.preventDefault();
+      if (modal) modal.hidden = true;
+    }, true);
+
+    if (searchButton) searchButton.addEventListener("click", searchLocalEvents, true);
+
+    if (input) input.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") searchLocalEvents(e);
+      if (e.key === "Escape" && modal) modal.hidden = true;
+    }, true);
+
+    if (prevButton) prevButton.addEventListener("click", function (e) {
+      e.preventDefault();
+      page -= 1;
+      render();
+    }, true);
+
+    if (nextButton) nextButton.addEventListener("click", function (e) {
+      e.preventDefault();
+      page += 1;
+      render();
+    }, true);
+  }
+
+  window.__localEventReload = loadLocalEvents;
+  window.__localEventSearch = searchLocalEvents;
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", function () {
+      bind();
+      loadLocalEvents();
+    });
+  } else {
+    bind();
+    loadLocalEvents();
   }
 })();
