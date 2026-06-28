@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import email.utils
 import json
 import mimetypes
 import subprocess
@@ -38,9 +39,13 @@ def read_json(path: Path, default):
         return default
 
 
+def runtime_path(name: str) -> Path:
+    return ENV_DIR / name
+
+
 def runtime_json(name: str):
     default = JSON_DEFAULTS.get(name, {})
-    path = ENV_DIR / name
+    path = runtime_path(name)
     if path.exists():
         return read_json(path, default)
     payload = dict(default) if isinstance(default, dict) else default
@@ -55,7 +60,7 @@ def runtime_json(name: str):
 
 
 def market_config_json():
-    path = ENV_DIR / "market_config.json"
+    path = runtime_path("market_config.json")
     if path.exists():
         return read_json(path, JSON_DEFAULTS["market_config.json"])
     return read_json(CONF_DIR / "market_config.default.json", JSON_DEFAULTS["market_config.json"])
@@ -74,6 +79,22 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def send_json_head(self, name: str) -> None:
+        path = runtime_path(name)
+        if not path.exists() or not path.is_file():
+            self.send_response(404)
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            return
+
+        stat = path.stat()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(stat.st_size))
+        self.send_header("Last-Modified", email.utils.formatdate(stat.st_mtime, usegmt=True))
+        self.end_headers()
+
     def send_env_file(self, path: Path) -> None:
         if not path.exists() or not path.is_file():
             self.send_error(404, "not found")
@@ -83,6 +104,7 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Content-Type", mimetypes.guess_type(str(path))[0] or "application/octet-stream")
         self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(data)))
+        self.send_header("Last-Modified", email.utils.formatdate(path.stat().st_mtime, usegmt=True))
         self.end_headers()
         self.wfile.write(data)
 
@@ -90,6 +112,31 @@ class Handler(SimpleHTTPRequestHandler):
         size = int(self.headers.get("Content-Length", "0") or "0")
         raw = self.rfile.read(size).decode("utf-8", "replace") if size else "{}"
         return json.loads(raw or "{}")
+
+    def do_HEAD(self):
+        path = urlparse(self.path).path
+        name = path.lstrip("/")
+
+        if name in JSON_DEFAULTS:
+            return self.send_json_head(name)
+
+        if path.startswith("/public_photos/"):
+            rel = unquote(path.removeprefix("/public_photos/")).lstrip("/")
+            target = ENV_DIR / "public_photos" / rel
+            if target.exists() and target.is_file():
+                self.send_response(200)
+                self.send_header("Content-Type", mimetypes.guess_type(str(target))[0] or "application/octet-stream")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(target.stat().st_size))
+                self.send_header("Last-Modified", email.utils.formatdate(target.stat().st_mtime, usegmt=True))
+                self.end_headers()
+                return
+            self.send_response(404)
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            return
+
+        return super().do_HEAD()
 
     def do_GET(self):
         path = urlparse(self.path).path
