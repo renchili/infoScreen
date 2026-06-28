@@ -36,10 +36,7 @@
   }
 
   function normalizeText(v) {
-    return String(v || "NO SCHEDULE EVENTS")
-      .replace(/\s+/g, " ")
-      .trim()
-      .toUpperCase();
+    return String(v || "NO SCHEDULE EVENTS").replace(/\s+/g, " ").trim().toUpperCase();
   }
 
   function ensure() {
@@ -47,9 +44,7 @@
     if (!box) return null;
     box.className = "inner agenda calendar-board" + (empty ? " empty-schedule" : "");
     if (!document.getElementById("calendarBoardRows")) {
-      box.innerHTML =
-        '<div class="calendar-board-head"><span>TIME</span><span>EVENT</span></div>' +
-        '<div class="calendar-board-rows" id="calendarBoardRows"></div>';
+      box.innerHTML = '<div class="calendar-board-head"><span>TIME</span><span>EVENT</span></div><div class="calendar-board-rows" id="calendarBoardRows"></div>';
     }
     return document.getElementById("calendarBoardRows");
   }
@@ -82,10 +77,7 @@
   }
 
   function rowHtml(item) {
-    return '<div class="calendar-board-row">' +
-      '<div class="calendar-board-time">' + cells(item.time || "") + '</div>' +
-      '<div class="calendar-board-event">' + cells(item.title || item.text || "NO SCHEDULE EVENTS") + '</div>' +
-      '</div>';
+    return '<div class="calendar-board-row"><div class="calendar-board-time">' + cells(item.time || "") + '</div><div class="calendar-board-event">' + cells(item.title || item.text || "NO SCHEDULE EVENTS") + '</div></div>';
   }
 
   function animateBoard(rows) {
@@ -165,6 +157,8 @@
   var page = 0;
   var items = [];
   var lastPayload = null;
+  var observer = null;
+  var restoring = false;
 
   function byId(id) { return document.getElementById(id); }
   function clean(value) { return String(value == null ? "" : value).replace(/\s+/g, " ").trim(); }
@@ -228,6 +222,7 @@
     if (page < 0) page = items.length - 1;
     if (page >= items.length) page = 0;
     var item = items[page];
+    restoring = true;
     list.innerHTML = [
       '<div class="local-event-card local-event-single active">',
       '<div class="local-event-label">EVENT</div>',
@@ -240,6 +235,7 @@
       item.url ? '<a class="local-event-link" href="' + esc(item.url) + '" target="_blank" rel="noopener noreferrer">OPEN OFFICIAL LINK</a>' : '<span class="local-event-no-link">NO LINK IN SOURCE</span>',
       '</div></div>'
     ].join("");
+    restoring = false;
     if (counter) counter.textContent = (page + 1) + "/" + items.length;
     if (prev) prev.disabled = items.length <= 1;
     if (next) next.disabled = items.length <= 1;
@@ -295,6 +291,12 @@
       if (button) button.disabled = false;
     }
   }
+  function eat(e) {
+    if (!e) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+  }
   function bind() {
     var openButton = byId("localEventLocationButton");
     var cancelButton = byId("localEventCancelButton");
@@ -304,8 +306,7 @@
     var modal = byId("localEventModal");
     var input = byId("localEventLocationInput");
     if (openButton) openButton.addEventListener("click", function (e) {
-      e.preventDefault();
-      e.stopImmediatePropagation();
+      eat(e);
       if (modal) modal.hidden = false;
       if (input) {
         input.value = clean(input.value) || "Punggol Singapore";
@@ -313,8 +314,7 @@
       }
     }, true);
     if (cancelButton) cancelButton.addEventListener("click", function (e) {
-      e.preventDefault();
-      e.stopImmediatePropagation();
+      eat(e);
       if (modal) modal.hidden = true;
     }, true);
     if (searchButton) searchButton.addEventListener("click", searchLocalEvents, true);
@@ -322,24 +322,42 @@
       if (e.key === "Enter") searchLocalEvents(e);
       if (e.key === "Escape" && modal) modal.hidden = true;
     }, true);
-    if (prevButton) prevButton.addEventListener("click", function (e) { e.preventDefault(); page -= 1; render(); }, true);
-    if (nextButton) nextButton.addEventListener("click", function (e) { e.preventDefault(); page += 1; render(); }, true);
+    if (prevButton) prevButton.addEventListener("click", function (e) { eat(e); page -= 1; render(); }, true);
+    if (nextButton) nextButton.addEventListener("click", function (e) { eat(e); page += 1; render(); }, true);
+  }
+  function watchdog() {
+    var list = byId("localEventList");
+    if (!list || !items.length) return;
+    if (list.dataset.owner !== "external-local-events") render();
+  }
+  function observe() {
+    var list = byId("localEventList");
+    if (!list || !window.MutationObserver || observer) return;
+    observer = new MutationObserver(function () {
+      if (restoring) return;
+      if (list.dataset.owner !== "external-local-events") setTimeout(render, 0);
+    });
+    observer.observe(list, { childList: true, subtree: false, attributes: true, attributeFilter: ["data-owner"] });
   }
   window.__localEventReload = loadLocalEvents;
   window.__localEventSearch = searchLocalEvents;
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", function () {
       bind();
+      observe();
       loadLocalEvents();
       setTimeout(loadLocalEvents, 500);
       setTimeout(loadLocalEvents, 1500);
       setTimeout(loadLocalEvents, 3000);
+      setInterval(watchdog, 2000);
     });
   } else {
     bind();
+    observe();
     loadLocalEvents();
     setTimeout(loadLocalEvents, 500);
     setTimeout(loadLocalEvents, 1500);
     setTimeout(loadLocalEvents, 3000);
+    setInterval(watchdog, 2000);
   }
 })();
