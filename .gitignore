@@ -3,6 +3,12 @@ schedule.json
 weather.json
 market.json
 
+# local event generated/debug outputs
+local_event_search_results.json
+local_event_search_results.json.*
+search_local_events.py.good
+discovered_event_sources.json
+
 # logs / backups
 *.log
 *.bak.*
@@ -23,7 +29,6 @@ mac/launchagents/*.plist
 
 # Surface runtime/generated data
 event_stream.json
-local_event_search_results.json
 photos.json
 sync_status.json
 photos/
