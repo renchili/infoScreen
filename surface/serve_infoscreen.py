@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 SURFACE_DIR = Path(__file__).resolve().parent
+REPO_DIR = SURFACE_DIR.parent
 WEB_DIR = SURFACE_DIR / "web"
 ENV_DIR = SURFACE_DIR / ".env"
 CONF_DIR = SURFACE_DIR / "conf"
@@ -38,6 +39,25 @@ def read_json(path: Path, default):
         return default
 
 
+def runtime_json(name: str):
+    default = JSON_DEFAULTS.get(name, {})
+    primary = ENV_DIR / name
+    legacy = REPO_DIR / name
+    if primary.exists():
+        return read_json(primary, default)
+    if legacy.exists():
+        return read_json(legacy, default)
+    return default
+
+
+def market_config_json():
+    if (ENV_DIR / "market_config.json").exists():
+        return read_json(ENV_DIR / "market_config.json", JSON_DEFAULTS["market_config.json"])
+    if (REPO_DIR / "market_config.json").exists():
+        return read_json(REPO_DIR / "market_config.json", JSON_DEFAULTS["market_config.json"])
+    return read_json(CONF_DIR / "market_config.default.json", JSON_DEFAULTS["market_config.json"])
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(WEB_DIR), **kwargs)
@@ -51,13 +71,14 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def send_env_file(self, path: Path) -> None:
-        if not path.exists() or not path.is_file():
+    def send_env_file(self, path: Path, legacy: Path | None = None) -> None:
+        target = path if path.exists() else legacy
+        if not target or not target.exists() or not target.is_file():
             self.send_error(404, "not found")
             return
-        data = path.read_bytes()
+        data = target.read_bytes()
         self.send_response(200)
-        self.send_header("Content-Type", mimetypes.guess_type(str(path))[0] or "application/octet-stream")
+        self.send_header("Content-Type", mimetypes.guess_type(str(target))[0] or "application/octet-stream")
         self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
@@ -73,18 +94,16 @@ class Handler(SimpleHTTPRequestHandler):
         name = path.lstrip("/")
 
         if path == "/api/market-config":
-            return self.send_json(
-                read_json(ENV_DIR / "market_config.json", read_json(CONF_DIR / "market_config.default.json", JSON_DEFAULTS["market_config.json"]))
-            )
+            return self.send_json(market_config_json())
         if path == "/api/local-events/search":
-            return self.send_json(read_json(ENV_DIR / "local_event_search_results.json", JSON_DEFAULTS["local_event_search_results.json"]))
+            return self.send_json(runtime_json("local_event_search_results.json"))
 
         if name in JSON_DEFAULTS:
-            return self.send_json(read_json(ENV_DIR / name, JSON_DEFAULTS[name]))
+            return self.send_json(runtime_json(name))
 
         if path.startswith("/public_photos/"):
             rel = unquote(path.removeprefix("/public_photos/")).lstrip("/")
-            return self.send_env_file(ENV_DIR / "public_photos" / rel)
+            return self.send_env_file(ENV_DIR / "public_photos" / rel, REPO_DIR / "public_photos" / rel)
 
         return super().do_GET()
 
@@ -114,7 +133,7 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/api/market-refresh":
             try:
                 proc = subprocess.run([sys.executable, str(SURFACE_DIR / "fetch_live_data.py")], cwd=str(SURFACE_DIR), text=True, capture_output=True, timeout=60)
-                return self.send_json({"ok": proc.returncode == 0, "returncode": proc.returncode, "stdout": proc.stdout[-2000:], "stderr": proc.stderr[-2000:], "market": read_json(ENV_DIR / "market.json", {})}, 200 if proc.returncode == 0 else 500)
+                return self.send_json({"ok": proc.returncode == 0, "returncode": proc.returncode, "stdout": proc.stdout[-2000:], "stderr": proc.stderr[-2000:], "market": runtime_json("market.json")}, 200 if proc.returncode == 0 else 500)
             except Exception as exc:
                 return self.send_json({"ok": False, "error": str(exc)}, 500)
 
@@ -123,7 +142,7 @@ class Handler(SimpleHTTPRequestHandler):
                 body = self.body_json()
                 location = str(body.get("location") or "Punggol Singapore")
                 proc = subprocess.run([sys.executable, str(SURFACE_DIR / "search_local_events.py"), location], cwd=str(SURFACE_DIR), text=True, capture_output=True, timeout=90)
-                data = read_json(ENV_DIR / "local_event_search_results.json", {"results": []})
+                data = runtime_json("local_event_search_results.json")
                 data["ok"] = proc.returncode == 0
                 data["stdout"] = proc.stdout[-1000:]
                 data["stderr"] = proc.stderr[-1000:]
