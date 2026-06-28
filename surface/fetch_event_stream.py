@@ -11,8 +11,9 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
 
-APP_ROOT = Path(__file__).resolve().parents[1]
-OUT = APP_ROOT / "event_stream.json"
+SURFACE_DIR = Path(__file__).resolve().parent
+ENV_DIR = SURFACE_DIR / ".env"
+OUT = ENV_DIR / "event_stream.json"
 ITEM_COUNT = 8
 
 
@@ -136,6 +137,7 @@ def make_item(base, target_lang: str):
 
 
 def main() -> None:
+    ENV_DIR.mkdir(exist_ok=True)
     pool = []
     errors = []
     for feed in FEEDS:
