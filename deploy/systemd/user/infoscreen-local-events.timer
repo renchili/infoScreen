@@ -1,0 +1,10 @@
+[Unit]
+Description=Run InfoScreen local event search every 6 hours
+
+[Timer]
+OnBootSec=90
+OnUnitActiveSec=6h
+Unit=infoscreen-local-events.service
+
+[Install]
+WantedBy=timers.target
