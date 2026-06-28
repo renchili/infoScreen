@@ -1,6 +1,7 @@
 [Unit]
-Description=Fetch RSS event stream for InfoScreen
+Description=Fetch InfoScreen event stream
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/python3 %h/infoscreen/fetch_event_stream.py
+WorkingDirectory=%h/infoscreen
+ExecStart=/usr/bin/python3 %h/infoscreen/surface/fetch_event_stream.py
