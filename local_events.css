@@ -157,6 +157,15 @@
   line-height: 1.35;
 }
 
+.le2-more {
+  padding: 7px 9px;
+  border: 1px dashed rgba(127, 226, 255, 0.18);
+  color: rgba(255, 225, 150, 0.78);
+  background: rgba(0, 8, 15, 0.48);
+  font-size: 10px;
+  line-height: 1.25;
+}
+
 .le2-empty {
   padding: 9px;
   border: 1px dashed rgba(127, 226, 255, 0.22);
