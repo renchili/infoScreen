@@ -1,0 +1,200 @@
+.local-event-static {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid rgba(127, 226, 255, 0.28);
+  background: rgba(3, 10, 18, 0.92);
+  color: #e7fbff;
+}
+
+.le2-header,
+.le2-row,
+.le2-source-list,
+.le2-group-title {
+  display: flex;
+  align-items: center;
+}
+
+.le2-header {
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.le2-kicker {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: #86eaff;
+}
+
+.le2-title {
+  margin: 2px 0 0;
+  font-size: 15px;
+  color: #ffffff;
+}
+
+.le2-status {
+  max-width: 45%;
+  text-align: right;
+  font-size: 10px;
+  color: rgba(220, 246, 255, 0.62);
+}
+
+.le2-controls {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 7px;
+  margin-bottom: 10px;
+}
+
+.le2-input,
+.le2-button {
+  min-height: 30px;
+  box-sizing: border-box;
+  border: 1px solid rgba(127, 226, 255, 0.32);
+  background: rgba(0, 8, 15, 0.95);
+  color: #ebfcff;
+  font: inherit;
+}
+
+.le2-input {
+  min-width: 0;
+  padding: 0 8px;
+}
+
+.le2-button {
+  padding: 0 11px;
+  color: #ffd979;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.le2-list {
+  display: grid;
+  max-height: 58vh;
+  overflow: auto;
+  gap: 9px;
+  padding-right: 2px;
+}
+
+.le2-group {
+  display: grid;
+  gap: 7px;
+}
+
+.le2-group-title {
+  justify-content: space-between;
+  padding: 5px 7px;
+  border: 1px solid rgba(127, 226, 255, 0.14);
+  background: rgba(0, 8, 15, 0.75);
+  color: rgba(231, 251, 255, 0.78);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.le2-group-title span {
+  color: rgba(255, 225, 150, 0.78);
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.le2-card {
+  padding: 9px;
+  border: 1px solid rgba(127, 226, 255, 0.16);
+  background: rgba(0, 15, 26, 0.74);
+}
+
+.le2-row {
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 5px;
+  font-size: 10px;
+}
+
+.le2-source {
+  color: #8feaff;
+}
+
+.le2-date {
+  max-width: 58%;
+  overflow: hidden;
+  color: #ffe196;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.le2-event-title {
+  display: block;
+  margin-bottom: 4px;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-decoration: none;
+}
+
+.le2-event-title:hover {
+  text-decoration: underline;
+}
+
+.le2-venue {
+  margin: 0 0 4px;
+  color: rgba(167, 239, 255, 0.74);
+  font-size: 10px;
+  line-height: 1.25;
+  letter-spacing: 0.04em;
+}
+
+.le2-summary {
+  margin: 0;
+  color: rgba(224, 247, 255, 0.72);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.le2-more {
+  padding: 7px 9px;
+  border: 1px dashed rgba(127, 226, 255, 0.18);
+  color: rgba(255, 225, 150, 0.78);
+  background: rgba(0, 8, 15, 0.48);
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+.le2-empty {
+  padding: 9px;
+  border: 1px dashed rgba(127, 226, 255, 0.22);
+  color: rgba(224, 247, 255, 0.68);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.le2-official-title {
+  margin: 11px 0 6px;
+  color: rgba(224, 247, 255, 0.58);
+  font-size: 10px;
+  letter-spacing: 0.13em;
+}
+
+.le2-source-list {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.le2-source-link {
+  padding: 4px 7px;
+  border: 1px solid rgba(127, 226, 255, 0.24);
+  color: #a7efff;
+  font-size: 10px;
+  text-decoration: none;
+}
+
+.le2-source-link:hover {
+  border-color: rgba(127, 226, 255, 0.74);
+  color: #ffffff;
+}
