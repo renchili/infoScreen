@@ -15,20 +15,36 @@ from urllib.parse import urljoin, urlparse
 
 BASE = Path(__file__).resolve().parent
 OUT = BASE / "local_event_search_results.json"
+OFFICIAL_REGISTRY = BASE / "official_source_registry.json"
+
 UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/126 Safari/537.36"
 DEFAULT_LOCATION = "Punggol Singapore"
 TODAY = date.today()
+
 MAX_SECONDS = float(os.environ.get("LOCAL_EVENTS_MAX_SECONDS", "85"))
-MAX_PAGES_PER_SOURCE = int(os.environ.get("LOCAL_EVENTS_MAX_PAGES_PER_SOURCE", "22"))
-MAX_EVENTS_PER_SOURCE = int(os.environ.get("LOCAL_EVENTS_MAX_EVENTS_PER_SOURCE", "6"))
+MAX_PAGES_PER_SOURCE = int(os.environ.get("LOCAL_EVENTS_MAX_PAGES_PER_SOURCE", "24"))
+MAX_EVENTS_PER_SOURCE = int(os.environ.get("LOCAL_EVENTS_MAX_EVENTS_PER_SOURCE", "8"))
 MAX_TOTAL_EVENTS = int(os.environ.get("LOCAL_EVENTS_MAX_TOTAL_EVENTS", "60"))
 PAST_GRACE_DAYS = int(os.environ.get("LOCAL_EVENTS_PAST_GRACE_DAYS", "1"))
 
 TEMPLATE_RE = re.compile(r"#\{[^}]+\}|\{\{[^}]+\}\}|\$\{[^}]+\}")
 SCRIPT_STYLE_RE = re.compile(r"<script[\s\S]*?</script>|<style[\s\S]*?</style>", re.I)
+SCRIPT_JSON_RE = re.compile(
+    r"<script[^>]+type=[\"']application/(?:ld\+)?json[\"'][^>]*>([\s\S]*?)</script>",
+    re.I,
+)
 TAG_RE = re.compile(r"<[^>]+>")
-JSON_URL_RE = re.compile(r'["\'](?:href|url|link|path|slug)["\']\s*:\s*["\']([^"\']+)["\']', re.I)
-HTML_HREF_RE = re.compile(r'<a\b[^>]*href=["\']([^"\']+)["\'][^>]*>([\s\S]*?)</a>', re.I)
+HTML_HREF_RE = re.compile(r"<a\b[^>]*href=[\"']([^\"']+)[\"'][^>]*>([\s\S]*?)</a>", re.I)
+JSON_URL_RE = re.compile(
+    r"[\"'](?:href|url|link|path|slug|canonicalUrl|pageUrl)[\"']\s*:\s*[\"']([^\"']+)[\"']",
+    re.I,
+)
+RAW_PATH_RE = re.compile(
+    r"/(?:whats-on|whatson|events?|exhibitions?|programmes?|programs?|activities?|happenings?|courses|workshops?)/[^\"'<>\\\s]+",
+    re.I,
+)
+ABS_URL_RE = re.compile(r"https?://[^\"'<>\\\s]+", re.I)
+
 DATE_RE = re.compile(
     r"\b20\d{2}-\d{1,2}-\d{1,2}\b|"
     r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b|"
@@ -45,35 +61,19 @@ MONTHS = {
     "nov": 11, "november": 11, "dec": 12, "december": 12,
 }
 EVENT_MARKERS = (
-    "event", "programme", "program", "workshop", "activity", "course", "class", "club",
-    "session", "talk", "tour", "storytelling", "storytime", "festival", "performance",
-    "concert", "carnival", "reading", "exhibition", "show", "camp", "walk", "trail",
-    "experience", "drop-in", "holiday", "screening", "guided", "open house",
+    "event", "programme", "program", "workshop", "activity", "course", "class",
+    "session", "talk", "tour", "storytelling", "storytime", "festival",
+    "performance", "concert", "carnival", "reading", "exhibition", "show",
+    "camp", "walk", "trail", "experience", "drop-in", "holiday", "screening",
+    "guided", "open house", "lecture",
 )
 EVENT_MARKER_RE = re.compile(r"\b(" + "|".join(re.escape(x) for x in EVENT_MARKERS) + r")\b", re.I)
 LOCAL_PRIORITY_TERMS = ("punggol", "waterway", "one punggol", "punggol regional library", "safra punggol")
-KNOWN_VENUES = (
-    "Children's Museum Singapore", "National Gallery Singapore", "National Museum Singapore",
-    "Asian Civilisations Museum", "Peranakan Museum", "ArtScience Museum",
-    "Science Centre Singapore", "KidsSTOP", "Punggol Regional Library", "One Punggol",
-    "Waterway Point", "SAFRA Punggol", "SAFRA Choa Chu Kang", "SAFRA Toa Payoh",
-    "SAFRA Tampines", "SAFRA Mount Faber", "SAFRA Yishun", "SAFRA Jurong",
+LISTING_ROUTE_RE = re.compile(r"/(?:whats-on|whatson|events?|overview|view-all|programmes?|programs?|activities?)/?$", re.I)
+DETAIL_ROUTE_RE = re.compile(
+    r"/(?:whats-on|whatson|events?|exhibitions?|programmes?|programs?|activities?|happenings?|courses|workshops?)/.+",
+    re.I,
 )
-
-SOURCES = [
-    {"name": "Children's Museum Singapore", "source": "Children's Museum Singapore", "default_venue": "Children's Museum Singapore", "domains": ["heritage.sg"], "seeds": ["https://www.heritage.sg/childrensmuseum/whatson"], "frontier_paths": ["/childrensmuseum/whatson"], "detail_prefixes": ["/childrensmuseum/whatson/"]},
-    {"name": "National Gallery Singapore", "source": "National Gallery Singapore", "default_venue": "National Gallery Singapore", "domains": ["nationalgallery.sg"], "seeds": ["https://www.nationalgallery.sg/sg/en/whats-on.html"], "frontier_paths": ["/sg/en/whats-on.html", "/whats-on"], "detail_prefixes": ["/sg/en/whats-on/"]},
-    {"name": "National Museum Singapore", "source": "National Museum Singapore", "default_venue": "National Museum Singapore", "domains": ["nhb.gov.sg"], "seeds": ["https://www.nhb.gov.sg/nationalmuseum/whats-on"], "frontier_paths": ["/nationalmuseum/whats-on"], "detail_prefixes": ["/nationalmuseum/whats-on/"]},
-    {"name": "Asian Civilisations Museum", "source": "Asian Civilisations Museum", "default_venue": "Asian Civilisations Museum", "domains": ["nhb.gov.sg"], "seeds": ["https://www.nhb.gov.sg/acm/whats-on"], "frontier_paths": ["/acm/whats-on", "/acm/whatson"], "detail_prefixes": ["/acm/whats-on/", "/acm/whatson/"]},
-    {"name": "Peranakan Museum", "source": "Peranakan Museum", "default_venue": "Peranakan Museum", "domains": ["nhb.gov.sg"], "seeds": ["https://www.nhb.gov.sg/peranakanmuseum/whats-on"], "frontier_paths": ["/peranakanmuseum/whats-on"], "detail_prefixes": ["/peranakanmuseum/whats-on/"]},
-    {"name": "ArtScience Museum", "source": "ArtScience Museum", "default_venue": "ArtScience Museum", "domains": ["marinabaysands.com"], "seeds": ["https://www.marinabaysands.com/museum/events.html", "https://www.marinabaysands.com/museum/exhibitions.html"], "frontier_paths": ["/museum/events.html", "/museum/exhibitions.html"], "detail_prefixes": ["/museum/events/", "/museum/exhibitions/"]},
-    {"name": "Science Centre Singapore", "source": "Science Centre Singapore", "default_venue": "Science Centre Singapore", "domains": ["science.edu.sg"], "seeds": ["https://www.science.edu.sg/whats-on"], "frontier_paths": ["/whats-on"], "detail_prefixes": ["/whats-on/"]},
-    {"name": "NLB", "source": "NLB", "default_venue": "NLB", "domains": ["nlb.gov.sg"], "seeds": ["https://www.nlb.gov.sg/main/whats-on"], "frontier_paths": ["/main/whats-on"], "detail_prefixes": ["/main/whats-on/"]},
-    {"name": "One Punggol", "source": "One Punggol", "default_venue": "One Punggol", "domains": ["onepunggol.sg"], "seeds": ["https://www.onepunggol.sg/events", "https://www.onepunggol.sg/happenings"], "frontier_paths": ["/events", "/happenings"], "detail_prefixes": ["/events/", "/happenings/"]},
-    {"name": "onePA", "source": "onePA", "default_venue": "onePA", "domains": ["onepa.gov.sg"], "seeds": ["https://www.onepa.gov.sg/events", "https://www.onepa.gov.sg/courses"], "frontier_paths": ["/events", "/courses"], "detail_prefixes": ["/events/", "/courses/"]},
-    {"name": "SAFRA", "source": "SAFRA", "default_venue": "SAFRA", "domains": ["safra.sg"], "seeds": ["https://www.safra.sg/whats-on"], "frontier_paths": ["/whats-on"], "detail_prefixes": ["/whats-on/"]},
-    {"name": "Waterway Point", "source": "Waterway Point", "default_venue": "Waterway Point", "domains": ["waterwaypoint.com.sg"], "seeds": ["https://www.waterwaypoint.com.sg/happenings"], "frontier_paths": ["/happenings"], "detail_prefixes": ["/happenings/"]},
-]
 
 
 def now_iso():
@@ -97,20 +97,28 @@ def shorten(value, limit):
 def normalize_url(url, base=""):
     raw = html.unescape(str(url or "")).strip()
     raw = raw.replace("\\/", "/").replace("\\u002F", "/").replace("\\u002f", "/")
-    if base:
-        raw = urljoin(base, raw)
     if raw.startswith("//"):
         raw = "https:" + raw
+    if base:
+        raw = urljoin(base, raw)
     parsed = urlparse(raw)
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         return ""
-    query = [(k, v) for k, v in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True) if not k.lower().startswith("utm_")]
-    return urllib.parse.urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", urllib.parse.urlencode(query), parsed.fragment))
+    query = [
+        (k, v)
+        for k, v in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+        if not k.lower().startswith("utm_")
+    ]
+    return urllib.parse.urlunparse(
+        (parsed.scheme, parsed.netloc.lower(), parsed.path or "/", "", urllib.parse.urlencode(query), "")
+    )
 
 
 def url_key(url):
     parsed = urlparse(url)
-    return urllib.parse.urlunparse((parsed.scheme, parsed.netloc.lower(), parsed.path.rstrip("/"), "", parsed.query, parsed.fragment)).lower()
+    return urllib.parse.urlunparse(
+        (parsed.scheme, parsed.netloc.lower(), parsed.path.rstrip("/"), "", parsed.query, "")
+    ).lower()
 
 
 def host(url):
@@ -119,32 +127,13 @@ def host(url):
 
 def same_domain(url, domains):
     h = host(url)
-    return bool(h) and any(h.endswith(domain) for domain in domains)
+    return bool(h) and any(h == d or h.endswith("." + d) for d in domains)
 
 
-def path_norm(url):
-    return urlparse(url).path.lower().rstrip("/") or "/"
-
-
-def source_frontier_page(source, url):
-    parsed = urlparse(url)
-    if parsed.query or parsed.fragment:
-        return False
-    path = path_norm(url)
-    return path in {item.rstrip("/").lower() for item in source.get("frontier_paths", [])}
-
-
-def source_detail_route(source, url):
-    path = path_norm(url) + "/"
-    if any(path.startswith(prefix.lower()) for prefix in source.get("detail_prefixes", [])):
-        return not source_frontier_page(source, url)
-    return False
-
-
-def fetch(url, timeout=8):
+def fetch(url, timeout=10):
     req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept-Language": "en-US,en;q=0.9"})
     with urllib.request.urlopen(req, timeout=timeout) as response:
-        raw = response.read(1_800_000)
+        raw = response.read(2_500_000)
         match = re.search(r"charset=([\w.-]+)", response.headers.get("Content-Type", ""), re.I)
         return raw.decode(match.group(1) if match else "utf-8", "replace")
 
@@ -189,313 +178,384 @@ def parse_one(day, month, year=""):
         return None
     y = int(year) if year else TODAY.year
     try:
-        parsed = date(y, month_num, int(day))
+        value = date(y, month_num, int(day))
     except ValueError:
         return None
-    if not year and parsed < TODAY - timedelta(days=30):
-        parsed = date(TODAY.year + 1, parsed.month, parsed.day)
-    return parsed
-
-
-def parse_dates(label):
-    text = clean(label).lower()
-    out = []
-    for match in re.finditer(r"\b(20\d{2})-(\d{1,2})-(\d{1,2})\b", text):
+    if not year and value < TODAY - timedelta(days=PAST_GRACE_DAYS):
         try:
-            out.append(date(int(match.group(1)), int(match.group(2)), int(match.group(3))))
+            value = date(y + 1, month_num, int(day))
+        except ValueError:
+            return None
+    return value
+
+
+def label_to_dates(label):
+    text = clean(label)
+    dates = []
+    for y, m, d in re.findall(r"\b(20\d{2})-(\d{1,2})-(\d{1,2})\b", text):
+        try:
+            dates.append(date(int(y), int(m), int(d)))
         except ValueError:
             pass
-    for match in re.finditer(r"\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b", text):
-        year = int(match.group(3))
-        if year < 100:
-            year += 2000
-        try:
-            out.append(date(year, int(match.group(2)), int(match.group(1))))
-        except ValueError:
-            pass
-    for match in re.finditer(r"\b(\d{1,2})\s+(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)[a-z]*\s*(?:-|to|–|—|until|till)\s*(\d{1,2})\s+(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)[a-z]*\s*(\d{4})?", text, re.I):
-        for parsed in (parse_one(match.group(1), match.group(2), match.group(5) or ""), parse_one(match.group(3), match.group(4), match.group(5) or "")):
-            if parsed:
-                out.append(parsed)
-    for match in re.finditer(r"\b(\d{1,2})\s*(?:-|to|–|—|until|till)\s*(\d{1,2})\s+(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)[a-z]*\s*(\d{4})?", text, re.I):
-        for parsed in (parse_one(match.group(1), match.group(3), match.group(4) or ""), parse_one(match.group(2), match.group(3), match.group(4) or "")):
-            if parsed:
-                out.append(parsed)
-    for match in re.finditer(r"\b(\d{1,2})\s+(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)[a-z]*\s*(\d{4})?", text, re.I):
-        parsed = parse_one(match.group(1), match.group(2), match.group(3) or "")
+    for d, m, y in re.findall(
+        r"\b(\d{1,2})\s+"
+        r"(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)[a-z]*"
+        r"\s*(20\d{2})?\b",
+        text,
+        re.I,
+    ):
+        parsed = parse_one(d, m, y)
         if parsed:
-            out.append(parsed)
-    for match in re.finditer(r"\b(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)[a-z]*\s+(\d{1,2}),?\s*(\d{4})?", text, re.I):
-        parsed = parse_one(match.group(2), match.group(1), match.group(3) or "")
+            dates.append(parsed)
+    for m, d, y in re.findall(
+        r"\b(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)[a-z]*"
+        r"\s+(\d{1,2}),?\s*(20\d{2})?\b",
+        text,
+        re.I,
+    ):
+        parsed = parse_one(d, m, y)
         if parsed:
-            out.append(parsed)
-    seen, uniq = set(), []
-    for parsed in out:
-        key = parsed.isoformat()
-        if key not in seen:
-            seen.add(key)
-            uniq.append(parsed)
-    return uniq
+            dates.append(parsed)
+    return dates
 
 
-def sessions_from_label(label, url):
-    dates = parse_dates(label)
-    if not dates or max(dates) < TODAY - timedelta(days=PAST_GRACE_DAYS):
-        return []
+def sessions_from_label(label):
     label = clean(label)
-    return [{"date": label, "when": label, "label": label, "url": url, "start_date": min(dates).isoformat(), "end_date": max(dates).isoformat()}]
+    if not label:
+        return []
+    dates = label_to_dates(label)
+    if not dates:
+        return []
+    if max(dates) < TODAY - timedelta(days=PAST_GRACE_DAYS):
+        return []
+    return [{"label": label, "dates": sorted(set(dates))}]
 
 
-def sessions_from_text(text, url):
-    sessions, seen = [], set()
-    for match in DATE_RE.finditer(text):
+def sessions_from_text(text, limit=10):
+    sessions = []
+    seen = set()
+    for match in DATE_RE.finditer(clean(text)[:250000]):
         label = clean(match.group(0))
-        found = sessions_from_label(label, url)
-        if not found:
-            continue
         key = label.lower()
         if key in seen:
             continue
         seen.add(key)
-        sessions.extend(found)
-        if len(sessions) >= 8:
+        sessions.extend(sessions_from_label(label))
+        if len(sessions) >= limit:
             break
-    sessions.sort(key=lambda item: item.get("start_date", "9999-12-31"))
-    return sessions
+    return sessions[:limit]
 
 
-def summarize_sessions(sessions):
-    labels, seen = [], set()
-    for session in sessions:
-        label = clean(session.get("date") or session.get("when") or session.get("label"))
-        if label and label.lower() not in seen:
-            seen.add(label.lower())
+def session_labels(sessions):
+    labels = []
+    for item in sessions:
+        label = item.get("label") or ""
+        if label and label not in labels:
             labels.append(label)
-    if len(labels) <= 1:
-        return labels[0] if labels else "Check official page"
-    shown = " / ".join(labels[:4])
-    if len(labels) > 4:
-        shown += f" / +{len(labels) - 4} more"
-    return f"{len(labels)} sessions: {shown}"
+    return labels
 
 
-def jsonld_objects(page):
+def best_date(sessions):
+    dates = []
+    for item in sessions:
+        dates.extend(item.get("dates") or [])
+    future = [d for d in dates if d >= TODAY - timedelta(days=PAST_GRACE_DAYS)]
+    return min(future or dates) if dates else TODAY
+
+
+def format_when(sessions):
+    labels = session_labels(sessions)
+    if not labels:
+        return ""
+    return " / ".join(labels[:4]) + (f" / +{len(labels) - 4} more" if len(labels) > 4 else "")
+
+
+def load_json_objects(page):
     objects = []
-    for match in re.finditer(r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>([\s\S]*?)</script>', page, re.I):
-        try:
-            data = json.loads(html.unescape(match.group(1)).strip())
-        except Exception:
+    for match in SCRIPT_JSON_RE.finditer(page):
+        raw = html.unescape(match.group(1)).strip()
+        if not raw:
             continue
-        stack = [data]
-        while stack:
-            item = stack.pop()
-            if isinstance(item, list):
-                stack.extend(item)
-            elif isinstance(item, dict):
-                objects.append(item)
-                stack.extend(value for value in item.values() if isinstance(value, (dict, list)))
+        try:
+            objects.append(json.loads(raw))
+        except Exception:
+            pass
     return objects
 
 
-def json_type_is_event(value):
-    types = value if isinstance(value, list) else [value]
-    return any(str(item).lower() == "event" for item in types)
+def walk_json(value):
+    stack = [value]
+    while stack:
+        item = stack.pop()
+        yield item
+        if isinstance(item, dict):
+            stack.extend(item.values())
+        elif isinstance(item, list):
+            stack.extend(item)
 
 
-def location_name(value):
+def event_type(value):
+    raw = value.get("@type") or value.get("type") if isinstance(value, dict) else None
+    items = raw if isinstance(raw, list) else [raw]
+    return any(str(item).lower() == "event" for item in items)
+
+
+def location_from_value(value):
     if isinstance(value, dict):
-        name = clean(value.get("name"))
-        if name:
-            return name
-        address = value.get("address")
-        if isinstance(address, dict):
-            parts = [clean(address.get(key)) for key in ("name", "streetAddress", "addressLocality")]
-            return ", ".join(part for part in parts if part)
-        return clean(address)
-    return clean(value)
-
-
-def known_venue(text):
-    blob = clean(text).lower()
-    for venue in KNOWN_VENUES:
-        if venue.lower() in blob:
-            return venue
+        loc = value.get("location")
+        if isinstance(loc, str):
+            return clean(loc)
+        if isinstance(loc, dict):
+            return clean(loc.get("name") or loc.get("address") or "")
     return ""
 
 
-def local_priority(title, summary, venue, url, location):
-    blob = f"{title} {summary} {venue} {url}".lower().replace("-", " ")
-    query_terms = [word for word in re.split(r"\W+", location.lower()) if len(word) >= 4]
-    hit = any(term in blob for term in LOCAL_PRIORITY_TERMS) or any(term in blob for term in query_terms)
-    return (25 if hit else 0), hit
+def sessions_from_value(value):
+    if not isinstance(value, dict):
+        return []
+    labels = []
+    for key in ("startDate", "endDate", "doorTime", "datePublished"):
+        raw = value.get(key)
+        if raw:
+            labels.append(str(raw))
+    joined = " - ".join(labels)
+    sessions = sessions_from_text(joined, limit=3)
+    return sessions
+
+
+def source_venue_names(source):
+    names = [source.get("default_venue") or source.get("name") or ""]
+    names.extend(source.get("aliases") or [])
+    for sub in source.get("official_subsites") or []:
+        if isinstance(sub, dict) and sub.get("name"):
+            names.append(sub["name"])
+    return [clean(x) for x in names if clean(x)]
+
+
+def extract_location(source, page, event_obj=None):
+    if event_obj:
+        loc = location_from_value(event_obj)
+        if loc:
+            return shorten(loc, 120)
+    text = clean(page[:80000])
+    for name in source_venue_names(source):
+        if re.search(r"\b" + re.escape(name) + r"\b", text, re.I):
+            return name
+    return source.get("default_venue") or source.get("name")
+
+
+def route_looks_listing(url):
+    parsed = urlparse(url)
+    path = parsed.path.lower().rstrip("/") or "/"
+    if parsed.query and re.search(r"\b(category|filter|time|date|type|page)=", parsed.query, re.I):
+        return True
+    if LISTING_ROUTE_RE.search(path):
+        return True
+    return False
+
+
+def route_looks_event_detail(url):
+    path = urlparse(url).path.lower().rstrip("/")
+    return bool(DETAIL_ROUTE_RE.search(path)) and not route_looks_listing(url)
 
 
 def valid_unstructured_event(title, url, page_text):
     if TEMPLATE_RE.search(str(title or "")):
         return False
-    title = clean(title)
-    if len(re.findall(r"[A-Za-z0-9]", title)) < 6:
+    if len(re.sub(r"[^a-z0-9]+", "", str(title or "").lower())) < 6:
         return False
-    # For pages without schema.org Event, require positive event semantics from the title or the page route.
-    return EVENT_MARKER_RE.search(title) is not None or source_route_looks_eventful(url, page_text)
+    if not route_looks_event_detail(url):
+        return False
+    if not sessions_from_text(page_text, limit=1):
+        return False
+    route_text = urllib.parse.unquote(urlparse(url).path.replace("-", " ").replace("_", " "))
+    signal_text = f"{title} {route_text} {clean(page_text[:5000])}"
+    return bool(EVENT_MARKER_RE.search(signal_text))
 
 
-def source_route_looks_eventful(url, page_text):
-    route = path_norm(url).replace("-", " ").replace("_", " ")
-    return EVENT_MARKER_RE.search(route) is not None and EVENT_MARKER_RE.search(clean(page_text[:2000])) is not None
-
-
-def make_event(source, url, title, summary, sessions, location, score, venue="", structured=False, page_text=""):
-    url = normalize_url(url)
-    title = clean(title)
-    summary = clean(summary) if summary else "Open the official page for details."
-    venue = clean(venue) or known_venue(f"{title} {summary} {page_text[:8000]}") or source.get("default_venue", source["name"])
-    if not url or source_frontier_page(source, url) or not sessions:
+def make_event(source, url, title, sessions, page, event_obj=None, structured=False):
+    if not title or not sessions:
         return None
-    if structured is False and not valid_unstructured_event(title, url, page_text):
+    if max(d for s in sessions for d in s.get("dates", [])) < TODAY - timedelta(days=PAST_GRACE_DAYS):
         return None
-    boost, priority = local_priority(title, summary, venue, url, location)
-    when = summarize_sessions(sessions)
+    if not structured and not valid_unstructured_event(title, url, page):
+        return None
     return {
-        "type": "event",
-        "title": shorten(title, 150),
-        "poster_title": shorten(title, 150),
-        "what": shorten(title, 150),
-        "when": when,
-        "date": when,
-        "sessions": sessions,
-        "session_count": len(sessions),
-        "where": venue,
-        "venue": venue,
-        "who": source["source"],
-        "organizer": source["source"],
-        "why": shorten(summary, 260),
-        "description": shorten(summary, 260),
-        "how": "Official page",
-        "summary": shorten(summary, 260),
-        "poster_summary": shorten(summary, 220),
-        "source": source["source"],
-        "source_name": source["name"],
+        "title": shorten(title, 140),
+        "when": format_when(sessions),
+        "where": extract_location(source, page, event_obj),
+        "host": source.get("source") or source.get("name"),
+        "source_name": source.get("source") or source.get("name"),
         "url": url,
-        "score": score + boost + min(len(sessions), 4),
-        "priority_location": priority,
+        "summary": page_summary(page),
+        "start_date": best_date(sessions).isoformat(),
+        "kind": "event",
+        "source_type": "official_registry",
+        "structured": bool(structured),
     }
 
 
-def structured_events(source, page_url, page, location):
+def structured_events(source, url, page):
     events = []
-    for obj in jsonld_objects(page):
-        if not json_type_is_event(obj.get("@type") or obj.get("type")):
-            continue
-        url = normalize_url(obj.get("url") or page_url, page_url)
-        if not url or not same_domain(url, source["domains"]):
-            continue
-        title = clean(obj.get("name") or obj.get("headline"))
-        summary = clean(obj.get("description")) or page_summary(page)
-        sessions = []
-        if obj.get("startDate") or obj.get("endDate"):
-            label = " - ".join(clean(x)[:10] for x in (obj.get("startDate"), obj.get("endDate")) if clean(x))
-            sessions = sessions_from_label(label, url)
-        if not sessions:
-            sessions = sessions_from_text(" ".join([title, summary, clean(page[:120000])]), url)
-        venue = location_name(obj.get("location")) or known_venue(f"{title} {summary} {clean(page[:30000])}")
-        item = make_event(source, url, title, summary, sessions, location, 100, venue, structured=True, page_text=clean(page[:20000]))
-        if item:
-            events.append(item)
+    for obj in load_json_objects(page):
+        for node in walk_json(obj):
+            if isinstance(node, dict) and event_type(node):
+                title = clean(node.get("name") or node.get("headline") or "")
+                sessions = sessions_from_value(node)
+                if not sessions:
+                    sessions = sessions_from_text(" ".join(str(node.get(k) or "") for k in ("startDate", "endDate", "description")))
+                event = make_event(source, url, title, sessions, page, node, structured=True)
+                if event:
+                    events.append(event)
     return events
 
 
-def analyze_page(source, url, page, location):
-    if source_frontier_page(source, url):
-        return []
-    structured = structured_events(source, url, page, location)
-    if structured:
-        return structured
-    title = page_title(page, "")
-    summary = page_summary(page)
-    body = clean(page[:120000])
-    sessions = sessions_from_text(" ".join([title, summary, body]), url)
-    venue = known_venue(" ".join([title, summary, body[:30000]])) or source.get("default_venue", source["name"])
-    item = make_event(source, url, title, summary, sessions, location, 70, venue, structured=False, page_text=body)
-    return [item] if item else []
+def unstructured_event(source, url, page, fallback_title=""):
+    title = page_title(page, fallback_title)
+    sessions = sessions_from_text(page)
+    event = make_event(source, url, title, sessions, page, structured=False)
+    return [event] if event else []
 
 
-def link_score(source, base_url, url, label, context):
-    url = normalize_url(url, base_url)
-    if not url or not same_domain(url, source["domains"]):
+def score_link(source, url, label, context):
+    if not same_domain(url, source.get("domains") or []):
         return -999
-    route = path_norm(url).replace("-", " ").replace("_", " ")
-    text = clean(f"{label} {context[:1500]}")
+    p = urlparse(url)
+    route = urllib.parse.unquote((p.path + " " + p.query).lower().replace("-", " ").replace("_", " "))
+    text = clean(f"{label} {context[:1800]}").lower()
     score = 0
-    if source_frontier_page(source, url):
-        score += 25
-    if source_detail_route(source, url):
-        score += 60
+    if route_looks_event_detail(url):
+        score += 80
+    if route_looks_listing(url):
+        score += 45
     if EVENT_MARKER_RE.search(route):
-        score += 25
+        score += 20
     if EVENT_MARKER_RE.search(text):
-        score += 15
+        score += 20
     if DATE_RE.search(text):
-        score += 15
-    if any(term in f"{route} {text}".lower() for term in LOCAL_PRIORITY_TERMS):
-        score += 10
-    if url_key(url) == url_key(base_url):
-        score -= 30
+        score += 20
+    if any(term in text or term in route for term in LOCAL_PRIORITY_TERMS):
+        score += 8
+    if p.scheme not in ("http", "https"):
+        score -= 100
     return score
-
-
-def page_url_candidates(page):
-    out = []
-    for match in JSON_URL_RE.finditer(page):
-        raw = match.group(1).replace("\\/", "/").replace("\\u002F", "/").replace("\\u002f", "/")
-        if raw.startswith("http") or raw.startswith("/"):
-            out.append(raw)
-    for match in re.finditer(r'/(?:acm|nationalmuseum|peranakanmuseum|childrensmuseum|main|museum)/(?:what(?:s-on|son)|events|happenings|activities|programmes|courses)/[^"\'<>\\\s]+', page, re.I):
-        out.append(match.group(0).replace("\\/", "/"))
-    return out
 
 
 def discover_links(source, page, base_url):
     found = {}
 
-    def add(raw_url, label, context, extra=0):
-        url = normalize_url(raw_url, base_url)
-        score = link_score(source, base_url, url, label, context) + extra
-        if score < 20:
+    def add(raw, label, context):
+        url = normalize_url(raw, base_url)
+        if not url:
+            return
+        score = score_link(source, url, label, context)
+        if score < 35:
             return
         key = url_key(url)
-        if score > found.get(key, (-999, ""))[0]:
-            found[key] = (score, url)
+        item = (score, url, clean(label)[:120])
+        if key not in found or item[0] > found[key][0]:
+            found[key] = item
 
     for match in HTML_HREF_RE.finditer(page):
-        context = page[max(0, match.start() - 700): min(len(page), match.end() + 1000)]
+        context = page[max(0, match.start() - 900): min(len(page), match.end() + 1400)]
         add(match.group(1), match.group(2), context)
-    for raw in page_url_candidates(page):
-        add(raw, raw, page[:3000], extra=8)
-    return sorted(found.values(), key=lambda item: -item[0])[:80]
+
+    decoded = html.unescape(page).replace("\\/", "/").replace("\\u002F", "/").replace("\\u002f", "/")
+    for match in JSON_URL_RE.finditer(decoded):
+        context = decoded[max(0, match.start() - 700): min(len(decoded), match.end() + 1000)]
+        add(match.group(1), match.group(1), context)
+
+    for regex in (RAW_PATH_RE, ABS_URL_RE):
+        for match in regex.finditer(decoded):
+            context = decoded[max(0, match.start() - 700): min(len(decoded), match.end() + 1000)]
+            add(match.group(0), match.group(0), context)
+
+    return sorted(found.values(), key=lambda x: (-x[0], x[1]))
+
+
+def analyze_page(source, url, page, location=DEFAULT_LOCATION, fallback_title=""):
+    events = structured_events(source, url, page)
+    if not events:
+        events = unstructured_event(source, url, page, fallback_title)
+    return events
+
+
+def registry_source_from_entry(entry):
+    name = clean(entry.get("name"))
+    official_site = normalize_url(entry.get("official_site"))
+    if not name or not official_site:
+        return None
+    domains = [host(official_site)]
+    for d in entry.get("allowed_domains") or []:
+        d = str(d).lower().replace("www.", "").strip()
+        if d and d not in domains:
+            domains.append(d)
+
+    seeds = [official_site]
+    for sub in entry.get("official_subsites") or []:
+        if isinstance(sub, dict):
+            url = normalize_url(sub.get("url"))
+            if url and same_domain(url, domains) and url not in seeds:
+                seeds.append(url)
+
+    return {
+        "name": name,
+        "source": name,
+        "default_venue": name,
+        "aliases": [clean(x) for x in entry.get("aliases") or [] if clean(x)],
+        "official_subsites": entry.get("official_subsites") or [],
+        "domains": domains,
+        "seeds": seeds,
+        "official_site": official_site,
+        "registry_status": entry.get("status"),
+        "registry_score": entry.get("score"),
+    }
+
+
+def load_sources():
+    if not OFFICIAL_REGISTRY.exists():
+        raise SystemExit(f"missing official source registry: {OFFICIAL_REGISTRY}")
+    data = json.loads(OFFICIAL_REGISTRY.read_text(encoding="utf-8"))
+    sources = []
+    for entry in data.get("institutions") or []:
+        if entry.get("status") != "confirmed":
+            continue
+        source = registry_source_from_entry(entry)
+        if source:
+            sources.append(source)
+    if not sources:
+        raise SystemExit("official_source_registry.json has no confirmed institutions")
+    return sources
 
 
 def crawl_source(source, location, deadline):
-    queue, events = [], []
-    queued, fetched = set(), set()
-    fetched_preview, rejected_preview, discovered_preview = [], [], []
+    queue = []
+    queued = set()
+    for seed in source.get("seeds") or []:
+        seed = normalize_url(seed)
+        if seed and same_domain(seed, source.get("domains") or []):
+            queue.append((100, seed, ""))
+            queued.add(url_key(seed))
 
-    def push(url, score):
-        url = normalize_url(url)
-        key = url_key(url)
-        if not url or key in queued or key in fetched or not same_domain(url, source["domains"]):
-            return
-        queued.add(key)
-        queue.append((score, url))
-        if len(discovered_preview) < 12:
-            discovered_preview.append({"score": score, "url": url})
+    fetched = set()
+    results = []
+    result_keys = set()
+    debug = {
+        "source": source.get("name"),
+        "official_site": source.get("official_site"),
+        "domains": source.get("domains"),
+        "seeds": source.get("seeds"),
+        "pages_fetched": 0,
+        "queue_seen": len(queue),
+        "discovered_preview": [],
+        "fetched_preview": [],
+        "accepted_preview": [],
+        "rejected_preview": [],
+    }
 
-    for seed in source.get("seeds", []):
-        push(seed, 90)
-
-    while queue and len(fetched) < MAX_PAGES_PER_SOURCE and len(events) < MAX_EVENTS_PER_SOURCE and time.monotonic() < deadline:
-        queue.sort(key=lambda item: -item[0])
-        _score, url = queue.pop(0)
+    while queue and time.time() < deadline and len(fetched) < MAX_PAGES_PER_SOURCE and len(results) < MAX_EVENTS_PER_SOURCE:
+        queue.sort(key=lambda x: (-x[0], x[1]))
+        score, url, label = queue.pop(0)
         key = url_key(url)
         if key in fetched:
             continue
@@ -503,62 +563,81 @@ def crawl_source(source, location, deadline):
         try:
             page = fetch(url)
         except Exception as exc:
-            rejected_preview.append({"url": url, "reason": f"fetch_failed:{type(exc).__name__}"})
+            debug["rejected_preview"].append({"url": url, "reason": f"fetch:{type(exc).__name__}"})
             continue
-        fetched_preview.append({"url": url, "title": shorten(page_title(page, url), 90), "frontier": source_frontier_page(source, url)})
-        events.extend(analyze_page(source, url, page, location))
-        for score, link in discover_links(source, page, url):
-            push(link, score)
 
-    return {"events": events, "debug": {"source": source["name"], "pages_fetched": len(fetched), "queue_seen": len(queued), "accepted": len(events), "discovered_preview": discovered_preview, "fetched_preview": fetched_preview[:10], "accepted_preview": [{"title": item.get("title"), "when": item.get("when"), "where": item.get("where"), "url": item.get("url")} for item in events[:8]], "rejected_preview": rejected_preview[:8]}}
+        debug["pages_fetched"] += 1
+        debug["fetched_preview"].append({"url": url, "score": score, "label": label})
 
+        for event in analyze_page(source, url, page, location, label):
+            event_key = url_key(event["url"]) + "::" + event["title"].lower()
+            if event_key not in result_keys:
+                result_keys.add(event_key)
+                results.append(event)
+                debug["accepted_preview"].append({"title": event["title"], "url": event["url"], "when": event["when"]})
+                if len(results) >= MAX_EVENTS_PER_SOURCE:
+                    break
 
-def event_key(item):
-    return "::".join([clean(item.get("source_name")).lower(), clean(item.get("venue")).lower(), clean(item.get("title")).lower()])
+        for link_score_value, link_url, link_label in discover_links(source, page, url):
+            link_key = url_key(link_url)
+            if link_key in fetched or link_key in queued:
+                continue
+            queued.add(link_key)
+            queue.append((link_score_value, link_url, link_label))
+            if len(debug["discovered_preview"]) < 30:
+                debug["discovered_preview"].append({"score": link_score_value, "url": link_url, "label": link_label})
 
+        debug["queue_seen"] = len(queued)
 
-def dedupe_events(events):
-    grouped = {}
-    for item in events:
-        if not item.get("sessions") or not clean(item.get("title")):
-            continue
-        key = event_key(item)
-        if key not in grouped or int(item.get("score", 0)) > int(grouped[key].get("score", 0)):
-            grouped[key] = item
-    out = list(grouped.values())
-    used_urls = {}
-    for idx, item in enumerate(out, 1):
-        url = item.get("url") or ""
-        key = url.lower()
-        used_urls[key] = used_urls.get(key, 0) + 1
-        if used_urls[key] > 1:
-            parsed = urlparse(url)
-            item["url"] = urllib.parse.urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", parsed.query, f"event-{idx}"))
-    return out
+    debug["accepted"] = len(results)
+    return results, debug
 
 
-def collect(location):
-    deadline = time.monotonic() + MAX_SECONDS
-    events, debug = [], []
-    for source in SOURCES:
-        if time.monotonic() >= deadline:
-            break
-        result = crawl_source(source, location, deadline)
-        events.extend(result["events"])
-        debug.append(result["debug"])
-    events = dedupe_events(events)
-    events.sort(key=lambda item: (not bool(item.get("priority_location")), -int(item.get("score", 0)), item.get("date", ""), item.get("source_name", ""), clean(item.get("title")).lower()))
-    events = events[:MAX_TOTAL_EVENTS]
-    sources = [{"type": "source", "title": source["name"], "url": source["seeds"][0], "source": source["source"], "venue": source.get("default_venue", source["name"])} for source in SOURCES]
-    return events, sources, debug
+def sort_results(items, location):
+    def local_score(item):
+        text = " ".join(str(item.get(k, "")) for k in ("title", "where", "summary", "source_name")).lower()
+        return sum(1 for term in LOCAL_PRIORITY_TERMS if term in text)
+
+    return sorted(items, key=lambda x: (-local_score(x), x.get("start_date", ""), x.get("title", "")))
 
 
 def main():
     location = " ".join(sys.argv[1:]).strip() or DEFAULT_LOCATION
-    events, sources, debug = collect(location)
-    payload = {"version": 17, "ok": True, "extractor": "positive-evidence-event-crawler-v17", "updated_at": now_iso(), "location": location, "count": len(events), "results": events, "items": events, "sources": sources, "debug_by_source": debug, "settings": {"acceptance": "positive_event_evidence_only", "local_terms_are_priority_not_filter": True, "source_is_institution_not_fixed_venue": True, "listing_pages_are_frontier_only": True}}
+    deadline = time.time() + MAX_SECONDS
+    sources = load_sources()
+
+    all_results = []
+    debug_by_source = []
+    seen = set()
+    for source in sources:
+        if time.time() >= deadline or len(all_results) >= MAX_TOTAL_EVENTS:
+            break
+        results, debug = crawl_source(source, location, deadline)
+        debug_by_source.append(debug)
+        for item in results:
+            key = url_key(item["url"]) + "::" + item["title"].lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            all_results.append(item)
+            if len(all_results) >= MAX_TOTAL_EVENTS:
+                break
+
+    all_results = sort_results(all_results, location)[:MAX_TOTAL_EVENTS]
+    payload = {
+        "ok": True,
+        "version": 18,
+        "extractor": "official-registry-event-crawler-v18",
+        "updated_at": now_iso(),
+        "location": location,
+        "source_registry": str(OFFICIAL_REGISTRY.name),
+        "source_count": len(sources),
+        "count": len(all_results),
+        "results": all_results,
+        "debug_by_source": debug_by_source,
+    }
     OUT.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"local events updated count={len(events)} sources={len(sources)} location={location}")
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
