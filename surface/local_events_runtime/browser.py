@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import re
+import shutil
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
 
 class MissingPlaywright(RuntimeError):
@@ -115,18 +116,62 @@ CARD_JS = r"""
 """
 
 
+def find_browser_executable() -> str:
+    env_path = os.environ.get("INFOSCREEN_CHROMIUM_PATH") or os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE")
+    candidates = [
+        env_path,
+        shutil.which("chromium"),
+        shutil.which("chromium-browser"),
+        shutil.which("google-chrome"),
+        shutil.which("google-chrome-stable"),
+        shutil.which("microsoft-edge"),
+        shutil.which("microsoft-edge-stable"),
+        shutil.which("brave-browser"),
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+        "/usr/bin/google-chrome",
+        "/usr/bin/google-chrome-stable",
+        "/snap/bin/chromium",
+    ]
+    for value in candidates:
+        if value and Path(value).exists():
+            return str(value)
+    return ""
+
+
+def launch_chromium(playwright):
+    args = [
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--disable-background-networking",
+    ]
+    executable = find_browser_executable()
+    if executable:
+        return playwright.chromium.launch(headless=True, executable_path=executable, args=args)
+    try:
+        return playwright.chromium.launch(headless=True, args=args)
+    except Exception as exc:
+        raise MissingPlaywright(
+            "missing_system_chromium: Playwright bundled Chromium is unavailable on this distro. "
+            "Install a system browser and set INFOSCREEN_CHROMIUM_PATH if needed. "
+            "Examples: sudo apt install chromium; or install Google Chrome and export INFOSCREEN_CHROMIUM_PATH=/usr/bin/google-chrome. "
+            f"Original error: {exc}"
+        ) from exc
+
+
 def render_listing_cards(source: dict[str, Any], url: str, debug_dir: Path, max_cards: int = 80) -> dict[str, Any]:
     try:
         from playwright.sync_api import sync_playwright
     except Exception as exc:  # pragma: no cover - depends on deployment image
-        raise MissingPlaywright("missing_playwright: install python package 'playwright' and browser runtime") from exc
+        raise MissingPlaywright("missing_playwright_python_package: python3 -m pip install --user playwright") from exc
 
     debug_dir.mkdir(parents=True, exist_ok=True)
     source_id = re.sub(r"[^a-z0-9]+", "-", str(source.get("id") or source.get("name") or "source").lower()).strip("-") or "source"
     allowed = [str(item).lower().replace("www.", "") for item in source.get("allowed_domains") or []]
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = launch_chromium(p)
         page = browser.new_page(viewport={"width": 1440, "height": 2200}, device_scale_factor=1)
         try:
             page.goto(url, wait_until="networkidle", timeout=60000)
