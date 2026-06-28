@@ -5,6 +5,7 @@
   var API_URL = "/api/local-events/search";
   var LOCATION_KEY = "infoscreen.local-event.location";
   var DEFAULT_LOCATION = "Punggol Singapore";
+  var DISPLAY_EVENTS_PER_SOURCE = 3;
 
   function q(selector, root) {
     return (root || document).querySelector(selector);
@@ -54,7 +55,7 @@
       .filter(function (item) {
         return item && item.type !== "source" && item.title && item.url;
       })
-      .slice(0, 64)
+      .slice(0, 96)
       .map(function (item) {
         return {
           title: clean(item.title, 145),
@@ -100,6 +101,12 @@
     });
   }
 
+  function visibleCount(groups) {
+    return groups.reduce(function (sum, group) {
+      return sum + Math.min(group.items.length, DISPLAY_EVENTS_PER_SOURCE);
+    }, 0);
+  }
+
   function eventCard(item) {
     return [
       '<article class="le2-card">',
@@ -122,12 +129,17 @@
   }
 
   function eventGroup(group) {
+    var visible = group.items.slice(0, DISPLAY_EVENTS_PER_SOURCE);
+    var hidden = group.items.length - visible.length;
     return [
       '<section class="le2-group">',
       '<div class="le2-group-title">', esc(group.source),
-      '<span>', esc(group.items.length + ' item' + (group.items.length === 1 ? '' : 's')), '</span>',
+      '<span>', esc(visible.length + '/' + group.items.length), '</span>',
       '</div>',
-      group.items.map(eventCard).join(""),
+      visible.map(eventCard).join(""),
+      hidden > 0
+        ? '<div class="le2-more">+' + esc(hidden) + ' more from this source</div>'
+        : '',
       '</section>'
     ].join("");
   }
@@ -152,8 +164,9 @@
 
     var events = normalizeEvents(data);
     var sources = normalizeSources(data);
-    var count = events.length;
     var groups = groupEvents(events);
+    var shown = visibleCount(groups);
+    var count = events.length;
 
     var eventHtml = events.length
       ? groups.map(eventGroup).join("")
@@ -173,7 +186,7 @@
       '<div class="le2-title">Nearby Picks</div>',
       '</div>',
       '<div class="le2-status">',
-      esc(status || (count + ' event' + (count === 1 ? '' : 's') + ' / ' + groups.length + ' source' + (groups.length === 1 ? '' : 's'))),
+      esc(status || (shown + '/' + count + ' shown / ' + groups.length + ' source' + (groups.length === 1 ? '' : 's'))),
       '</div>',
       '</div>',
 
