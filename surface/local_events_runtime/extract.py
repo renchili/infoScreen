@@ -72,6 +72,18 @@ def lines(text: str) -> list[str]:
     return [clean(item) for item in raw.split("\n") if clean(item)]
 
 
+def norm_key(value: object) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", clean(value).lower()).strip()
+
+
+def semantic_key(event: dict[str, Any]) -> str:
+    return "|".join([
+        norm_key(event.get("source_name")),
+        norm_key(event.get("title")),
+        norm_key(event.get("when")),
+    ])
+
+
 def short(value: object, limit: int) -> str:
     text = clean(value)
     return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
@@ -298,6 +310,7 @@ def event_from_card(source: dict[str, Any], card: dict[str, Any]) -> tuple[dict[
         "kind": "event",
         "source_type": "rendered_dom_card",
         "debug_screenshot": card.get("screenshot") or "",
+        "debug_detail_url_count": card.get("detail_url_count", 0),
     }, "accepted"
 
 
@@ -321,6 +334,7 @@ def collect_source(source: dict[str, Any], debug_dir: Path, deadline: float) -> 
     }
     accepted: list[dict[str, Any]] = []
     seen = set()
+    semantic_seen = set()
 
     for listing_url in source.get("listing_urls") or []:
         if time.time() >= deadline or len(accepted) >= MAX_EVENTS_PER_SOURCE:
@@ -339,6 +353,8 @@ def collect_source(source: dict[str, Any], debug_dir: Path, deadline: float) -> 
             continue
 
         debug["listing_fetched"] += 1
+        if rendered.get("prepare"):
+            debug["prepare"] = rendered.get("prepare")
         if rendered.get("screenshot"):
             debug["screenshots"].append(rendered["screenshot"])
         cards = rendered.get("cards") or []
@@ -352,12 +368,20 @@ def collect_source(source: dict[str, Any], debug_dir: Path, deadline: float) -> 
                 continue
             seen.add(key)
             event, reason = event_from_card(source, card)
+            if event:
+                skey = semantic_key(event)
+                if skey in semantic_seen:
+                    bump(debug, "duplicate_semantic_event")
+                    if len(debug["not_output_preview"]) < 30:
+                        debug["not_output_preview"].append({"url": card.get("url"), "link_text": card.get("link_text"), "reason": "duplicate_semantic_event", "title": event.get("title"), "when": event.get("when"), "detail_url_count": card.get("detail_url_count")})
+                    continue
+                semantic_seen.add(skey)
             bump(debug, reason)
             if event:
                 accepted.append(event)
-                debug["accepted_preview"].append({"title": event["title"], "url": event["url"], "when": event["when"], "where": event["where"]})
+                debug["accepted_preview"].append({"title": event["title"], "url": event["url"], "when": event["when"], "where": event["where"], "detail_url_count": event.get("debug_detail_url_count")})
             elif len(debug["not_output_preview"]) < 30:
-                debug["not_output_preview"].append({"url": card.get("url"), "link_text": card.get("link_text"), "reason": reason, "screenshot": card.get("screenshot")})
+                debug["not_output_preview"].append({"url": card.get("url"), "link_text": card.get("link_text"), "reason": reason, "screenshot": card.get("screenshot"), "detail_url_count": card.get("detail_url_count")})
 
     debug["accepted"] = len(accepted)
     return accepted, debug
@@ -394,6 +418,7 @@ def collect_events(config_path: Path, location: str, debug_dir: Path) -> dict[st
     all_items: list[dict[str, Any]] = []
     debug = []
     seen = set()
+    semantic_seen = set()
 
     for source in config.get("sources") or []:
         if time.time() >= deadline or len(all_items) >= MAX_TOTAL_EVENTS:
@@ -402,9 +427,11 @@ def collect_events(config_path: Path, location: str, debug_dir: Path) -> dict[st
         debug.append(source_debug)
         for item in items:
             key = item.get("url") or ""
-            if not key or key in seen:
+            skey = semantic_key(item)
+            if not key or key in seen or skey in semantic_seen:
                 continue
             seen.add(key)
+            semantic_seen.add(skey)
             all_items.append(item)
             if len(all_items) >= MAX_TOTAL_EVENTS:
                 break
