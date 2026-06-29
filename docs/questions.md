@@ -13,7 +13,7 @@ This document tracks user-confirmation items, missing inputs, open design questi
 - Local-event frontend rendering should have one state machine only.
 - `infoscreen-local-events.timer` should remain disabled while extraction is being debugged.
 - API schema should use Pydantic models plus framework-independent OpenAPI generation, not a FastAPI migration.
-- The initial 7-event result is insufficient; event source coverage must be expanded before judging extractor quality.
+- The initial ACM result quality problem is crawler/extractor quality, not primarily source count.
 
 ## Needs user confirmation
 
@@ -36,12 +36,13 @@ Risk:
 
 Current state:
 
-- `surface/conf/event_sources.json` now contains more verified official listing sources than the initial three-source setup.
-- The current expanded set is still mostly Singapore-wide official venues, not truly Punggol-local.
+- Source expansion alone is not a valid fix for poor result quality.
+- ACM itself has many activities that were not correctly extracted.
+- The immediate focus is crawler quality: rendered card completeness, card line preservation, pagination/load-more handling, and field extraction.
 
 Question:
 
-- Should default `Punggol Singapore` prioritize truly local sources such as One Punggol, NLB/Punggol Regional Library, OnePA/PA, SAFRA Punggol, Waterway Point, and community venues?
+- After ACM extraction is fixed, should default `Punggol Singapore` add truly local sources such as One Punggol, NLB/Punggol Regional Library, OnePA/PA, SAFRA Punggol, Waterway Point, and community venues?
 
 Missing input:
 
@@ -133,16 +134,18 @@ python3 -m pip install --user playwright
 
 ## Open technical issues
 
-### 1. Field splitting accuracy
+### 1. ACM crawler quality
 
 Status:
 
-- v41 improves `when`, `where`, and `summary` splitting.
+- `surface/local_events_runtime/browser.py` now preserves `text_lines` instead of flattening the whole rendered card into one line.
+- The browser runtime now scrolls and attempts to click Load more / View more / Show more controls before extracting cards.
+- Source expansion was reverted; the quality issue must be fixed on the existing ACM/NHB crawler path first.
 
 Open issue:
 
-- Real rendered cards still need review.
-- Some card layouts may still mix category/title/date/venue in one DOM text block.
+- Need verify actual ACM `cards_found`, `accepted`, and rejected reasons after rerun.
+- Need inspect `debug_by_source` and card screenshots before claiming quality fixed.
 
 Verification:
 
@@ -155,8 +158,11 @@ print(d.get('extractor'))
 print(d.get('source_count'))
 print(d.get('count'))
 for src in d.get('debug_by_source', []):
-    print(src.get('source'), 'cards=', src.get('cards_found'), 'accepted=', src.get('accepted'), src.get('reason_counts'))
-for x in d.get('results', [])[:20]:
+    print('\nSOURCE:', src.get('source'))
+    print('cards=', src.get('cards_found'), 'accepted=', src.get('accepted'))
+    print('reasons=', src.get('reason_counts'))
+    print('not_output=', src.get('not_output_preview', [])[:5])
+for x in d.get('results', [])[:30]:
     print('\nTITLE:', x.get('title'))
     print('WHEN :', x.get('when'))
     print('WHERE:', x.get('where'))
@@ -165,7 +171,19 @@ for x in d.get('results', [])[:20]:
 PY
 ```
 
-### 2. Mandai extraction
+### 2. Field splitting accuracy
+
+Status:
+
+- v41 improves `when`, `where`, and `summary` splitting.
+- Card line preservation should make field splitting materially better.
+
+Open issue:
+
+- Real rendered cards still need review.
+- Some card layouts may still mix category/title/date/venue in one DOM block.
+
+### 3. Mandai extraction
 
 Status:
 
@@ -176,7 +194,7 @@ Open issue:
 - Need verify rendered DOM extractor output for Mandai.
 - If rendered DOM still fails, Mandai may need a source-specific DOM selector or JSON extraction path.
 
-### 3. Old source files still present
+### 4. Old source files still present
 
 Status:
 
@@ -192,7 +210,7 @@ Recommendation:
 - Keep until rendered DOM path is proven stable.
 - Delete only after confirmation.
 
-### 4. Frontend source cleanup
+### 5. Frontend source cleanup
 
 Status:
 
@@ -203,12 +221,11 @@ Open issue:
 
 - Physical deletion from `surface/web/index.html` remains pending.
 
-### 5. API timeout
+### 6. API timeout
 
 Current timeout:
 
 - `/api/local-events/search` POST timeout is 130 seconds.
-- extractor internal budget is 115 seconds by default.
 
 Open issue:
 
@@ -219,7 +236,7 @@ Need confirm:
 - Actual runtime on Surface.
 - Whether timeout should remain 130 seconds.
 
-### 6. OpenAPI runtime verification
+### 7. OpenAPI runtime verification
 
 Current state:
 
@@ -334,9 +351,9 @@ Expected:
 ## Do not claim yet
 
 - Do not claim final extraction accuracy is solved until real v41 output is reviewed.
+- Do not claim ACM quality is solved until ACM `debug_by_source` proves more cards are found and accepted correctly.
 - Do not claim the legacy inline script is physically deleted from `index.html`; currently it is stripped at serve time.
 - Do not claim the timer can be re-enabled until the extractor output is verified.
 - Do not claim OCR/VLM support exists; only debug screenshots exist.
 - Do not claim Mandai is fixed until rendered DOM output proves it.
 - Do not claim OpenAPI is working on Surface until `/openapi.json` is verified after installing Pydantic.
-- Do not claim Punggol-local quality is solved until Punggol-specific official sources are added and verified.
