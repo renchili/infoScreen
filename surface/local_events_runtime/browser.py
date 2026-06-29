@@ -12,9 +12,13 @@ class MissingPlaywright(RuntimeError):
     pass
 
 
+MAX_LISTING_PAGES = int(os.environ.get("LOCAL_EVENTS_MAX_LISTING_PAGES", "8"))
+LOAD_MORE_ROUNDS = int(os.environ.get("LOCAL_EVENTS_LOAD_MORE_ROUNDS", "2"))
+
+
 PREPARE_PAGE_JS = r"""
 async (args) => {
-  const maxRounds = args.maxRounds || 8;
+  const maxRounds = args.maxRounds || 2;
   const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
   function visible(el) {
@@ -33,7 +37,7 @@ async (args) => {
   let lastHeight = 0;
   for (let round = 0; round < maxRounds; round++) {
     window.scrollTo(0, document.body.scrollHeight);
-    await sleep(900);
+    await sleep(650);
 
     const controls = Array.from(document.querySelectorAll("button, a[href], [role='button']"))
       .filter(visible)
@@ -42,10 +46,10 @@ async (args) => {
     if (controls.length) {
       try {
         controls[0].scrollIntoView({block: "center"});
-        await sleep(250);
+        await sleep(200);
         controls[0].click();
         clicks += 1;
-        await sleep(1400);
+        await sleep(900);
       } catch (e) {}
     }
 
@@ -54,8 +58,103 @@ async (args) => {
     lastHeight = height;
   }
   window.scrollTo(0, 0);
-  await sleep(300);
+  await sleep(250);
   return {clicks, height: document.body.scrollHeight};
+}
+"""
+
+
+CLICK_NEXT_PAGE_JS = r"""
+async (args) => {
+  const allowedDomains = args.allowedDomains || [];
+  const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+  function oneLine(value) {
+    return String(value || "").replace(/\s+/g, " ").trim();
+  }
+
+  function visible(el) {
+    if (!el) return false;
+    const style = window.getComputedStyle(el);
+    if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity || 1) === 0) return false;
+    const r = el.getBoundingClientRect();
+    return r.width >= 24 && r.height >= 18 && r.bottom >= 0 && r.right >= 0;
+  }
+
+  function disabled(el) {
+    const cls = oneLine(el.className).toLowerCase();
+    return el.disabled || el.getAttribute("aria-disabled") === "true" || cls.includes("disabled") || cls.includes("is-disabled");
+  }
+
+  function sameDomain(raw) {
+    let u;
+    try { u = new URL(raw, document.location.href); } catch { return false; }
+    const h = u.hostname.replace(/^www\./, "").toLowerCase();
+    return allowedDomains.some(d => h === String(d).replace(/^www\./, "").toLowerCase() || h.endsWith("." + String(d).replace(/^www\./, "").toLowerCase()));
+  }
+
+  function pathRole(raw) {
+    let u;
+    try { u = new URL(raw, document.location.href); } catch { return "other"; }
+    const path = decodeURIComponent(u.pathname.toLowerCase()).replace(/\/$/, "");
+    const parts = path.split("/").filter(Boolean);
+    const leaf = (parts[parts.length - 1] || "").replace(/\.html$/, "");
+    const generic = new Set(["", "whats-on", "whatson", "overview", "view-all", "events", "event", "exhibition", "exhibitions", "programme", "programmes", "program", "programs", "activities", "activity", "guided-tours"]);
+    if (/[?&](category|filter|time|date|type|page)=/i.test(u.search)) return "listing";
+    if (generic.has(leaf)) return "listing";
+    if (/\/(whats-on|whatson|events?|event|exhibitions?|exhibition|programmes?|programs?|activities?|guided-tours|discover-mandai\/events)\//i.test(path + "/")) return "detail";
+    return "other";
+  }
+
+  function controlText(el) {
+    return oneLine([el.innerText, el.textContent, el.getAttribute("aria-label"), el.getAttribute("title")].join(" "));
+  }
+
+  function isNextControl(el) {
+    if (!visible(el) || disabled(el)) return false;
+    const text = controlText(el);
+    if (!text) return false;
+    if (/\b(next programme|next program|next exhibition|next event|next article)\b/i.test(text)) return false;
+    const nextish = /^(next|>|›|»|→)$/i.test(text) || /\b(next page|go to next|page next|next results?)\b/i.test(text) || /下一页|下一頁/.test(text);
+    if (!nextish) return false;
+    if (el.tagName === "A") {
+      const href = el.getAttribute("href") || "";
+      if (!href || href === "#") return true;
+      const abs = new URL(href, document.location.href).href;
+      if (!sameDomain(abs)) return false;
+      return pathRole(abs) !== "detail";
+    }
+    return true;
+  }
+
+  function score(el) {
+    let score = 0;
+    const attrs = oneLine([el.className, el.id, el.getAttribute("role"), el.closest("nav,[class*='pager' i],[class*='pagination' i],[class*='page' i]")?.className].join(" "));
+    if (/\b(pager|pagination|page|next)\b/i.test(attrs)) score += 50;
+    if (/^(next|>|›|»|→)$/i.test(controlText(el))) score += 20;
+    const r = el.getBoundingClientRect();
+    score += Math.max(0, 1200 - r.top) / 100;
+    return score;
+  }
+
+  const candidates = Array.from(document.querySelectorAll("a[href], button, [role='button']"))
+    .filter(isNextControl)
+    .sort((a, b) => score(b) - score(a));
+
+  if (!candidates.length) return {clicked: false, reason: "next_control_not_found"};
+  const el = candidates[0];
+  const beforeHref = document.location.href;
+  const beforeTextLength = oneLine(document.body.innerText).length;
+  const text = controlText(el);
+  try {
+    el.scrollIntoView({block: "center"});
+    await sleep(180);
+    el.click();
+    await sleep(1000);
+    return {clicked: true, text, beforeHref, afterHref: document.location.href, beforeTextLength, afterTextLength: oneLine(document.body.innerText).length};
+  } catch (e) {
+    return {clicked: false, text, reason: String(e)};
+  }
 }
 """
 
@@ -65,6 +164,7 @@ CARD_JS = r"""
   const allowedDomains = args.allowedDomains || [];
   const maxCards = args.maxCards || 160;
   const sourceId = args.sourceId || "source";
+  const pageIndex = args.pageIndex || 0;
 
   function clean(value) {
     return String(value || "").replace(/[ \t\f\v]+/g, " ").replace(/\n\s+/g, "\n").replace(/\s+\n/g, "\n").trim();
@@ -173,7 +273,7 @@ CARD_JS = r"""
     if (seen.has(key)) continue;
     seen.add(key);
 
-    const id = `${sourceId}-${out.length}-${Math.random().toString(36).slice(2)}`;
+    const id = `${sourceId}-${pageIndex}-${out.length}-${Math.random().toString(36).slice(2)}`;
     card.setAttribute("data-infoscreen-card-id", id);
     out.push({
       id,
@@ -185,6 +285,8 @@ CARD_JS = r"""
       text_lines: lines,
       detail_url_count: cardDetailUrls.length,
       detail_urls: cardDetailUrls.slice(0, 8),
+      page_index: pageIndex,
+      page_url: document.location.href,
       rect: {x: r.x, y: r.y, width: r.width, height: r.height},
       role: pathRole(abs)
     });
@@ -257,23 +359,55 @@ def render_listing_cards(source: dict[str, Any], url: str, debug_dir: Path, max_
                 page.goto(url, wait_until="networkidle", timeout=60000)
             except Exception:
                 page.goto(url, wait_until="domcontentloaded", timeout=60000)
-            page.wait_for_timeout(1800)
-            prepare = page.evaluate(PREPARE_PAGE_JS, {"maxRounds": 8})
-            cards = page.evaluate(CARD_JS, {"allowedDomains": allowed, "maxCards": max_cards, "sourceId": source_id})
-            screenshot_path = debug_dir / f"{source_id}-{hashlib.sha1(url.encode()).hexdigest()[:10]}-page.png"
-            page.screenshot(path=str(screenshot_path), full_page=True)
+            page.wait_for_timeout(1400)
 
-            for card in cards:
-                cid = card.get("id")
-                if not cid:
-                    continue
-                crop_path = debug_dir / f"{source_id}-{len(card.get('text', ''))}-{hashlib.sha1((card.get('url', '') + cid).encode()).hexdigest()[:10]}.png"
+            all_cards: list[dict[str, Any]] = []
+            seen_cards = set()
+            screenshots: list[str] = []
+            pagination: list[dict[str, Any]] = []
+            rendered_pages = 0
+
+            for page_index in range(MAX_LISTING_PAGES):
+                prepare = page.evaluate(PREPARE_PAGE_JS, {"maxRounds": LOAD_MORE_ROUNDS})
+                page_cards = page.evaluate(CARD_JS, {"allowedDomains": allowed, "maxCards": max_cards, "sourceId": source_id, "pageIndex": page_index})
+                page_screenshot = debug_dir / f"{source_id}-{hashlib.sha1((url + str(page_index)).encode()).hexdigest()[:10]}-page-{page_index}.png"
+                page.screenshot(path=str(page_screenshot), full_page=True)
+                screenshots.append(str(page_screenshot))
+                rendered_pages += 1
+                new_count = 0
+
+                for card in page_cards:
+                    key = (card.get("url") or "") + "\n" + (card.get("text") or "")[:500]
+                    if not key.strip() or key in seen_cards:
+                        continue
+                    seen_cards.add(key)
+                    cid = card.get("id")
+                    if cid:
+                        crop_path = debug_dir / f"{source_id}-{page_index}-{len(card.get('text', ''))}-{hashlib.sha1((card.get('url', '') + cid).encode()).hexdigest()[:10]}.png"
+                        try:
+                            page.locator(f"[data-infoscreen-card-id='{cid}']").first.screenshot(path=str(crop_path), timeout=2500)
+                            card["screenshot"] = str(crop_path)
+                        except Exception:
+                            card["screenshot"] = ""
+                    all_cards.append(card)
+                    new_count += 1
+                    if len(all_cards) >= max_cards:
+                        break
+
+                pagination.append({"page_index": page_index, "url": page.url, "prepare": prepare, "cards": len(page_cards), "new_cards": new_count})
+                if len(all_cards) >= max_cards or page_index >= MAX_LISTING_PAGES - 1:
+                    break
+
+                next_result = page.evaluate(CLICK_NEXT_PAGE_JS, {"allowedDomains": allowed})
+                pagination[-1]["next"] = next_result
+                if not next_result.get("clicked"):
+                    break
                 try:
-                    page.locator(f"[data-infoscreen-card-id='{cid}']").first.screenshot(path=str(crop_path), timeout=2500)
-                    card["screenshot"] = str(crop_path)
+                    page.wait_for_load_state("networkidle", timeout=8000)
                 except Exception:
-                    card["screenshot"] = ""
+                    page.wait_for_timeout(1000)
+                page.wait_for_timeout(800)
 
-            return {"ok": True, "url": url, "prepare": prepare, "screenshot": str(screenshot_path), "cards": cards}
+            return {"ok": True, "url": url, "rendered_pages": rendered_pages, "pagination": pagination, "screenshot": screenshots[0] if screenshots else "", "screenshots": screenshots, "cards": all_cards}
         finally:
             browser.close()
