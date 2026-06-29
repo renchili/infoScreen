@@ -33,6 +33,35 @@ LEGACY_LOCAL_EVENT_INLINE_RE = re.compile(
     re.I,
 )
 
+LOCAL_EVENT_TOOLBAR_PIN_CSS = """
+<style id="local-event-toolbar-pin">
+#localEventBox .local-event-toolbar{
+  position:absolute!important;top:6px!important;right:7px!important;height:24px!important;
+  display:flex!important;align-items:center!important;gap:5px!important;z-index:20!important;overflow:visible!important;
+}
+#localEventBox #localEventCounter{
+  display:inline-flex!important;align-items:center!important;justify-content:flex-end!important;
+  width:38px!important;min-width:38px!important;max-width:38px!important;height:22px!important;
+  font-size:10px!important;line-height:1!important;color:#7d8782!important;letter-spacing:.04em!important;
+}
+#localEventBox #localEventPrevButton,
+#localEventBox #localEventNextButton,
+#localEventBox #localEventLocationButton{
+  appearance:none!important;-webkit-appearance:none!important;box-sizing:border-box!important;
+  display:inline-grid!important;place-items:center!important;flex:0 0 22px!important;
+  width:22px!important;min-width:22px!important;max-width:22px!important;
+  height:22px!important;min-height:22px!important;max-height:22px!important;
+  margin:0!important;padding:0!important;border:1px solid #3a3f3d!important;border-radius:999px!important;
+  background:#050606!important;color:#8cecff!important;font-family:inherit!important;font-size:13px!important;
+  font-weight:950!important;line-height:20px!important;text-align:center!important;cursor:pointer!important;
+  transform:none!important;box-shadow:none!important;letter-spacing:0!important;touch-action:manipulation!important;
+}
+#localEventBox #localEventPrevButton:disabled,
+#localEventBox #localEventNextButton:disabled,
+#localEventBox #localEventLocationButton:disabled{opacity:.28!important;cursor:default!important;}
+</style>
+"""
+
 SWAGGER_UI_HTML = """<!doctype html>
 <html lang="en">
 <head>
@@ -99,7 +128,9 @@ def market_config_json():
 def clean_index_html() -> bytes:
     raw = (WEB_DIR / "index.html").read_text(encoding="utf-8")
     cleaned = LEGACY_LOCAL_EVENT_INLINE_RE.sub("\n", raw)
-    cleaned = cleaned.replace('calendar_board.js?v=1781715981', 'calendar_board.js?v=front-clean-1')
+    cleaned = cleaned.replace('calendar_board.js?v=1781715981', 'calendar_board.js?v=toolbar-pin-1')
+    if 'id="local-event-toolbar-pin"' not in cleaned:
+        cleaned = cleaned.replace("</head>", LOCAL_EVENT_TOOLBAR_PIN_CSS + "\n</head>")
     return cleaned.encode("utf-8")
 
 
@@ -269,7 +300,7 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/api/market-refresh":
             try:
                 proc = subprocess.run([sys.executable, str(SURFACE_DIR / "fetch_live_data.py")], cwd=str(SURFACE_DIR), text=True, capture_output=True, timeout=60)
-                return self.send_json({"ok": proc.returncode == 0, "returncode": proc.returncode, "stdout": proc.stdout[-2000:], "stderr": proc.stderr[-2000:], "market": runtime_json("market.json")}, 200 if proc.returncode == 0 else 500)
+                return self.send_json({"ok": proc.returncode == 0, "returncode": proc.returncode, "stdout": proc.stdout[-2000:], "stderr": proc.stderr[-2000:], "market": runtime_json("market.json"), "weather": runtime_json("weather.json")}, 200 if proc.returncode == 0 else 500)
             except Exception as exc:
                 return self.send_json({"ok": False, "error": str(exc)}, 500)
 
