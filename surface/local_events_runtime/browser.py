@@ -107,6 +107,16 @@ CARD_JS = r"""
     return "other";
   }
 
+  function detailUrls(el) {
+    const urls = [];
+    for (const a of Array.from(el.querySelectorAll("a[href]"))) {
+      let abs = "";
+      try { abs = new URL(a.getAttribute("href"), document.location.href).href; } catch { continue; }
+      if (sameDomain(abs) && pathRole(abs) === "detail" && !urls.includes(abs)) urls.push(abs);
+    }
+    return urls;
+  }
+
   function scoreContainer(el, anchor) {
     if (!el || !visible(el)) return -999;
     const r = el.getBoundingClientRect();
@@ -115,13 +125,17 @@ CARD_JS = r"""
     if (text.length < 8 || r.width < 80 || r.height < 35) return -999;
     let score = 0;
     const attrs = oneLine([el.className, el.id, el.getAttribute("role"), el.getAttribute("aria-label")].join(" "));
+    const detailCount = detailUrls(el).length;
     if (/\b(card|tile|item|event|programme|program|exhibition|listing|result)\b/i.test(attrs)) score += 45;
     if (/^(ARTICLE|LI)$/i.test(el.tagName)) score += 35;
     if (el.querySelector("h1,h2,h3,h4")) score += 25;
     if (/\b20\d{2}\b|\b\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)/i.test(text)) score += 55;
     if (/\b\d{1,2}(:|\.)\d{2}\s*(am|pm)?\b|\b\d{1,2}\s*(am|pm)\b|daily|selected dates/i.test(text)) score += 10;
     if (lines.length >= 3) score += 16;
-    if (r.height > 1600 || text.length > 5500) score -= 70;
+    if (detailCount === 1) score += 35;
+    if (detailCount > 1) score -= 120 * (detailCount - 1);
+    if (r.height > 900 || text.length > 1800) score -= 55;
+    if (r.height > 1600 || text.length > 5500) score -= 90;
     if (anchor && !el.contains(anchor)) score -= 200;
     return score;
   }
@@ -135,7 +149,8 @@ CARD_JS = r"""
     const closest = anchor.closest("article, li, [class*='card' i], [class*='tile' i], [class*='event' i], [class*='programme' i], [class*='program' i], [class*='exhibition' i], [class*='listing' i], [class*='result' i]");
     if (closest) candidates.push(closest);
     candidates.sort((a, b) => scoreContainer(b, anchor) - scoreContainer(a, anchor));
-    return candidates[0] || anchor;
+    const singleDetail = candidates.find(el => detailUrls(el).length === 1 && scoreContainer(el, anchor) > -999);
+    return singleDetail || candidates[0] || anchor;
   }
 
   const out = [];
@@ -153,6 +168,7 @@ CARD_JS = r"""
     const headings = Array.from(card.querySelectorAll("h1,h2,h3,h4")).map(h => oneLine(h.innerText || h.textContent)).filter(Boolean);
     const imgAlts = Array.from(card.querySelectorAll("img[alt]")).map(img => oneLine(img.getAttribute("alt"))).filter(Boolean);
     const linkText = oneLine(a.innerText || a.textContent || a.getAttribute("aria-label") || "");
+    const cardDetailUrls = detailUrls(card);
     const key = abs + "\n" + text.slice(0, 500);
     if (seen.has(key)) continue;
     seen.add(key);
@@ -167,6 +183,8 @@ CARD_JS = r"""
       image_alts: imgAlts,
       text,
       text_lines: lines,
+      detail_url_count: cardDetailUrls.length,
+      detail_urls: cardDetailUrls.slice(0, 8),
       rect: {x: r.x, y: r.y, width: r.width, height: r.height},
       role: pathRole(abs)
     });
