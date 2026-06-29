@@ -16,8 +16,30 @@ CONF_DIR = SURFACE_DIR / "conf"
 CONFIG = ENV_DIR / "market_config.json"
 DEFAULT_CONFIG = CONF_DIR / "market_config.default.json"
 MARKET = ENV_DIR / "market.json"
+WEATHER = ENV_DIR / "weather.json"
 DEFAULT_SYMBOLS = ["AAPL", "NVDA", "MSFT", "TSLA"]
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/126 Safari/537.36"
+
+WEATHER_CODE = {
+    0: "clear sky",
+    1: "mainly clear",
+    2: "partly cloudy",
+    3: "overcast",
+    45: "fog",
+    48: "depositing rime fog",
+    51: "light drizzle",
+    53: "moderate drizzle",
+    55: "dense drizzle",
+    61: "slight rain",
+    63: "moderate rain",
+    65: "heavy rain",
+    80: "slight rain showers",
+    81: "moderate rain showers",
+    82: "violent rain showers",
+    95: "thunderstorm",
+    96: "thunderstorm with hail",
+    99: "thunderstorm with heavy hail",
+}
 
 
 def read_json(path, default):
@@ -204,14 +226,64 @@ def quote_one(symbol):
     return {"symbol": symbol, "name": symbol, "price": "N/A", "percent": "N/A", "session": "ERR", "provider": "none", "error": " | ".join(errors)[-800:]}
 
 
-def main() -> None:
-    ENV_DIR.mkdir(exist_ok=True)
+def fetch_weather():
+    lat = 1.3521
+    lon = 103.8198
+    url = "https://api.open-meteo.com/v1/forecast?" + urllib.parse.urlencode({
+        "latitude": lat,
+        "longitude": lon,
+        "current": "temperature_2m,relative_humidity_2m,apparent_temperature,weather_code",
+        "timezone": "Asia/Singapore",
+    })
+    data = http_json(url, timeout=15)
+    current = data.get("current") or {}
+    code = current.get("weather_code")
+    temp = current.get("temperature_2m")
+    feels = current.get("apparent_temperature")
+    humidity = current.get("relative_humidity_2m")
+    return {
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "location": "Singapore",
+        "source": "open-meteo",
+        "status": "OK" if temp is not None else "ERR",
+        "temp_c": temp,
+        "feels_like_c": feels,
+        "humidity": humidity,
+        "weather_code": code,
+        "desc": WEATHER_CODE.get(int(code), "unknown") if code is not None else "unknown",
+    }
+
+
+def write_weather():
+    try:
+        payload = fetch_weather()
+    except Exception as exc:
+        old = read_json(WEATHER, {})
+        payload = {
+            **old,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "location": old.get("location") or "Singapore",
+            "source": "open-meteo",
+            "status": "ERR",
+            "error": str(exc)[-500:],
+        }
+    WEATHER.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"weather updated status={payload.get('status')} -> {WEATHER}")
+
+
+def write_market():
     symbols = load_symbols()
     items = [quote_one(symbol) for symbol in symbols]
     ok_count = sum(1 for item in items if item.get("price") != "N/A")
     payload = {"updated_at": datetime.now(timezone.utc).isoformat(), "source": "nasdaq+cnbc+stooq+yahoo", "symbols": symbols, "status": "OK" if ok_count else "ERR", "error": None if ok_count else "all quote providers failed", "items": items}
     MARKET.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"market updated status={payload['status']} ok={ok_count}/{len(symbols)} symbols={','.join(symbols)} -> {MARKET}")
+
+
+def main() -> None:
+    ENV_DIR.mkdir(exist_ok=True)
+    write_weather()
+    write_market()
 
 
 if __name__ == "__main__":
