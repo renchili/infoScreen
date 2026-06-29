@@ -16,7 +16,7 @@ source "$CONFIG_FILE"
 : "${PYTHON_BIN:=python3}"
 : "${SURFACE_USER:?SURFACE_USER is required in mac/local.env}"
 : "${SURFACE_HOST:?SURFACE_HOST is required in mac/local.env}"
-: "${REMOTE_SCHEDULE_JSON:=~/infoscreen/schedule.json}"
+: "${REMOTE_SCHEDULE_JSON:=~/infoscreen/surface/.env/schedule.json}"
 : "${LOCAL_SCHEDULE_JSON:=schedule.json}"
 : "${LOG_DIR:=$HOME/Library/Logs/infoscreen-sync}"
 
@@ -38,8 +38,11 @@ fi
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/push_schedule.log"
 
+remote_dir="$(dirname "$REMOTE_SCHEDULE_JSON")"
+
 {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] start"
+  echo "remote=${SURFACE_USER}@${SURFACE_HOST}:${REMOTE_SCHEDULE_JSON}"
 
   cd "$SCRIPT_DIR"
   "$PYTHON_CMD" export.py "$LOCAL_SCHEDULE_JSON"
@@ -48,6 +51,8 @@ LOG_FILE="$LOG_DIR/push_schedule.log"
     echo "Generated schedule file missing: $SCRIPT_DIR/$LOCAL_SCHEDULE_JSON"
     exit 1
   fi
+
+  ssh -q "${SURFACE_USER}@${SURFACE_HOST}" "mkdir -p '$remote_dir'"
 
   scp -q \
     "$SCRIPT_DIR/$LOCAL_SCHEDULE_JSON" \
