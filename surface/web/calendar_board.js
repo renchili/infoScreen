@@ -204,17 +204,20 @@
     var style = document.createElement("style");
     style.id = "local-event-adaptive-style";
     style.textContent = [
-      "#localEventList{min-height:0;}",
-      ".local-event-card.local-event-single{height:100%;max-height:100%;display:flex;flex-direction:column;overflow:hidden;box-sizing:border-box;}",
-      ".local-event-title{font-size:clamp(20px,3.25vw,34px);line-height:1.14;letter-spacing:.055em;max-height:3.42em;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow-wrap:anywhere;word-break:normal;}",
-      ".local-event-title.title-md{font-size:clamp(18px,2.75vw,29px);line-height:1.12;letter-spacing:.045em;}",
-      ".local-event-title.title-sm{font-size:clamp(16px,2.3vw,24px);line-height:1.1;letter-spacing:.035em;}",
-      ".local-event-title.title-xs{font-size:clamp(14px,1.95vw,20px);line-height:1.08;letter-spacing:.025em;-webkit-line-clamp:4;max-height:4.32em;}",
-      ".local-event-kv{display:grid;grid-template-columns:minmax(72px,96px) 1fr;align-items:start;gap:8px;min-height:0;}",
-      ".local-event-kv b{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;word-break:normal;}",
-      ".local-event-desc{flex:1 1 auto;min-height:0;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:5;position:relative;}",
-      ".local-event-actions{flex:0 0 auto;margin-top:auto;padding-top:12px;}",
-      "#localEventPrevButton,#localEventNextButton{position:relative;z-index:50;min-width:44px;min-height:36px;cursor:pointer;touch-action:manipulation;pointer-events:auto;}"
+      "#localEventList{min-height:0!important;height:100%!important;overflow:hidden!important;}",
+      "#localEventList .local-event-card.local-event-single{height:100%!important;max-height:100%!important;display:flex!important;flex-direction:column!important;overflow:hidden!important;box-sizing:border-box!important;padding:20px 26px 18px!important;gap:7px!important;}",
+      "#localEventList .local-event-label{font-size:12px!important;line-height:1!important;letter-spacing:.22em!important;margin:0 0 4px!important;opacity:.72!important;}",
+      "#localEventList .local-event-title{font-size:24px!important;line-height:1.08!important;letter-spacing:.045em!important;max-height:2.16em!important;margin:0 0 6px!important;overflow:hidden!important;display:-webkit-box!important;-webkit-line-clamp:2!important;-webkit-box-orient:vertical!important;overflow-wrap:anywhere!important;word-break:normal!important;}",
+      "#localEventList .local-event-title.title-md{font-size:22px!important;line-height:1.06!important;letter-spacing:.035em!important;}",
+      "#localEventList .local-event-title.title-sm{font-size:20px!important;line-height:1.05!important;letter-spacing:.028em!important;}",
+      "#localEventList .local-event-title.title-xs{font-size:18px!important;line-height:1.05!important;letter-spacing:.02em!important;-webkit-line-clamp:2!important;max-height:2.1em!important;}",
+      "#localEventList .local-event-kv{display:grid!important;grid-template-columns:82px minmax(0,1fr)!important;align-items:start!important;gap:8px!important;margin:0!important;min-height:0!important;}",
+      "#localEventList .local-event-kv span{font-size:12px!important;line-height:1.15!important;letter-spacing:.18em!important;}",
+      "#localEventList .local-event-kv b{font-size:16px!important;line-height:1.18!important;letter-spacing:.045em!important;display:-webkit-box!important;-webkit-line-clamp:2!important;-webkit-box-orient:vertical!important;overflow:hidden!important;overflow-wrap:anywhere!important;word-break:normal!important;}",
+      "#localEventList .local-event-desc{flex:1 1 auto!important;min-height:0!important;max-height:4.1em!important;overflow:hidden!important;display:-webkit-box!important;-webkit-box-orient:vertical!important;-webkit-line-clamp:3!important;font-size:16px!important;line-height:1.36!important;margin:5px 0 0!important;letter-spacing:.02em!important;}",
+      "#localEventList .local-event-actions{flex:0 0 auto!important;margin-top:auto!important;padding-top:9px!important;}",
+      "#localEventList .local-event-link{font-size:14px!important;line-height:1!important;padding:12px 18px!important;display:inline-flex!important;align-items:center!important;}",
+      "#localEventPrevButton,#localEventNextButton{position:relative!important;z-index:50!important;min-width:44px!important;min-height:36px!important;cursor:pointer!important;touch-action:manipulation!important;pointer-events:auto!important;}"
     ].join("\n");
     document.head.appendChild(style);
   }
@@ -248,11 +251,11 @@
     list.innerHTML = [
       '<div class="local-event-card local-event-single active">',
       '<div class="local-event-label">EVENT</div>',
-      '<div class="local-event-title' + titleSizeClass(title) + '">', esc(shorten(title, 150)), '</div>',
-      item.when ? '<div class="local-event-kv"><span>WHEN</span><b>' + esc(shorten(item.when, 120)) + '</b></div>' : '',
-      item.where ? '<div class="local-event-kv"><span>WHERE</span><b>' + esc(shorten(item.where, 120)) + '</b></div>' : '',
-      item.source ? '<div class="local-event-kv"><span>HOST</span><b>' + esc(shorten(item.source, 90)) + '</b></div>' : '',
-      item.summary ? '<div class="local-event-desc">' + esc(shorten(item.summary, 360)) + '</div>' : '',
+      '<div class="local-event-title' + titleSizeClass(title) + '">', esc(shorten(title, 96)), '</div>',
+      item.when ? '<div class="local-event-kv"><span>WHEN</span><b>' + esc(shorten(item.when, 90)) + '</b></div>' : '',
+      item.where ? '<div class="local-event-kv"><span>WHERE</span><b>' + esc(shorten(item.where, 90)) + '</b></div>' : '',
+      item.source ? '<div class="local-event-kv"><span>HOST</span><b>' + esc(shorten(item.source, 70)) + '</b></div>' : '',
+      item.summary ? '<div class="local-event-desc">' + esc(shorten(item.summary, 230)) + '</div>' : '',
       '<div class="local-event-actions">',
       item.url ? '<a class="local-event-link" href="' + esc(item.url) + '" target="_blank" rel="noopener noreferrer">OPEN OFFICIAL LINK</a>' : '<span class="local-event-no-link">NO LINK IN SOURCE</span>',
       '</div></div>'
