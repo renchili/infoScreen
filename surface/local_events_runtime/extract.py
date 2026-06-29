@@ -15,8 +15,8 @@ from urllib.parse import urlparse, unquote
 from .browser import MissingPlaywright, render_listing_cards
 
 TODAY = date.today()
-MAX_SECONDS = float(os.environ.get("LOCAL_EVENTS_MAX_SECONDS", "75"))
-MAX_EVENTS_PER_SOURCE = int(os.environ.get("LOCAL_EVENTS_MAX_EVENTS_PER_SOURCE", "16"))
+MAX_SECONDS = float(os.environ.get("LOCAL_EVENTS_MAX_SECONDS", "115"))
+MAX_EVENTS_PER_SOURCE = int(os.environ.get("LOCAL_EVENTS_MAX_EVENTS_PER_SOURCE", "14"))
 MAX_TOTAL_EVENTS = int(os.environ.get("LOCAL_EVENTS_MAX_TOTAL_EVENTS", "80"))
 PAST_GRACE_DAYS = int(os.environ.get("LOCAL_EVENTS_PAST_GRACE_DAYS", "1"))
 
@@ -46,15 +46,15 @@ TIME_RE = re.compile(r"\b(?:\d{1,2}(?::|\.)\d{2}\s*(?:am|pm)?|\d{1,2}\s*(?:am|pm
 BAD_LINE_RE = re.compile(r"\b(previous programme|next programme|related|recommended|last updated|newsletter|privacy|terms of use|copyright|©|cookie)\b", re.I)
 GENERIC_TITLE_RE = re.compile(r"^(events?|exhibitions?(?:\s*&\s*programmes?)?|programmes?|programs?|activities?|view all|overview|what'?s on|read more|learn more|find out more|view details|details|more|book now)$", re.I)
 CATEGORY_PREFIX_RE = re.compile(r"^(?:exhibitions?(?:\s*&\s*programmes?)?|programmes?|programs?|events?|activities?)\s+", re.I)
-VENUE_RE = re.compile(r"\b(museum|gallery|galleries|zoo|safari|park|library|safra|punggol|waterway|mandai|level|foyer|hall|theatre|theater|room|atrium|concourse)\b", re.I)
+VENUE_RE = re.compile(r"\b(museum|gallery|galleries|zoo|safari|park|library|safra|punggol|waterway|mandai|level|foyer|hall|theatre|theater|room|atrium|concourse|centre|center|esplanade|kallang|stadium|arena|gardens)\b", re.I)
 VENUE_PHRASE_RE = re.compile(
     r"\b(?:(?:B\d+|L\d+|Level\s*\d+|Basement\s*\d+)\s+)?"
     r"[A-Z][A-Za-z0-9&,'’()\-/ ]{0,80}?"
-    r"(?:Gallery|Galleries|Room|Hall|Theatre|Theater|Foyer|Atrium|Concourse|Library|Museum|Park|Zoo|Safari)"
+    r"(?:Gallery|Galleries|Room|Hall|Theatre|Theater|Foyer|Atrium|Concourse|Library|Museum|Park|Zoo|Safari|Centre|Center|Stadium|Arena|Gardens)"
     r"(?:\s+[A-Z][A-Za-z0-9&,'’()\-/ ]{0,30})?\b",
     re.I,
 )
-SUMMARY_START_RE = re.compile(r"\b(?:Embark|Join|Discover|Explore|Experience|Learn|Enjoy|Celebrate|Step|Take|Find|Visit|Come|Uncover|Journey)\b", re.I)
+SUMMARY_START_RE = re.compile(r"\b(?:Embark|Join|Discover|Explore|Experience|Learn|Enjoy|Celebrate|Step|Take|Find|Visit|Come|Uncover|Journey|Be part|Catch|Watch)\b", re.I)
 
 
 def now_iso() -> str:
@@ -152,7 +152,6 @@ def date_fragments(text: str) -> list[str]:
             if not frag or not label_dates(frag) or not current_date_label(frag):
                 continue
             found.append((priority, match.start(), frag))
-    # Remove fragments fully contained in a stronger range phrase.
     unique: list[str] = []
     for _, _, frag in sorted(found, key=lambda item: (item[0], item[1], -len(item[2]))):
         if any(frag != existing and frag in existing for existing in unique):
