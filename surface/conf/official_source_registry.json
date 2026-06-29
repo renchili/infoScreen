@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "purpose": "Confirmed official institution homepages only. This file is stage 1. Do not store event listings, event detail URLs, tickets pages, or third-party aggregators here.",
   "policy": {
     "stage": "official_site_confirmation_only",
@@ -57,6 +57,62 @@
         "User confirmed canonical official URL as https://www.nationalmuseum.nhb.gov.sg/.",
         "Domain contains nationalmuseum and is under nhb.gov.sg.",
         "Reject singapore-tickets.com and other third-party ticketing or tourism domains."
+      ]
+    },
+    {
+      "name": "Gardens by the Bay",
+      "official_site": "https://www.gardensbythebay.com.sg/",
+      "allowed_domains": ["gardensbythebay.com.sg"],
+      "status": "confirmed",
+      "score": 95,
+      "evidence": [
+        "Official source added for event source coverage.",
+        "Event listing URLs remain in event_sources.json, not this registry."
+      ]
+    },
+    {
+      "name": "Esplanade",
+      "official_site": "https://www.esplanade.com/",
+      "allowed_domains": ["esplanade.com"],
+      "status": "confirmed",
+      "score": 95,
+      "evidence": [
+        "Official source added for event source coverage.",
+        "Event listing URLs remain in event_sources.json, not this registry."
+      ]
+    },
+    {
+      "name": "Science Centre Singapore",
+      "official_site": "https://www.science.edu.sg/",
+      "allowed_domains": ["science.edu.sg"],
+      "status": "confirmed",
+      "score": 95,
+      "evidence": [
+        "Official source added for event source coverage.",
+        "Event listing URLs remain in event_sources.json, not this registry."
+      ]
+    },
+    {
+      "name": "The Kallang",
+      "aliases": ["Singapore Sports Hub"],
+      "official_site": "https://www.thekallang.com.sg/",
+      "allowed_domains": ["thekallang.com.sg", "sportshub.com.sg"],
+      "status": "confirmed",
+      "score": 95,
+      "evidence": [
+        "Official source added for event source coverage.",
+        "Event listing URLs remain in event_sources.json, not this registry."
+      ]
+    },
+    {
+      "name": "ArtScience Museum",
+      "official_site": "https://www.marinabaysands.com/museum.html",
+      "allowed_domains": ["marinabaysands.com"],
+      "status": "confirmed",
+      "score": 90,
+      "evidence": [
+        "Official Marina Bay Sands museum subsite added for event source coverage.",
+        "Event listing URLs remain in event_sources.json, not this registry."
       ]
     }
   ]
