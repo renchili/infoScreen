@@ -26,12 +26,15 @@ The project should run locally, be debuggable through files and systemd, and avo
 - Do not depend on third-party aggregators for official local events.
 - Do not use guessed institution domains or guessed `/events` paths as source truth.
 - Do not keep multiple frontend state machines controlling the same local event widget.
+- Do not migrate the server to FastAPI just to get Swagger/OpenAPI.
 
 ## Repository layout
 
 ```text
 surface/
   serve_infoscreen.py              # local HTTP server
+  api_models.py                    # Pydantic request/response/runtime schemas
+  openapi_spec.py                  # route map + Pydantic schemas -> OpenAPI 3.1
   search_local_events.py           # local event refresh entrypoint
   fetch_live_data.py               # market refresh entrypoint
   fetch_event_stream.py            # event/news stream refresh entrypoint
@@ -88,9 +91,37 @@ Responsibilities:
 - handle POST APIs for refresh/update actions
 - disable browser caching with `Cache-Control: no-store`
 - expose `/api/local-events/search` for local-event read/search
+- expose `/openapi.json` and `/docs` without changing framework
 - strip the legacy inline local-event script from served HTML
 
 The served dashboard root is sanitized at response time so the browser executes only the external local-event renderer in `calendar_board.js`.
+
+## API schema and OpenAPI design
+
+InfoScreen uses a framework-independent schema layer:
+
+```text
+surface/api_models.py
+  Pydantic BaseModel definitions for request, response, and runtime payloads
+
+surface/openapi_spec.py
+  Route table and operation metadata
+  Uses Pydantic model_json_schema / TypeAdapter JSON Schema
+  Produces OpenAPI 3.1
+
+surface/serve_infoscreen.py
+  GET /openapi.json -> openapi_spec.build_openapi()
+  GET /docs         -> minimal Swagger UI HTML loading /openapi.json
+```
+
+This design keeps the current `http.server` implementation while still producing a Swagger-compatible contract.
+
+Rules:
+
+- Pydantic owns field schema and descriptions.
+- `openapi_spec.py` owns paths/methods/request-body/response-code mapping.
+- `docs/api-spec.md` is the human-readable API usage document.
+- OpenAPI generation must fail explicitly if Pydantic is missing.
 
 ## Frontend design
 
@@ -259,6 +290,8 @@ kind        event
 source_type rendered_dom_card
 ```
 
+The same contract is represented in `surface/api_models.py` as `LocalEventItem` and `LocalEventSearchResponse`.
+
 `when` must not be the whole card text. It should only be the date/date-range substring.
 
 `where` should prefer venue text after the date range when available, for example:
@@ -301,6 +334,14 @@ Future timer design should be explicit:
 - no service should be installed directly as `WantedBy=default.target` for this job
 
 ## Debugging and verification
+
+### Verify OpenAPI
+
+```bash
+python3 -m pip install --user 'pydantic>=2.0'
+python3 surface/openapi_spec.py | python3 -m json.tool | head -n 80
+curl -s http://127.0.0.1:8765/openapi.json | python3 -m json.tool | head -n 80
+```
 
 ### Verify local event runtime
 
@@ -345,6 +386,7 @@ Expected:
 - Detail pages can supplement but should not override more accurate listing-card structure blindly.
 - No large model should be imported in the default path.
 - Debug artifacts such as card screenshots belong under `surface/.env/`.
+- API schemas should be defined once in Pydantic and reused for OpenAPI generation.
 
 ## Known current limitation
 
