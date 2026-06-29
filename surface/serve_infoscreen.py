@@ -33,6 +33,30 @@ LEGACY_LOCAL_EVENT_INLINE_RE = re.compile(
     re.I,
 )
 
+SWAGGER_UI_HTML = """<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>InfoScreen API Docs</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
+  <style>body{margin:0;background:#0b0d0e;} .topbar{display:none}</style>
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+  <script>
+    window.ui = SwaggerUIBundle({
+      url: "/openapi.json",
+      dom_id: "#swagger-ui",
+      deepLinking: true,
+      layout: "BaseLayout"
+    });
+  </script>
+</body>
+</html>
+"""
+
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -79,6 +103,12 @@ def clean_index_html() -> bytes:
     return cleaned.encode("utf-8")
 
 
+def openapi_payload() -> dict:
+    from openapi_spec import build_openapi
+
+    return build_openapi()
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(WEB_DIR), **kwargs)
@@ -94,6 +124,28 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+
+    def send_html(self, html: str, status: int = 200, head_only: bool = False) -> None:
+        data = html.encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        if not head_only:
+            self.wfile.write(data)
+
+    def send_openapi(self, head_only: bool = False) -> None:
+        try:
+            payload = openapi_payload()
+        except Exception as exc:
+            return self.send_json({"ok": False, "error": f"openapi_generation_failed: {type(exc).__name__}: {exc}"}, 500)
+        data = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        if not head_only:
+            self.wfile.write(data)
 
     def send_index(self, head_only: bool = False) -> None:
         data = clean_index_html()
@@ -142,6 +194,10 @@ class Handler(SimpleHTTPRequestHandler):
 
         if path in {"/", "/index.html"}:
             return self.send_index(head_only=True)
+        if path == "/openapi.json":
+            return self.send_openapi(head_only=True)
+        if path == "/docs":
+            return self.send_html(SWAGGER_UI_HTML, head_only=True)
 
         if name in JSON_DEFAULTS:
             return self.send_json_head(name)
@@ -168,6 +224,10 @@ class Handler(SimpleHTTPRequestHandler):
 
         if path in {"/", "/index.html"}:
             return self.send_index()
+        if path == "/openapi.json":
+            return self.send_openapi()
+        if path == "/docs":
+            return self.send_html(SWAGGER_UI_HTML)
 
         if path == "/api/market-config":
             return self.send_json(market_config_json())
