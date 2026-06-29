@@ -67,6 +67,7 @@ async (args) => {
 CLICK_NEXT_PAGE_JS = r"""
 async (args) => {
   const allowedDomains = args.allowedDomains || [];
+  const pageIndex = args.pageIndex || 0;
   const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
   function oneLine(value) {
@@ -78,7 +79,7 @@ async (args) => {
     const style = window.getComputedStyle(el);
     if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity || 1) === 0) return false;
     const r = el.getBoundingClientRect();
-    return r.width >= 24 && r.height >= 18 && r.bottom >= 0 && r.right >= 0;
+    return r.width >= 20 && r.height >= 18 && r.bottom >= 0 && r.right >= 0;
   }
 
   function disabled(el) {
@@ -110,38 +111,48 @@ async (args) => {
     return oneLine([el.innerText, el.textContent, el.getAttribute("aria-label"), el.getAttribute("title")].join(" "));
   }
 
+  function safeListingHref(el) {
+    if (el.tagName !== "A") return true;
+    const href = el.getAttribute("href") || "";
+    if (!href || href === "#" || href.startsWith("javascript:")) return true;
+    const abs = new URL(href, document.location.href).href;
+    if (!sameDomain(abs)) return false;
+    return pathRole(abs) !== "detail";
+  }
+
   function isNextControl(el) {
-    if (!visible(el) || disabled(el)) return false;
+    if (!visible(el) || disabled(el) || !safeListingHref(el)) return false;
     const text = controlText(el);
     if (!text) return false;
     if (/\b(next programme|next program|next exhibition|next event|next article)\b/i.test(text)) return false;
-    const nextish = /^(next|>|›|»|→)$/i.test(text) || /\b(next page|go to next|page next|next results?)\b/i.test(text) || /下一页|下一頁/.test(text);
-    if (!nextish) return false;
-    if (el.tagName === "A") {
-      const href = el.getAttribute("href") || "";
-      if (!href || href === "#") return true;
-      const abs = new URL(href, document.location.href).href;
-      if (!sameDomain(abs)) return false;
-      return pathRole(abs) !== "detail";
-    }
-    return true;
+    return /^(next|>|›|»|→)$/i.test(text) || /\b(next page|go to next|page next|next results?)\b/i.test(text) || /下一页|下一頁/.test(text);
+  }
+
+  function isNumericNextControl(el) {
+    if (!visible(el) || disabled(el) || !safeListingHref(el)) return false;
+    const text = controlText(el);
+    if (!/^\d+$/.test(text)) return false;
+    const n = Number(text);
+    return n === pageIndex + 2;
   }
 
   function score(el) {
     let score = 0;
+    const text = controlText(el);
     const attrs = oneLine([el.className, el.id, el.getAttribute("role"), el.closest("nav,[class*='pager' i],[class*='pagination' i],[class*='page' i]")?.className].join(" "));
     if (/\b(pager|pagination|page|next)\b/i.test(attrs)) score += 50;
-    if (/^(next|>|›|»|→)$/i.test(controlText(el))) score += 20;
+    if (/^(next|>|›|»|→)$/i.test(text)) score += 25;
+    if (/^\d+$/.test(text)) score += 15;
     const r = el.getBoundingClientRect();
     score += Math.max(0, 1200 - r.top) / 100;
     return score;
   }
 
   const candidates = Array.from(document.querySelectorAll("a[href], button, [role='button']"))
-    .filter(isNextControl)
+    .filter(el => isNextControl(el) || isNumericNextControl(el))
     .sort((a, b) => score(b) - score(a));
 
-  if (!candidates.length) return {clicked: false, reason: "next_control_not_found"};
+  if (!candidates.length) return {clicked: false, reason: "next_control_not_found", expectedNumericPage: pageIndex + 2};
   const el = candidates[0];
   const beforeHref = document.location.href;
   const beforeTextLength = oneLine(document.body.innerText).length;
@@ -151,9 +162,9 @@ async (args) => {
     await sleep(180);
     el.click();
     await sleep(1000);
-    return {clicked: true, text, beforeHref, afterHref: document.location.href, beforeTextLength, afterTextLength: oneLine(document.body.innerText).length};
+    return {clicked: true, text, expectedNumericPage: pageIndex + 2, beforeHref, afterHref: document.location.href, beforeTextLength, afterTextLength: oneLine(document.body.innerText).length};
   } catch (e) {
-    return {clicked: false, text, reason: String(e)};
+    return {clicked: false, text, reason: String(e), expectedNumericPage: pageIndex + 2};
   }
 }
 """
@@ -398,7 +409,7 @@ def render_listing_cards(source: dict[str, Any], url: str, debug_dir: Path, max_
                 if len(all_cards) >= max_cards or page_index >= MAX_LISTING_PAGES - 1:
                     break
 
-                next_result = page.evaluate(CLICK_NEXT_PAGE_JS, {"allowedDomains": allowed})
+                next_result = page.evaluate(CLICK_NEXT_PAGE_JS, {"allowedDomains": allowed, "pageIndex": page_index})
                 pagination[-1]["next"] = next_result
                 if not next_result.get("clicked"):
                     break
