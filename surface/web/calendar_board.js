@@ -192,11 +192,38 @@
       url: /^https?:\/\//i.test(url) ? url : ""
     };
   }
+  function titleSizeClass(title) {
+    var n = clean(title).length;
+    if (n > 88) return " title-xs";
+    if (n > 68) return " title-sm";
+    if (n > 48) return " title-md";
+    return "";
+  }
+  function installAdaptiveStyle() {
+    if (document.getElementById("local-event-adaptive-style")) return;
+    var style = document.createElement("style");
+    style.id = "local-event-adaptive-style";
+    style.textContent = [
+      "#localEventList{min-height:0;}",
+      ".local-event-card.local-event-single{height:100%;max-height:100%;display:flex;flex-direction:column;overflow:hidden;box-sizing:border-box;}",
+      ".local-event-title{font-size:clamp(20px,3.25vw,34px);line-height:1.14;letter-spacing:.055em;max-height:3.42em;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow-wrap:anywhere;word-break:normal;}",
+      ".local-event-title.title-md{font-size:clamp(18px,2.75vw,29px);line-height:1.12;letter-spacing:.045em;}",
+      ".local-event-title.title-sm{font-size:clamp(16px,2.3vw,24px);line-height:1.1;letter-spacing:.035em;}",
+      ".local-event-title.title-xs{font-size:clamp(14px,1.95vw,20px);line-height:1.08;letter-spacing:.025em;-webkit-line-clamp:4;max-height:4.32em;}",
+      ".local-event-kv{display:grid;grid-template-columns:minmax(72px,96px) 1fr;align-items:start;gap:8px;min-height:0;}",
+      ".local-event-kv b{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;word-break:normal;}",
+      ".local-event-desc{flex:1 1 auto;min-height:0;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:5;position:relative;}",
+      ".local-event-actions{flex:0 0 auto;margin-top:auto;padding-top:12px;}",
+      "#localEventPrevButton,#localEventNextButton{position:relative;z-index:50;min-width:44px;min-height:36px;cursor:pointer;touch-action:manipulation;pointer-events:auto;}"
+    ].join("\n");
+    document.head.appendChild(style);
+  }
   function renderEmpty(text) {
     var list = byId("localEventList");
     var counter = byId("localEventCounter");
     var prev = byId("localEventPrevButton");
     var next = byId("localEventNextButton");
+    installAdaptiveStyle();
     if (list) list.innerHTML = '<div class="local-event-empty">' + esc(text) + '</div>';
     if (counter) counter.textContent = "";
     if (prev) prev.disabled = true;
@@ -208,6 +235,7 @@
     var prev = byId("localEventPrevButton");
     var next = byId("localEventNextButton");
     if (!list) return;
+    installAdaptiveStyle();
     if (!items.length) {
       var rawCount = lastPayload && typeof lastPayload.count !== "undefined" ? lastPayload.count : rows(lastPayload).length;
       renderEmpty("NO RENDERABLE EVENTS · RAW " + rawCount);
@@ -216,14 +244,15 @@
     if (page < 0) page = items.length - 1;
     if (page >= items.length) page = 0;
     var item = items[page];
+    var title = item.title || "Local event";
     list.innerHTML = [
       '<div class="local-event-card local-event-single active">',
       '<div class="local-event-label">EVENT</div>',
-      '<div class="local-event-title">', esc(shorten(item.title || "Local event", 120)), '</div>',
-      item.when ? '<div class="local-event-kv"><span>WHEN</span><b>' + esc(shorten(item.when, 180)) + '</b></div>' : '',
-      item.where ? '<div class="local-event-kv"><span>WHERE</span><b>' + esc(shorten(item.where, 160)) + '</b></div>' : '',
-      item.source ? '<div class="local-event-kv"><span>HOST</span><b>' + esc(shorten(item.source, 130)) + '</b></div>' : '',
-      item.summary ? '<div class="local-event-desc">' + esc(shorten(item.summary, 260)) + '</div>' : '',
+      '<div class="local-event-title' + titleSizeClass(title) + '">', esc(shorten(title, 150)), '</div>',
+      item.when ? '<div class="local-event-kv"><span>WHEN</span><b>' + esc(shorten(item.when, 120)) + '</b></div>' : '',
+      item.where ? '<div class="local-event-kv"><span>WHERE</span><b>' + esc(shorten(item.where, 120)) + '</b></div>' : '',
+      item.source ? '<div class="local-event-kv"><span>HOST</span><b>' + esc(shorten(item.source, 90)) + '</b></div>' : '',
+      item.summary ? '<div class="local-event-desc">' + esc(shorten(item.summary, 360)) + '</div>' : '',
       '<div class="local-event-actions">',
       item.url ? '<a class="local-event-link" href="' + esc(item.url) + '" target="_blank" rel="noopener noreferrer">OPEN OFFICIAL LINK</a>' : '<span class="local-event-no-link">NO LINK IN SOURCE</span>',
       '</div></div>'
@@ -281,6 +310,11 @@
       if (button) button.disabled = false;
     }
   }
+  function movePage(delta) {
+    if (!items.length || items.length <= 1) return;
+    page += delta;
+    render();
+  }
   function bind() {
     var openButton = byId("localEventLocationButton");
     var cancelButton = byId("localEventCancelButton");
@@ -306,8 +340,12 @@
       if (e.key === "Enter") searchLocalEvents(e);
       if (e.key === "Escape" && modal) modal.hidden = true;
     });
-    if (prevButton) prevButton.addEventListener("click", function (e) { e.preventDefault(); page -= 1; render(); });
-    if (nextButton) nextButton.addEventListener("click", function (e) { e.preventDefault(); page += 1; render(); });
+    if (prevButton) prevButton.addEventListener("click", function (e) { e.preventDefault(); movePage(-1); });
+    if (nextButton) nextButton.addEventListener("click", function (e) { e.preventDefault(); movePage(1); });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "ArrowLeft") movePage(-1);
+      if (e.key === "ArrowRight") movePage(1);
+    });
   }
   window.__localEventReload = loadLocalEvents;
   window.__localEventSearch = searchLocalEvents;
