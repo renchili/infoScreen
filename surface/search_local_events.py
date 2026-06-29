@@ -18,7 +18,7 @@ DEFAULT_LOCATION = "Punggol Singapore"
 
 def self_test() -> int:
     payload = collect_events(CONFIG, DEFAULT_LOCATION, DEBUG_DIR)
-    assert payload["extractor"] == "rendered-dom-card-v40"
+    assert payload["extractor"] == "rendered-dom-card-v41"
     assert isinstance(payload.get("results"), list)
     assert isinstance(payload.get("debug_by_source"), list)
     print("local-event rendered DOM self-test passed")
