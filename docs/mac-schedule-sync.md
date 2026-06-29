@@ -2,6 +2,14 @@
 
 This repository keeps the dashboard schedule private. The Mac reads Apple Calendar through EventKit, writes `schedule.json`, and copies that one JSON file to the display host through SSH.
 
+The dashboard server reads the schedule from:
+
+```text
+~/infoscreen/surface/.env/schedule.json
+```
+
+Do not sync to the repository root `~/infoscreen/schedule.json`; the current server does not read that path.
+
 ## Prerequisites
 
 - macOS with permission for the selected Python runtime to access Calendar.
@@ -23,7 +31,7 @@ bash "$repo_root/mac/scripts/setup-schedule-sync.sh" \
 Optional arguments:
 
 ```text
---remote-path <remote-path>       Default: ~/infoscreen/schedule.json
+--remote-path <remote-path>       Default: ~/infoscreen/surface/.env/schedule.json
 --python <python-with-eventkit>   Select a specific Python runtime
 --interval <seconds>              Default: 120
 ```
@@ -46,16 +54,37 @@ bash "$repo_root/mac/sync_schedule.sh"
 
 The generated JSON remains in `mac/schedule.json`; the script then copies it to the configured remote path.
 
-## Check the job
+On the Surface/display host, verify:
+
+```bash
+stat ~/infoscreen/surface/.env/schedule.json
+head -n 40 ~/infoscreen/surface/.env/schedule.json
+curl -s http://127.0.0.1:8765/schedule.json | python3 -m json.tool | head -n 40
+```
+
+## Check the macOS job
 
 ```bash
 launchctl print "gui/$(id -u)/com.renchili.infoscreen.schedule-sync"
 tail -n 80 "$HOME/Library/Logs/infoscreen-sync/push_schedule.log"
+tail -n 80 "$HOME/Library/Logs/infoscreen-sync/launchd.err.log"
+```
+
+## Check the Surface runtime
+
+```bash
+ssh <ssh-user>@<ssh-host> 'stat ~/infoscreen/surface/.env/schedule.json; head -n 20 ~/infoscreen/surface/.env/schedule.json'
 ```
 
 ## Reconfigure
 
 Run the setup command again with new arguments. It safely replaces the user LaunchAgent before loading the new one.
+
+If an older `mac/local.env` points to `~/infoscreen/schedule.json`, run setup again or edit it to:
+
+```text
+REMOTE_SCHEDULE_JSON=~/infoscreen/surface/.env/schedule.json
+```
 
 ## Remove the job
 
