@@ -1,6 +1,6 @@
 # InfoScreen API usage spec
 
-This document describes the HTTP API exposed by the local InfoScreen server.
+This document describes the HTTP API exposed by the local InfoScreen server and the schema generation rules.
 
 ## Runtime model
 
@@ -9,23 +9,54 @@ This document describes the HTTP API exposed by the local InfoScreen server.
 - Static web root: `surface/web/`.
 - Runtime JSON root: `surface/.env/`.
 - Configuration root: `surface/conf/`.
-- The server must not read fallback runtime JSON from the repository root.
+- Pydantic schema definitions: `surface/api_models.py`.
+- OpenAPI generation: `surface/openapi_spec.py`.
 - Runtime JSON files are intentionally not source-controlled.
+- The server must not read fallback runtime JSON from the repository root.
+
+## Schema and documentation model
+
+InfoScreen does not need to migrate to FastAPI just to get Swagger/OpenAPI.
+
+Current design:
+
+```text
+surface/api_models.py      Pydantic request/response/runtime schemas
+surface/openapi_spec.py    routes + Pydantic JSON Schema -> OpenAPI 3.1
+GET /openapi.json          machine-readable OpenAPI spec
+GET /docs                  Swagger UI loading /openapi.json
+```
+
+Rules:
+
+- Pydantic owns field names, types, descriptions, and JSON Schema.
+- `openapi_spec.py` owns paths, HTTP methods, summaries, request bodies, and response mappings.
+- `docs/api-spec.md` is human-readable usage documentation.
+- Runtime code should validate or normalize data according to the same schema contract where practical.
+
+Install requirement for OpenAPI generation:
+
+```bash
+python3 -m pip install --user 'pydantic>=2.0'
+```
+
+Swagger UI itself is served by `/docs` and loads browser assets from a CDN. If the kiosk is offline, `/openapi.json` still works.
 
 ## General response rules
 
 - JSON responses use `application/json; charset=utf-8`.
 - Static and JSON responses send `Cache-Control: no-store`.
 - Runtime JSON endpoints return a missing-runtime object if the backing file does not exist.
-- Write endpoints should return `{ "ok": true, ... }` on success and `{ "ok": false, "error": "..." }` on failure.
+- Write endpoints return `{ "ok": true, ... }` on success and `{ "ok": false, "error": "..." }` on failure.
+- Failed subprocess endpoints include captured stdout/stderr tails.
 
-## Static endpoints
+## Static and documentation endpoints
 
 ### `GET /`
 
-Returns the dashboard HTML.
+Returns sanitized dashboard HTML.
 
-Implementation note: the served HTML is sanitized by `surface/serve_infoscreen.py` to strip the legacy local-event inline script block:
+Implementation note: the served HTML is sanitized by `surface/serve_infoscreen.py` to strip this legacy local-event inline script block before sending HTML to the browser:
 
 ```html
 <script id="local-event-inline-script">...</script>
@@ -47,101 +78,52 @@ Returns the external JavaScript bundle that owns:
 
 There must be only one local-event state machine in the browser.
 
+### `GET /openapi.json`
+
+Returns OpenAPI 3.1 JSON generated from:
+
+```text
+surface/openapi_spec.py
+surface/api_models.py
+```
+
+Failure response example if Pydantic is missing or schema generation fails:
+
+```json
+{
+  "ok": false,
+  "error": "openapi_generation_failed: ModuleNotFoundError: No module named 'pydantic'"
+}
+```
+
+### `GET /docs`
+
+Returns a minimal Swagger UI page that loads:
+
+```text
+/openapi.json
+```
+
 ## Runtime JSON endpoints
 
 The following files are served from `surface/.env/`.
 
-### `GET /schedule.json`
-
-Default payload if missing:
-
-```json
-[]
-```
-
-Used by the right-side calendar board.
-
-### `GET /weather.json`
-
-Default payload if missing:
-
-```json
-{}
-```
-
-Used by the weather panel.
-
-### `GET /market.json`
-
-Default payload if missing:
-
-```json
-{}
-```
-
-Used by the market panel and ticker.
-
-### `GET /market_config.json`
-
-Default payload if missing:
-
-```json
-{
-  "symbols": ["AAPL", "NVDA", "MSFT", "TSLA"]
-}
-```
-
-### `GET /event_stream.json`
-
-Default payload if missing:
-
-```json
-{
-  "items": []
-}
-```
-
-Used by the multilingual event/news ticker.
-
-### `GET /photos.json`
-
-Default payload if missing:
-
-```json
-{
-  "items": []
-}
-```
-
-Used by the photo wall.
-
-### `GET /sync_status.json`
-
-Default payload if missing:
-
-```json
-{}
-```
-
-Reserved for sync/runtime state.
-
-### `GET /local_event_search_results.json`
-
-Returns the same runtime data used by the local event API.
-
-Default payload if missing:
-
-```json
-{
-  "results": []
-}
-```
+| Endpoint | Backing file | Default if missing | Purpose |
+|---|---|---|---|
+| `GET /schedule.json` | `surface/.env/schedule.json` | `[]` | calendar board |
+| `GET /weather.json` | `surface/.env/weather.json` | `{}` | weather panel |
+| `GET /market.json` | `surface/.env/market.json` | `{}` | market panel/ticker |
+| `GET /market_config.json` | `surface/.env/market_config.json` | default symbols | market config |
+| `GET /event_stream.json` | `surface/.env/event_stream.json` | `{ "items": [] }` | multilingual event/news ticker |
+| `GET /photos.json` | `surface/.env/photos.json` | `{ "items": [] }` | photo wall |
+| `GET /sync_status.json` | `surface/.env/sync_status.json` | `{}` | sync/runtime state |
+| `GET /local_event_search_results.json` | `surface/.env/local_event_search_results.json` | `{ "results": [] }` | local event results |
 
 ## API endpoints
 
 ### `GET /api/market-config`
 
-Returns the active market symbol config.
+Returns active market symbol config.
 
 Resolution order:
 
@@ -177,16 +159,6 @@ Validation rules:
 - Duplicates are removed while preserving order.
 - At most 12 symbols are stored.
 - Empty final symbol list is rejected.
-
-Success response:
-
-```json
-{
-  "ok": true,
-  "symbols": ["AAPL", "NVDA", "MSFT"],
-  "updated_at": "..."
-}
-```
 
 ### `POST /api/market-refresh`
 
@@ -226,46 +198,10 @@ surface/.env/local_event_search_results.json
 
 It does not run a new search.
 
-Expected current extractor after the rendered DOM work:
+Expected current extractor after rendered DOM work:
 
 ```text
 rendered-dom-card-v41
-```
-
-Example response shape:
-
-```json
-{
-  "ok": true,
-  "version": 41,
-  "extractor": "rendered-dom-card-v41",
-  "updated_at": "...",
-  "location": "Punggol Singapore",
-  "runtime": {
-    "writer": "surface.local_events_runtime.extract.collect_events",
-    "pid": 12345,
-    "cwd": "/home/rody/infoscreen/surface",
-    "python": "/usr/bin/python3",
-    "module_file": ".../surface/local_events_runtime/extract.py",
-    "git_head": "..."
-  },
-  "count": 1,
-  "results": [
-    {
-      "title": "Event title",
-      "when": "24 May 2025 — 09 Oct 2026",
-      "where": "B1 Exhibition Galleries",
-      "host": "National Museum Singapore",
-      "source_name": "National Museum Singapore",
-      "url": "https://...",
-      "summary": "...",
-      "start_date": "2025-05-24",
-      "kind": "event",
-      "source_type": "rendered_dom_card"
-    }
-  ],
-  "debug_by_source": []
-}
 ```
 
 ### `POST /api/local-events/search`
@@ -312,11 +248,11 @@ Each event item should provide:
 ```json
 {
   "title": "required display title",
-  "when": "required date/time text",
+  "when": "date/date-range substring only",
   "where": "venue or fallback venue",
   "host": "organizer/source display name",
   "source_name": "official source name",
-  "url": "https:// official URL",
+  "url": "https://official.example/detail",
   "summary": "short display summary",
   "start_date": "YYYY-MM-DD when parseable",
   "kind": "event",
@@ -349,11 +285,13 @@ Returns file metadata if present.
 - Do not silently fall back to fake root JSON.
 - Do not silently fall back from rendered extraction to the old generic crawler.
 - If Playwright or browser runtime is missing, the local event payload/debug should show a clear reason such as `missing_playwright_python_package` or `missing_system_chromium`.
-- Failed subprocess endpoints should return HTTP 500 with captured stderr/stdout.
+- If OpenAPI generation fails, `/openapi.json` must return an explicit `openapi_generation_failed` error.
 
 ## Verification
 
 ```bash
+curl -s http://127.0.0.1:8765/openapi.json | python3 -m json.tool | head -n 80
+curl -s http://127.0.0.1:8765/docs | head
 curl -s http://127.0.0.1:8765/api/local-events/search | python3 -m json.tool | head -n 80
 curl -s http://127.0.0.1:8765/ | grep -n "local-event-inline-script" || true
 curl -s http://127.0.0.1:8765/calendar_board.js | grep -n "MutationObserver\|watchdog\|external-local-events" || true
