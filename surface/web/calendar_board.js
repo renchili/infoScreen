@@ -158,6 +158,15 @@
   var items = [];
   var lastPayload = null;
 
+  var cardStyle = "height:100%;max-height:100%;box-sizing:border-box;display:flex;flex-direction:column;overflow:hidden;padding:20px 26px 18px;border-left:5px solid #ffe58a;background:#101313;";
+  var labelStyle = "flex:0 0 auto;color:#8f9998;font-size:12px;line-height:1;letter-spacing:.24em;font-weight:800;margin:0 0 8px;text-transform:uppercase;";
+  var metaStyle = "flex:0 0 auto;display:flex;align-items:baseline;gap:10px;min-height:22px;max-height:22px;overflow:hidden;margin:3px 0;white-space:nowrap;";
+  var metaKeyStyle = "flex:0 0 68px;color:#8f9998;font-size:13px;line-height:1;letter-spacing:.2em;font-weight:800;text-transform:uppercase;";
+  var metaValueStyle = "min-width:0;flex:1;color:#85e8f4;font-size:16px;line-height:1.15;letter-spacing:.045em;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+  var summaryStyle = "flex:1 1 auto;min-height:0;max-height:82px;overflow:hidden;color:#c9cdca;font-size:15px;line-height:1.34;letter-spacing:.015em;font-weight:700;margin:9px 0 8px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;";
+  var actionsStyle = "flex:0 0 auto;margin-top:auto;padding-top:8px;";
+  var linkStyle = "display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;min-height:42px;padding:12px 18px;border:1px solid #4b5454;color:#ffe58a;text-decoration:none;font-size:14px;line-height:1;letter-spacing:.08em;font-weight:900;";
+
   function byId(id) { return document.getElementById(id); }
   function clean(value) { return String(value == null ? "" : value).replace(/\s+/g, " ").trim(); }
   function esc(value) {
@@ -192,42 +201,33 @@
       url: /^https?:\/\//i.test(url) ? url : ""
     };
   }
-  function titleSizeClass(title) {
+  function titleStyle(title) {
     var n = clean(title).length;
-    if (n > 88) return " title-xs";
-    if (n > 68) return " title-sm";
-    if (n > 48) return " title-md";
-    return "";
+    var size = n > 86 ? 18 : n > 64 ? 20 : n > 42 ? 22 : 24;
+    return "flex:0 0 auto;color:#ffe58a;font-size:" + size + "px;line-height:1.12;letter-spacing:.055em;font-weight:900;max-height:" + Math.ceil(size * 2.3) + "px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere;margin:0 0 8px;";
   }
-  function installAdaptiveStyle() {
-    if (document.getElementById("local-event-adaptive-style")) return;
+  function installPagerStyle() {
+    if (document.getElementById("local-event-isolated-style")) return;
     var style = document.createElement("style");
-    style.id = "local-event-adaptive-style";
+    style.id = "local-event-isolated-style";
     style.textContent = [
-      "#localEventList{min-height:0!important;height:100%!important;overflow:hidden!important;}",
-      "#localEventList .local-event-card.local-event-single{height:100%!important;max-height:100%!important;display:flex!important;flex-direction:column!important;overflow:hidden!important;box-sizing:border-box!important;padding:20px 26px 18px!important;gap:7px!important;}",
-      "#localEventList .local-event-label{font-size:12px!important;line-height:1!important;letter-spacing:.22em!important;margin:0 0 4px!important;opacity:.72!important;}",
-      "#localEventList .local-event-title{font-size:24px!important;line-height:1.08!important;letter-spacing:.045em!important;max-height:2.16em!important;margin:0 0 6px!important;overflow:hidden!important;display:-webkit-box!important;-webkit-line-clamp:2!important;-webkit-box-orient:vertical!important;overflow-wrap:anywhere!important;word-break:normal!important;}",
-      "#localEventList .local-event-title.title-md{font-size:22px!important;line-height:1.06!important;letter-spacing:.035em!important;}",
-      "#localEventList .local-event-title.title-sm{font-size:20px!important;line-height:1.05!important;letter-spacing:.028em!important;}",
-      "#localEventList .local-event-title.title-xs{font-size:18px!important;line-height:1.05!important;letter-spacing:.02em!important;-webkit-line-clamp:2!important;max-height:2.1em!important;}",
-      "#localEventList .local-event-kv{display:grid!important;grid-template-columns:82px minmax(0,1fr)!important;align-items:start!important;gap:8px!important;margin:0!important;min-height:0!important;}",
-      "#localEventList .local-event-kv span{font-size:12px!important;line-height:1.15!important;letter-spacing:.18em!important;}",
-      "#localEventList .local-event-kv b{font-size:16px!important;line-height:1.18!important;letter-spacing:.045em!important;display:-webkit-box!important;-webkit-line-clamp:2!important;-webkit-box-orient:vertical!important;overflow:hidden!important;overflow-wrap:anywhere!important;word-break:normal!important;}",
-      "#localEventList .local-event-desc{flex:1 1 auto!important;min-height:0!important;max-height:4.1em!important;overflow:hidden!important;display:-webkit-box!important;-webkit-box-orient:vertical!important;-webkit-line-clamp:3!important;font-size:16px!important;line-height:1.36!important;margin:5px 0 0!important;letter-spacing:.02em!important;}",
-      "#localEventList .local-event-actions{flex:0 0 auto!important;margin-top:auto!important;padding-top:9px!important;}",
-      "#localEventList .local-event-link{font-size:14px!important;line-height:1!important;padding:12px 18px!important;display:inline-flex!important;align-items:center!important;}",
+      "#localEventList{height:100%!important;min-height:0!important;overflow:hidden!important;}",
       "#localEventPrevButton,#localEventNextButton{position:relative!important;z-index:50!important;min-width:44px!important;min-height:36px!important;cursor:pointer!important;touch-action:manipulation!important;pointer-events:auto!important;}"
     ].join("\n");
     document.head.appendChild(style);
+  }
+  function meta(label, value, maxLen) {
+    value = clean(value);
+    if (!value) return "";
+    return '<div class="infoscreen-event-meta" style="' + metaStyle + '"><span style="' + metaKeyStyle + '">' + esc(label) + '</span><b style="' + metaValueStyle + '">' + esc(shorten(value, maxLen || 90)) + '</b></div>';
   }
   function renderEmpty(text) {
     var list = byId("localEventList");
     var counter = byId("localEventCounter");
     var prev = byId("localEventPrevButton");
     var next = byId("localEventNextButton");
-    installAdaptiveStyle();
-    if (list) list.innerHTML = '<div class="local-event-empty">' + esc(text) + '</div>';
+    installPagerStyle();
+    if (list) list.innerHTML = '<div style="' + cardStyle + '"><div style="' + labelStyle + '">EVENT</div><div style="color:#ffe58a;font-size:20px;font-weight:900;letter-spacing:.06em;">' + esc(text) + '</div></div>';
     if (counter) counter.textContent = "";
     if (prev) prev.disabled = true;
     if (next) next.disabled = true;
@@ -238,7 +238,7 @@
     var prev = byId("localEventPrevButton");
     var next = byId("localEventNextButton");
     if (!list) return;
-    installAdaptiveStyle();
+    installPagerStyle();
     if (!items.length) {
       var rawCount = lastPayload && typeof lastPayload.count !== "undefined" ? lastPayload.count : rows(lastPayload).length;
       renderEmpty("NO RENDERABLE EVENTS · RAW " + rawCount);
@@ -249,16 +249,16 @@
     var item = items[page];
     var title = item.title || "Local event";
     list.innerHTML = [
-      '<div class="local-event-card local-event-single active">',
-      '<div class="local-event-label">EVENT</div>',
-      '<div class="local-event-title' + titleSizeClass(title) + '">', esc(shorten(title, 96)), '</div>',
-      item.when ? '<div class="local-event-kv"><span>WHEN</span><b>' + esc(shorten(item.when, 90)) + '</b></div>' : '',
-      item.where ? '<div class="local-event-kv"><span>WHERE</span><b>' + esc(shorten(item.where, 90)) + '</b></div>' : '',
-      item.source ? '<div class="local-event-kv"><span>HOST</span><b>' + esc(shorten(item.source, 70)) + '</b></div>' : '',
-      item.summary ? '<div class="local-event-desc">' + esc(shorten(item.summary, 230)) + '</div>' : '',
-      '<div class="local-event-actions">',
-      item.url ? '<a class="local-event-link" href="' + esc(item.url) + '" target="_blank" rel="noopener noreferrer">OPEN OFFICIAL LINK</a>' : '<span class="local-event-no-link">NO LINK IN SOURCE</span>',
-      '</div></div>'
+      '<article class="infoscreen-event-card" style="' + cardStyle + '">',
+      '<div class="infoscreen-event-label" style="' + labelStyle + '">EVENT</div>',
+      '<div class="infoscreen-event-title" style="' + titleStyle(title) + '">', esc(shorten(title, 92)), '</div>',
+      meta('WHEN', item.when, 72),
+      meta('WHERE', item.where, 72),
+      meta('HOST', item.source, 58),
+      item.summary ? '<div class="infoscreen-event-summary" style="' + summaryStyle + '">' + esc(shorten(item.summary, 220)) + '</div>' : '<div style="flex:1 1 auto;min-height:0;"></div>',
+      '<div class="infoscreen-event-actions" style="' + actionsStyle + '">',
+      item.url ? '<a class="infoscreen-event-link" style="' + linkStyle + '" href="' + esc(item.url) + '" target="_blank" rel="noopener noreferrer">OPEN OFFICIAL LINK</a>' : '<span style="color:#8f9998;font-size:13px;font-weight:800;letter-spacing:.08em;">NO LINK IN SOURCE</span>',
+      '</div></article>'
     ].join("");
     if (counter) counter.textContent = (page + 1) + "/" + items.length;
     if (prev) prev.disabled = items.length <= 1;
