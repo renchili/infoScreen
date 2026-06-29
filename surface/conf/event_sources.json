@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "purpose": "Verified event listing sources. This is separate from official_source_registry.json, which remains homepage/domain confirmation only.",
   "policy": {
     "no_recursive_site_crawl": true,
@@ -40,6 +40,61 @@
       "default_venue": "Mandai Wildlife Reserve",
       "listing_urls": [
         "https://www.mandai.com/en/discover-mandai/events.html"
+      ]
+    },
+    {
+      "id": "gardensbythebay",
+      "name": "Gardens by the Bay",
+      "adapter": "rendered_dom_card",
+      "official_home": "https://www.gardensbythebay.com.sg/",
+      "allowed_domains": ["gardensbythebay.com.sg"],
+      "default_venue": "Gardens by the Bay",
+      "listing_urls": [
+        "https://www.gardensbythebay.com.sg/en/things-to-do/calendar-of-events.html"
+      ]
+    },
+    {
+      "id": "esplanade",
+      "name": "Esplanade",
+      "adapter": "rendered_dom_card",
+      "official_home": "https://www.esplanade.com/",
+      "allowed_domains": ["esplanade.com"],
+      "default_venue": "Esplanade",
+      "listing_urls": [
+        "https://www.esplanade.com/whats-on"
+      ]
+    },
+    {
+      "id": "sciencecentre",
+      "name": "Science Centre Singapore",
+      "adapter": "rendered_dom_card",
+      "official_home": "https://www.science.edu.sg/",
+      "allowed_domains": ["science.edu.sg"],
+      "default_venue": "Science Centre Singapore",
+      "listing_urls": [
+        "https://www.science.edu.sg/whats-on"
+      ]
+    },
+    {
+      "id": "thekallang",
+      "name": "The Kallang",
+      "adapter": "rendered_dom_card",
+      "official_home": "https://www.thekallang.com.sg/",
+      "allowed_domains": ["thekallang.com.sg", "sportshub.com.sg"],
+      "default_venue": "The Kallang",
+      "listing_urls": [
+        "https://www.thekallang.com.sg/en/things-to-do/events.html"
+      ]
+    },
+    {
+      "id": "artscience",
+      "name": "ArtScience Museum",
+      "adapter": "rendered_dom_card",
+      "official_home": "https://www.marinabaysands.com/museum.html",
+      "allowed_domains": ["marinabaysands.com"],
+      "default_venue": "ArtScience Museum",
+      "listing_urls": [
+        "https://www.marinabaysands.com/museum/whats-on.html?tab=event"
       ]
     }
   ]
