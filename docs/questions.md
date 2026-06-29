@@ -13,6 +13,7 @@ This document tracks user-confirmation items, missing inputs, open design questi
 - Local-event frontend rendering should have one state machine only.
 - `infoscreen-local-events.timer` should remain disabled while extraction is being debugged.
 - API schema should use Pydantic models plus framework-independent OpenAPI generation, not a FastAPI migration.
+- The initial 7-event result is insufficient; event source coverage must be expanded before judging extractor quality.
 
 ## Needs user confirmation
 
@@ -33,16 +34,20 @@ Risk:
 
 ### 2. Local event source scope
 
-Current event sources are mostly museum/Mandai style official sources.
+Current state:
+
+- `surface/conf/event_sources.json` now contains more verified official listing sources than the initial three-source setup.
+- The current expanded set is still mostly Singapore-wide official venues, not truly Punggol-local.
 
 Question:
 
-- Should default `Punggol Singapore` prioritize truly local sources such as One Punggol, NLB/Punggol Regional Library, OnePA/PA, SAFRA Punggol, and community venues?
+- Should default `Punggol Singapore` prioritize truly local sources such as One Punggol, NLB/Punggol Regional Library, OnePA/PA, SAFRA Punggol, Waterway Point, and community venues?
 
 Missing input:
 
 - Confirm which source families are allowed.
 - Confirm whether source freshness or geographic relevance matters more than source count.
+- Confirm whether commercial venue official sites are allowed when they host public events.
 
 ### 3. OCR for image-only event cards
 
@@ -147,11 +152,15 @@ python3 - <<'PY'
 import json
 d=json.load(open('surface/.env/local_event_search_results.json'))
 print(d.get('extractor'))
+print(d.get('source_count'))
 print(d.get('count'))
-for x in d.get('results', [])[:10]:
+for src in d.get('debug_by_source', []):
+    print(src.get('source'), 'cards=', src.get('cards_found'), 'accepted=', src.get('accepted'), src.get('reason_counts'))
+for x in d.get('results', [])[:20]:
     print('\nTITLE:', x.get('title'))
     print('WHEN :', x.get('when'))
     print('WHERE:', x.get('where'))
+    print('SRC  :', x.get('source_name'))
     print('URL  :', x.get('url'))
 PY
 ```
@@ -199,10 +208,11 @@ Open issue:
 Current timeout:
 
 - `/api/local-events/search` POST timeout is 130 seconds.
+- extractor internal budget is 115 seconds by default.
 
 Open issue:
 
-- Rendered browser extraction may be slower or faster than the old crawler depending on source pages and browser startup time.
+- Rendered browser extraction may be slower or faster depending on source pages and browser startup time.
 
 Need confirm:
 
@@ -329,3 +339,4 @@ Expected:
 - Do not claim OCR/VLM support exists; only debug screenshots exist.
 - Do not claim Mandai is fixed until rendered DOM output proves it.
 - Do not claim OpenAPI is working on Surface until `/openapi.json` is verified after installing Pydantic.
+- Do not claim Punggol-local quality is solved until Punggol-specific official sources are added and verified.
