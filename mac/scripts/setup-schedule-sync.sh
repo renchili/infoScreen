@@ -13,6 +13,9 @@ Usage:
 
 The script writes local-only configuration to mac/local.env and creates a
 LaunchAgent under ~/Library/LaunchAgents. Neither file is committed to Git.
+
+Default remote path:
+  ~/infoscreen/surface/.env/schedule.json
 EOF
 }
 
@@ -107,7 +110,7 @@ fi
 
 HOST="${HOST:-${SURFACE_HOST:-}}"
 USER_NAME="${USER_NAME:-${SURFACE_USER:-}}"
-REMOTE_PATH="${REMOTE_PATH:-${REMOTE_SCHEDULE_JSON:-~/infoscreen/schedule.json}}"
+REMOTE_PATH="${REMOTE_PATH:-${REMOTE_SCHEDULE_JSON:-~/infoscreen/surface/.env/schedule.json}}"
 
 if [ -z "$HOST" ] && [ -t 0 ]; then
   read -r -p "Surface SSH host: " HOST
@@ -185,4 +188,5 @@ LABEL="com.renchili.infoscreen.schedule-sync"
 
 echo "Installed LaunchAgent: $PLIST_FILE"
 echo "Local config: $CONFIG_FILE"
+echo "Remote schedule: $REMOTE_PATH"
 echo "Manual test: bash $SYNC_SCRIPT"
