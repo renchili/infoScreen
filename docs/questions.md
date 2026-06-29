@@ -12,6 +12,7 @@ This document tracks user-confirmation items, missing inputs, open design questi
 - Playwright may be used as a browser control layer, but the browser executable should be a system Chromium/Chrome on unsupported distros.
 - Local-event frontend rendering should have one state machine only.
 - `infoscreen-local-events.timer` should remain disabled while extraction is being debugged.
+- API schema should use Pydantic models plus framework-independent OpenAPI generation, not a FastAPI migration.
 
 ## Needs user confirmation
 
@@ -85,7 +86,7 @@ Recommendation:
 
 Current behavior:
 
-- Python Playwright package is required.
+- Python Playwright package is required for rendered DOM extraction.
 - Browser executable is resolved from system Chromium/Chrome paths.
 
 Question:
@@ -97,6 +98,24 @@ Missing input:
 - Surface OS/browser package availability.
 - Whether Snap Chromium is acceptable.
 
+### 6. Python dependency packaging
+
+Current behavior:
+
+- `/openapi.json` requires `pydantic>=2.0`.
+- Rendered DOM extraction requires `playwright` plus a system browser.
+
+Question:
+
+- Should the repo add a committed requirements file, for example `surface/requirements.txt`, or keep install commands in docs only?
+
+Current install commands:
+
+```bash
+python3 -m pip install --user 'pydantic>=2.0'
+python3 -m pip install --user playwright
+```
+
 ## Missing inputs
 
 - Exact Surface OS release and package availability for Chromium/Chrome.
@@ -105,7 +124,7 @@ Missing input:
 - Whether event search should be location-aware beyond simple display sorting.
 - Whether frontend should show all official events or only events with local relevance to the requested location.
 - Whether debug screenshots under `surface/.env/local_event_debug_cards/` should be automatically cleaned up.
-- Whether `docs/design.md` should describe the full dashboard only or also every helper script/timer.
+- Whether dependency management should be a root requirements file, `surface/requirements.txt`, `pyproject.toml`, or manual install docs.
 
 ## Open technical issues
 
@@ -190,6 +209,26 @@ Need confirm:
 - Actual runtime on Surface.
 - Whether timeout should remain 130 seconds.
 
+### 6. OpenAPI runtime verification
+
+Current state:
+
+- `surface/api_models.py` defines Pydantic schemas.
+- `surface/openapi_spec.py` builds OpenAPI 3.1.
+- `surface/serve_infoscreen.py` exposes `/openapi.json` and `/docs`.
+
+Open issue:
+
+- Need verify on Surface that Pydantic is installed and `/openapi.json` returns generated spec.
+
+Verification:
+
+```bash
+python3 -m pip install --user 'pydantic>=2.0'
+python3 surface/openapi_spec.py | python3 -m json.tool | head -n 80
+curl -s http://127.0.0.1:8765/openapi.json | python3 -m json.tool | head -n 80
+```
+
 ## Blockers
 
 ### 1. Browser runtime missing
@@ -215,7 +254,20 @@ Do not run this on unsupported distros as the only browser solution:
 python3 -m playwright install chromium
 ```
 
-### 2. Timer overwriting manual output
+### 2. Pydantic missing
+
+Symptoms:
+
+- `GET /openapi.json` returns `openapi_generation_failed`
+- `python3 surface/openapi_spec.py` fails with `No module named 'pydantic'`
+
+Resolution:
+
+```bash
+python3 -m pip install --user 'pydantic>=2.0'
+```
+
+### 3. Timer overwriting manual output
 
 Symptoms:
 
@@ -243,7 +295,7 @@ Verification:
 systemctl --user list-timers --all | grep -i infoscreen || true
 ```
 
-### 3. Browser cache or old kiosk process
+### 4. Browser cache or old kiosk process
 
 Symptoms:
 
@@ -276,3 +328,4 @@ Expected:
 - Do not claim the timer can be re-enabled until the extractor output is verified.
 - Do not claim OCR/VLM support exists; only debug screenshots exist.
 - Do not claim Mandai is fixed until rendered DOM output proves it.
+- Do not claim OpenAPI is working on Surface until `/openapi.json` is verified after installing Pydantic.
