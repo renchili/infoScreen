@@ -66,7 +66,7 @@ def now_iso() -> str:
 
 
 def clean(value: object) -> str:
-    text = html.unescape(str(value or "")).replace("\/", "/").replace("\u002F", "/")
+    text = html.unescape(str(value or "")).replace("\\/", "/").replace("\\u002F", "/")
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
