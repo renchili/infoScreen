@@ -1,395 +1,316 @@
 # InfoScreen design
 
-This document describes how InfoScreen is designed and how the current implementation should satisfy the dashboard requirements.
+This document describes the intended project design. It does not replace `README.md` usage instructions or `docs/api-spec.md` endpoint details.
 
-## Goals
+## Purpose
 
-InfoScreen is a local Surface/Ubuntu kiosk dashboard.
+InfoScreen is a local kiosk dashboard for an always-on Surface/Ubuntu display.
 
 The dashboard should show:
 
-- local time and date
-- market data
-- weather data
-- event/news stream
-- photo wall
-- calendar/schedule board
-- local event card with location search
-- sync/runtime status
-
-The project should run locally, be debuggable through files and systemd, and avoid hidden fallbacks that make runtime behavior hard to reason about.
-
-## Non-goals
-
-- Do not run large local VLM/LLM models by default.
-- Do not embed Qwen, OCR, or transformer models in the default Python path.
-- Do not depend on third-party aggregators for official local events.
-- Do not use guessed institution domains or guessed `/events` paths as source truth.
-- Do not keep multiple frontend state machines controlling the same local event widget.
-- Do not migrate the server to FastAPI just to get Swagger/OpenAPI.
-
-## Repository layout
-
 ```text
-surface/
-  serve_infoscreen.py              # local HTTP server
-  api_models.py                    # Pydantic request/response/runtime schemas
-  openapi_spec.py                  # route map + Pydantic schemas -> OpenAPI 3.1
-  search_local_events.py           # local event refresh entrypoint
-  fetch_live_data.py               # market refresh entrypoint
-  fetch_event_stream.py            # event/news stream refresh entrypoint
-  local_events_runtime/            # rendered DOM extraction runtime
-  local_events_adapters/           # older adapter experiment; not the main path
-  local_events_engine.py           # old generic crawler; not the main path
-  conf/
-    official_source_registry.json  # official homepage/domain registry only
-    event_sources.json             # verified event listing entrypoints
-    market_config.default.json
-  web/
-    index.html
-    calendar_board.js
-  .env/                            # runtime generated files, not committed
-
-docs/
-  api-spec.md
-  design.md
-  questions.md
+1. local clock/date
+2. calendar schedule
+3. market watchlist
+4. weather
+5. event/news stream
+6. local official events
+7. photo wall
+8. runtime/sync status
 ```
 
-## Runtime data model
+The system should be simple to operate locally and easy to debug through files, logs, systemd units, and HTTP endpoints.
 
-All generated runtime files live under:
+## Hosts and ownership
 
-```text
-surface/.env/
-```
+### Surface / Ubuntu host
 
-Important files:
+The Surface host owns:
 
 ```text
-surface/.env/schedule.json
-surface/.env/weather.json
-surface/.env/market.json
-surface/.env/market_config.json
-surface/.env/event_stream.json
-surface/.env/local_event_search_results.json
-surface/.env/photos.json
-surface/.env/public_photos/
-surface/.env/local_event_debug_cards/
+1. HTTP dashboard server
+2. static frontend files
+3. market/weather refresh
+4. event/news stream refresh
+5. local official event search
+6. systemd user services/timers
+7. local logs
 ```
 
-The server must not read root-level runtime JSON. Root fallback hides errors and causes stale data confusion.
+Main entrypoints:
+
+```text
+surface/serve_infoscreen.py
+surface/fetch_live_data.py
+surface/fetch_event_stream.py
+surface/search_local_events.py
+surface/build_photos_json.py
+```
+
+### macOS host
+
+The Mac host owns only Apple Calendar export and schedule sync.
+
+Main entrypoints:
+
+```text
+mac/export.py
+mac/sync_schedule.sh
+mac/scripts/setup-schedule-sync.sh
+```
+
+The Mac checkout must not depend on a Surface frontend/crawler feature branch.
+
+## Data flow
+
+### Calendar schedule
+
+```text
+Apple Calendar on Mac
+  -> mac/export.py
+  -> mac/schedule.json
+  -> mac/sync_schedule.sh over SSH/SCP
+  -> ~/infoscreen/schedule.json on Surface
+  -> GET /schedule.json
+  -> calendar board frontend
+```
+
+Current verified Surface target:
+
+```text
+~/infoscreen/schedule.json
+```
+
+Do not move this path without a separate migration and verification.
+
+### Market and weather
+
+```text
+surface/fetch_live_data.py
+  -> runtime weather JSON
+  -> runtime market JSON
+  -> GET /weather.json and GET /market.json
+  -> dashboard panels and tickers
+```
+
+The exact runtime file path must match the current server implementation and docs before changing systemd timers or frontend fetches.
+
+### Event/news stream
+
+```text
+surface/fetch_event_stream.py
+  -> runtime event_stream.json
+  -> GET /event_stream.json
+  -> multilingual event/news ticker
+```
+
+### Local official events
+
+```text
+surface/conf/official_source_registry.json
+surface/conf/event_sources.json
+  -> surface/search_local_events.py
+  -> surface/local_events_runtime/
+  -> runtime local_event_search_results.json
+  -> GET/POST /api/local-events/search
+  -> local events frontend
+```
+
+Local event source rules:
+
+```text
+official_source_registry.json = official homepage/domain identity only
+event_sources.json = verified event listing entrypoints
+no third-party aggregators
+no guessed domains or guessed /events paths
+no silent fallback to old crawler or fake data
+```
 
 ## HTTP server design
 
-`surface/serve_infoscreen.py` is a small local HTTP server using Python standard library `ThreadingHTTPServer`.
+`surface/serve_infoscreen.py` should remain a small local HTTP/API/static-file server.
 
-Responsibilities:
-
-- serve static files from `surface/web/`
-- serve runtime JSON from `surface/.env/`
-- handle POST APIs for refresh/update actions
-- disable browser caching with `Cache-Control: no-store`
-- expose `/api/local-events/search` for local-event read/search
-- expose `/openapi.json` and `/docs` without changing framework
-- strip the legacy inline local-event script from served HTML
-
-The served dashboard root is sanitized at response time so the browser executes only the external local-event renderer in `calendar_board.js`.
-
-## API schema and OpenAPI design
-
-InfoScreen uses a framework-independent schema layer:
+Allowed responsibilities:
 
 ```text
-surface/api_models.py
-  Pydantic BaseModel definitions for request, response, and runtime payloads
-
-surface/openapi_spec.py
-  Route table and operation metadata
-  Uses Pydantic model_json_schema / TypeAdapter JSON Schema
-  Produces OpenAPI 3.1
-
-surface/serve_infoscreen.py
-  GET /openapi.json -> openapi_spec.build_openapi()
-  GET /docs         -> minimal Swagger UI HTML loading /openapi.json
+1. serve surface/web/index.html
+2. serve static files from surface/web/
+3. expose runtime JSON endpoints
+4. expose API endpoints
+5. expose /openapi.json and /docs
+6. run explicitly requested backend refresh commands
 ```
 
-This design keeps the current `http.server` implementation while still producing a Swagger-compatible contract.
+Forbidden responsibilities:
 
-Rules:
+```text
+1. injecting CSS into HTML
+2. replacing script URLs or cache-busting versions at runtime
+3. patching HTML structure at runtime
+4. hiding frontend duplication by server-side regex cleanup
+5. guessing runtime file paths
+```
 
-- Pydantic owns field schema and descriptions.
-- `openapi_spec.py` owns paths/methods/request-body/response-code mapping.
-- `docs/api-spec.md` is the human-readable API usage document.
-- OpenAPI generation must fail explicitly if Pydantic is missing.
+Frontend cleanup should happen in source files, not in the server.
 
 ## Frontend design
 
-The browser should have one owner per UI panel.
-
-### Calendar board
-
-Owned by the first module in:
+Canonical checked-in frontend files live under:
 
 ```text
-surface/web/calendar_board.js
+surface/web/assets/css/
+surface/web/assets/js/
 ```
 
-It reads:
+The target browser asset ownership is:
+
+```text
+assets/css/app.css              base layout/theme
+assets/css/calendar_board.css   calendar board styles
+assets/css/local_events.css     local events styles
+assets/css/market_custom.css    market custom styles
+assets/js/calendar_board.js     calendar board behavior
+assets/js/local_events.js       local event behavior
+assets/js/market_custom.js      market custom behavior
+```
+
+`surface/web/index.html` should reference assets only. Root-level duplicates and `surface/web/*.js|*.css` duplicates are cleanup debt.
+
+Each browser panel should have one owner module. Do not keep multiple state machines controlling the same UI widget.
+
+## Runtime files and logs
+
+Runtime files are deployment state, not source code.
+
+Known current files:
+
+```text
+~/infoscreen/schedule.json
+~/infoscreen/surface/.env/
+~/infoscreen/surface/.env/logs/http.log
+~/infoscreen/surface/.env/logs/http.err.log
+```
+
+The HTTP service must keep append-style file logs unless a documented migration replaces them:
+
+```ini
+StandardOutput=append:%h/infoscreen/surface/.env/logs/http.log
+StandardError=append:%h/infoscreen/surface/.env/logs/http.err.log
+```
+
+Before destructive git operations on a deployed Surface host, backup:
 
 ```text
 schedule.json
+surface/.env/
 ```
 
-and renders a split-flap style schedule board.
+## API and schema design
 
-### Local event card
-
-Owned by the second module in:
+The project uses a framework-independent API schema layer.
 
 ```text
-surface/web/calendar_board.js
+surface/api_models.py      Pydantic schemas
+surface/openapi_spec.py    OpenAPI route/spec builder
+GET /openapi.json          machine-readable OpenAPI
+GET /docs                  Swagger UI
 ```
 
-It reads:
-
-```text
-/api/local-events/search
-```
-
-and renders one local event card at a time with previous/next paging.
-
-Only this external module should bind these controls:
-
-```text
-localEventPrevButton
-localEventNextButton
-localEventLocationButton
-localEventSearchButton
-localEventCancelButton
-localEventLocationInput
-```
-
-The old inline local-event script in `index.html` must not execute in the browser. It grouped results into a separate `localEventItems` state and caused the UI to collapse into the old `3/3` pager state after clicking next/previous.
-
-## Local event source design
-
-There are two separate source files with different responsibilities.
-
-### `official_source_registry.json`
-
-Purpose:
-
-- identify official institution homepages
-- list allowed official domains
-- record source identity only
-
-It must not store:
-
-- event listing URLs
-- event detail URLs
-- ticketing URLs
-- third-party aggregators
-
-### `event_sources.json`
-
-Purpose:
-
-- hold verified event listing entrypoints
-- map each source to an extraction strategy
-- keep listing URLs out of the official homepage registry
-
-Example source fields:
-
-```json
-{
-  "id": "nationalmuseum",
-  "name": "National Museum Singapore",
-  "adapter": "nhb",
-  "official_home": "https://www.nationalmuseum.nhb.gov.sg/",
-  "allowed_domains": ["nationalmuseum.nhb.gov.sg"],
-  "default_venue": "National Museum Singapore",
-  "listing_urls": ["https://www.nationalmuseum.nhb.gov.sg/whats-on/exhibition"]
-}
-```
+The server should not be migrated to FastAPI solely for OpenAPI support.
 
 ## Local event extraction design
 
-Current main path:
+Main path:
 
 ```text
 surface/search_local_events.py
-  -> surface/local_events_runtime.collect_events
+  -> surface/local_events_runtime.extract.collect_events
   -> surface/local_events_runtime.browser.render_listing_cards
-  -> surface/local_events_runtime.extract.event_from_card
-  -> surface/.env/local_event_search_results.json
+  -> local_event_search_results.json
 ```
 
-Extractor version expected after this work:
+Rendered DOM extraction uses Playwright as a browser-control layer. It should not import or require large local LLM/VLM/OCR models by default.
+
+Output should include debug information when possible:
 
 ```text
-rendered-dom-card-v41
+source_count
+count
+debug_by_source
+reason_counts
+accepted_preview
+not_output_preview
 ```
 
-### Why rendered DOM
+Do not claim extractor quality is fixed until real output and debug data are reviewed on the Surface host.
 
-Some pages are not useful through raw `requests.get()` because:
+## systemd design
 
-- important cards are rendered by client-side JavaScript
-- HTML text around links can be incomplete
-- listing cards may contain images, alt text, hidden structure, or layout-dependent grouping
-
-The current default implementation uses Playwright only as a browser control layer:
-
-- load listing page
-- wait for rendering
-- inspect visible DOM anchors
-- find nearest useful card container
-- collect heading, link text, visible text, image alt text, URL, and bounding box
-- save debug screenshots
-- use Python schema/date validation to produce events
-
-It does not use local VLM/OCR by default.
-
-### Browser runtime handling
-
-On Ubuntu versions unsupported by Playwright bundled Chromium, the runtime should use a system browser.
-
-`surface/local_events_runtime/browser.py` checks for:
+Canonical user systemd templates live under:
 
 ```text
-INFOSCREEN_CHROMIUM_PATH
-PLAYWRIGHT_CHROMIUM_EXECUTABLE
-chromium
-chromium-browser
-google-chrome
-google-chrome-stable
-microsoft-edge
-brave-browser
-/usr/bin/chromium
-/usr/bin/google-chrome
-/snap/bin/chromium
+deploy/systemd/user/
 ```
 
-If no browser is available, the extractor must report the missing browser explicitly. It must not silently fall back to fake data.
-
-## Local event schema design
-
-Each extracted event should contain:
+Install/update scripts live under:
 
 ```text
-title       display title
-when        exact date/date-range substring only
-where       venue phrase or source fallback
-host        organizer/source display name
-source_name official source display name
-url         official HTTP/HTTPS detail URL
-summary     short readable description
-start_date  YYYY-MM-DD if parseable
-kind        event
-source_type rendered_dom_card
+deploy/scripts/
 ```
 
-The same contract is represented in `surface/api_models.py` as `LocalEventItem` and `LocalEventSearchResponse`.
+Do not extend competing locations such as `surface/systemd/`. Move or remove legacy locations in a dedicated cleanup.
 
-`when` must not be the whole card text. It should only be the date/date-range substring.
-
-`where` should prefer venue text after the date range when available, for example:
+Expected user units include:
 
 ```text
-B1 Exhibition Galleries
-```
-
-`summary` should remove repeated title/date/venue text where possible.
-
-## Timers and refresh design
-
-The old local event systemd timer was identified as:
-
-```text
+infoscreen-http.service
+infoscreen-live-data.service
+infoscreen-live-data.timer
+infoscreen-event-stream.service
+infoscreen-event-stream.timer
+infoscreen-local-events.service
 infoscreen-local-events.timer
 ```
 
-It triggered:
+Refresh jobs should be timer-driven oneshot services where appropriate.
+
+## Documentation design
+
+Documentation responsibilities:
 
 ```text
-infoscreen-local-events.service
+metadata.json              project requirements, constraints, plan
+README.md                  user-facing setup/start/use/troubleshooting
+docs/api-spec.md           endpoint interactions
+docs/design.md             system design
+docs/questions.md          implementation issues and resolution notes
+docs/project-structure.md  repository and development-boundary constraints
 ```
 
-which ran:
+Do not keep conflicting copies of structure/runtime rules in multiple docs.
+
+## Non-goals
 
 ```text
-/usr/bin/python3 %h/infoscreen/surface/search_local_events.py Punggol Singapore
+1. no default large local model dependency
+2. no Qwen/OCR/VLM in the default local event path
+3. no third-party event aggregators as official source truth
+4. no hidden fallback to old crawler/fake data
+5. no frontend patches from serve_infoscreen.py
+6. no Mac checkout dependency on Surface feature branches
 ```
 
-During debugging, this caused manual output to appear as if it was being rolled back.
+## Cleanup backlog
 
-The timer should remain disabled until the extractor output is verified.
+Current cleanup still needed:
 
-Future timer design should be explicit:
-
-- service should be `Type=oneshot`
-- service should have `WorkingDirectory=%h/infoscreen`
-- timer should control refresh cadence
-- no service should be installed directly as `WantedBy=default.target` for this job
-
-## Debugging and verification
-
-### Verify OpenAPI
-
-```bash
-python3 -m pip install --user 'pydantic>=2.0'
-python3 surface/openapi_spec.py | python3 -m json.tool | head -n 80
-curl -s http://127.0.0.1:8765/openapi.json | python3 -m json.tool | head -n 80
+```text
+1. normalize frontend assets under surface/web/assets/
+2. remove duplicate root and surface/web JS/CSS files
+3. remove server-side CSS/script injection from serve_infoscreen.py
+4. restore and verify HTTP file logging
+5. align schedule sync docs/scripts/server behavior to ~/infoscreen/schedule.json
+6. add/repair .gitignore for runtime files and pycache
+7. prune or convert conflicting docs into pointers
+8. split Mac schedule sync changes from Surface frontend/crawler changes
 ```
-
-### Verify local event runtime
-
-```bash
-python3 surface/search_local_events.py "Punggol Singapore"
-python3 - <<'PY'
-import json
-d=json.load(open('surface/.env/local_event_search_results.json'))
-print(d.get('extractor'))
-print(d.get('runtime'))
-print(d.get('count'))
-for x in d.get('results', [])[:5]:
-    print(x.get('title'), '|', x.get('when'), '|', x.get('where'))
-PY
-```
-
-### Verify timer is stopped
-
-```bash
-systemctl --user list-timers --all | grep -i infoscreen || true
-systemctl --user list-units --all | grep -i infoscreen || true
-```
-
-### Verify served frontend is clean
-
-```bash
-curl -s http://127.0.0.1:8765/ | grep -n "local-event-inline-script" || true
-curl -s http://127.0.0.1:8765/calendar_board.js | grep -n "MutationObserver\|watchdog\|external-local-events" || true
-```
-
-Expected:
-
-- no legacy inline script in served HTML
-- no watchdog/MutationObserver owner hack in external JS
-- local event paging remains on the full result count and does not switch to old `3/3`
-
-## Implementation principles
-
-- Prefer explicit failure over hidden fallback.
-- Runtime output should include enough metadata to identify writer process, cwd, Python path, and git head.
-- Listing pages are primary sources; listing page URLs themselves are not event items.
-- Detail pages can supplement but should not override more accurate listing-card structure blindly.
-- No large model should be imported in the default path.
-- Debug artifacts such as card screenshots belong under `surface/.env/`.
-- API schemas should be defined once in Pydantic and reused for OpenAPI generation.
-
-## Known current limitation
-
-The old inline local-event script has not yet been physically removed from `surface/web/index.html`. It is stripped from served HTML by `surface/serve_infoscreen.py`.
-
-Physical deletion from the source HTML should be done later with a careful full-file edit, because `index.html` is currently large and contains multiple unrelated inline dashboard modules.
