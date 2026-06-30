@@ -406,7 +406,9 @@
     var style = document.createElement("style");
     style.id = "market-config-style";
     style.textContent = [
-      ".box[data-title='market'] .market-toolbar{position:absolute;right:8px;bottom:8px;display:flex;gap:6px;z-index:8;background:rgba(5,6,6,.9);border-radius:999px;}",
+      ".box[data-title='market'] .inner{display:grid!important;grid-template-rows:minmax(0,1fr) 26px!important;gap:4px!important;min-height:0!important;overflow:hidden!important;}",
+      ".box[data-title='market'] .market-list{min-height:0!important;overflow:hidden!important;}",
+      ".box[data-title='market'] .market-toolbar{position:static!important;display:flex!important;gap:6px!important;justify-content:flex-end!important;align-items:center!important;background:transparent!important;border-radius:999px!important;height:24px!important;z-index:1!important;}",
       ".box[data-title='market'] .market-config-button{appearance:none;-webkit-appearance:none;width:24px;height:24px;border:1px solid #3a3f3d;border-radius:999px;background:#050606;color:#8cecff;font:950 12px/1 inherit;display:grid;place-items:center;cursor:pointer;padding:0;}",
       ".market-config-modal[hidden]{display:none!important;}",
       ".market-config-modal{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.72);display:grid;place-items:center;}",
@@ -426,10 +428,11 @@
     installMarketStyle();
     var box = document.querySelector(".box[data-title='market']");
     if (!box || byId("marketConfigButton")) return;
+    var inner = box.querySelector(".inner") || box;
     var toolbar = document.createElement("div");
     toolbar.className = "market-toolbar";
     toolbar.innerHTML = '<button id="marketConfigButton" class="market-config-button" type="button" title="Configure stocks" aria-label="Configure stocks">⚙</button><button id="marketRefreshButton" class="market-config-button" type="button" title="Refresh market" aria-label="Refresh market">↻</button>';
-    box.appendChild(toolbar);
+    inner.appendChild(toolbar);
 
     var modal = document.createElement("div");
     modal.id = "marketConfigModal";
