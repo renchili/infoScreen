@@ -276,18 +276,17 @@ Refresh jobs should be timer-driven oneshot services where appropriate.
 
 ## Documentation design
 
-Documentation responsibilities:
+Active documentation set:
 
 ```text
-metadata.json              project requirements, constraints, plan
-README.md                  user-facing setup/start/use/troubleshooting
-docs/api-spec.md           endpoint interactions
-docs/design.md             system design
-docs/questions.md          implementation issues and resolution notes
-docs/project-structure.md  repository and development-boundary constraints
+metadata.json        project requirements, constraints, plan
+README.md            user-facing setup/start/use/troubleshooting
+docs/api-spec.md     endpoint interactions
+docs/design.md       system design
+docs/questions.md    implementation issues and resolution notes
 ```
 
-Do not keep conflicting copies of structure/runtime rules in multiple docs.
+No other `docs/*.md` files should remain as active documentation.
 
 ## Non-goals
 
@@ -311,6 +310,5 @@ Current cleanup still needed:
 4. restore and verify HTTP file logging
 5. align schedule sync docs/scripts/server behavior to ~/infoscreen/schedule.json
 6. add/repair .gitignore for runtime files and pycache
-7. prune or convert conflicting docs into pointers
-8. split Mac schedule sync changes from Surface frontend/crawler changes
+7. split Mac schedule sync changes from Surface frontend/crawler changes
 ```
