@@ -19,6 +19,7 @@ MAX_SECONDS = float(os.environ.get("LOCAL_EVENTS_MAX_SECONDS", "115"))
 MAX_EVENTS_PER_SOURCE = int(os.environ.get("LOCAL_EVENTS_MAX_EVENTS_PER_SOURCE", "14"))
 MAX_TOTAL_EVENTS = int(os.environ.get("LOCAL_EVENTS_MAX_TOTAL_EVENTS", "80"))
 PAST_GRACE_DAYS = int(os.environ.get("LOCAL_EVENTS_PAST_GRACE_DAYS", "1"))
+MAX_DATE_SPAN_DAYS = int(os.environ.get("LOCAL_EVENTS_MAX_DATE_SPAN_DAYS", "760"))
 
 MONTHS = {
     "jan": 1, "january": 1,
@@ -55,6 +56,9 @@ VENUE_PHRASE_RE = re.compile(
     re.I,
 )
 SUMMARY_START_RE = re.compile(r"\b(?:Embark|Join|Discover|Explore|Experience|Learn|Enjoy|Celebrate|Step|Take|Find|Visit|Come|Uncover|Journey|Be part|Catch|Watch)\b", re.I)
+NON_EVENT_URL_RE = re.compile(r"/(?:facilit(?:y|ies)|amenit(?:y|ies)|membership|member|club|clubs|venue-hire|booking|bookings|sports|swimming|gym|pool|fnb|dining|parking|contact|about|overview)(?:/|[-_]|$)", re.I)
+NON_EVENT_TITLE_RE = re.compile(r"\b(?:overview|swimming\s*pool|pool|gym|membership|member\s*benefits|club\s*facilities|facilities|venue\s*hire|bookings?|parking|faq)\b", re.I)
+EVENT_WORD_RE = re.compile(r"\b(?:event|exhibition|programme|program|activity|workshop|tour|talk|lecture|festival|performance|concert|screening|class|course|guided|show|market|fair)\b", re.I)
 
 
 def now_iso() -> str:
@@ -62,7 +66,7 @@ def now_iso() -> str:
 
 
 def clean(value: object) -> str:
-    text = html.unescape(str(value or "")).replace("\\/", "/").replace("\\u002F", "/")
+    text = html.unescape(str(value or "")).replace("\/", "/").replace("\u002F", "/")
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
@@ -128,6 +132,11 @@ def label_dates(label: str) -> list[date]:
         except ValueError:
             pass
     return sorted(out)
+
+
+def date_span_too_long(label: str) -> bool:
+    dates = label_dates(label)
+    return len(dates) >= 2 and (max(dates) - min(dates)).days > MAX_DATE_SPAN_DAYS
 
 
 def current_date_label(label: str) -> bool:
@@ -288,6 +297,21 @@ def pick_summary(card: dict[str, Any], title: str, when: str, where: str) -> str
     return "Open the official page for details."
 
 
+def event_looks_wrong(source: dict[str, Any], card: dict[str, Any], title: str, when: str) -> str:
+    url = clean(card.get("url") or "")
+    text = clean(card.get("text") or "")
+    source_id = clean(source.get("id") or "").lower()
+    combined = " ".join([title, url, text[:500]])
+    if NON_EVENT_URL_RE.search(url) or NON_EVENT_TITLE_RE.search(title):
+        if not EVENT_WORD_RE.search(combined):
+            return "non_event_overview_or_facility_page"
+    if source_id == "safra" and (NON_EVENT_URL_RE.search(url) or NON_EVENT_TITLE_RE.search(title)):
+        return "non_event_safra_facility_page"
+    if date_span_too_long(when) and not re.search(r"\b(exhibition|installation|festival|season)\b", combined, re.I):
+        return "date_range_too_broad_for_event"
+    return ""
+
+
 def event_from_card(source: dict[str, Any], card: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
     title = pick_title(card)
     when, when_line = pick_when(card)
@@ -295,6 +319,9 @@ def event_from_card(source: dict[str, Any], card: dict[str, Any]) -> tuple[dict[
         return None, "title_not_found"
     if not when:
         return None, "current_date_not_found_in_card"
+    bad = event_looks_wrong(source, card, title, when)
+    if bad:
+        return None, bad
     where = pick_venue(source, card, when, when_line)
     summary = pick_summary(card, title, when, where)
     url = card.get("url") or ""
@@ -322,7 +349,7 @@ def bump(debug: dict[str, Any], reason: str) -> None:
 def collect_source(source: dict[str, Any], debug_dir: Path, deadline: float) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     debug: dict[str, Any] = {
         "source": source.get("name"),
-        "adapter": "rendered_dom_card",
+        "adapter": source.get("adapter") or "rendered_dom_card",
         "listing_urls": source.get("listing_urls") or [],
         "listing_fetched": 0,
         "cards_found": 0,
