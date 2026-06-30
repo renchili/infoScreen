@@ -1,359 +1,299 @@
-# InfoScreen questions, missing inputs, and blockers
+# InfoScreen implementation questions and resolution log
 
-This document tracks user-confirmation items, missing inputs, open design questions, and blockers.
+This document records implementation issues, user-confirmed constraints, mistakes found during development, and the resolution plan.
 
-## Confirmed decisions
+Use this file for interaction/problem history. Do not use it as the API spec or architecture document.
 
-- Runtime files belong under `surface/.env/`, not the repository root.
-- `official_source_registry.json` is only for official homepage/domain identity.
-- Event listing URLs belong in a separate source config such as `surface/conf/event_sources.json`.
-- The old generic crawler should not be the main local-event extractor.
-- Default local-event extraction should not embed Qwen, OCR, VLM, or any other large local model.
-- Playwright may be used as a browser control layer, but the browser executable should be a system Chromium/Chrome on unsupported distros.
-- Local-event frontend rendering should have one state machine only.
-- `infoscreen-local-events.timer` should remain disabled while extraction is being debugged.
-- API schema should use Pydantic models plus framework-independent OpenAPI generation, not a FastAPI migration.
-- The initial ACM result quality problem is crawler/extractor quality, not primarily source count.
+## User-confirmed documentation split
 
-## Needs user confirmation
+The documentation set must be:
 
-### 1. Physical deletion of legacy inline local-event script
-
-Current state:
-
-- `surface/serve_infoscreen.py` strips the legacy inline script from served HTML.
-- The legacy script still exists in `surface/web/index.html` source.
-
-Question:
-
-- Should the old `<script id="local-event-inline-script">...</script>` block be physically removed from `surface/web/index.html` now?
-
-Risk:
-
-- `index.html` is a large file with many unrelated inline dashboard modules, so full-file surgery has higher risk than serving-time stripping.
-
-### 2. Local event source scope
-
-Current state:
-
-- Source expansion alone is not a valid fix for poor result quality.
-- ACM itself has many activities that were not correctly extracted.
-- The immediate focus is crawler quality: rendered card completeness, card line preservation, pagination/load-more handling, and field extraction.
-
-Question:
-
-- After ACM extraction is fixed, should default `Punggol Singapore` add truly local sources such as One Punggol, NLB/Punggol Regional Library, OnePA/PA, SAFRA Punggol, Waterway Point, and community venues?
-
-Missing input:
-
-- Confirm which source families are allowed.
-- Confirm whether source freshness or geographic relevance matters more than source count.
-- Confirm whether commercial venue official sites are allowed when they host public events.
-
-### 3. OCR for image-only event cards
-
-Current default:
-
-- No OCR.
-- No VLM.
-- Card screenshots are saved only for debugging.
-
-Question:
-
-- If a card contains date/title only inside an image, should the project add optional OCR?
-
-Possible approach:
-
-- Add optional OCR backend only when explicitly configured.
-- Do not enable OCR by default on Surface.
-
-### 4. Timer refresh cadence
-
-Current state:
-
-- `infoscreen-local-events.timer` was disabled because it overwrote manual debugging output.
-
-Question:
-
-- After extraction is verified, what refresh cadence should be used?
-
-Options:
-
-- manual only
-- hourly
-- daily
-- on login plus daily
-
-Recommendation:
-
-- Use a timer-controlled `oneshot` service only after output is verified.
-
-### 5. Browser dependency target
-
-Current behavior:
-
-- Python Playwright package is required for rendered DOM extraction.
-- Browser executable is resolved from system Chromium/Chrome paths.
-
-Question:
-
-- Should install docs standardize on `chromium`, Google Chrome, or an environment variable like `INFOSCREEN_CHROMIUM_PATH`?
-
-Missing input:
-
-- Surface OS/browser package availability.
-- Whether Snap Chromium is acceptable.
-
-### 6. Python dependency packaging
-
-Current behavior:
-
-- `/openapi.json` requires `pydantic>=2.0`.
-- Rendered DOM extraction requires `playwright` plus a system browser.
-
-Question:
-
-- Should the repo add a committed requirements file, for example `surface/requirements.txt`, or keep install commands in docs only?
-
-Current install commands:
-
-```bash
-python3 -m pip install --user 'pydantic>=2.0'
-python3 -m pip install --user playwright
+```text
+metadata.json              all project requirements, constraints, plan, and cleanup backlog
+README.md                  how to use, install, start, verify, and troubleshoot
+docs/api-spec.md           endpoint interactions and request/response contracts
+docs/design.md             whole-project design
+docs/questions.md          implementation questions, mistakes, and solutions
+docs/project-structure.md  canonical structure and development-boundary constraints
 ```
 
-## Missing inputs
+## Confirmed hard constraints
 
-- Exact Surface OS release and package availability for Chromium/Chrome.
-- Actual desired local event source list.
-- Whether OCR is acceptable as an optional dependency.
-- Whether event search should be location-aware beyond simple display sorting.
-- Whether frontend should show all official events or only events with local relevance to the requested location.
-- Whether debug screenshots under `surface/.env/local_event_debug_cards/` should be automatically cleaned up.
-- Whether dependency management should be a root requirements file, `surface/requirements.txt`, `pyproject.toml`, or manual install docs.
+```text
+1. Do not guess runtime paths.
+2. schedule.json current target is ~/infoscreen/schedule.json unless verified otherwise.
+3. Surface HTTP logs must continue writing under surface/.env/logs/.
+4. Mac schedule sync must not depend on a Surface frontend/crawler branch.
+5. Frontend assets must be normalized under surface/web/assets/css and surface/web/assets/js.
+6. serve_infoscreen.py must not inject CSS, patch HTML, or replace JS versions as a normal solution.
+7. Runtime files, logs, pycache, and local data must not be destroyed by git cleanup.
+8. Local event source registry must not contain listing/detail/ticket/aggregator URLs.
+9. event_sources.json owns verified listing entrypoints.
+10. No Qwen/OCR/VLM/large local model in the default local-event extraction path.
+11. No hidden fallback to old crawler or fake data.
+```
 
-## Open technical issues
+## Mistakes found in this branch
 
-### 1. ACM crawler quality
+### 1. Runtime path was guessed incorrectly
 
-Status:
+Problem:
 
-- `surface/local_events_runtime/browser.py` now preserves `text_lines` instead of flattening the whole rendered card into one line.
-- The browser runtime now scrolls and attempts to click Load more / View more / Show more controls before extracting cards.
-- Source expansion was reverted; the quality issue must be fixed on the existing ACM/NHB crawler path first.
+```text
+Docs and Mac schedule-sync changes claimed the Surface should read:
+~/infoscreen/surface/.env/schedule.json
+```
 
-Open issue:
+User-provided audit showed the fresh runtime schedule file at:
 
-- Need verify actual ACM `cards_found`, `accepted`, and rejected reasons after rerun.
-- Need inspect `debug_by_source` and card screenshots before claiming quality fixed.
+```text
+~/infoscreen/schedule.json
+```
+
+Resolution:
+
+```text
+1. metadata.json now records ~/infoscreen/schedule.json as the current runtime contract.
+2. docs/mac-schedule-sync.md must point to ~/infoscreen/schedule.json.
+3. Future path changes require curl + sha256 verification before code/doc changes.
+```
+
+Verification command:
+
+```bash
+cd ~/infoscreen
+curl -s http://127.0.0.1:8765/schedule.json -o /tmp/served_schedule.json
+sha256sum /tmp/served_schedule.json ~/infoscreen/schedule.json
+```
+
+### 2. Mac sync changes were mixed into a Surface branch
+
+Problem:
+
+```text
+Mac schedule-sync files were changed on fix/local-event-one-card, a Surface frontend/local-event branch.
+```
+
+Why this is wrong:
+
+```text
+1. The Mac checkout may not have or need that Surface branch.
+2. Mac schedule export is operationally independent from Surface frontend/crawler work.
+3. It makes deployment instructions unsafe.
+```
+
+Resolution:
+
+```text
+Mac changes should be delivered as a mac-only patch or as local mac/local.env configuration.
+Do not require Mac to checkout a Surface branch.
+```
+
+### 3. Frontend assets became duplicated
+
+Problem:
+
+Current tree contains both:
+
+```text
+surface/web/assets/css/*.css
+surface/web/assets/js/*.js
+surface/web/*.css
+surface/web/*.js
+root-level market_custom.css
+root-level market_custom.js
+```
+
+Resolution plan:
+
+```text
+1. Keep checked-in CSS only in surface/web/assets/css/.
+2. Keep checked-in JS only in surface/web/assets/js/.
+3. Update index.html to reference assets only.
+4. Delete duplicate surface/web/*.css|*.js and root market_custom files in a dedicated cleanup.
+```
+
+### 4. Server was used as a frontend patch layer
+
+Problem:
+
+```text
+serve_infoscreen.py was modified to inject CSS and replace JS version strings.
+```
+
+Why this is wrong:
+
+```text
+1. It hides source-level frontend problems.
+2. It makes the served page different from the checked-in page.
+3. It complicates debugging and violates separation of concerns.
+```
+
+Resolution plan:
+
+```text
+1. Fix source HTML/CSS/JS directly.
+2. Remove CSS injection and script replacement from serve_infoscreen.py.
+3. Keep serve_infoscreen.py limited to HTTP/API/static serving.
+```
+
+### 5. File logging was broken or stopped
+
+Problem:
+
+User reported Surface logs stopped after local files were removed/changed. Audit found existing log files under:
+
+```text
+~/infoscreen/surface/.env/logs/http.log
+~/infoscreen/surface/.env/logs/http.err.log
+```
+
+but they were no longer being written.
+
+Resolution plan:
+
+```text
+1. Restore infoscreen-http.service append logging.
+2. Keep logs under surface/.env/logs/.
+3. Do not remove file logging during unrelated changes.
+```
+
+Expected systemd settings:
+
+```ini
+StandardOutput=append:%h/infoscreen/surface/.env/logs/http.log
+StandardError=append:%h/infoscreen/surface/.env/logs/http.err.log
+```
+
+### 6. Destructive git operations were suggested without runtime backup
+
+Problem:
+
+Commands like `git reset --hard` were suggested while runtime files and logs existed inside the working checkout.
+
+Resolution:
+
+Before destructive operations on Surface:
+
+```bash
+backup="$HOME/infoscreen-runtime-backup-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$backup"
+cp -a schedule.json "$backup/" 2>/dev/null || true
+cp -a surface/.env "$backup/surface-env" 2>/dev/null || true
+```
+
+Do not use `git clean -fd` on a deployed Surface checkout without explicit backup and review.
+
+## Current implementation questions
+
+### Q1. Should schedule runtime remain at repo root?
+
+Current answer:
+
+```text
+Yes, keep ~/infoscreen/schedule.json for now because that is the user-confirmed current target.
+```
+
+Open condition:
+
+```text
+Only change this through a separate migration that updates server, Mac sync, docs, and verification commands together.
+```
+
+### Q2. How should frontend assets be cleaned?
+
+Current answer:
+
+```text
+Canonical target is surface/web/assets/css and surface/web/assets/js.
+```
+
+Pending work:
+
+```text
+1. Check which duplicate files are actually referenced.
+2. Move/merge content if needed.
+3. Update index.html references.
+4. Delete duplicates in one cleanup commit.
+5. Verify browser behavior.
+```
+
+### Q3. Should local event frontend be one-card or compact-list?
+
+Current answer:
+
+```text
+The one-card large layout caused overflow and poor information density.
+The immediate recovery direction is compact rows that show multiple items and keep buttons small.
+```
+
+Pending work:
+
+```text
+Verify actual browser rendering after asset cleanup. Do not keep patching via serve_infoscreen.py.
+```
+
+### Q4. When can the local-events timer be re-enabled?
+
+Current answer:
+
+```text
+Only after extractor output is verified and the timer cannot overwrite manual debugging unexpectedly.
+```
 
 Verification:
 
 ```bash
 python3 surface/search_local_events.py "Punggol Singapore"
-python3 - <<'PY'
-import json
-d=json.load(open('surface/.env/local_event_search_results.json'))
-print(d.get('extractor'))
-print(d.get('source_count'))
-print(d.get('count'))
-for src in d.get('debug_by_source', []):
-    print('\nSOURCE:', src.get('source'))
-    print('cards=', src.get('cards_found'), 'accepted=', src.get('accepted'))
-    print('reasons=', src.get('reason_counts'))
-    print('not_output=', src.get('not_output_preview', [])[:5])
-for x in d.get('results', [])[:30]:
-    print('\nTITLE:', x.get('title'))
-    print('WHEN :', x.get('when'))
-    print('WHERE:', x.get('where'))
-    print('SRC  :', x.get('source_name'))
-    print('URL  :', x.get('url'))
-PY
-```
-
-### 2. Field splitting accuracy
-
-Status:
-
-- v41 improves `when`, `where`, and `summary` splitting.
-- Card line preservation should make field splitting materially better.
-
-Open issue:
-
-- Real rendered cards still need review.
-- Some card layouts may still mix category/title/date/venue in one DOM block.
-
-### 3. Mandai extraction
-
-Status:
-
-- Earlier HTML adapter found `cards: 0` for Mandai.
-
-Open issue:
-
-- Need verify rendered DOM extractor output for Mandai.
-- If rendered DOM still fails, Mandai may need a source-specific DOM selector or JSON extraction path.
-
-### 4. Old source files still present
-
-Status:
-
-- `surface/local_events_engine.py` and `surface/local_events_adapters/` still exist.
-- Main entrypoint no longer uses them.
-
-Open issue:
-
-- Decide whether to remove them after v41 is verified.
-
-Recommendation:
-
-- Keep until rendered DOM path is proven stable.
-- Delete only after confirmation.
-
-### 5. Frontend source cleanup
-
-Status:
-
-- Served HTML is clean because server strips the legacy local-event inline script.
-- Source HTML still contains the legacy block.
-
-Open issue:
-
-- Physical deletion from `surface/web/index.html` remains pending.
-
-### 6. API timeout
-
-Current timeout:
-
-- `/api/local-events/search` POST timeout is 130 seconds.
-
-Open issue:
-
-- Rendered browser extraction may be slower or faster depending on source pages and browser startup time.
-
-Need confirm:
-
-- Actual runtime on Surface.
-- Whether timeout should remain 130 seconds.
-
-### 7. OpenAPI runtime verification
-
-Current state:
-
-- `surface/api_models.py` defines Pydantic schemas.
-- `surface/openapi_spec.py` builds OpenAPI 3.1.
-- `surface/serve_infoscreen.py` exposes `/openapi.json` and `/docs`.
-
-Open issue:
-
-- Need verify on Surface that Pydantic is installed and `/openapi.json` returns generated spec.
-
-Verification:
-
-```bash
-python3 -m pip install --user 'pydantic>=2.0'
-python3 surface/openapi_spec.py | python3 -m json.tool | head -n 80
-curl -s http://127.0.0.1:8765/openapi.json | python3 -m json.tool | head -n 80
-```
-
-## Blockers
-
-### 1. Browser runtime missing
-
-Symptoms:
-
-- local event payload contains `missing_playwright_python_package`
-- local event payload contains `missing_system_chromium`
-- Playwright bundled Chromium install fails with unsupported distro, such as Ubuntu 26.04
-
-Resolution:
-
-```bash
-python3 -m pip install --user playwright
-sudo apt install -y chromium
-# or install Google Chrome and set:
-export INFOSCREEN_CHROMIUM_PATH=/usr/bin/google-chrome
-```
-
-Do not run this on unsupported distros as the only browser solution:
-
-```bash
-python3 -m playwright install chromium
-```
-
-### 2. Pydantic missing
-
-Symptoms:
-
-- `GET /openapi.json` returns `openapi_generation_failed`
-- `python3 surface/openapi_spec.py` fails with `No module named 'pydantic'`
-
-Resolution:
-
-```bash
-python3 -m pip install --user 'pydantic>=2.0'
-```
-
-### 3. Timer overwriting manual output
-
-Symptoms:
-
-- manual run writes expected `extractor`
-- later JSON reverts unexpectedly
-
-Known source:
-
-```text
-infoscreen-local-events.timer -> infoscreen-local-events.service
-```
-
-Resolution:
-
-```bash
-systemctl --user stop infoscreen-local-events.timer
-systemctl --user disable infoscreen-local-events.timer
-systemctl --user stop infoscreen-local-events.service
-systemctl --user daemon-reload
-```
-
-Verification:
-
-```bash
+python3 -m json.tool <runtime-local-event-json> | head -n 120
 systemctl --user list-timers --all | grep -i infoscreen || true
 ```
 
-### 4. Browser cache or old kiosk process
+### Q5. Should OCR/VLM be added for event cards?
 
-Symptoms:
+Current answer:
 
-- served code has changed but UI still behaves like old frontend
-- next/previous click still switches to old `3/3` grouping
-
-Resolution:
-
-```bash
-systemctl --user restart infoscreen-http.service
-pkill -f chromium || true
+```text
+No default OCR/VLM. Optional OCR can be considered later only behind explicit configuration.
 ```
 
-Verification:
+### Q6. Where should systemd files live?
 
-```bash
-curl -s http://127.0.0.1:8765/ | grep -n "local-event-inline-script" || true
-curl -s http://127.0.0.1:8765/calendar_board.js | grep -n "MutationObserver\|watchdog\|external-local-events" || true
+Current answer:
+
+```text
+deploy/systemd/user/ is canonical.
 ```
 
-Expected:
+Pending work:
 
-- no legacy inline script in served HTML
-- no watchdog/MutationObserver hack in `calendar_board.js`
+```text
+Do not extend surface/systemd/. Migrate or remove legacy systemd locations in cleanup.
+```
+
+## Immediate resolution plan
+
+```text
+1. Finish documentation reset: metadata.json, README.md, api-spec, design, questions.
+2. Add/repair .gitignore for runtime files, logs, pycache, and schedule.json.
+3. Restore HTTP file logging in deploy/systemd/user/infoscreen-http.service.
+4. Normalize frontend assets to surface/web/assets/.
+5. Remove serve_infoscreen.py frontend patching.
+6. Restore Mac schedule docs/scripts to target ~/infoscreen/schedule.json.
+7. Verify /schedule.json, HTTP logs, and frontend rendering on Surface.
+8. Continue local event extraction quality work only after repo structure is stable.
+```
 
 ## Do not claim yet
 
-- Do not claim final extraction accuracy is solved until real v41 output is reviewed.
-- Do not claim ACM quality is solved until ACM `debug_by_source` proves more cards are found and accepted correctly.
-- Do not claim the legacy inline script is physically deleted from `index.html`; currently it is stripped at serve time.
-- Do not claim the timer can be re-enabled until the extractor output is verified.
-- Do not claim OCR/VLM support exists; only debug screenshots exist.
-- Do not claim Mandai is fixed until rendered DOM output proves it.
-- Do not claim OpenAPI is working on Surface until `/openapi.json` is verified after installing Pydantic.
+Do not claim any of these until verified on the Surface host:
+
+```text
+1. schedule sync is restored
+2. HTTP logs are restored
+3. frontend layout is fixed
+4. local event extraction quality is fixed
+5. duplicate assets are removed
+6. serve_infoscreen.py is clean
+7. docs are fully consistent beyond this documentation reset
+```
