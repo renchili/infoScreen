@@ -337,16 +337,25 @@
     render();
   }
 
+  function claim(id) {
+    var el = byId(id);
+    if (!el || !el.parentNode) return el;
+    var clone = el.cloneNode(true);
+    el.parentNode.replaceChild(clone, el);
+    return clone;
+  }
+
   function bind() {
-    var openButton = byId("localEventLocationButton");
-    var cancelButton = byId("localEventCancelButton");
-    var searchButton = byId("localEventSearchButton");
-    var prevButton = byId("localEventPrevButton");
-    var nextButton = byId("localEventNextButton");
+    var openButton = claim("localEventLocationButton");
+    var cancelButton = claim("localEventCancelButton");
+    var searchButton = claim("localEventSearchButton");
+    var prevButton = claim("localEventPrevButton");
+    var nextButton = claim("localEventNextButton");
+    var input = claim("localEventLocationInput");
     var modal = byId("localEventModal");
-    var input = byId("localEventLocationInput");
     if (openButton) openButton.addEventListener("click", function (e) {
       e.preventDefault();
+      e.stopImmediatePropagation();
       if (modal) modal.hidden = false;
       if (input) {
         input.value = clean(input.value) || "Punggol Singapore";
@@ -355,6 +364,7 @@
     });
     if (cancelButton) cancelButton.addEventListener("click", function (e) {
       e.preventDefault();
+      e.stopImmediatePropagation();
       if (modal) modal.hidden = true;
     });
     if (searchButton) searchButton.addEventListener("click", searchLocalEvents);
@@ -362,12 +372,8 @@
       if (e.key === "Enter") searchLocalEvents(e);
       if (e.key === "Escape" && modal) modal.hidden = true;
     });
-    if (prevButton) prevButton.addEventListener("click", function (e) { e.preventDefault(); movePage(-1); });
-    if (nextButton) nextButton.addEventListener("click", function (e) { e.preventDefault(); movePage(1); });
-    document.addEventListener("keydown", function (e) {
-      if (e.key === "ArrowLeft") movePage(-1);
-      if (e.key === "ArrowRight") movePage(1);
-    });
+    if (prevButton) prevButton.addEventListener("click", function (e) { e.preventDefault(); e.stopImmediatePropagation(); movePage(-1); });
+    if (nextButton) nextButton.addEventListener("click", function (e) { e.preventDefault(); e.stopImmediatePropagation(); movePage(1); });
   }
 
   window.__localEventReload = loadLocalEvents;
@@ -381,4 +387,159 @@
     bind();
     loadLocalEvents();
   }
+})();
+
+(function () {
+  function byId(id) { return document.getElementById(id); }
+  function clean(value) { return String(value == null ? "" : value).replace(/\s+/g, " ").trim(); }
+  function esc(value) {
+    return clean(value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  function installMarketStyle() {
+    if (document.getElementById("market-config-style")) return;
+    var style = document.createElement("style");
+    style.id = "market-config-style";
+    style.textContent = [
+      ".box[data-title='market'] .market-toolbar{position:absolute;top:6px;right:8px;display:flex;gap:6px;z-index:8;background:rgba(5,6,6,.9);border-radius:999px;}",
+      ".box[data-title='market'] .market-config-button{appearance:none;-webkit-appearance:none;width:24px;height:24px;border:1px solid #3a3f3d;border-radius:999px;background:#050606;color:#8cecff;font:950 12px/1 inherit;display:grid;place-items:center;cursor:pointer;padding:0;}",
+      ".market-config-modal[hidden]{display:none!important;}",
+      ".market-config-modal{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.72);display:grid;place-items:center;}",
+      ".market-config-card{width:min(420px,calc(100vw - 28px));background:#090b0c;border:1px solid #3a3f3d;padding:16px;color:#d7ddd9;box-shadow:0 18px 80px rgba(0,0,0,.7);}",
+      ".market-config-title{color:#ffe08a;font-size:14px;font-weight:950;letter-spacing:.08em;text-transform:uppercase;margin-bottom:10px;}",
+      "#marketSymbolInput{width:100%;height:82px;background:#050606;color:#d7ddd9;border:1px solid #3a3f3d;padding:10px;font:900 14px/1.4 inherit;resize:none;outline:none;}",
+      ".market-config-hint{color:#7d8782;font-size:11px;line-height:1.35;margin-top:8px;}",
+      "#marketConfigError{min-height:18px;color:#ff8c8c;font-size:12px;font-weight:800;margin-top:8px;}",
+      ".market-config-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px;}",
+      ".market-config-actions button{border:1px solid #3a3f3d;background:#050606;color:#d7ddd9;padding:7px 11px;font:900 12px/1 inherit;cursor:pointer;}",
+      ".market-config-actions button:last-child{background:#ffe08a;color:#050606;border-color:#ffe08a;}"
+    ].join("\n");
+    document.head.appendChild(style);
+  }
+
+  function ensureMarketControls() {
+    installMarketStyle();
+    var box = document.querySelector(".box[data-title='market']");
+    if (!box || byId("marketConfigButton")) return;
+    var toolbar = document.createElement("div");
+    toolbar.className = "market-toolbar";
+    toolbar.innerHTML = '<button id="marketConfigButton" class="market-config-button" type="button" title="Configure stocks" aria-label="Configure stocks">⚙</button><button id="marketRefreshButton" class="market-config-button" type="button" title="Refresh market" aria-label="Refresh market">↻</button>';
+    box.appendChild(toolbar);
+
+    var modal = document.createElement("div");
+    modal.id = "marketConfigModal";
+    modal.className = "market-config-modal";
+    modal.hidden = true;
+    modal.innerHTML = [
+      '<div class="market-config-card" role="dialog" aria-modal="true" aria-label="Configure market symbols">',
+      '<div class="market-config-title">Market symbols</div>',
+      '<textarea id="marketSymbolInput" spellcheck="false" placeholder="AAPL, NVDA, MSFT, TSLA"></textarea>',
+      '<div class="market-config-hint">Comma / space / newline separated. Saved to surface/.env/market_config.json.</div>',
+      '<div id="marketConfigError"></div>',
+      '<div class="market-config-actions"><button id="marketConfigCancelButton" type="button">Cancel</button><button id="marketConfigSaveButton" type="button">Save & Refresh</button></div>',
+      '</div>'
+    ].join("");
+    document.body.appendChild(modal);
+  }
+
+  async function loadConfigIntoModal() {
+    var input = byId("marketSymbolInput");
+    var err = byId("marketConfigError");
+    if (err) err.textContent = "";
+    try {
+      var resp = await fetch("/api/market-config?_=" + Date.now(), { cache: "no-store" });
+      var data = await resp.json();
+      var symbols = Array.isArray(data.symbols) ? data.symbols : [];
+      if (input) input.value = symbols.join(", ");
+    } catch (e) {
+      if (err) err.textContent = "Cannot load current symbols.";
+    }
+  }
+
+  function parseSymbols(value) {
+    var out = [];
+    clean(value).split(/[\s,;]+/).forEach(function (raw) {
+      var symbol = raw.trim().toUpperCase();
+      if (symbol && out.indexOf(symbol) < 0) out.push(symbol);
+    });
+    return out.slice(0, 12);
+  }
+
+  async function saveAndRefresh() {
+    var input = byId("marketSymbolInput");
+    var err = byId("marketConfigError");
+    var save = byId("marketConfigSaveButton");
+    var symbols = parseSymbols(input && input.value);
+    if (!symbols.length) {
+      if (err) err.textContent = "Enter at least one symbol.";
+      return;
+    }
+    if (save) save.disabled = true;
+    if (err) err.textContent = "Saving symbols…";
+    try {
+      var resp = await fetch("/api/market-config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbols: symbols })
+      });
+      var data = await resp.json();
+      if (!resp.ok || data.ok === false) throw new Error(data.error || ("HTTP " + resp.status));
+      if (err) err.textContent = "Refreshing market data…";
+      await fetch("/api/market-refresh", { method: "POST" });
+      var modal = byId("marketConfigModal");
+      if (modal) modal.hidden = true;
+      if (window.loadMarket) window.loadMarket();
+      if (window.loadTopMarketTape) window.loadTopMarketTape();
+    } catch (e) {
+      if (err) err.textContent = "Save failed: " + e.message;
+    } finally {
+      if (save) save.disabled = false;
+    }
+  }
+
+  async function refreshMarketNow() {
+    var button = byId("marketRefreshButton");
+    if (button) button.disabled = true;
+    try {
+      await fetch("/api/market-refresh", { method: "POST" });
+      if (window.loadMarket) window.loadMarket();
+      if (window.loadTopMarketTape) window.loadTopMarketTape();
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
+  function bindMarketControls() {
+    ensureMarketControls();
+    var config = byId("marketConfigButton");
+    var refresh = byId("marketRefreshButton");
+    var cancel = byId("marketConfigCancelButton");
+    var save = byId("marketConfigSaveButton");
+    var modal = byId("marketConfigModal");
+    if (config) config.addEventListener("click", function (e) {
+      e.preventDefault();
+      if (modal) modal.hidden = false;
+      loadConfigIntoModal();
+      setTimeout(function () { var input = byId("marketSymbolInput"); if (input) input.focus(); }, 20);
+    });
+    if (refresh) refresh.addEventListener("click", function (e) { e.preventDefault(); refreshMarketNow(); });
+    if (cancel) cancel.addEventListener("click", function (e) { e.preventDefault(); if (modal) modal.hidden = true; });
+    if (save) save.addEventListener("click", function (e) { e.preventDefault(); saveAndRefresh(); });
+    if (modal) modal.addEventListener("click", function (e) { if (e.target === modal) modal.hidden = true; });
+  }
+
+  window.__marketConfigOpen = function () {
+    ensureMarketControls();
+    var modal = byId("marketConfigModal");
+    if (modal) modal.hidden = false;
+    loadConfigIntoModal();
+  };
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", bindMarketControls);
+  else bindMarketControls();
 })();
