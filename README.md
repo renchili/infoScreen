@@ -1,265 +1,390 @@
 # InfoScreen
 
-InfoScreen is a local dashboard for an always-on display. It shows schedule items, stock watchlist quotes, local event discovery, weather, photos, event streams, and system status.
+InfoScreen is a local kiosk dashboard for an always-on Surface/Ubuntu display.
 
-Runtime data is intentionally excluded from git.
+It shows:
 
-## Architecture
+```text
+calendar schedule
+market watchlist
+weather
+event/news stream
+local official events
+photo wall
+runtime/sync status
+```
 
-Mac side:
+The project uses local files, local HTTP, and user-level systemd units. Runtime data is intentionally local and should not be committed.
 
-    mac/export.py
-    mac/sync_schedule.sh
-    launchd timer
-    schedule.json push over SSH
+## Current required reading
 
-Surface / Ubuntu side:
+Before changing the project, read these files:
 
-    surface/serve_infoscreen.py
-    surface/fetch_live_data.py
-    surface/fetch_event_stream.py
-    surface/search_local_events.py
-    surface/build_photos_json.py
-    user systemd services
-    dashboard on port 8765
+```text
+metadata.json                  project requirements, constraints, and cleanup plan
+docs/project-structure.md      canonical structure and development-boundary rules
+docs/design.md                 whole-project design
+docs/api-spec.md               HTTP API interaction contract
+docs/questions.md              implementation issues and resolution log
+```
 
-Browser side:
+## Host roles
 
-    index.html
-    calendar_board.js
-    calendar_board.css
-    market_custom.js
-    market_custom.css
-    local_events.js
-    local_events.css
+### Surface / Ubuntu
 
-Data flow:
+The Surface host runs:
 
-    Mac Calendar
-      -> mac/export.py
-      -> schedule.json
-      -> pushed to Surface / Ubuntu
-      -> calendar_board.js renders it
+```text
+surface/serve_infoscreen.py
+surface/fetch_live_data.py
+surface/fetch_event_stream.py
+surface/search_local_events.py
+user systemd services/timers
+dashboard on port 8765
+```
 
-    Browser market controls
-      -> /api/market-config
-      -> market_config.json
-      -> surface/fetch_live_data.py
-      -> market.json
-      -> index.html renders it
+### macOS
 
-    Local event scan
-      -> official_source_registry.json
-      -> surface/search_local_events.py
-      -> local_event_search_results.json
-      -> local_events.js / index.html renders it
+The Mac host only exports Apple Calendar and pushes `schedule.json` to Surface.
 
-## Repository Layout
+The Mac checkout must not switch to a Surface frontend/crawler branch just to run schedule sync.
 
-Root directory is for UI assets, runtime manifest examples, repository config, and docs. Runtime Python entrypoints live under `surface/`; Mac-only scripts live under `mac/`; CI and setup helpers live under `scripts/` and `deploy/`.
+## Runtime files
 
-    surface/              Surface / Ubuntu runtime Python scripts
-    mac/                  macOS calendar export and sync scripts
-    deploy/systemd/user/  checked-in user systemd unit templates
-    deploy/scripts/       deploy/install helpers
-    scripts/ci/           repo quality checks
-    docs/                 project and feature docs
-    skills/               agent workflow instructions
+Current verified runtime files:
 
-Do not add new root-level Python scripts. Add runtime scripts under `surface/`, Mac scripts under `mac/`, repo automation under `scripts/`, and one-off developer tools under `tools/`.
+```text
+~/infoscreen/schedule.json
+~/infoscreen/surface/.env/logs/http.log
+~/infoscreen/surface/.env/logs/http.err.log
+```
 
-## Quick Start
+Do not change these paths without verifying the running Surface host first.
 
-Clone the repository on the Surface / Ubuntu host:
+Schedule verification:
 
-    git clone <repo-url> infoscreen
-    cd infoscreen
+```bash
+cd ~/infoscreen
+curl -s http://127.0.0.1:8765/schedule.json -o /tmp/served_schedule.json
+sha256sum /tmp/served_schedule.json ~/infoscreen/schedule.json
+head -n 20 /tmp/served_schedule.json
+```
 
-Install user services:
+## Repository layout
 
-    bash deploy/scripts/install-user-systemd.sh
+Target layout:
+
+```text
+deploy/                         systemd templates and install scripts
+docs/                           documentation
+mac/                            macOS calendar export/sync only
+sample/                         sample JSON fixtures
+scripts/                        repo/dev/status scripts
+surface/                        Surface app implementation
+surface/web/index.html          dashboard shell
+surface/web/assets/css/         checked-in CSS
+surface/web/assets/js/          checked-in browser JS
+metadata.json                   project requirements and plan
+schedule.json                   local runtime calendar file, not source
+```
+
+Checked-in frontend assets should live only under:
+
+```text
+surface/web/assets/css/
+surface/web/assets/js/
+```
+
+Duplicate root-level or `surface/web/*.js|*.css` files are cleanup debt.
+
+## Install on Surface / Ubuntu
+
+Clone or update the repository:
+
+```bash
+cd ~
+git clone <repo-url> infoscreen
+cd ~/infoscreen
+```
+
+Install or update user systemd units:
+
+```bash
+bash deploy/scripts/install-user-systemd.sh
+```
+
+Start/restart the HTTP service:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now infoscreen-http.service
+systemctl --user restart infoscreen-http.service
+```
 
 Open the dashboard:
 
-    http://<surface-host>:8765/index.html
+```text
+http://<surface-host>:8765/
+http://127.0.0.1:8765/
+```
 
-## Surface / Ubuntu Services
+## Start without systemd
 
-The Surface / Ubuntu host owns the HTTP server and live-data refresh jobs.
+For local debugging:
 
-Expected services:
+```bash
+cd ~/infoscreen
+python3 surface/serve_infoscreen.py
+```
 
-    infoscreen-http.service
-    infoscreen-live-data.timer
-    infoscreen-event-stream.timer
-    infoscreen-local-events.timer
+Then open:
 
-Check status:
+```text
+http://127.0.0.1:8765/
+```
 
-    systemctl --user status infoscreen-http.service --no-pager -l
-    systemctl --user list-timers --all --no-pager | grep infoscreen
+## Surface service status
 
-View logs:
+Check services and timers:
 
-    journalctl --user -u infoscreen-http.service -f
-    tail -f logs/http.log logs/http.err.log
+```bash
+systemctl --user status infoscreen-http.service --no-pager -l
+systemctl --user list-timers --all | grep -i infoscreen || true
+systemctl --user list-units --all | grep -i infoscreen || true
+```
 
-The Surface / Ubuntu host must not generate calendar data. It only receives schedule.json from the Mac.
+Check HTTP logs:
 
-## Mac Schedule Sync
+```bash
+tail -n 80 ~/infoscreen/surface/.env/logs/http.log
+tail -n 80 ~/infoscreen/surface/.env/logs/http.err.log
+```
 
-The Mac exports calendar data and pushes schedule.json to the Surface / Ubuntu host.
+The HTTP service must keep writing those file logs unless a documented migration replaces them.
 
-Create local config:
+## Calendar schedule sync from Mac
 
-    cp mac/local.env.example mac/local.env
+The Mac exports calendar data and pushes `schedule.json` to Surface.
 
-Edit mac/local.env locally:
+Current Surface target:
 
-    SURFACE_USER="<surface-ssh-user>"
-    SURFACE_HOST="<surface-host-or-ip>"
-    REMOTE_SCHEDULE_JSON="<remote-repo-path>/schedule.json"
-    PYTHON_BIN="<python-with-eventkit>"
+```text
+~/infoscreen/schedule.json
+```
 
-Install launchd:
+On Mac, configure `mac/local.env` or run setup with an explicit remote path:
 
-    bash mac/scripts/install-launchd-schedule-sync.sh
+```bash
+cd /path/to/infoScreen
+bash mac/scripts/setup-schedule-sync.sh \
+  --host "<surface-host>" \
+  --user "<surface-user>" \
+  --remote-path "~/infoscreen/schedule.json"
+```
 
-Check status:
+Manual sync from Mac:
 
-    launchctl print gui/$(id -u)/com.renchili.infoscreen.schedule-sync
+```bash
+bash mac/sync_schedule.sh
+```
 
-Check logs:
+Verify on Surface:
 
-    tail -n 80 ~/Library/Logs/infoscreen-schedule-sync.out.log
-    tail -n 80 ~/Library/Logs/infoscreen-schedule-sync.err.log
+```bash
+cd ~/infoscreen
+stat schedule.json
+curl -s http://127.0.0.1:8765/schedule.json | python3 -m json.tool | head -n 40
+```
 
-## Market Watchlist
+## Market and weather refresh
 
-The watchlist is stored in market_config.json at runtime.
+Manual refresh:
 
-Use the dashboard controls:
+```bash
+cd ~/infoscreen
+python3 surface/fetch_live_data.py
+```
 
-    SAVE
-    REFRESH
+API refresh:
 
-Or create a local config from the example:
+```bash
+curl -s -X POST http://127.0.0.1:8765/api/market-refresh | python3 -m json.tool | head -n 80
+```
 
-    cp examples/market_config.example.json market_config.json
+Market config:
 
-Refresh manually:
+```bash
+curl -s http://127.0.0.1:8765/api/market-config | python3 -m json.tool
 
-    python3 surface/fetch_live_data.py
+curl -s -X POST http://127.0.0.1:8765/api/market-config \
+  -H 'Content-Type: application/json' \
+  -d '{"symbols":["AAPL","NVDA","MSFT"]}' | python3 -m json.tool
+```
 
-market.json is runtime data and must not be committed.
+## Local official events
 
-## Local Events
+Manual search:
 
-Local event discovery is handled by:
+```bash
+cd ~/infoscreen
+python3 surface/search_local_events.py "Punggol Singapore"
+```
 
-    official_source_registry.json
-    surface/search_local_events.py
-    local_event_search_results.json
+API search:
 
-Run parser self-test:
+```bash
+curl -s -X POST http://127.0.0.1:8765/api/local-events/search \
+  -H 'Content-Type: application/json' \
+  -d '{"location":"Punggol Singapore"}' | python3 -m json.tool | head -n 120
+```
 
-    python3 surface/search_local_events.py --self-test
+Read current results:
 
-Run manually:
+```bash
+curl -s http://127.0.0.1:8765/api/local-events/search | python3 -m json.tool | head -n 120
+```
 
-    python3 surface/search_local_events.py "<location>"
+Local event source rules:
 
-Refresh through API:
+```text
+official_source_registry.json stores official homepage/domain identity only
+event_sources.json stores verified event listing entrypoints
+no third-party aggregators
+no guessed domains or guessed /events paths
+no hidden fallback to old crawler or fake data
+```
 
-    curl -X POST http://127.0.0.1:8765/api/local-events/search -H 'Content-Type: application/json' -d '{"location":"<location>"}'
+## API docs
 
-local_event_search_results.json is runtime data and must not be committed.
+OpenAPI JSON:
 
-See `docs/local-events.md` for source and extractor rules.
+```bash
+curl -s http://127.0.0.1:8765/openapi.json | python3 -m json.tool | head -n 80
+```
 
-## Calendar Board
+Swagger UI:
 
-The calendar board is rendered by:
+```text
+http://127.0.0.1:8765/docs
+```
 
-    calendar_board.js
-    calendar_board.css
+If Pydantic is missing:
 
-It reads schedule.json generated by the Mac sync process.
+```bash
+python3 -m pip install --user 'pydantic>=2.0'
+```
 
-## Project Docs
+## Runtime backup before destructive git operations
 
-    docs/project-structure.md
-    docs/local-events.md
+On the deployed Surface host, always back up runtime files before running commands such as `git reset --hard`, branch replacement, file deletion, or any `git clean` command.
 
-These docs record repository layout, runtime ownership, generated artifacts, local-event extraction rules, and validation commands.
+```bash
+cd ~/infoscreen
+backup="$HOME/infoscreen-runtime-backup-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$backup"
+cp -a schedule.json "$backup/" 2>/dev/null || true
+cp -a surface/.env "$backup/surface-env" 2>/dev/null || true
+echo "$backup"
+```
 
-## Privacy
+Do not run `git clean -fd` on a deployed Surface checkout unless the backup has been made and reviewed.
 
-Do not commit runtime data, logs, backups, local env files, SSH keys, personal calendar exports, personal photos, private IP addresses, personal email addresses, absolute home paths, passwords, tokens, or API keys.
+## Developer checks
 
-Excluded runtime files include:
+Python syntax:
 
-    schedule.json
-    market.json
-    market_config.json
-    weather.json
-    event_stream.json
-    local_event_search_results.json
-    photos/
-    public_photos/
-    logs/
-    *.bak*
+```bash
+python3 -m py_compile surface/*.py mac/*.py scripts/ci/*.py
+```
 
-## CI
+Local event self-test:
 
-Run locally:
+```bash
+python3 surface/search_local_events.py --self-test
+```
 
-    python3 scripts/ci/check_repo.py --suite all --scope repository
+Repository checks if available:
 
-Changed-file check:
-
-    python3 scripts/ci/check_repo.py --suite all --scope changed --base main
-
-GitHub Actions runs the same check on push and pull request.
-
-Checks include:
-
-    Python syntax
-    JavaScript syntax
-    JSON example validity
-    README required sections
-    privacy leak scan
+```bash
+python3 scripts/ci/check_repo.py --suite all --scope repository
+```
 
 ## Troubleshooting
 
-API returns 501 or local events do not refresh:
+### Dashboard does not load
 
-    systemctl --user restart infoscreen-http.service
-    curl -i http://127.0.0.1:8765/api/market-config
+```bash
+systemctl --user status infoscreen-http.service --no-pager -l
+journalctl --user -u infoscreen-http.service -n 120 --no-pager
+tail -n 120 ~/infoscreen/surface/.env/logs/http.err.log
+```
 
-Market data is stale:
+### Schedule is stale
 
-    python3 surface/fetch_live_data.py
-    python3 -m json.tool market.json | head
-    journalctl --user -u infoscreen-live-data.service -n 120 --no-pager
+```bash
+cd ~/infoscreen
+stat schedule.json
+curl -s http://127.0.0.1:8765/schedule.json -o /tmp/served_schedule.json
+sha256sum /tmp/served_schedule.json schedule.json
+```
 
-Schedule is empty:
+Then check Mac schedule-sync logs on the Mac.
 
-    Check Mac launchd logs first.
-    Then check schedule.json on the Surface / Ubuntu host.
+### Market or weather is stale
 
-Local events are poor quality:
+```bash
+python3 surface/fetch_live_data.py
+curl -s http://127.0.0.1:8765/weather.json | python3 -m json.tool | head -n 40
+curl -s http://127.0.0.1:8765/market.json | python3 -m json.tool | head -n 80
+journalctl --user -u infoscreen-live-data.service -n 120 --no-pager
+```
 
-    python3 surface/search_local_events.py --self-test
-    python3 surface/search_local_events.py "<location>"
-    python3 -m json.tool local_event_search_results.json | head -n 120
+### Local events are stale or poor quality
 
-## Backup and Rollback
+```bash
+python3 surface/search_local_events.py "Punggol Singapore"
+curl -s http://127.0.0.1:8765/api/local-events/search | python3 -m json.tool | head -n 160
+```
 
-Create a backup tag:
+Do not claim extraction quality is fixed until `debug_by_source`, accepted/rejected reasons, and rendered results are reviewed.
 
-    git tag "backup-$(date +%Y%m%d-%H%M%S)"
+### Frontend still looks old
 
-Rollback to a tag:
+```bash
+systemctl --user restart infoscreen-http.service
+pkill -f chromium || true
+curl -s http://127.0.0.1:8765/ | grep -n "calendar_board\|local_events\|assets/" | head -n 40
+```
 
-    git checkout <tag>
+## Privacy and git hygiene
+
+Do not commit:
+
+```text
+schedule.json
+surface/.env/
+surface/.env/logs/
+*.log
+__pycache__/
+*.pyc
+local env files
+SSH keys
+tokens
+personal calendar exports
+personal photos
+private IP addresses
+```
+
+## Current cleanup warning
+
+This branch still has known cleanup debt:
+
+```text
+duplicate frontend CSS/JS locations
+serve_infoscreen.py frontend patching from previous work
+schedule path changes that need reconciliation
+HTTP log writing needs verification
+Mac schedule-sync changes mixed into a Surface branch
+```
+
+Do not treat this branch as clean until the cleanup plan in `metadata.json` and `docs/questions.md` is completed.
