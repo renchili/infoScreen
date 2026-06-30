@@ -21,12 +21,13 @@ The project uses local files, local HTTP, and user-level systemd units. Runtime 
 Before changing the project, read these files:
 
 ```text
-metadata.json                  project requirements, constraints, and cleanup plan
-docs/project-structure.md      canonical structure and development-boundary rules
-docs/design.md                 whole-project design
-docs/api-spec.md               HTTP API interaction contract
-docs/questions.md              implementation issues and resolution log
+metadata.json            project requirements, constraints, and cleanup plan
+docs/design.md           whole-project design
+docs/api-spec.md         HTTP API interaction contract
+docs/questions.md        implementation issues and resolution log
 ```
+
+No other `docs/*.md` files are part of the active documentation set.
 
 ## Host roles
 
@@ -76,7 +77,7 @@ Target layout:
 
 ```text
 deploy/                         systemd templates and install scripts
-docs/                           documentation
+docs/                           only api-spec.md, design.md, questions.md
 mac/                            macOS calendar export/sync only
 sample/                         sample JSON fixtures
 scripts/                        repo/dev/status scripts
