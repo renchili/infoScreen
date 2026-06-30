@@ -234,6 +234,29 @@ CARD_JS = r"""
     return urls;
   }
 
+  function sameDomainUrls(el) {
+    const urls = [];
+    for (const a of Array.from(el.querySelectorAll("a[href]"))) {
+      let abs = "";
+      try { abs = new URL(a.getAttribute("href"), document.location.href).href; } catch { continue; }
+      if (sameDomain(abs) && !urls.includes(abs)) urls.push(abs);
+    }
+    return urls;
+  }
+
+  function textHash(text) {
+    let h = 2166136261;
+    for (let i = 0; i < text.length; i++) {
+      h ^= text.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return (h >>> 0).toString(16);
+  }
+
+  function hasDateText(text) {
+    return /\b20\d{2}\b|\b\d{1,2}\s+(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b/i.test(text);
+  }
+
   function scoreContainer(el, anchor) {
     if (!el || !visible(el)) return -999;
     const r = el.getBoundingClientRect();
@@ -243,10 +266,10 @@ CARD_JS = r"""
     let score = 0;
     const attrs = oneLine([el.className, el.id, el.getAttribute("role"), el.getAttribute("aria-label")].join(" "));
     const detailCount = detailUrls(el).length;
-    if (/\b(card|tile|item|event|programme|program|exhibition|listing|result)\b/i.test(attrs)) score += 45;
+    if (/\b(card|tile|item|event|programme|program|exhibition|listing|result|views-row)\b/i.test(attrs)) score += 45;
     if (/^(ARTICLE|LI)$/i.test(el.tagName)) score += 35;
     if (el.querySelector("h1,h2,h3,h4")) score += 25;
-    if (/\b20\d{2}\b|\b\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)/i.test(text)) score += 55;
+    if (hasDateText(text)) score += 55;
     if (/\b\d{1,2}(:|\.)\d{2}\s*(am|pm)?\b|\b\d{1,2}\s*(am|pm)\b|daily|selected dates/i.test(text)) score += 10;
     if (lines.length >= 3) score += 16;
     if (detailCount === 1) score += 35;
@@ -263,39 +286,34 @@ CARD_JS = r"""
     for (let depth = 0; el && depth < 10; depth++, el = el.parentElement) {
       candidates.push(el);
     }
-    const closest = anchor.closest("article, li, [class*='card' i], [class*='tile' i], [class*='event' i], [class*='programme' i], [class*='program' i], [class*='exhibition' i], [class*='listing' i], [class*='result' i]");
+    const closest = anchor.closest("article, li, [class*='card' i], [class*='tile' i], [class*='event' i], [class*='programme' i], [class*='program' i], [class*='exhibition' i], [class*='listing' i], [class*='result' i], [class*='views-row' i]");
     if (closest) candidates.push(closest);
     candidates.sort((a, b) => scoreContainer(b, anchor) - scoreContainer(a, anchor));
     const singleDetail = candidates.find(el => detailUrls(el).length === 1 && scoreContainer(el, anchor) > -999);
     return singleDetail || candidates[0] || anchor;
   }
 
-  const out = [];
-  const seen = new Set();
-  const anchors = Array.from(document.querySelectorAll("a[href]")).filter(a => visible(a));
+  function chosenUrl(el, text) {
+    const details = detailUrls(el);
+    if (details.length) return details[0];
+    const same = sameDomainUrls(el);
+    if (same.length) return same[0];
+    return document.location.href.split('#')[0] + '#infoscreen-' + textHash(text.slice(0, 600));
+  }
 
-  for (const a of anchors) {
-    const abs = new URL(a.getAttribute("href"), document.location.href).href;
-    if (!sameDomain(abs) || pathRole(abs) !== "detail") continue;
-
-    const card = bestCard(a);
-    const r = card.getBoundingClientRect();
-    const lines = textLines(card);
+  function cardPayload(el, url, linkText, fallback) {
+    const r = el.getBoundingClientRect();
+    const lines = textLines(el);
     const text = lines.join("\n");
-    const headings = Array.from(card.querySelectorAll("h1,h2,h3,h4")).map(h => oneLine(h.innerText || h.textContent)).filter(Boolean);
-    const imgAlts = Array.from(card.querySelectorAll("img[alt]")).map(img => oneLine(img.getAttribute("alt"))).filter(Boolean);
-    const linkText = oneLine(a.innerText || a.textContent || a.getAttribute("aria-label") || "");
-    const cardDetailUrls = detailUrls(card);
-    const key = abs + "\n" + text.slice(0, 500);
-    if (seen.has(key)) continue;
-    seen.add(key);
-
-    const id = `${sourceId}-${pageIndex}-${out.length}-${Math.random().toString(36).slice(2)}`;
-    card.setAttribute("data-infoscreen-card-id", id);
-    out.push({
+    const headings = Array.from(el.querySelectorAll("h1,h2,h3,h4")).map(h => oneLine(h.innerText || h.textContent)).filter(Boolean);
+    const imgAlts = Array.from(el.querySelectorAll("img[alt]")).map(img => oneLine(img.getAttribute("alt"))).filter(Boolean);
+    const cardDetailUrls = detailUrls(el);
+    const id = `${sourceId}-${pageIndex}-${textHash(url + text.slice(0, 500))}`;
+    el.setAttribute("data-infoscreen-card-id", id);
+    return {
       id,
-      url: abs,
-      link_text: linkText,
+      url,
+      link_text: linkText || "",
       headings,
       image_alts: imgAlts,
       text,
@@ -305,10 +323,67 @@ CARD_JS = r"""
       page_index: pageIndex,
       page_url: document.location.href,
       rect: {x: r.x, y: r.y, width: r.width, height: r.height},
-      role: pathRole(abs)
-    });
+      role: pathRole(url),
+      fallback_dom_card: Boolean(fallback)
+    };
+  }
+
+  function likelyDomCard(el) {
+    if (!el || !visible(el)) return false;
+    const r = el.getBoundingClientRect();
+    if (r.height > 900 || r.width < 120) return false;
+    const lines = textLines(el);
+    const text = lines.join(" ");
+    if (text.length < 25 || text.length > 1800 || lines.length < 2) return false;
+    if (!hasDateText(text)) return false;
+    const attrs = oneLine([el.className, el.id, el.getAttribute("role"), el.getAttribute("aria-label")].join(" "));
+    if (/\b(filter|breadcrumb|pagination|pager|header|footer|nav|menu|modal|cookie|newsletter|search)\b/i.test(attrs)) return false;
+    if (/^(HEADER|FOOTER|NAV|FORM|SELECT|OPTION)$/i.test(el.tagName)) return false;
+    const childCards = Array.from(el.querySelectorAll("article, li, [class*='card' i], [class*='tile' i], [class*='event' i], [class*='programme' i], [class*='program' i], [class*='exhibition' i], [class*='listing' i], [class*='result' i], [class*='views-row' i]")).filter(child => child !== el && visible(child) && hasDateText(textLines(child).join(' ')));
+    if (childCards.length >= 2) return false;
+    return true;
+  }
+
+  const out = [];
+  const seen = new Set();
+  const anchors = Array.from(document.querySelectorAll("a[href]")).filter(a => visible(a));
+
+  function push(el, url, linkText, fallback) {
+    if (!el || out.length >= maxCards) return;
+    const lines = textLines(el);
+    const text = lines.join("\n");
+    const key = (url || "") + "\n" + text.slice(0, 500);
+    if (!text.trim() || seen.has(key)) return;
+    seen.add(key);
+    out.push(cardPayload(el, url || chosenUrl(el, text), linkText, fallback));
+  }
+
+  for (const a of anchors) {
+    const abs = new URL(a.getAttribute("href"), document.location.href).href;
+    if (!sameDomain(abs) || pathRole(abs) !== "detail") continue;
+    const card = bestCard(a);
+    const linkText = oneLine(a.innerText || a.textContent || a.getAttribute("aria-label") || "");
+    push(card, abs, linkText, false);
     if (out.length >= maxCards) break;
   }
+
+  if (out.length < maxCards) {
+    const selectors = "article, li, [class*='card' i], [class*='tile' i], [class*='event' i], [class*='programme' i], [class*='program' i], [class*='exhibition' i], [class*='listing' i], [class*='result' i], [class*='views-row' i], [data-testid*='card' i], [data-testid*='event' i]";
+    const candidates = Array.from(document.querySelectorAll(selectors))
+      .filter(likelyDomCard)
+      .sort((a, b) => {
+        const ar = a.getBoundingClientRect();
+        const br = b.getBoundingClientRect();
+        return ar.top - br.top || ar.left - br.left;
+      });
+    for (const el of candidates) {
+      const text = textLines(el).join("\n");
+      const firstLink = sameDomainUrls(el)[0] || "";
+      push(el, firstLink || chosenUrl(el, text), "", true);
+      if (out.length >= maxCards) break;
+    }
+  }
+
   return out;
 }
 """
