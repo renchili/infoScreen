@@ -268,7 +268,7 @@ class Handler(SimpleHTTPRequestHandler):
             try:
                 body = self.body_json()
                 location = str(body.get("location") or "Punggol Singapore")
-                proc = subprocess.run([sys.executable, str(SURFACE_DIR / "search_local_events.py"), location], cwd=str(SURFACE_DIR), text=True, capture_output=True, timeout=130)
+                proc = subprocess.run([sys.executable, str(SURFACE_DIR / "search_local_events.py"), location], cwd=str(SURFACE_DIR), text=True, capture_output=True, timeout=330)
                 data = runtime_json("local_event_search_results.json")
                 data["ok"] = proc.returncode == 0
                 data["stdout"] = proc.stdout[-1000:]
