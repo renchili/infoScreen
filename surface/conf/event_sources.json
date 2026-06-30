@@ -9,6 +9,18 @@
   },
   "sources": [
     {
+      "id": "nationalgallery",
+      "name": "National Gallery Singapore",
+      "adapter": "rendered_dom_card",
+      "official_home": "https://www.nationalgallery.sg/",
+      "allowed_domains": ["nationalgallery.sg"],
+      "default_venue": "National Gallery Singapore",
+      "listing_urls": [
+        "https://www.nationalgallery.sg/sg/en/whats-on.html",
+        "https://www.nationalgallery.sg/sg/en/whats-on.html?activity=Exhibition&category=today&date="
+      ]
+    },
+    {
       "id": "acm",
       "name": "Asian Civilisations Museum",
       "adapter": "nhb",
