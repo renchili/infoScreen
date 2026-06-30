@@ -11,7 +11,7 @@ from pathlib import Path
 # systemd environment.
 os.environ.setdefault("LOCAL_EVENTS_MAX_SECONDS", "260")
 os.environ.setdefault("LOCAL_EVENTS_MAX_LISTING_PAGES", "1")
-os.environ.setdefault("LOCAL_EVENTS_LOAD_MORE_ROUNDS", "0")
+os.environ.setdefault("LOCAL_EVENTS_LOAD_MORE_ROUNDS", "1")
 os.environ.setdefault("LOCAL_EVENTS_NAV_TIMEOUT_MS", "12000")
 os.environ.setdefault("LOCAL_EVENTS_DOM_TIMEOUT_MS", "12000")
 os.environ.setdefault("LOCAL_EVENTS_PAGE_SCREENSHOTS", "0")
