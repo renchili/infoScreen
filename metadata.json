@@ -1,49 +1,41 @@
 {
   "project": {
     "name": "InfoScreen",
-    "purpose": "A local kiosk dashboard for a Surface/Ubuntu display with schedule, market, weather, event stream, local events, photos, and runtime status.",
-    "primary_host": "Surface/Ubuntu",
-    "secondary_host": "macOS for Apple Calendar export only"
+    "purpose": "Local kiosk dashboard for a Surface or Ubuntu display.",
+    "primary_host": "Surface or Ubuntu",
+    "secondary_host": "macOS for Apple Calendar export"
   },
   "document_contract": {
-    "metadata_json": "Root project requirements, constraints, plan, quality gates, and cleanup backlog.",
-    "README.md": "How to use, install, start, verify, and troubleshoot the project.",
-    "docs/api-spec.md": "HTTP endpoints, request/response behavior, and runtime JSON interactions.",
+    "metadata.json": "Project requirements, constraints, implementation plan, and acceptance criteria.",
+    "README.md": "Usage, startup, verification, and troubleshooting.",
+    "docs/api-spec.md": "HTTP endpoint interactions and request response contracts.",
     "docs/design.md": "Concrete system design contracts and verification gates.",
-    "docs/questions.md": "Open implementation questions, project risks, decisions, and pending resolutions."
+    "docs/questions.md": "Decision rationale, judgment criteria, alternatives, and change conditions."
   },
-  "hard_constraints": [
-    "Runtime paths must be verified on the running Surface host before being changed.",
-    "Mac schedule-sync changes must remain independent from Surface frontend, crawler, systemd, and API changes.",
-    "The Mac checkout must not be required to switch to a Surface feature branch for schedule sync.",
-    "serve_infoscreen.py must not inject CSS, replace script URLs, or patch HTML as a normal solution.",
-    "Checked-in frontend CSS and JS must not be duplicated across surface/web/ and surface/web/assets/.",
-    "HTTP file logging must remain enabled unless replaced by a documented logging migration.",
-    "Destructive git cleanup on a deployed Surface host requires a runtime backup first.",
-    "Docs must not contain guessed paths; environment-specific paths require verification commands.",
-    "Runtime code must not silently fall back to fake data, old crawlers, or unverified sources."
-  ],
-  "current_runtime_contract": {
+  "runtime_contract": {
     "schedule_json": "~/infoscreen/schedule.json",
     "http_log": "~/infoscreen/surface/.env/logs/http.log",
     "http_error_log": "~/infoscreen/surface/.env/logs/http.err.log",
-    "surface_runtime_dir": "~/infoscreen/surface/.env/",
-    "verification_required": true,
-    "schedule_verification": [
-      "cd ~/infoscreen",
-      "curl -s http://127.0.0.1:8765/schedule.json -o /tmp/served_schedule.json",
-      "sha256sum /tmp/served_schedule.json ~/infoscreen/schedule.json"
-    ]
+    "surface_runtime_dir": "~/infoscreen/surface/.env/"
   },
+  "constraints": [
+    "Runtime paths require verification on the running Surface host before change.",
+    "Mac schedule sync is independent from Surface frontend and crawler branches.",
+    "serve_infoscreen.py serves files and APIs only.",
+    "Checked-in frontend CSS and JS live under surface/web/assets/css and surface/web/assets/js.",
+    "HTTP file logging remains enabled unless replaced by a documented logging migration.",
+    "Runtime files must be backed up before source file cleanup on the deployed Surface host.",
+    "Docs must not contain guessed paths."
+  ],
   "target_repository_layout": {
-    "deploy/": "Systemd unit templates and install scripts only.",
-    "docs/": "Only api-spec.md, design.md, and questions.md should remain under docs/.",
-    "mac/": "macOS Apple Calendar export and schedule sync only.",
-    "sample/": "Sample JSON fixtures only.",
+    "deploy/": "Systemd templates and install scripts.",
+    "docs/": "Only api-spec.md, design.md, and questions.md.",
+    "mac/": "macOS Apple Calendar export and schedule sync.",
+    "sample/": "Sample JSON fixtures.",
     "scripts/": "Developer, CI, status, and setup scripts.",
     "surface/": "Surface app implementation and runtime Python entrypoints.",
-    "surface/web/assets/css/": "All checked-in CSS.",
-    "surface/web/assets/js/": "All checked-in browser JavaScript."
+    "surface/web/assets/css/": "Checked-in CSS.",
+    "surface/web/assets/js/": "Checked-in browser JavaScript."
   },
   "runtime_and_generated_files": {
     "must_not_be_committed": [
@@ -56,82 +48,18 @@
       "public_photos/",
       "*.log"
     ],
-    "backup_before_destructive_git_commands": [
+    "backup_before_source_file_cleanup": [
       "schedule.json",
       "surface/.env/"
     ]
   },
-  "active_features": [
-    {
-      "name": "HTTP dashboard server",
-      "entrypoint": "surface/serve_infoscreen.py",
-      "port": 8765,
-      "status": "implemented; cleanup required to enforce the HTTP server boundary contract"
-    },
-    {
-      "name": "Calendar schedule board",
-      "runtime_file": "schedule.json",
-      "producer": "mac/export.py plus mac/sync_schedule.sh",
-      "consumer": "browser calendar board via GET /schedule.json",
-      "status": "implemented; runtime path must stay aligned with the verified Surface target"
-    },
-    {
-      "name": "Market and weather refresh",
-      "entrypoint": "surface/fetch_live_data.py",
-      "status": "implemented; runtime file paths and docs must remain consistent"
-    },
-    {
-      "name": "Event/news stream",
-      "entrypoint": "surface/fetch_event_stream.py",
-      "status": "implemented; timer and logging verification required"
-    },
-    {
-      "name": "Local official event discovery",
-      "entrypoint": "surface/search_local_events.py",
-      "status": "implemented; output quality and frontend rendering require verification"
-    },
-    {
-      "name": "OpenAPI docs",
-      "entrypoints": ["surface/api_models.py", "surface/openapi_spec.py", "GET /openapi.json", "GET /docs"],
-      "status": "implemented; depends on pydantic"
-    }
-  ],
-  "cleanup_plan": [
-    {
-      "id": "docs-reset",
-      "description": "Keep README.md, metadata.json, docs/api-spec.md, docs/design.md, and docs/questions.md as the active documentation set; remove other docs files.",
-      "status": "documented"
-    },
-    {
-      "id": "runtime-backup-rule",
-      "description": "Require runtime backup before reset, clean, branch replacement, or file deletion on Surface.",
-      "status": "documented"
-    },
-    {
-      "id": "frontend-assets-normalization",
-      "description": "Move/keep checked-in CSS and JS only under surface/web/assets/css and surface/web/assets/js; remove duplicate root and surface/web-level assets after verification.",
-      "status": "pending"
-    },
-    {
-      "id": "server-boundary-cleanup",
-      "description": "Remove CSS injection, script URL replacement, and HTML patching from serve_infoscreen.py after source files are cleaned.",
-      "status": "pending"
-    },
-    {
-      "id": "logging-restore",
-      "description": "Ensure infoscreen-http.service writes append logs to surface/.env/logs/http.log and http.err.log.",
-      "status": "pending"
-    },
-    {
-      "id": "schedule-path-alignment",
-      "description": "Keep Mac schedule sync and Surface /schedule.json serving aligned to the verified target ~/infoscreen/schedule.json unless a separate migration changes it.",
-      "status": "pending"
-    },
-    {
-      "id": "gitignore-runtime",
-      "description": "Ignore runtime files, logs, schedule.json, .env, pycache, and pyc files in a dedicated cleanup commit.",
-      "status": "pending"
-    }
+  "implementation_plan": [
+    {"id": "docs-contract", "status": "documented"},
+    {"id": "runtime-ignore-rules", "status": "pending"},
+    {"id": "http-file-logging", "status": "pending"},
+    {"id": "frontend-assets-layout", "status": "pending"},
+    {"id": "server-boundary", "status": "pending"},
+    {"id": "schedule-path-alignment", "status": "pending"}
   ],
   "quality_gates": [
     "python3 -m py_compile surface/*.py mac/*.py scripts/ci/*.py",
@@ -145,7 +73,6 @@
   ],
   "acceptance_criteria": [
     "Schedule endpoint returns the verified Surface schedule file.",
-    "Local event extraction output is verified against real results and debug data.",
     "Frontend layout uses one state owner per panel and canonical assets paths.",
     "HTTP file logs are written under surface/.env/logs/.",
     "docs/ contains only api-spec.md, design.md, and questions.md.",
