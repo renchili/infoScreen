@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "purpose": "Verified event listing sources. This is separate from official_source_registry.json, which remains homepage/domain confirmation only.",
+  "purpose": "Verified official event listing entrypoints. This is separate from official_source_registry.json, which remains homepage/domain confirmation only.",
   "policy": {
     "no_recursive_site_crawl": true,
     "no_sitemap_primary_flow": true,
@@ -8,6 +8,18 @@
     "listing_urls_are_allowed_here": true
   },
   "sources": [
+    {
+      "id": "childrensmuseum",
+      "name": "Children's Museum Singapore",
+      "adapter": "rendered_dom_card",
+      "official_home": "https://www.childrensmuseum.sg/",
+      "allowed_domains": ["heritage.sg", "childrensmuseum.sg"],
+      "default_venue": "Children's Museum Singapore",
+      "listing_urls": [
+        "https://www.heritage.sg/childrensmuseum/whatson/activities",
+        "https://www.heritage.sg/childrensmuseum/whatson/childrens-season---listing-page"
+      ]
+    },
     {
       "id": "nationalgallery",
       "name": "National Gallery Singapore",
@@ -21,17 +33,6 @@
       ]
     },
     {
-      "id": "acm",
-      "name": "Asian Civilisations Museum",
-      "adapter": "nhb",
-      "official_home": "https://www.acm.nhb.gov.sg/",
-      "allowed_domains": ["acm.nhb.gov.sg"],
-      "default_venue": "Asian Civilisations Museum",
-      "listing_urls": [
-        "https://www.acm.nhb.gov.sg/whats-on/overview?category=Exhibitions%2CLectures%2CProgrammes%2CGuided+Tours&time=Today%2CUpcoming"
-      ]
-    },
-    {
       "id": "nationalmuseum",
       "name": "National Museum Singapore",
       "adapter": "nhb",
@@ -40,7 +41,112 @@
       "default_venue": "National Museum Singapore",
       "listing_urls": [
         "https://www.nationalmuseum.nhb.gov.sg/whats-on/overview?time=Today%2CUpcoming",
-        "https://www.nationalmuseum.nhb.gov.sg/whats-on/exhibition"
+        "https://www.nationalmuseum.nhb.gov.sg/whats-on/exhibition",
+        "https://www.nationalmuseum.nhb.gov.sg/whats-on/view-all"
+      ]
+    },
+    {
+      "id": "acm",
+      "name": "Asian Civilisations Museum",
+      "adapter": "nhb",
+      "official_home": "https://www.acm.nhb.gov.sg/",
+      "allowed_domains": ["acm.nhb.gov.sg", "acm.org.sg"],
+      "default_venue": "Asian Civilisations Museum",
+      "listing_urls": [
+        "https://www.acm.nhb.gov.sg/whats-on/overview?category=Exhibitions%2CLectures%2CProgrammes%2CGuided+Tours&time=Today%2CUpcoming",
+        "https://www.acm.nhb.gov.sg/whats-on/overview?category=Programmes&time=Today%2CUpcoming"
+      ]
+    },
+    {
+      "id": "peranakanmuseum",
+      "name": "Peranakan Museum",
+      "adapter": "nhb",
+      "official_home": "https://www.peranakanmuseum.nhb.gov.sg/",
+      "allowed_domains": ["peranakanmuseum.nhb.gov.sg", "peranakanmuseum.org.sg"],
+      "default_venue": "Peranakan Museum",
+      "listing_urls": [
+        "https://www.peranakanmuseum.nhb.gov.sg/whatson/programmes"
+      ]
+    },
+    {
+      "id": "artscience",
+      "name": "ArtScience Museum",
+      "adapter": "rendered_dom_card",
+      "official_home": "https://www.marinabaysands.com/museum.html",
+      "allowed_domains": ["marinabaysands.com"],
+      "default_venue": "ArtScience Museum",
+      "listing_urls": [
+        "https://www.marinabaysands.com/museum/whats-on.html?tab=event",
+        "https://www.marinabaysands.com/museum/whats-on.html"
+      ]
+    },
+    {
+      "id": "sciencecentre",
+      "name": "Science Centre Singapore",
+      "adapter": "rendered_dom_card",
+      "official_home": "https://www.science.edu.sg/",
+      "allowed_domains": ["science.edu.sg"],
+      "default_venue": "Science Centre Singapore",
+      "listing_urls": [
+        "https://www.science.edu.sg/whats-on"
+      ]
+    },
+    {
+      "id": "nlb",
+      "name": "National Library Board",
+      "adapter": "rendered_dom_card",
+      "official_home": "https://www.nlb.gov.sg/",
+      "allowed_domains": ["nlb.gov.sg", "nlb.libcal.com"],
+      "default_venue": "NLB Libraries",
+      "listing_urls": [
+        "https://www.nlb.gov.sg/main/whats-on",
+        "https://nlb.libcal.com/calendar?cid=11498"
+      ]
+    },
+    {
+      "id": "onepa",
+      "name": "onePA / People's Association",
+      "adapter": "rendered_dom_card",
+      "official_home": "https://www.onepa.gov.sg/",
+      "allowed_domains": ["onepa.gov.sg"],
+      "default_venue": "People's Association CCs",
+      "listing_urls": [
+        "https://www.onepa.gov.sg/events"
+      ]
+    },
+    {
+      "id": "safra",
+      "name": "SAFRA",
+      "adapter": "rendered_dom_card",
+      "official_home": "https://www.safra.sg/",
+      "allowed_domains": ["safra.sg"],
+      "default_venue": "SAFRA Clubs",
+      "listing_urls": [
+        "https://www.safra.sg/whats-on"
+      ]
+    },
+    {
+      "id": "onepunggol",
+      "name": "One Punggol",
+      "adapter": "rendered_dom_card",
+      "official_home": "https://www.onepunggol.sg/",
+      "allowed_domains": ["onepunggol.sg"],
+      "default_venue": "One Punggol",
+      "listing_urls": [
+        "https://www.onepunggol.sg/events",
+        "https://www.onepunggol.sg/happenings"
+      ]
+    },
+    {
+      "id": "waterwaypoint",
+      "name": "Waterway Point",
+      "adapter": "rendered_dom_card",
+      "official_home": "https://www.waterwaypoint.com.sg/",
+      "allowed_domains": ["waterwaypoint.com.sg", "frasersproperty.com"],
+      "default_venue": "Waterway Point",
+      "listing_urls": [
+        "https://www.waterwaypoint.com.sg/happenings",
+        "https://www.waterwaypoint.com.sg/promotions"
       ]
     },
     {
@@ -51,7 +157,34 @@
       "allowed_domains": ["mandai.com"],
       "default_venue": "Mandai Wildlife Reserve",
       "listing_urls": [
-        "https://www.mandai.com/en/discover-mandai/events.html"
+        "https://www.mandai.com/en/discover-mandai/events.html",
+        "https://www.mandai.com/en/see-and-do.html",
+        "https://www.mandai.com/en/singapore-zoo.html",
+        "https://www.mandai.com/en/bird-paradise.html",
+        "https://www.mandai.com/en/river-wonders.html",
+        "https://www.mandai.com/en/night-safari.html"
+      ]
+    },
+    {
+      "id": "sentosa",
+      "name": "Sentosa",
+      "adapter": "rendered_dom_card",
+      "official_home": "https://www.sentosa.com.sg/",
+      "allowed_domains": ["sentosa.com.sg"],
+      "default_venue": "Sentosa",
+      "listing_urls": [
+        "https://www.sentosa.com.sg/en/things-to-do/events/"
+      ]
+    },
+    {
+      "id": "rws",
+      "name": "Resorts World Sentosa",
+      "adapter": "rendered_dom_card",
+      "official_home": "https://www.rwsentosa.com/",
+      "allowed_domains": ["rwsentosa.com"],
+      "default_venue": "Resorts World Sentosa",
+      "listing_urls": [
+        "https://www.rwsentosa.com/en/events"
       ]
     },
     {
@@ -77,17 +210,6 @@
       ]
     },
     {
-      "id": "sciencecentre",
-      "name": "Science Centre Singapore",
-      "adapter": "rendered_dom_card",
-      "official_home": "https://www.science.edu.sg/",
-      "allowed_domains": ["science.edu.sg"],
-      "default_venue": "Science Centre Singapore",
-      "listing_urls": [
-        "https://www.science.edu.sg/whats-on"
-      ]
-    },
-    {
       "id": "thekallang",
       "name": "The Kallang",
       "adapter": "rendered_dom_card",
@@ -96,17 +218,6 @@
       "default_venue": "The Kallang",
       "listing_urls": [
         "https://www.thekallang.com.sg/en/things-to-do/events.html"
-      ]
-    },
-    {
-      "id": "artscience",
-      "name": "ArtScience Museum",
-      "adapter": "rendered_dom_card",
-      "official_home": "https://www.marinabaysands.com/museum.html",
-      "allowed_domains": ["marinabaysands.com"],
-      "default_venue": "ArtScience Museum",
-      "listing_urls": [
-        "https://www.marinabaysands.com/museum/whats-on.html?tab=event"
       ]
     }
   ]
