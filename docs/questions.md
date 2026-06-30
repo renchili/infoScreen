@@ -6,16 +6,17 @@ Use this file for interaction/problem history. Do not use it as the API spec or 
 
 ## User-confirmed documentation split
 
-The documentation set must be:
+The active documentation set must be:
 
 ```text
-metadata.json              all project requirements, constraints, plan, and cleanup backlog
-README.md                  how to use, install, start, verify, and troubleshoot
-docs/api-spec.md           endpoint interactions and request/response contracts
-docs/design.md             whole-project design
-docs/questions.md          implementation questions, mistakes, and solutions
-docs/project-structure.md  canonical structure and development-boundary constraints
+metadata.json        all project requirements, constraints, plan, and cleanup backlog
+README.md            how to use, install, start, verify, and troubleshoot
+docs/api-spec.md     endpoint interactions and request/response contracts
+docs/design.md       whole-project design
+docs/questions.md    implementation questions, mistakes, and solutions
 ```
+
+No other `docs/*.md` files should remain as active documentation.
 
 ## Confirmed hard constraints
 
@@ -53,9 +54,9 @@ User-provided audit showed the fresh runtime schedule file at:
 Resolution:
 
 ```text
-1. metadata.json now records ~/infoscreen/schedule.json as the current runtime contract.
-2. docs/mac-schedule-sync.md must point to ~/infoscreen/schedule.json.
-3. Future path changes require curl + sha256 verification before code/doc changes.
+1. metadata.json records ~/infoscreen/schedule.json as the current runtime contract.
+2. Future path changes require curl + sha256 verification before code/doc changes.
+3. Mac sync docs are folded into README.md and docs/design.md instead of a separate docs/mac-schedule-sync.md file.
 ```
 
 Verification command:
