@@ -10,8 +10,7 @@
     "README.md": "How to use, install, start, verify, and troubleshoot the project.",
     "docs/api-spec.md": "HTTP endpoints, request/response behavior, and runtime JSON interactions.",
     "docs/design.md": "Project architecture and implementation design.",
-    "docs/questions.md": "Implementation questions, mistakes found during this work, decisions, and resolution plan.",
-    "docs/project-structure.md": "Canonical repository structure and development-boundary constraints."
+    "docs/questions.md": "Implementation questions, mistakes found during this work, decisions, and resolution plan."
   },
   "hard_constraints": [
     "Do not move or redefine runtime paths without verifying the running Surface host first.",
@@ -38,7 +37,7 @@
   },
   "target_repository_layout": {
     "deploy/": "Systemd unit templates and install scripts only.",
-    "docs/": "Project documentation. Keep api-spec.md, design.md, questions.md, project-structure.md focused and non-overlapping.",
+    "docs/": "Only api-spec.md, design.md, and questions.md should remain under docs/.",
     "mac/": "macOS Apple Calendar export and schedule sync only.",
     "sample/": "Sample JSON fixtures only.",
     "scripts/": "Developer, CI, status, and setup scripts.",
@@ -100,7 +99,7 @@
   "cleanup_plan": [
     {
       "id": "docs-reset",
-      "description": "Make metadata.json, README.md, docs/api-spec.md, docs/design.md, and docs/questions.md the only active planning/use docs for this cleanup pass.",
+      "description": "Keep README.md, metadata.json, docs/api-spec.md, docs/design.md, and docs/questions.md as the active documentation set; remove other docs files.",
       "status": "in_progress"
     },
     {
@@ -126,11 +125,6 @@
     {
       "id": "schedule-path-alignment",
       "description": "Keep Mac schedule sync and Surface /schedule.json serving aligned to the verified target ~/infoscreen/schedule.json unless a separate migration changes it.",
-      "status": "pending"
-    },
-    {
-      "id": "docs-prune",
-      "description": "Remove or convert conflicting docs into pointers after README, api-spec, design, questions, and project-structure are updated.",
       "status": "pending"
     },
     {
