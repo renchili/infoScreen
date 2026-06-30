@@ -12,13 +12,19 @@ class MissingPlaywright(RuntimeError):
     pass
 
 
-MAX_LISTING_PAGES = int(os.environ.get("LOCAL_EVENTS_MAX_LISTING_PAGES", "8"))
-LOAD_MORE_ROUNDS = int(os.environ.get("LOCAL_EVENTS_LOAD_MORE_ROUNDS", "2"))
+MAX_LISTING_PAGES = int(os.environ.get("LOCAL_EVENTS_MAX_LISTING_PAGES", "1"))
+LOAD_MORE_ROUNDS = int(os.environ.get("LOCAL_EVENTS_LOAD_MORE_ROUNDS", "0"))
+NAV_TIMEOUT_MS = int(os.environ.get("LOCAL_EVENTS_NAV_TIMEOUT_MS", "12000"))
+DOM_TIMEOUT_MS = int(os.environ.get("LOCAL_EVENTS_DOM_TIMEOUT_MS", "12000"))
+LOAD_WAIT_MS = int(os.environ.get("LOCAL_EVENTS_LOAD_WAIT_MS", "550"))
+NEXT_WAIT_MS = int(os.environ.get("LOCAL_EVENTS_NEXT_WAIT_MS", "700"))
+PAGE_SCREENSHOTS = os.environ.get("LOCAL_EVENTS_PAGE_SCREENSHOTS", "0") == "1"
+CARD_SCREENSHOTS = os.environ.get("LOCAL_EVENTS_CARD_SCREENSHOTS", "0") == "1"
 
 
 PREPARE_PAGE_JS = r"""
 async (args) => {
-  const maxRounds = args.maxRounds || 2;
+  const maxRounds = args.maxRounds || 0;
   const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
   function visible(el) {
@@ -37,7 +43,7 @@ async (args) => {
   let lastHeight = 0;
   for (let round = 0; round < maxRounds; round++) {
     window.scrollTo(0, document.body.scrollHeight);
-    await sleep(650);
+    await sleep(450);
 
     const controls = Array.from(document.querySelectorAll("button, a[href], [role='button']"))
       .filter(visible)
@@ -46,10 +52,10 @@ async (args) => {
     if (controls.length) {
       try {
         controls[0].scrollIntoView({block: "center"});
-        await sleep(200);
+        await sleep(150);
         controls[0].click();
         clicks += 1;
-        await sleep(900);
+        await sleep(650);
       } catch (e) {}
     }
 
@@ -58,7 +64,7 @@ async (args) => {
     lastHeight = height;
   }
   window.scrollTo(0, 0);
-  await sleep(250);
+  await sleep(150);
   return {clicks, height: document.body.scrollHeight};
 }
 """
@@ -161,7 +167,7 @@ async (args) => {
     el.scrollIntoView({block: "center"});
     await sleep(180);
     el.click();
-    await sleep(1000);
+    await sleep(700);
     return {clicked: true, text, expectedNumericPage: pageIndex + 2, beforeHref, afterHref: document.location.href, beforeTextLength, afterTextLength: oneLine(document.body.innerText).length};
   } catch (e) {
     return {clicked: false, text, reason: String(e), expectedNumericPage: pageIndex + 2};
@@ -173,7 +179,7 @@ async (args) => {
 CARD_JS = r"""
 (args) => {
   const allowedDomains = args.allowedDomains || [];
-  const maxCards = args.maxCards || 160;
+  const maxCards = args.maxCards || 60;
   const sourceId = args.sourceId || "source";
   const pageIndex = args.pageIndex || 0;
 
@@ -352,7 +358,7 @@ def launch_chromium(playwright):
         ) from exc
 
 
-def render_listing_cards(source: dict[str, Any], url: str, debug_dir: Path, max_cards: int = 160) -> dict[str, Any]:
+def render_listing_cards(source: dict[str, Any], url: str, debug_dir: Path, max_cards: int = 60) -> dict[str, Any]:
     try:
         from playwright.sync_api import sync_playwright
     except Exception as exc:  # pragma: no cover - depends on deployment image
@@ -367,10 +373,10 @@ def render_listing_cards(source: dict[str, Any], url: str, debug_dir: Path, max_
         try:
             page = browser.new_page(viewport={"width": 1440, "height": 2200}, device_scale_factor=1)
             try:
-                page.goto(url, wait_until="networkidle", timeout=60000)
+                page.goto(url, wait_until="networkidle", timeout=NAV_TIMEOUT_MS)
             except Exception:
-                page.goto(url, wait_until="domcontentloaded", timeout=60000)
-            page.wait_for_timeout(1400)
+                page.goto(url, wait_until="domcontentloaded", timeout=DOM_TIMEOUT_MS)
+            page.wait_for_timeout(LOAD_WAIT_MS)
 
             all_cards: list[dict[str, Any]] = []
             seen_cards = set()
@@ -381,9 +387,10 @@ def render_listing_cards(source: dict[str, Any], url: str, debug_dir: Path, max_
             for page_index in range(MAX_LISTING_PAGES):
                 prepare = page.evaluate(PREPARE_PAGE_JS, {"maxRounds": LOAD_MORE_ROUNDS})
                 page_cards = page.evaluate(CARD_JS, {"allowedDomains": allowed, "maxCards": max_cards, "sourceId": source_id, "pageIndex": page_index})
-                page_screenshot = debug_dir / f"{source_id}-{hashlib.sha1((url + str(page_index)).encode()).hexdigest()[:10]}-page-{page_index}.png"
-                page.screenshot(path=str(page_screenshot), full_page=True)
-                screenshots.append(str(page_screenshot))
+                if PAGE_SCREENSHOTS:
+                    page_screenshot = debug_dir / f"{source_id}-{hashlib.sha1((url + str(page_index)).encode()).hexdigest()[:10]}-page-{page_index}.png"
+                    page.screenshot(path=str(page_screenshot), full_page=True)
+                    screenshots.append(str(page_screenshot))
                 rendered_pages += 1
                 new_count = 0
 
@@ -393,13 +400,15 @@ def render_listing_cards(source: dict[str, Any], url: str, debug_dir: Path, max_
                         continue
                     seen_cards.add(key)
                     cid = card.get("id")
-                    if cid:
+                    if CARD_SCREENSHOTS and cid:
                         crop_path = debug_dir / f"{source_id}-{page_index}-{len(card.get('text', ''))}-{hashlib.sha1((card.get('url', '') + cid).encode()).hexdigest()[:10]}.png"
                         try:
-                            page.locator(f"[data-infoscreen-card-id='{cid}']").first.screenshot(path=str(crop_path), timeout=2500)
+                            page.locator(f"[data-infoscreen-card-id='{cid}']").first.screenshot(path=str(crop_path), timeout=2000)
                             card["screenshot"] = str(crop_path)
                         except Exception:
                             card["screenshot"] = ""
+                    else:
+                        card["screenshot"] = ""
                     all_cards.append(card)
                     new_count += 1
                     if len(all_cards) >= max_cards:
@@ -414,10 +423,10 @@ def render_listing_cards(source: dict[str, Any], url: str, debug_dir: Path, max_
                 if not next_result.get("clicked"):
                     break
                 try:
-                    page.wait_for_load_state("networkidle", timeout=8000)
+                    page.wait_for_load_state("networkidle", timeout=NEXT_WAIT_MS)
                 except Exception:
-                    page.wait_for_timeout(1000)
-                page.wait_for_timeout(800)
+                    page.wait_for_timeout(NEXT_WAIT_MS)
+                page.wait_for_timeout(300)
 
             return {"ok": True, "url": url, "rendered_pages": rendered_pages, "pagination": pagination, "screenshot": screenshots[0] if screenshots else "", "screenshots": screenshots, "cards": all_cards}
         finally:
