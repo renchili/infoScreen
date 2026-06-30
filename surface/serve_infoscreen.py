@@ -4,7 +4,6 @@ from __future__ import annotations
 import email.utils
 import json
 import mimetypes
-import re
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -27,40 +26,6 @@ JSON_DEFAULTS = {
     "photos.json": {"items": []},
     "sync_status.json": {},
 }
-
-LEGACY_LOCAL_EVENT_INLINE_RE = re.compile(
-    r"\n?<script\s+id=[\"']local-event-inline-script[\"'][^>]*>[\s\S]*?</script>\s*",
-    re.I,
-)
-
-LOCAL_EVENT_TOOLBAR_PIN_CSS = """
-<style id="local-event-toolbar-pin">
-#localEventBox .local-event-toolbar{
-  position:absolute!important;top:6px!important;right:7px!important;height:24px!important;
-  display:flex!important;align-items:center!important;gap:5px!important;z-index:20!important;overflow:visible!important;
-}
-#localEventBox #localEventCounter{
-  display:inline-flex!important;align-items:center!important;justify-content:flex-end!important;
-  width:38px!important;min-width:38px!important;max-width:38px!important;height:22px!important;
-  font-size:10px!important;line-height:1!important;color:#7d8782!important;letter-spacing:.04em!important;
-}
-#localEventBox #localEventPrevButton,
-#localEventBox #localEventNextButton,
-#localEventBox #localEventLocationButton{
-  appearance:none!important;-webkit-appearance:none!important;box-sizing:border-box!important;
-  display:inline-grid!important;place-items:center!important;flex:0 0 22px!important;
-  width:22px!important;min-width:22px!important;max-width:22px!important;
-  height:22px!important;min-height:22px!important;max-height:22px!important;
-  margin:0!important;padding:0!important;border:1px solid #3a3f3d!important;border-radius:999px!important;
-  background:#050606!important;color:#8cecff!important;font-family:inherit!important;font-size:13px!important;
-  font-weight:950!important;line-height:20px!important;text-align:center!important;cursor:pointer!important;
-  transform:none!important;box-shadow:none!important;letter-spacing:0!important;touch-action:manipulation!important;
-}
-#localEventBox #localEventPrevButton:disabled,
-#localEventBox #localEventNextButton:disabled,
-#localEventBox #localEventLocationButton:disabled{opacity:.28!important;cursor:default!important;}
-</style>
-"""
 
 SWAGGER_UI_HTML = """<!doctype html>
 <html lang="en">
@@ -125,13 +90,8 @@ def market_config_json():
     return read_json(CONF_DIR / "market_config.default.json", JSON_DEFAULTS["market_config.json"])
 
 
-def clean_index_html() -> bytes:
-    raw = (WEB_DIR / "index.html").read_text(encoding="utf-8")
-    cleaned = LEGACY_LOCAL_EVENT_INLINE_RE.sub("\n", raw)
-    cleaned = cleaned.replace('calendar_board.js?v=1781715981', 'calendar_board.js?v=toolbar-pin-1')
-    if 'id="local-event-toolbar-pin"' not in cleaned:
-        cleaned = cleaned.replace("</head>", LOCAL_EVENT_TOOLBAR_PIN_CSS + "\n</head>")
-    return cleaned.encode("utf-8")
+def index_html() -> bytes:
+    return (WEB_DIR / "index.html").read_bytes()
 
 
 def openapi_payload() -> dict:
@@ -179,7 +139,7 @@ class Handler(SimpleHTTPRequestHandler):
             self.wfile.write(data)
 
     def send_index(self, head_only: bool = False) -> None:
-        data = clean_index_html()
+        data = index_html()
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
