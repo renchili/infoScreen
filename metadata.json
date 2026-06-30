@@ -8,74 +8,37 @@
   "document_contract": {
     "metadata.json": "Project requirements, constraints, implementation plan, and acceptance criteria.",
     "README.md": "Usage, startup, verification, and troubleshooting.",
-    "docs/api-spec.md": "HTTP endpoint interactions and request response contracts.",
-    "docs/design.md": "Concrete system design contracts and verification gates.",
-    "docs/questions.md": "Decision rationale, judgment criteria, alternatives, and change conditions."
+    "docs/api-spec.md": "HTTP endpoint interactions.",
+    "docs/design.md": "System design contracts.",
+    "docs/questions.md": "Decision rationale."
   },
   "runtime_contract": {
-    "schedule_json": "~/infoscreen/schedule.json",
+    "runtime_dir": "~/infoscreen/surface/.env/",
+    "schedule_json": "~/infoscreen/surface/.env/schedule.json",
     "http_log": "~/infoscreen/surface/.env/logs/http.log",
-    "http_error_log": "~/infoscreen/surface/.env/logs/http.err.log",
-    "surface_runtime_dir": "~/infoscreen/surface/.env/"
+    "http_error_log": "~/infoscreen/surface/.env/logs/http.err.log"
   },
-  "constraints": [
-    "Runtime paths require verification on the running Surface host before change.",
-    "Mac schedule sync is independent from Surface frontend and crawler branches.",
-    "serve_infoscreen.py serves files and APIs only.",
-    "Checked-in frontend CSS and JS live under surface/web/assets/css and surface/web/assets/js.",
-    "HTTP file logging remains enabled unless replaced by a documented logging migration.",
-    "Runtime files must be backed up before source file cleanup on the deployed Surface host.",
-    "Docs must not contain guessed paths."
-  ],
-  "target_repository_layout": {
+  "source_layout": {
     "deploy/": "Systemd templates and install scripts.",
-    "docs/": "Only api-spec.md, design.md, and questions.md.",
-    "mac/": "macOS Apple Calendar export and schedule sync.",
+    "docs/": "api-spec.md, design.md, questions.md.",
+    "mac/": "Calendar export and schedule sync.",
     "sample/": "Sample JSON fixtures.",
-    "scripts/": "Developer, CI, status, and setup scripts.",
-    "surface/": "Surface app implementation and runtime Python entrypoints.",
-    "surface/web/assets/css/": "Checked-in CSS.",
-    "surface/web/assets/js/": "Checked-in browser JavaScript."
-  },
-  "runtime_and_generated_files": {
-    "must_not_be_committed": [
-      "schedule.json",
-      "surface/.env/",
-      "surface/.env/logs/",
-      "__pycache__/",
-      "*.pyc",
-      "photos/",
-      "public_photos/",
-      "*.log"
-    ],
-    "backup_before_source_file_cleanup": [
-      "schedule.json",
-      "surface/.env/"
-    ]
+    "scripts/": "Developer and status scripts.",
+    "surface/": "Surface app implementation.",
+    "surface/web/assets/css/": "CSS.",
+    "surface/web/assets/js/": "Browser JavaScript."
   },
   "implementation_plan": [
-    {"id": "docs-contract", "status": "documented"},
-    {"id": "runtime-ignore-rules", "status": "pending"},
-    {"id": "http-file-logging", "status": "pending"},
-    {"id": "frontend-assets-layout", "status": "pending"},
-    {"id": "server-boundary", "status": "pending"},
-    {"id": "schedule-path-alignment", "status": "pending"}
-  ],
-  "quality_gates": [
-    "python3 -m py_compile surface/*.py mac/*.py scripts/ci/*.py",
-    "bash scripts/ci/check_javascript_syntax.sh",
-    "python3 surface/search_local_events.py --self-test",
-    "curl -s http://127.0.0.1:8765/openapi.json | python3 -m json.tool | head -n 80",
-    "curl -s http://127.0.0.1:8765/schedule.json | python3 -m json.tool | head -n 40",
-    "systemctl --user list-timers --all | grep -i infoscreen || true",
-    "tail -n 40 ~/infoscreen/surface/.env/logs/http.log",
-    "tail -n 40 ~/infoscreen/surface/.env/logs/http.err.log"
+    "runtime-ignore-rules",
+    "http-file-logging",
+    "frontend-assets-layout",
+    "server-boundary",
+    "schedule-runtime-path"
   ],
   "acceptance_criteria": [
-    "Schedule endpoint returns the verified Surface schedule file.",
-    "Frontend layout uses one state owner per panel and canonical assets paths.",
+    "Schedule endpoint reads the file under surface/.env/.",
+    "The root directory stays source-only.",
     "HTTP file logs are written under surface/.env/logs/.",
-    "docs/ contains only api-spec.md, design.md, and questions.md.",
-    "Runtime and generated files are ignored and not committed."
+    "docs/ contains api-spec.md, design.md, and questions.md."
   ]
 }
