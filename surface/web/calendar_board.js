@@ -406,7 +406,7 @@
     var style = document.createElement("style");
     style.id = "market-config-style";
     style.textContent = [
-      ".box[data-title='market'] .market-toolbar{position:absolute;top:6px;right:8px;display:flex;gap:6px;z-index:8;background:rgba(5,6,6,.9);border-radius:999px;}",
+      ".box[data-title='market'] .market-toolbar{position:absolute;right:8px;bottom:8px;display:flex;gap:6px;z-index:8;background:rgba(5,6,6,.9);border-radius:999px;}",
       ".box[data-title='market'] .market-config-button{appearance:none;-webkit-appearance:none;width:24px;height:24px;border:1px solid #3a3f3d;border-radius:999px;background:#050606;color:#8cecff;font:950 12px/1 inherit;display:grid;place-items:center;cursor:pointer;padding:0;}",
       ".market-config-modal[hidden]{display:none!important;}",
       ".market-config-modal{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.72);display:grid;place-items:center;}",
