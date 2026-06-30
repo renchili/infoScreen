@@ -1,6 +1,6 @@
-# InfoScreen implementation questions and issues
+# InfoScreen decision rationale
 
-This document tracks project-level implementation questions, known issues, decisions, and pending resolutions.
+This document explains why the project uses its current implementation choices, how each choice is judged, which alternatives were considered, and when a choice may be changed.
 
 It must stay project-focused. It must not record assistant-specific mistakes, conversation blame, or personal postmortem notes.
 
@@ -11,122 +11,435 @@ metadata.json        project requirements, constraints, plan, and cleanup backlo
 README.md            usage, install, start, verify, and troubleshooting
 docs/api-spec.md     endpoint interactions and request/response contracts
 docs/design.md       concrete system design contracts
-docs/questions.md    implementation questions, known issues, decisions, and pending resolutions
+docs/questions.md    decision rationale, judgment criteria, alternatives, and change conditions
 ```
 
 No other `docs/*.md` files should remain as active documentation.
 
-## Confirmed project constraints
+## Decision format
+
+Each decision should answer:
 
 ```text
-1. Runtime paths require verification on the running Surface host before being changed.
-2. Current schedule target is ~/infoscreen/schedule.json unless a verified migration changes it.
-3. Surface HTTP logs must continue writing under surface/.env/logs/.
-4. Mac schedule sync must remain independent from Surface frontend/crawler branches.
-5. Frontend assets must be normalized under surface/web/assets/css and surface/web/assets/js.
-6. serve_infoscreen.py must not inject CSS, patch HTML, or replace JS versions as normal behavior.
-7. Runtime files, logs, pycache, and local data must not be removed by source cleanup.
-8. Local event source registry must not contain listing/detail/ticket/aggregator URLs.
-9. event_sources.json owns verified listing entrypoints.
-10. No Qwen/OCR/VLM/large local model in the default local-event extraction path.
-11. No hidden fallback to old crawler or placeholder data.
+Decision: what the project currently does.
+Reason: why this is the current choice.
+How to judge: what evidence shows the choice is correct.
+Alternatives: what else was considered.
+Change condition: when the decision may be changed.
+Verification: exact command or observable result where applicable.
 ```
 
-## Known implementation issues
+## D1. Schedule file stays at repo root
 
-### I1. Runtime schedule path alignment
-
-Issue: Mac sync, Surface server, frontend, and docs must agree on the schedule file path.
-
-Current decision: keep the current verified target at `~/infoscreen/schedule.json`.
-
-Resolution: any future path migration must update server code, Mac sync configuration, docs, and verification commands in one dedicated migration.
-
-### I2. Mac schedule sync branch boundary
-
-Issue: Mac calendar export must not depend on an unrelated Surface feature branch.
-
-Current decision: Mac schedule sync must be deployable from `mac/` files and local `mac/local.env` configuration only.
-
-Resolution: deliver Mac sync changes as a mac-only patch or local configuration change.
-
-### I3. Duplicated frontend assets
-
-Issue: the browser can load old JS/CSS from `surface/web` while newer files exist under `surface/web/assets/`.
-
-Current target:
+Decision:
 
 ```text
-surface/web/assets/css/*.css
-surface/web/assets/js/*.js
+The Surface schedule file is currently ~/infoscreen/schedule.json.
 ```
 
-Pending cleanup:
+Reason:
 
 ```text
-1. Check current index.html references.
-2. Move or merge required content into assets/.
-3. Update index.html to reference assets only.
-4. Delete duplicate surface/web/*.css|*.js and root market_custom files.
-5. Verify served HTML and browser rendering.
+The running dashboard exposes /schedule.json. The schedule producer on Mac only needs to copy one JSON file to the Surface host. Keeping the current verified target avoids a partial migration where Mac writes one path while the server reads another.
 ```
 
-### I4. HTTP server frontend patching
-
-Issue: server-side HTML/CSS/JS patching can make the served dashboard differ from checked-in source files.
-
-Current target: `serve_infoscreen.py` serves files and APIs only. Source HTML/CSS/JS should contain the actual frontend fix.
-
-Pending cleanup: remove CSS injection, script URL replacement, and HTML patching from `serve_infoscreen.py` after source files are normalized.
-
-### I5. HTTP file logging
-
-Issue: the HTTP service can continue running while local file logs stop being written.
-
-Current required log files:
+How to judge:
 
 ```text
-~/infoscreen/surface/.env/logs/http.log
-~/infoscreen/surface/.env/logs/http.err.log
+The served /schedule.json payload must match ~/infoscreen/schedule.json on the Surface host.
 ```
 
-Required systemd settings:
+Verification:
 
-```ini
-StandardOutput=append:%h/infoscreen/surface/.env/logs/http.log
-StandardError=append:%h/infoscreen/surface/.env/logs/http.err.log
+```bash
+cd ~/infoscreen
+curl -s http://127.0.0.1:8765/schedule.json -o /tmp/served_schedule.json
+sha256sum /tmp/served_schedule.json ~/infoscreen/schedule.json
 ```
 
-### I6. Runtime data protection during source cleanup
-
-Issue: runtime files live inside the deployed checkout, so source cleanup must not remove local runtime state.
-
-Required backup scope before cleanup:
+Alternatives:
 
 ```text
-schedule.json
-surface/.env/
+1. Move schedule.json under surface/.env/.
+2. Move all runtime JSON files to one runtime directory outside the repo.
 ```
 
-### I7. Local event extraction quality
+Why not alternatives now:
 
-Issue: source count can increase while actual title/date/venue extraction remains poor.
+```text
+Those are migrations. They require server, Mac sync, docs, systemd, and verification updates together. A partial path change breaks calendar sync.
+```
 
-Current decision: fix card rendering, pagination, date/venue splitting, and debug output before expanding source count.
+Change condition:
 
-### I8. Local-events timer overwrites manual debugging
+```text
+Only change through a dedicated runtime-path migration that updates all readers, writers, docs, and verification commands in one patch.
+```
 
-Issue: a timer refresh can overwrite manual local event output during debugging.
+## D2. Mac schedule sync is independent from Surface feature branches
 
-Current decision: keep local-events timer disabled until extraction output is verified.
+Decision:
 
-### I9. Optional OCR/VLM scope
+```text
+Mac schedule sync is configured through mac/ scripts and mac/local.env. The Mac checkout must not depend on a Surface frontend or crawler branch.
+```
 
-Issue: adding OCR/VLM by default increases dependencies and hides extractor logic problems.
+Reason:
 
-Current decision: no default OCR/VLM. Optional OCR can be considered later only behind explicit configuration.
+```text
+The Mac only exports Apple Calendar and copies schedule.json. It does not need Surface frontend, crawler, or systemd changes to do that job.
+```
 
-## Open implementation questions
+How to judge:
+
+```text
+A Mac with mac/export.py, mac/sync_schedule.sh, mac/local.env, and SSH access can update the Surface schedule target without checking out a Surface feature branch.
+```
+
+Alternatives:
+
+```text
+1. Require both Mac and Surface to checkout the same branch.
+2. Put Mac runtime configuration into the shared repo state.
+```
+
+Why not alternatives now:
+
+```text
+They couple two different deployment roles and make calendar sync depend on unrelated Surface work.
+```
+
+Change condition:
+
+```text
+Only change if the project becomes a single-machine deployment where Mac export and Surface dashboard run from the same checkout.
+```
+
+## D3. Frontend assets live under surface/web/assets
+
+Decision:
+
+```text
+Checked-in CSS lives under surface/web/assets/css/.
+Checked-in browser JS lives under surface/web/assets/js/.
+```
+
+Reason:
+
+```text
+One canonical asset location prevents the browser from loading an older root-level JS/CSS file while newer files exist elsewhere.
+```
+
+How to judge:
+
+```text
+index.html references only assets/css and assets/js for checked-in CSS/JS.
+No duplicate checked-in JS/CSS remains at surface/web/*.js, surface/web/*.css, or repo root market_custom.*.
+```
+
+Verification:
+
+```bash
+grep -RIn "calendar_board\|local_events\|market_custom" surface/web/index.html
+find surface/web -maxdepth 2 -type f | sort
+```
+
+Alternatives:
+
+```text
+1. Keep JS/CSS directly under surface/web/.
+2. Keep both root-level and assets-level copies.
+```
+
+Why not alternatives now:
+
+```text
+Keeping both copies makes it unclear which file the kiosk is running. Direct root-level assets can work, but the project already has assets/ and should converge on one convention.
+```
+
+Change condition:
+
+```text
+Only change if the whole frontend asset structure is migrated in one cleanup and index.html references are updated at the same time.
+```
+
+## D4. serve_infoscreen.py is not a frontend patch layer
+
+Decision:
+
+```text
+serve_infoscreen.py serves static files and APIs. It must not inject CSS, rewrite script URLs, or patch HTML as normal behavior.
+```
+
+Reason:
+
+```text
+Runtime HTML patching makes the served dashboard different from source files and hides which frontend code is actually running.
+```
+
+How to judge:
+
+```text
+serve_infoscreen.py contains no CSS injection, script URL replacement, or permanent HTML cleanup logic.
+```
+
+Verification:
+
+```bash
+grep -RIn "inject\|replace(.*calendar_board\|local-event-inline-script\|cleaned" surface/serve_infoscreen.py || true
+```
+
+Alternatives:
+
+```text
+1. Patch HTML at serve time.
+2. Keep duplicate frontend owners and strip one from the response.
+```
+
+Why not alternatives now:
+
+```text
+They make source review unreliable and create different behavior between file inspection and browser execution.
+```
+
+Change condition:
+
+```text
+Temporary serve-time compatibility code is allowed only during a documented migration and must include a removal condition.
+```
+
+## D5. HTTP logs stay as local files under surface/.env/logs
+
+Decision:
+
+```text
+The HTTP service writes stdout to surface/.env/logs/http.log and stderr to surface/.env/logs/http.err.log.
+```
+
+Reason:
+
+```text
+The Surface deployment needs easy local debugging without relying only on journald retention. File logs also make kiosk runtime problems visible from the repo checkout.
+```
+
+How to judge:
+
+```text
+The user service contains append log targets and the files receive new lines after service restart or HTTP requests.
+```
+
+Verification:
+
+```bash
+systemctl --user cat infoscreen-http.service
+tail -n 40 ~/infoscreen/surface/.env/logs/http.log
+tail -n 40 ~/infoscreen/surface/.env/logs/http.err.log
+```
+
+Alternatives:
+
+```text
+1. Use journald only.
+2. Move logs to /var/log.
+3. Move logs to a runtime directory outside the repo.
+```
+
+Why not alternatives now:
+
+```text
+They require an explicit logging migration. The current deployment expects local file logs under surface/.env/logs/.
+```
+
+Change condition:
+
+```text
+Only change through a logging migration that updates systemd units, README troubleshooting, and status scripts together.
+```
+
+## D6. Runtime files are protected before source cleanup
+
+Decision:
+
+```text
+Before source cleanup on a deployed Surface checkout, back up schedule.json and surface/.env/.
+```
+
+Reason:
+
+```text
+Runtime files live inside the deployed checkout. Source cleanup can otherwise remove or overwrite local state that is not reproducible from Git.
+```
+
+How to judge:
+
+```text
+A backup directory exists before cleanup and contains schedule.json and the surface runtime directory when they exist.
+```
+
+Verification:
+
+```bash
+cd ~/infoscreen
+backup="$HOME/infoscreen-runtime-backup-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$backup"
+cp -a schedule.json "$backup/" 2>/dev/null || true
+cp -a surface/.env "$backup/surface-env" 2>/dev/null || true
+find "$backup" -maxdepth 2 -type f -o -type d
+```
+
+Alternatives:
+
+```text
+1. Keep runtime files inside Git.
+2. Ignore runtime state during cleanup.
+3. Move all runtime state outside the repo immediately.
+```
+
+Why not alternatives now:
+
+```text
+Runtime files contain local/private state and should not be committed. Moving runtime state is a separate migration.
+```
+
+Change condition:
+
+```text
+If runtime state is migrated outside the repo, update this backup scope to the new runtime root.
+```
+
+## D7. Local event extraction quality is judged by fields, not source count
+
+Decision:
+
+```text
+Improve rendered card extraction, pagination, date/venue splitting, and debug output before expanding source count.
+```
+
+Reason:
+
+```text
+More sources do not fix bad extraction. The useful output is determined by title, date, venue, source, URL, and readable summary quality.
+```
+
+How to judge:
+
+```text
+For each source, debug output shows cards found, accepted count, rejection reasons, and sample results with correct title/when/where/source/url fields.
+```
+
+Verification:
+
+```bash
+python3 surface/search_local_events.py "Punggol Singapore"
+curl -s http://127.0.0.1:8765/api/local-events/search | python3 -m json.tool | head -n 160
+```
+
+Alternatives:
+
+```text
+1. Add more sources first.
+2. Use third-party aggregators.
+3. Use OCR/VLM by default.
+```
+
+Why not alternatives now:
+
+```text
+They hide extraction quality problems or add unnecessary dependencies. Official rendered DOM extraction should be correct first.
+```
+
+Change condition:
+
+```text
+After field quality is verified, source expansion can be considered using verified official listing entrypoints only.
+```
+
+## D8. Local-events timer remains off during extractor debugging
+
+Decision:
+
+```text
+The local-events timer should stay disabled while extractor output is being debugged manually.
+```
+
+Reason:
+
+```text
+A timer can overwrite manual output and make it unclear which run produced the current result file.
+```
+
+How to judge:
+
+```text
+Manual search output remains stable until another explicit manual run or API request is made.
+```
+
+Verification:
+
+```bash
+systemctl --user list-timers --all | grep -i infoscreen || true
+systemctl --user list-units --all | grep -i infoscreen || true
+```
+
+Alternatives:
+
+```text
+1. Keep timer enabled during debugging.
+2. Write manual and timer output to separate files.
+```
+
+Why not alternatives now:
+
+```text
+The first makes debugging unreliable. The second is a larger runtime-output design change.
+```
+
+Change condition:
+
+```text
+Re-enable the timer only after extractor quality and output ownership are verified.
+```
+
+## D9. OCR/VLM is not part of the default local event path
+
+Decision:
+
+```text
+Default local event extraction uses browser-rendered DOM, not OCR/VLM or a large local model.
+```
+
+Reason:
+
+```text
+The first target is reliable extraction from official web pages. OCR/VLM adds dependencies, runtime cost, and nondeterministic output before the DOM path is proven insufficient.
+```
+
+How to judge:
+
+```text
+If official pages expose title/date/venue in DOM text or structured attributes, DOM extraction should handle them without OCR/VLM.
+```
+
+Alternatives:
+
+```text
+1. Add optional OCR for image-only cards.
+2. Add VLM extraction for screenshots.
+```
+
+Why not alternatives now:
+
+```text
+They should be optional extensions, not default dependencies.
+```
+
+Change condition:
+
+```text
+Add optional OCR only if verified official sources expose important event data only inside images and the feature is explicitly configured.
+```
+
+## Open decisions
 
 ```text
 1. Should local events eventually filter by geographic relevance or show all official events?
@@ -159,5 +472,5 @@ Current decision: no default OCR/VLM. Optional OCR can be considered later only 
 4. /schedule.json matches the verified Surface schedule file.
 5. HTTP service writes http.log and http.err.log.
 6. Browser static assets are referenced only through surface/web/assets/.
-7. Runtime files and generated files are ignored by git.
+7. Runtime files and generated files are ignored by Git.
 ```
