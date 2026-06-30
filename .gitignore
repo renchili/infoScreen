@@ -1,12 +1,15 @@
 # local machine configuration and runtime state
 .env/
 surface/.env/
+schedule.json
+mac/schedule.json
 
-# legacy/generated runtime directories
+# generated runtime directories
 logs/
 photos/
 public_photos/
 __pycache__/
+*.pyc
 
 # local backups / editor artifacts
 *.bak*
