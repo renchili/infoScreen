@@ -195,15 +195,14 @@
     return !text || /^(check official page|open official page|date not published|venue not published|unknown organizer|official source|no link in source)$/i.test(text);
   }
 
+  function badWhere(value) {
+    var text = lower(value);
+    return !text || isPlaceholder(text) || /\b(free entry|singaporeans|admission|tickets?|exhibitions? in-museum|programmes? in-museum|book your|entry requirements)\b/i.test(text);
+  }
+
   function safeUrl(value) {
     var url = clean(value);
     return /^https?:\/\//i.test(url) ? url : "";
-  }
-
-  function looksLikeDate(value) {
-    var text = clean(value);
-    if (!text || isPlaceholder(text)) return false;
-    return /(\b(today|tomorrow|tonight|weekend|mon|tue|wed|thu|fri|sat|sun|jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b|\d{1,2}\s*[-–—]\s*\d{1,2}|\d{4}-\d{1,2}-\d{1,2}|\d{1,2}\/\d{1,2}|\d{1,2}\s*(am|pm)|\d{1,2}[:.]\d{2})/i.test(text);
   }
 
   function first(raw, keys) {
@@ -214,7 +213,7 @@
     return "";
   }
 
-  function normalize(raw) {
+  function normalize(raw, index) {
     raw = raw || {};
     var title = first(raw, ["title", "what_text", "name", "event", "summary"]);
     var when = first(raw, ["when", "when_text", "date", "date_text", "time", "time_text", "datetime", "start_time", "start"]);
@@ -224,12 +223,12 @@
     var url = safeUrl(first(raw, ["url", "link", "href", "official_url"]));
 
     title = title.replace(/\s*-\s*Singapore$/i, "").replace(/\s*\|\s*$/, "");
-    if (isPlaceholder(when) || !looksLikeDate(when)) when = "";
-    if (isPlaceholder(where)) where = "";
+    if (isPlaceholder(when)) when = "";
+    if (badWhere(where)) where = "";
     if (isPlaceholder(source)) source = "";
     if (summary === title || isPlaceholder(summary)) summary = "";
 
-    return { title: title, when: when, where: where, source: source, summary: summary, url: url };
+    return { title: title, when: when, where: where, source: source, summary: summary, url: url, sourceOrder: raw.source_order || raw.source_index || index };
   }
 
   function eventKey(item) {
@@ -238,7 +237,6 @@
 
   function usable(item) {
     if (!item.title) return false;
-    if (!item.when) return false;
     if (/^(official page|local event|events?|overview|view details)$/i.test(item.title)) return false;
     if (/\b(address|opening hours|directions|facilities|venue hire|contact us|about us)\b/i.test(item.title) && !item.summary) return false;
     return true;
@@ -246,8 +244,8 @@
 
   function normalizeList(payload) {
     var map = new Map();
-    rows(payload).forEach(function (raw) {
-      var item = normalize(raw);
+    rows(payload).forEach(function (raw, index) {
+      var item = normalize(raw, index);
       if (!usable(item)) return;
       var key = eventKey(item);
       if (!map.has(key)) {
@@ -255,6 +253,7 @@
         return;
       }
       var old = map.get(key);
+      if (!old.when && item.when) old.when = item.when;
       if (!old.where && item.where) old.where = item.where;
       if (!old.source && item.source) old.source = item.source;
       if (!old.summary && item.summary) old.summary = item.summary;
@@ -267,13 +266,13 @@
     var style = document.createElement("style");
     style.id = "local-event-stable-style";
     style.textContent = [
-      "#localEventList .local-event-card{height:100%!important;box-sizing:border-box!important;display:grid!important;grid-template-rows:auto auto auto auto minmax(0,1fr) auto!important;gap:6px!important;overflow:hidden!important;padding:9px 10px 9px 12px!important;border-left:3px solid #ffe08a!important;background:rgba(255,224,138,.045)!important;color:#d7ddd9!important;text-decoration:none!important;}",
-      "#localEventList .local-event-label{color:#7d8782!important;font-size:10px!important;line-height:1.1!important;font-weight:950!important;letter-spacing:.16em!important;text-transform:uppercase!important;}",
+      "#localEventList .local-event-card{height:100%!important;box-sizing:border-box!important;display:grid!important;grid-template-rows:auto auto auto minmax(0,1fr) auto!important;gap:5px!important;overflow:hidden!important;padding:9px 10px 9px 12px!important;border-left:3px solid #ffe08a!important;background:rgba(255,224,138,.045)!important;color:#d7ddd9!important;text-decoration:none!important;}",
+      "#localEventList .local-event-source{max-width:calc(100% - 128px)!important;color:#8cecff!important;font-size:11px!important;line-height:1.15!important;font-weight:950!important;letter-spacing:.08em!important;text-transform:uppercase!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;}",
       "#localEventList .local-event-title{color:#ffe08a!important;font-size:16px!important;line-height:1.12!important;font-weight:950!important;letter-spacing:.01em!important;overflow:hidden!important;display:-webkit-box!important;-webkit-line-clamp:2!important;-webkit-box-orient:vertical!important;}",
       "#localEventList .local-event-kv{display:grid!important;grid-template-columns:48px minmax(0,1fr)!important;gap:8px!important;align-items:start!important;min-height:0!important;font-size:12px!important;line-height:1.18!important;font-weight:850!important;overflow:hidden!important;}",
       "#localEventList .local-event-kv span{color:#7d8782!important;font-size:10px!important;line-height:1.2!important;font-weight:950!important;letter-spacing:.12em!important;text-transform:uppercase!important;}",
       "#localEventList .local-event-kv b{color:#8cecff!important;font-weight:900!important;overflow:hidden!important;display:-webkit-box!important;-webkit-line-clamp:2!important;-webkit-box-orient:vertical!important;}",
-      "#localEventList .local-event-desc{min-height:0!important;overflow:hidden!important;color:#d7ddd9!important;font-size:12px!important;line-height:1.2!important;font-weight:760!important;display:-webkit-box!important;-webkit-line-clamp:5!important;-webkit-box-orient:vertical!important;}",
+      "#localEventList .local-event-desc{min-height:0!important;overflow:hidden!important;color:#d7ddd9!important;font-size:12px!important;line-height:1.2!important;font-weight:760!important;display:-webkit-box!important;-webkit-line-clamp:4!important;-webkit-box-orient:vertical!important;}",
       "#localEventList .local-event-actions{align-self:end!important;}",
       "#localEventList .local-event-link{display:inline-block!important;color:#050606!important;background:#ffe08a!important;border:1px solid #ffe08a!important;border-radius:999px!important;padding:4px 10px!important;font-size:10px!important;line-height:1!important;font-weight:950!important;letter-spacing:.08em!important;text-decoration:none!important;text-transform:uppercase!important;}",
       "#localEventList .local-event-empty{height:100%!important;display:grid!important;place-items:center!important;color:#7d8782!important;font-size:14px!important;font-weight:900!important;letter-spacing:.05em!important;text-transform:uppercase!important;text-align:center!important;}"
@@ -309,7 +308,7 @@
     installStyle();
     if (!items.length) {
       var rawCount = lastPayload && typeof lastPayload.count !== "undefined" ? lastPayload.count : rows(lastPayload).length;
-      renderEmpty("NO DATED EVENTS · RAW " + rawCount);
+      renderEmpty("NO RENDERABLE EVENTS · RAW " + rawCount);
       return;
     }
     if (page < 0) page = items.length - 1;
@@ -317,11 +316,10 @@
     var item = items[page];
     var html = [
       '<div class="local-event-card active" data-owned-by="calendar-board">',
-      '<div class="local-event-label">EVENT</div>',
+      '<div class="local-event-source">' + esc(short(item.source || "Official source", 90)) + '</div>',
       '<div class="local-event-title">' + esc(short(item.title || "Local event", 120)) + '</div>',
       fact("WHEN", item.when),
-      fact("WHERE", item.where || item.source),
-      fact("HOST", item.source),
+      fact("WHERE", item.where),
       item.summary ? '<div class="local-event-desc">' + esc(short(item.summary, 260)) + '</div>' : '<div class="local-event-desc"></div>',
       '<div class="local-event-actions">' + (item.url ? '<a class="local-event-link" href="' + esc(item.url) + '" target="_blank" rel="noopener noreferrer">OPEN OFFICIAL LINK</a>' : '') + '</div>',
       '</div>'
