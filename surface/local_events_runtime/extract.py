@@ -7,6 +7,7 @@ import re
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,8 @@ MAX_EVENTS_PER_SOURCE = int(os.environ.get("LOCAL_EVENTS_MAX_EVENTS_PER_SOURCE",
 MAX_TOTAL_EVENTS = int(os.environ.get("LOCAL_EVENTS_MAX_TOTAL_EVENTS", "80"))
 PAST_GRACE_DAYS = int(os.environ.get("LOCAL_EVENTS_PAST_GRACE_DAYS", "1"))
 MAX_DATE_SPAN_DAYS = int(os.environ.get("LOCAL_EVENTS_MAX_DATE_SPAN_DAYS", "760"))
+SOURCE_CONCURRENCY = max(1, int(os.environ.get("LOCAL_EVENTS_SOURCE_CONCURRENCY", "3")))
+SOURCE_TIMEOUT_SECONDS = float(os.environ.get("LOCAL_EVENTS_SOURCE_TIMEOUT_SECONDS", "55"))
 
 MONTHS = {
     "jan": 1, "january": 1,
@@ -347,6 +350,7 @@ def bump(debug: dict[str, Any], reason: str) -> None:
 
 
 def collect_source(source: dict[str, Any], debug_dir: Path, deadline: float) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    started = time.time()
     debug: dict[str, Any] = {
         "source": source.get("name"),
         "adapter": source.get("adapter") or "rendered_dom_card",
@@ -410,8 +414,40 @@ def collect_source(source: dict[str, Any], debug_dir: Path, deadline: float) -> 
             elif len(debug["not_output_preview"]) < 30:
                 debug["not_output_preview"].append({"url": card.get("url"), "link_text": card.get("link_text"), "reason": reason, "screenshot": card.get("screenshot"), "detail_url_count": card.get("detail_url_count")})
 
+    if time.time() >= deadline and debug["listing_fetched"] < len(debug["listing_urls"]):
+        bump(debug, "source_budget_exhausted")
     debug["accepted"] = len(accepted)
+    debug["elapsed_seconds"] = round(time.time() - started, 2)
     return accepted, debug
+
+
+def skipped_source_debug(source: dict[str, Any], reason: str) -> dict[str, Any]:
+    return {
+        "source": source.get("name"),
+        "adapter": source.get("adapter") or "rendered_dom_card",
+        "listing_urls": source.get("listing_urls") or [],
+        "listing_fetched": 0,
+        "cards_found": 0,
+        "accepted": 0,
+        "accepted_preview": [],
+        "not_output_preview": [{"reason": reason}],
+        "reason_counts": {reason: 1},
+        "screenshots": [],
+        "elapsed_seconds": 0,
+    }
+
+
+def collect_source_index(index: int, source: dict[str, Any], debug_dir: Path, global_deadline: float) -> tuple[int, list[dict[str, Any]], dict[str, Any]]:
+    if time.time() >= global_deadline:
+        return index, [], skipped_source_debug(source, "skipped_by_global_deadline")
+    source_deadline = min(global_deadline, time.time() + SOURCE_TIMEOUT_SECONDS)
+    try:
+        items, source_debug = collect_source(source, debug_dir, source_deadline)
+        return index, items, source_debug
+    except Exception as exc:
+        debug = skipped_source_debug(source, f"source_error:{type(exc).__name__}")
+        debug["not_output_preview"] = [{"reason": f"source_error:{type(exc).__name__}:{exc}"}]
+        return index, [], debug
 
 
 def local_score(item: dict[str, Any], location: str) -> int:
@@ -436,23 +472,51 @@ def runtime_info(config_path: Path) -> dict[str, Any]:
         "python": sys.executable,
         "module_file": __file__,
         "git_head": git_head(config_path),
+        "source_concurrency": SOURCE_CONCURRENCY,
+        "source_timeout_seconds": SOURCE_TIMEOUT_SECONDS,
     }
 
 
 def collect_events(config_path: Path, location: str, debug_dir: Path) -> dict[str, Any]:
     config = json.loads(config_path.read_text(encoding="utf-8"))
+    sources = list(config.get("sources") or [])
     deadline = time.time() + MAX_SECONDS
     all_items: list[dict[str, Any]] = []
-    debug = []
+    debug_by_index: dict[int, dict[str, Any]] = {}
+    items_by_index: dict[int, list[dict[str, Any]]] = {}
     seen = set()
     semantic_seen = set()
 
-    for source in config.get("sources") or []:
-        if time.time() >= deadline or len(all_items) >= MAX_TOTAL_EVENTS:
-            break
-        items, source_debug = collect_source(source, debug_dir, deadline)
-        debug.append(source_debug)
-        for item in items:
+    max_workers = min(SOURCE_CONCURRENCY, len(sources)) or 1
+    executor = ThreadPoolExecutor(max_workers=max_workers)
+    future_to_index = {
+        executor.submit(collect_source_index, index, source, debug_dir, deadline): index
+        for index, source in enumerate(sources)
+    }
+
+    try:
+        for future in as_completed(future_to_index, timeout=max(0.1, deadline - time.time())):
+            index = future_to_index[future]
+            try:
+                _, items, source_debug = future.result(timeout=0)
+            except Exception as exc:
+                items = []
+                source_debug = skipped_source_debug(sources[index], f"source_error:{type(exc).__name__}")
+                source_debug["not_output_preview"] = [{"reason": f"source_error:{type(exc).__name__}:{exc}"}]
+            items_by_index[index] = items
+            debug_by_index[index] = source_debug
+    except FuturesTimeoutError:
+        for future, index in future_to_index.items():
+            if not future.done():
+                future.cancel()
+                debug_by_index.setdefault(index, skipped_source_debug(sources[index], "skipped_by_global_deadline"))
+                items_by_index.setdefault(index, [])
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+
+    for index, source in enumerate(sources):
+        debug_by_index.setdefault(index, skipped_source_debug(source, "not_started"))
+        for item in items_by_index.get(index, []):
             key = item.get("url") or ""
             skey = semantic_key(item)
             if not key or key in seen or skey in semantic_seen:
@@ -462,19 +526,22 @@ def collect_events(config_path: Path, location: str, debug_dir: Path) -> dict[st
             all_items.append(item)
             if len(all_items) >= MAX_TOTAL_EVENTS:
                 break
+        if len(all_items) >= MAX_TOTAL_EVENTS:
+            break
 
+    debug = [debug_by_index[index] for index in range(len(sources))]
     all_items.sort(key=lambda item: (-local_score(item, location), str(item.get("source_name", "")), str(item.get("start_date", "")), str(item.get("title", ""))))
     return {
         "ok": True,
-        "version": 41,
-        "extractor": "rendered-dom-card-v41",
+        "version": 42,
+        "extractor": "rendered-dom-card-v42",
         "updated_at": now_iso(),
         "location": location,
         "runtime": runtime_info(config_path),
         "event_source_config": config_path.name,
-        "source_count": len(config.get("sources") or []),
+        "source_count": len(sources),
         "count": len(all_items),
-        "sources": [{"title": item.get("name"), "url": item.get("official_home")} for item in config.get("sources") or []],
+        "sources": [{"title": item.get("name"), "url": item.get("official_home")} for item in sources],
         "results": all_items,
         "debug_by_source": debug,
     }
