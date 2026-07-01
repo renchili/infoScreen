@@ -154,12 +154,19 @@
 
 (function () {
   var API = "/api/local-events/search";
+  var ROTATE_MS = 60000;
+  var DATA_REFRESH_MS = 30 * 60 * 1000;
   var page = 0;
   var items = [];
+  var rotateTimer = null;
+  var refreshTimer = null;
+  var applying = false;
+  var observer = null;
   var lastPayload = null;
 
   function byId(id) { return document.getElementById(id); }
   function clean(value) { return String(value == null ? "" : value).replace(/\s+/g, " ").trim(); }
+  function lower(value) { return clean(value).toLowerCase(); }
   function esc(value) {
     return clean(value)
       .replaceAll("&", "&amp;")
@@ -167,6 +174,11 @@
       .replaceAll(">", "&gt;")
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#039;");
+  }
+  function short(value, maxLen) {
+    var text = clean(value);
+    if (!text) return "";
+    return text.length <= maxLen ? text : text.slice(0, maxLen - 1).trimEnd() + "…";
   }
 
   function rows(payload) {
@@ -178,47 +190,100 @@
     return [];
   }
 
-  function normalize(raw) {
-    raw = raw || {};
-    var url = clean(raw.url || raw.link || raw.href || "");
-    var source = clean(raw.source_name || raw.host || raw.source || raw.organizer || "Official source");
-    var title = clean(raw.title || raw.name || raw.summary || "");
-    var when = clean(raw.when || raw.date || raw.date_text || raw.when_text || raw.start_date || raw.start || "");
-    var where = clean(raw.where || raw.venue || raw.location || raw.place || "");
-    var summary = clean(raw.summary || raw.description || raw.why_text || raw.subtitle || "");
-    return {
-      title: title,
-      when: when,
-      where: where,
-      source: source,
-      summary: summary,
-      url: /^https?:\/\//i.test(url) ? url : ""
-    };
+  function isPlaceholder(value) {
+    var text = lower(value);
+    return !text || /^(check official page|open official page|date not published|venue not published|unknown organizer|official source|no link in source)$/i.test(text);
   }
 
-  function installReadableStyle() {
-    if (document.getElementById("local-event-readable-style")) return;
+  function safeUrl(value) {
+    var url = clean(value);
+    return /^https?:\/\//i.test(url) ? url : "";
+  }
+
+  function looksLikeDate(value) {
+    var text = clean(value);
+    if (!text || isPlaceholder(text)) return false;
+    return /(\b(today|tomorrow|tonight|weekend|mon|tue|wed|thu|fri|sat|sun|jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b|\d{1,2}\s*[-–—]\s*\d{1,2}|\d{4}-\d{1,2}-\d{1,2}|\d{1,2}\/\d{1,2}|\d{1,2}\s*(am|pm)|\d{1,2}[:.]\d{2})/i.test(text);
+  }
+
+  function first(raw, keys) {
+    for (var i = 0; i < keys.length; i++) {
+      var value = clean(raw && raw[keys[i]]);
+      if (value) return value;
+    }
+    return "";
+  }
+
+  function normalize(raw) {
+    raw = raw || {};
+    var title = first(raw, ["title", "what_text", "name", "event", "summary"]);
+    var when = first(raw, ["when", "when_text", "date", "date_text", "time", "time_text", "datetime", "start_time", "start"]);
+    var where = first(raw, ["where", "venue", "place", "where_text", "location", "address", "area"]);
+    var source = first(raw, ["source_name", "host", "organizer", "who_text", "source"]);
+    var summary = first(raw, ["summary", "description", "desc", "why_text", "subtitle"]);
+    var url = safeUrl(first(raw, ["url", "link", "href", "official_url"]));
+
+    title = title.replace(/\s*-\s*Singapore$/i, "").replace(/\s*\|\s*$/, "");
+    if (isPlaceholder(when) || !looksLikeDate(when)) when = "";
+    if (isPlaceholder(where)) where = "";
+    if (isPlaceholder(source)) source = "";
+    if (summary === title || isPlaceholder(summary)) summary = "";
+
+    return { title: title, when: when, where: where, source: source, summary: summary, url: url };
+  }
+
+  function eventKey(item) {
+    return item.url || [lower(item.title), lower(item.source), lower(item.when), lower(item.where)].join("|");
+  }
+
+  function usable(item) {
+    if (!item.title) return false;
+    if (!item.when) return false;
+    if (/^(official page|local event|events?|overview|view details)$/i.test(item.title)) return false;
+    if (/\b(address|opening hours|directions|facilities|venue hire|contact us|about us)\b/i.test(item.title) && !item.summary) return false;
+    return true;
+  }
+
+  function normalizeList(payload) {
+    var map = new Map();
+    rows(payload).forEach(function (raw) {
+      var item = normalize(raw);
+      if (!usable(item)) return;
+      var key = eventKey(item);
+      if (!map.has(key)) {
+        map.set(key, item);
+        return;
+      }
+      var old = map.get(key);
+      if (!old.where && item.where) old.where = item.where;
+      if (!old.source && item.source) old.source = item.source;
+      if (!old.summary && item.summary) old.summary = item.summary;
+    });
+    return Array.from(map.values());
+  }
+
+  function installStyle() {
+    if (document.getElementById("local-event-stable-style")) return;
     var style = document.createElement("style");
-    style.id = "local-event-readable-style";
+    style.id = "local-event-stable-style";
     style.textContent = [
-      "#localEventBox .inner{position:relative!important;height:100%!important;min-height:0!important;overflow:hidden!important;padding:7px 10px 9px 10px!important;display:block!important;background:#050606!important;}",
-      "#localEventBox .local-event-toolbar{position:absolute!important;top:6px!important;right:8px!important;height:23px!important;display:flex!important;align-items:center!important;gap:6px!important;z-index:5!important;margin:0!important;padding:0!important;background:rgba(5,6,6,.88)!important;border-radius:999px!important;}",
-      "#localEventBox #localEventCounter{min-width:48px!important;text-align:right!important;color:#7d8782!important;font-size:12px!important;line-height:21px!important;font-weight:900!important;letter-spacing:.04em!important;}",
-      "#localEventBox #localEventPrevButton,#localEventBox #localEventNextButton,#localEventBox #localEventLocationButton{appearance:none!important;-webkit-appearance:none!important;box-sizing:border-box!important;display:inline-grid!important;place-items:center!important;width:23px!important;height:23px!important;min-width:23px!important;min-height:23px!important;margin:0!important;padding:0!important;border:1px solid #3a3f3d!important;border-radius:999px!important;background:#050606!important;color:#8cecff!important;font-size:14px!important;font-weight:950!important;line-height:1!important;}",
-      "#localEventBox #localEventPrevButton:disabled,#localEventBox #localEventNextButton:disabled{opacity:.28!important;}",
-      "#localEventList{height:100%!important;min-height:0!important;overflow:hidden!important;margin:0!important;padding:0!important;display:block!important;background:transparent!important;}",
-      "#localEventList .infoscreen-event-card{height:100%!important;box-sizing:border-box!important;display:grid!important;grid-template-rows:auto auto auto auto minmax(0,1fr) auto!important;gap:5px!important;overflow:hidden!important;padding:9px 10px 9px 12px!important;border-left:3px solid #ffe08a!important;background:rgba(255,224,138,.045)!important;color:#d7ddd9!important;text-decoration:none!important;}",
-      "#localEventList .event-source{max-width:calc(100% - 128px)!important;color:#8cecff!important;font-size:11px!important;line-height:1.15!important;font-weight:950!important;letter-spacing:.08em!important;text-transform:uppercase!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;}",
-      "#localEventList .event-title{display:block!important;color:#ffe08a!important;font-size:16px!important;line-height:1.12!important;font-weight:950!important;letter-spacing:.01em!important;text-decoration:none!important;overflow:hidden!important;display:-webkit-box!important;-webkit-line-clamp:2!important;-webkit-box-orient:vertical!important;}",
-      "#localEventList .event-fact{display:grid!important;grid-template-columns:48px minmax(0,1fr)!important;gap:8px!important;align-items:start!important;min-height:0!important;color:#d7ddd9!important;font-size:12px!important;line-height:1.18!important;font-weight:850!important;overflow:hidden!important;}",
-      "#localEventList .event-label{color:#7d8782!important;font-size:10px!important;line-height:1.2!important;font-weight:950!important;letter-spacing:.12em!important;text-transform:uppercase!important;}",
-      "#localEventList .event-value{color:#8cecff!important;overflow:hidden!important;display:-webkit-box!important;-webkit-line-clamp:2!important;-webkit-box-orient:vertical!important;}",
-      "#localEventList .event-about{min-height:0!important;overflow:hidden!important;color:#d7ddd9!important;font-size:12px!important;line-height:1.2!important;font-weight:760!important;display:-webkit-box!important;-webkit-line-clamp:5!important;-webkit-box-orient:vertical!important;}",
-      "#localEventList .event-about .event-label{display:block!important;margin-bottom:2px!important;}",
-      "#localEventList .event-link{align-self:end!important;justify-self:start!important;color:#050606!important;background:#ffe08a!important;border:1px solid #ffe08a!important;border-radius:999px!important;padding:4px 10px!important;font-size:10px!important;line-height:1!important;font-weight:950!important;letter-spacing:.08em!important;text-decoration:none!important;text-transform:uppercase!important;}",
-      "#localEventList .infoscreen-local-empty{height:100%!important;display:grid!important;place-items:center!important;color:#7d8782!important;font-size:14px!important;font-weight:900!important;letter-spacing:.05em!important;text-transform:uppercase!important;text-align:center!important;}"
+      "#localEventList .local-event-card{height:100%!important;box-sizing:border-box!important;display:grid!important;grid-template-rows:auto auto auto auto minmax(0,1fr) auto!important;gap:6px!important;overflow:hidden!important;padding:9px 10px 9px 12px!important;border-left:3px solid #ffe08a!important;background:rgba(255,224,138,.045)!important;color:#d7ddd9!important;text-decoration:none!important;}",
+      "#localEventList .local-event-label{color:#7d8782!important;font-size:10px!important;line-height:1.1!important;font-weight:950!important;letter-spacing:.16em!important;text-transform:uppercase!important;}",
+      "#localEventList .local-event-title{color:#ffe08a!important;font-size:16px!important;line-height:1.12!important;font-weight:950!important;letter-spacing:.01em!important;overflow:hidden!important;display:-webkit-box!important;-webkit-line-clamp:2!important;-webkit-box-orient:vertical!important;}",
+      "#localEventList .local-event-kv{display:grid!important;grid-template-columns:48px minmax(0,1fr)!important;gap:8px!important;align-items:start!important;min-height:0!important;font-size:12px!important;line-height:1.18!important;font-weight:850!important;overflow:hidden!important;}",
+      "#localEventList .local-event-kv span{color:#7d8782!important;font-size:10px!important;line-height:1.2!important;font-weight:950!important;letter-spacing:.12em!important;text-transform:uppercase!important;}",
+      "#localEventList .local-event-kv b{color:#8cecff!important;font-weight:900!important;overflow:hidden!important;display:-webkit-box!important;-webkit-line-clamp:2!important;-webkit-box-orient:vertical!important;}",
+      "#localEventList .local-event-desc{min-height:0!important;overflow:hidden!important;color:#d7ddd9!important;font-size:12px!important;line-height:1.2!important;font-weight:760!important;display:-webkit-box!important;-webkit-line-clamp:5!important;-webkit-box-orient:vertical!important;}",
+      "#localEventList .local-event-actions{align-self:end!important;}",
+      "#localEventList .local-event-link{display:inline-block!important;color:#050606!important;background:#ffe08a!important;border:1px solid #ffe08a!important;border-radius:999px!important;padding:4px 10px!important;font-size:10px!important;line-height:1!important;font-weight:950!important;letter-spacing:.08em!important;text-decoration:none!important;text-transform:uppercase!important;}",
+      "#localEventList .local-event-empty{height:100%!important;display:grid!important;place-items:center!important;color:#7d8782!important;font-size:14px!important;font-weight:900!important;letter-spacing:.05em!important;text-transform:uppercase!important;text-align:center!important;}"
     ].join("\n");
     document.head.appendChild(style);
+  }
+
+  function fact(label, value) {
+    if (isPlaceholder(value)) return "";
+    return '<div class="local-event-kv"><span>' + esc(label) + '</span><b>' + esc(short(value, 180)) + '</b></div>';
   }
 
   function renderEmpty(text) {
@@ -226,37 +291,13 @@
     var counter = byId("localEventCounter");
     var prev = byId("localEventPrevButton");
     var next = byId("localEventNextButton");
-    installReadableStyle();
-    if (list) list.innerHTML = '<div class="infoscreen-local-empty">' + esc(text) + '</div>';
+    installStyle();
+    applying = true;
+    if (list) list.innerHTML = '<div class="local-event-empty">' + esc(text) + '</div>';
+    applying = false;
     if (counter) counter.textContent = "";
     if (prev) prev.disabled = true;
     if (next) next.disabled = true;
-  }
-
-  function fact(label, value) {
-    if (!clean(value)) return "";
-    return '<div class="event-fact"><div class="event-label">' + esc(label) + '</div><div class="event-value">' + esc(value) + '</div></div>';
-  }
-
-  function cardHtml(item) {
-    var title = item.title || "Local event";
-    var about = item.summary || "Open the official source for event details.";
-    var titleHtml = item.url
-      ? '<a class="event-title" href="' + esc(item.url) + '" target="_blank" rel="noopener noreferrer">' + esc(title) + '</a>'
-      : '<div class="event-title">' + esc(title) + '</div>';
-    var linkHtml = item.url
-      ? '<a class="event-link" href="' + esc(item.url) + '" target="_blank" rel="noopener noreferrer">OPEN OFFICIAL SOURCE ↗</a>'
-      : '';
-    return [
-      '<article class="infoscreen-event-card">',
-      '<div class="event-source">', esc(item.source || "Official source"), '</div>',
-      titleHtml,
-      fact("WHEN", item.when || "Date not published"),
-      fact("WHERE", item.where || "Venue not published"),
-      '<div class="event-about"><span class="event-label">ABOUT</span>', esc(about), '</div>',
-      linkHtml,
-      '</article>'
-    ].join("");
   }
 
   function render() {
@@ -265,27 +306,67 @@
     var prev = byId("localEventPrevButton");
     var next = byId("localEventNextButton");
     if (!list) return;
-    installReadableStyle();
+    installStyle();
     if (!items.length) {
       var rawCount = lastPayload && typeof lastPayload.count !== "undefined" ? lastPayload.count : rows(lastPayload).length;
-      renderEmpty("NO RENDERABLE EVENTS · RAW " + rawCount);
+      renderEmpty("NO DATED EVENTS · RAW " + rawCount);
       return;
     }
     if (page < 0) page = items.length - 1;
     if (page >= items.length) page = 0;
-    list.innerHTML = cardHtml(items[page]);
+    var item = items[page];
+    var html = [
+      '<div class="local-event-card active" data-owned-by="calendar-board">',
+      '<div class="local-event-label">EVENT</div>',
+      '<div class="local-event-title">' + esc(short(item.title || "Local event", 120)) + '</div>',
+      fact("WHEN", item.when),
+      fact("WHERE", item.where || item.source),
+      fact("HOST", item.source),
+      item.summary ? '<div class="local-event-desc">' + esc(short(item.summary, 260)) + '</div>' : '<div class="local-event-desc"></div>',
+      '<div class="local-event-actions">' + (item.url ? '<a class="local-event-link" href="' + esc(item.url) + '" target="_blank" rel="noopener noreferrer">OPEN OFFICIAL LINK</a>' : '') + '</div>',
+      '</div>'
+    ].join("");
+    applying = true;
+    list.innerHTML = html;
+    applying = false;
     if (counter) counter.textContent = (page + 1) + "/" + items.length;
     if (prev) prev.disabled = items.length <= 1;
     if (next) next.disabled = items.length <= 1;
   }
 
+  function stopRotate() {
+    if (rotateTimer) clearInterval(rotateTimer);
+    rotateTimer = null;
+  }
+
+  function startRotate() {
+    stopRotate();
+    if (items.length <= 1) return;
+    rotateTimer = setInterval(function () {
+      page = (page + 1) % items.length;
+      render();
+    }, ROTATE_MS);
+  }
+
+  function resetRotate() {
+    startRotate();
+  }
+
   function apply(payload) {
     lastPayload = payload || {};
-    items = rows(payload).map(normalize).filter(function (item) {
-      return item.title;
-    });
+    var current = items[page] ? eventKey(items[page]) : "";
+    items = normalizeList(payload);
     page = 0;
+    if (current) {
+      for (var i = 0; i < items.length; i++) {
+        if (eventKey(items[i]) === current) {
+          page = i;
+          break;
+        }
+      }
+    }
     render();
+    startRotate();
   }
 
   async function loadLocalEvents() {
@@ -295,7 +376,8 @@
       if (!resp.ok) throw new Error(payload.error || ("HTTP " + resp.status));
       apply(payload);
     } catch (err) {
-      renderEmpty("LOCAL EVENTS UNAVAILABLE · " + err.message);
+      renderEmpty("LOCAL EVENTS UNAVAILABLE");
+      stopRotate();
     }
   }
 
@@ -311,11 +393,12 @@
     if (err) err.textContent = "Searching official sources…";
     if (button) button.disabled = true;
     renderEmpty("SEARCHING OFFICIAL SOURCES…");
+    stopRotate();
     try {
       var resp = await fetch(API, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ location: location })
+        body: JSON.stringify({ location: location, query: location, place: location })
       });
       var payload = await resp.json();
       if (!resp.ok) throw new Error(payload.error || payload.stderr || ("HTTP " + resp.status));
@@ -325,7 +408,7 @@
       apply(payload);
     } catch (e) {
       if (err) err.textContent = "Search failed: " + e.message;
-      renderEmpty("LOCAL EVENT SEARCH FAILED · " + e.message);
+      renderEmpty("LOCAL EVENT SEARCH FAILED");
     } finally {
       if (button) button.disabled = false;
     }
@@ -335,6 +418,7 @@
     if (!items.length) return;
     page += delta;
     render();
+    resetRotate();
   }
 
   function claim(id) {
@@ -343,6 +427,20 @@
     var clone = el.cloneNode(true);
     el.parentNode.replaceChild(clone, el);
     return clone;
+  }
+
+  function observeInlineOverwrite() {
+    var list = byId("localEventList");
+    if (!list || !window.MutationObserver) return;
+    if (observer) observer.disconnect();
+    observer = new MutationObserver(function () {
+      if (applying) return;
+      setTimeout(function () {
+        var owned = list.querySelector('[data-owned-by="calendar-board"]');
+        if (!owned && items.length) render();
+      }, 0);
+    });
+    observer.observe(list, { childList: true, subtree: false });
   }
 
   function bind() {
@@ -374,32 +472,28 @@
     });
     if (prevButton) prevButton.addEventListener("click", function (e) { e.preventDefault(); e.stopImmediatePropagation(); movePage(-1); });
     if (nextButton) nextButton.addEventListener("click", function (e) { e.preventDefault(); e.stopImmediatePropagation(); movePage(1); });
+    observeInlineOverwrite();
   }
 
   window.__localEventReload = loadLocalEvents;
   window.__localEventSearch = searchLocalEvents;
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", function () {
-      bind();
-      loadLocalEvents();
-    });
-  } else {
+  window.__localEventNext = function () { movePage(1); };
+  window.__localEventPrev = function () { movePage(-1); };
+
+  function start() {
     bind();
     loadLocalEvents();
+    if (refreshTimer) clearInterval(refreshTimer);
+    refreshTimer = setInterval(loadLocalEvents, DATA_REFRESH_MS);
   }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
+  else start();
 })();
 
 (function () {
   function byId(id) { return document.getElementById(id); }
   function clean(value) { return String(value == null ? "" : value).replace(/\s+/g, " ").trim(); }
-  function esc(value) {
-    return clean(value)
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
-  }
 
   function installMarketStyle() {
     if (document.getElementById("market-config-style")) return;
