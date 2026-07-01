@@ -261,6 +261,135 @@ CARD_JS = r"""
     return /\b20\d{2}\b|\b\d{1,2}\s+(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b/i.test(text);
   }
 
+  function firstString(obj, keys) {
+    if (!obj || typeof obj !== "object") return "";
+    for (const key of keys) {
+      if (typeof obj[key] === "string" && oneLine(obj[key])) return oneLine(obj[key]);
+    }
+    const wanted = keys.map(k => k.toLowerCase());
+    for (const [key, value] of Object.entries(obj)) {
+      if (typeof value !== "string") continue;
+      const lower = key.toLowerCase();
+      if (wanted.some(w => lower === w || lower.endsWith(w) || lower.includes(w))) {
+        const text = oneLine(value);
+        if (text) return text;
+      }
+    }
+    return "";
+  }
+
+  function plainText(value, depth = 0) {
+    if (value == null || depth > 3) return "";
+    if (typeof value === "string" || typeof value === "number") return oneLine(value);
+    if (Array.isArray(value)) return value.slice(0, 6).map(v => plainText(v, depth + 1)).filter(Boolean).join(" ");
+    if (typeof value === "object") return Object.values(value).slice(0, 10).map(v => plainText(v, depth + 1)).filter(Boolean).join(" ");
+    return "";
+  }
+
+  function titleLooksUseful(title) {
+    if (!title || title.length < 4 || title.length > 180) return false;
+    if (/^(events?|exhibitions?|programmes?|programs?|activities?|overview|what'?s on|view all|read more|learn more|book now)$/i.test(title)) return false;
+    return true;
+  }
+
+  function objectDateText(obj) {
+    const parts = [];
+    for (const [key, value] of Object.entries(obj || {})) {
+      const lower = key.toLowerCase();
+      if (/(date|time|start|end|from|to|period|duration)/.test(lower)) {
+        const text = plainText(value);
+        if (text) parts.push(text);
+      }
+    }
+    return parts.join(" | ");
+  }
+
+  function objectUrl(obj, text) {
+    const raw = firstString(obj, ["url", "link", "href", "path", "pageUrl", "detailUrl", "ctaUrl"]);
+    if (raw) {
+      try {
+        const abs = new URL(raw, document.location.href).href;
+        if (sameDomain(abs) && pathRole(abs) !== "listing") return abs;
+      } catch {}
+    }
+    const base = officialHome || document.location.origin;
+    return base.replace(/\/$/, "") + "#nhb-json-" + textHash(text.slice(0, 900));
+  }
+
+  function dataCardPayload(obj, extractionMode) {
+    const title = firstString(obj, ["title", "name", "heading", "displayTitle", "eventTitle", "programmeTitle"]);
+    if (!titleLooksUseful(title)) return null;
+    const when = objectDateText(obj);
+    const venue = firstString(obj, ["venue", "location", "place", "where", "site", "museum"]);
+    const summary = firstString(obj, ["description", "summary", "excerpt", "shortDescription", "body", "intro", "subtitle"]);
+    const type = firstString(obj, ["type", "category", "contentType"]);
+    const textParts = [title, when, venue, type, summary].filter(Boolean);
+    const allText = textParts.join("\n");
+    if (!hasDateText(allText)) return null;
+    const url = objectUrl(obj, allText);
+    const id = `${sourceId}-${pageIndex}-json-${textHash(url + allText.slice(0, 500))}`;
+    return {
+      id,
+      url,
+      link_text: title,
+      headings: [title],
+      image_alts: [],
+      text: allText,
+      text_lines: textParts,
+      detail_url_count: 0,
+      detail_urls: [],
+      page_index: pageIndex,
+      page_url: document.location.href,
+      rect: {x: 0, y: 0, width: 0, height: 0},
+      role: pathRole(url),
+      extraction_mode: extractionMode
+    };
+  }
+
+  function visitJson(value, out, seenObjects, depth = 0) {
+    if (out.length >= maxCards || value == null || depth > 9) return;
+    if (typeof value !== "object") return;
+    if (seenObjects.has(value)) return;
+    seenObjects.add(value);
+
+    if (!Array.isArray(value)) {
+      const payload = dataCardPayload(value, "nhb_json");
+      if (payload) out.push(payload);
+    }
+
+    const children = Array.isArray(value) ? value : Object.values(value);
+    for (const child of children) {
+      if (out.length >= maxCards) break;
+      visitJson(child, out, seenObjects, depth + 1);
+    }
+  }
+
+  function pushNhbJsonCards(out, seen) {
+    const jsonCards = [];
+    const seenObjects = new WeakSet();
+    const scripts = Array.from(document.querySelectorAll("script"));
+
+    for (const script of scripts) {
+      const type = (script.getAttribute("type") || "").toLowerCase();
+      const id = (script.getAttribute("id") || "").toLowerCase();
+      const raw = (script.textContent || "").trim();
+      if (!raw || raw.length < 20 || raw.length > 700000) continue;
+      if (!(type.includes("json") || id === "__next_data__" || raw[0] === "{" || raw[0] === "[")) continue;
+      try {
+        visitJson(JSON.parse(raw), jsonCards, seenObjects, 0);
+      } catch {}
+      if (jsonCards.length >= maxCards) break;
+    }
+
+    for (const card of jsonCards) {
+      const key = card.url + "\n" + card.text.slice(0, 500);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(card);
+      if (out.length >= maxCards) break;
+    }
+  }
+
   function scoreContainer(el, anchor) {
     if (!el || !visible(el)) return -999;
     const r = el.getBoundingClientRect();
@@ -370,6 +499,10 @@ CARD_JS = r"""
   const out = [];
   const seen = new Set();
   const anchors = Array.from(document.querySelectorAll("a[href]")).filter(a => visible(a));
+
+  if (adapter === "nhb") {
+    pushNhbJsonCards(out, seen);
+  }
 
   for (const a of anchors) {
     const abs = new URL(a.getAttribute("href"), document.location.href).href;
