@@ -20,6 +20,12 @@ LOAD_WAIT_MS = int(os.environ.get("LOCAL_EVENTS_LOAD_WAIT_MS", "550"))
 NEXT_WAIT_MS = int(os.environ.get("LOCAL_EVENTS_NEXT_WAIT_MS", "700"))
 PAGE_SCREENSHOTS = os.environ.get("LOCAL_EVENTS_PAGE_SCREENSHOTS", "0") == "1"
 CARD_SCREENSHOTS = os.environ.get("LOCAL_EVENTS_CARD_SCREENSHOTS", "0") == "1"
+NHB_DETAIL_LIMIT = int(os.environ.get("LOCAL_EVENTS_NHB_DETAIL_LIMIT", "12"))
+NHB_DETAIL_TIMEOUT_MS = int(os.environ.get("LOCAL_EVENTS_NHB_DETAIL_TIMEOUT_MS", "10000"))
+DETAIL_DATE_RE = re.compile(
+    r"\b20\d{2}\b|\b\d{1,2}\s+(?:jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b",
+    re.I,
+)
 
 
 PREPARE_PAGE_JS = r"""
@@ -522,6 +528,30 @@ CARD_JS = r"""
 """
 
 
+DETAIL_CARD_JS = r"""
+() => {
+  function clean(value) {
+    return String(value || "").replace(/[ \t\f\v]+/g, " ").replace(/\n\s+/g, "\n").replace(/\s+\n/g, "\n").trim();
+  }
+  function oneLine(value) {
+    return clean(value).replace(/\s+/g, " ").trim();
+  }
+  const root = document.querySelector("main") || document.querySelector("article") || document.body;
+  const text = clean(root ? (root.innerText || root.textContent || "") : "");
+  const lines = text.split("\n").map(oneLine).filter(Boolean).slice(0, 120);
+  const headings = Array.from(document.querySelectorAll("main h1, main h2, article h1, article h2, h1, h2"))
+    .map(h => oneLine(h.innerText || h.textContent || ""))
+    .filter(Boolean)
+    .slice(0, 8);
+  const imgAlts = Array.from(document.querySelectorAll("main img[alt], article img[alt], img[alt]"))
+    .map(img => oneLine(img.getAttribute("alt")))
+    .filter(Boolean)
+    .slice(0, 8);
+  return {text: lines.join("\n"), text_lines: lines, headings, image_alts: imgAlts, title: headings[0] || ""};
+}
+"""
+
+
 def find_browser_executable() -> str:
     env_path = os.environ.get("INFOSCREEN_CHROMIUM_PATH") or os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE")
     candidates = [
@@ -566,6 +596,80 @@ def launch_chromium(playwright):
         ) from exc
 
 
+def card_has_date(card: dict[str, Any]) -> bool:
+    text = "\n".join([
+        str(card.get("text") or ""),
+        "\n".join(str(item) for item in card.get("text_lines") or []),
+        "\n".join(str(item) for item in card.get("headings") or []),
+        str(card.get("link_text") or ""),
+    ])
+    return bool(DETAIL_DATE_RE.search(text))
+
+
+def detail_url_allowed(url: str) -> bool:
+    return bool(url.startswith("http") and "#nhb-" not in url and "#nhb-json-" not in url)
+
+
+def merge_detail_payload(card: dict[str, Any], detail: dict[str, Any]) -> dict[str, Any]:
+    detail_text = str(detail.get("text") or "")
+    if not detail_text:
+        return card
+    merged = dict(card)
+    headings = [str(item) for item in detail.get("headings") or [] if str(item).strip()]
+    image_alts = [str(item) for item in detail.get("image_alts") or [] if str(item).strip()]
+    merged["text"] = detail_text
+    merged["text_lines"] = detail.get("text_lines") or detail_text.splitlines()
+    if headings:
+        merged["headings"] = headings
+        merged["link_text"] = headings[0]
+    if image_alts:
+        merged["image_alts"] = image_alts
+    merged["detail_enriched"] = True
+    merged["extraction_mode"] = f"{card.get('extraction_mode') or 'card'}+nhb_detail"
+    return merged
+
+
+def enrich_nhb_detail_cards(browser, cards: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if NHB_DETAIL_LIMIT <= 0:
+        return cards
+
+    enriched: list[dict[str, Any]] = []
+    detail_reads = 0
+    for card in cards:
+        if card_has_date(card) or detail_reads >= NHB_DETAIL_LIMIT:
+            enriched.append(card)
+            continue
+
+        url = str(card.get("url") or "")
+        if not detail_url_allowed(url):
+            enriched.append(card)
+            continue
+
+        detail_page = None
+        try:
+            detail_page = browser.new_page(viewport={"width": 1440, "height": 1800}, device_scale_factor=1)
+            try:
+                detail_page.goto(url, wait_until="networkidle", timeout=NHB_DETAIL_TIMEOUT_MS)
+            except Exception:
+                detail_page.goto(url, wait_until="domcontentloaded", timeout=NHB_DETAIL_TIMEOUT_MS)
+            detail_page.wait_for_timeout(450)
+            payload = detail_page.evaluate(DETAIL_CARD_JS)
+            detail_reads += 1
+            merged = merge_detail_payload(card, payload)
+            enriched.append(merged)
+        except Exception as exc:
+            failed = dict(card)
+            failed["detail_enrich_error"] = f"{type(exc).__name__}:{exc}"
+            enriched.append(failed)
+        finally:
+            if detail_page is not None:
+                try:
+                    detail_page.close()
+                except Exception:
+                    pass
+    return enriched
+
+
 def render_listing_cards(source: dict[str, Any], url: str, debug_dir: Path, max_cards: int = 60) -> dict[str, Any]:
     try:
         from playwright.sync_api import sync_playwright
@@ -598,6 +702,8 @@ def render_listing_cards(source: dict[str, Any], url: str, debug_dir: Path, max_
             for page_index in range(MAX_LISTING_PAGES):
                 prepare = page.evaluate(PREPARE_PAGE_JS, {"maxRounds": load_more_rounds})
                 page_cards = page.evaluate(CARD_JS, {"allowedDomains": allowed, "maxCards": max_cards, "sourceId": source_id, "pageIndex": page_index, "adapter": adapter, "officialHome": official_home})
+                if adapter == "nhb":
+                    page_cards = enrich_nhb_detail_cards(browser, page_cards)
                 if PAGE_SCREENSHOTS:
                     page_screenshot = debug_dir / f"{source_id}-{hashlib.sha1((url + str(page_index)).encode()).hexdigest()[:10]}-page-{page_index}.png"
                     page.screenshot(path=str(page_screenshot), full_page=True)
