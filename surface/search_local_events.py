@@ -10,6 +10,8 @@ from pathlib import Path
 # consuming the whole search window. Operators can still override them in the
 # systemd environment.
 os.environ.setdefault("LOCAL_EVENTS_MAX_SECONDS", "260")
+os.environ.setdefault("LOCAL_EVENTS_SOURCE_CONCURRENCY", "3")
+os.environ.setdefault("LOCAL_EVENTS_SOURCE_TIMEOUT_SECONDS", "55")
 os.environ.setdefault("LOCAL_EVENTS_MAX_LISTING_PAGES", "1")
 os.environ.setdefault("LOCAL_EVENTS_LOAD_MORE_ROUNDS", "1")
 os.environ.setdefault("LOCAL_EVENTS_NAV_TIMEOUT_MS", "12000")
@@ -73,7 +75,7 @@ def write_payload(payload: dict) -> None:
 
 def self_test() -> int:
     payload = collect_events(CONFIG, DEFAULT_LOCATION, DEBUG_DIR)
-    assert payload["extractor"] == "rendered-dom-card-v41"
+    assert payload["extractor"] == "rendered-dom-card-v42"
     assert isinstance(payload.get("results"), list)
     assert isinstance(payload.get("debug_by_source"), list)
     print("local-event rendered DOM self-test passed")
