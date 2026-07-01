@@ -6,11 +6,12 @@ import json
 import os
 from pathlib import Path
 
-# Runtime defaults for the kiosk search path. These keep one slow source from
-# consuming the whole search window. Operators can still override them in the
-# systemd environment.
+# Runtime defaults for the kiosk search path. The Surface target is small enough
+# that three simultaneous Chromium instances can be slower than two due to CPU,
+# memory, and disk contention. Keep source-level concurrency bounded and make it
+# overrideable for stronger machines.
 os.environ.setdefault("LOCAL_EVENTS_MAX_SECONDS", "260")
-os.environ.setdefault("LOCAL_EVENTS_SOURCE_CONCURRENCY", "3")
+os.environ.setdefault("LOCAL_EVENTS_SOURCE_CONCURRENCY", "2")
 os.environ.setdefault("LOCAL_EVENTS_SOURCE_TIMEOUT_SECONDS", "55")
 os.environ.setdefault("LOCAL_EVENTS_MAX_LISTING_PAGES", "1")
 os.environ.setdefault("LOCAL_EVENTS_LOAD_MORE_ROUNDS", "0")
