@@ -57,6 +57,7 @@ def _date_fragments(text: str) -> list[str]:
 
 
 _original_score_when = _extract.score_when
+_original_collect_events = _extract.collect_events
 
 
 def _score_when(fragment: str, source_line: str) -> int:
@@ -66,10 +67,42 @@ def _score_when(fragment: str, source_line: str) -> int:
     return score
 
 
+def _source_order(payload: dict) -> dict[str, int]:
+    order: dict[str, int] = {}
+    for index, item in enumerate(payload.get("sources") or []):
+        title = _extract.norm_key((item or {}).get("title"))
+        if title and title not in order:
+            order[title] = index
+    return order
+
+
+def _preserve_source_order(payload: dict) -> dict:
+    results = payload.get("results")
+    if not isinstance(results, list):
+        return payload
+
+    order = _source_order(payload)
+    indexed = list(enumerate(results))
+
+    def key(pair: tuple[int, dict]) -> tuple[int, int]:
+        index, item = pair
+        source = _extract.norm_key((item or {}).get("source_name") or (item or {}).get("host"))
+        return (order.get(source, 10_000), index)
+
+    payload = dict(payload)
+    payload["results"] = [item for _, item in sorted(indexed, key=key)]
+    payload["order_policy"] = "event_sources_config_order"
+    payload["extractor"] = f"{payload.get('extractor', 'rendered-dom-card')}-source-order"
+    return payload
+
+
 _extract.current_date_label = _current_date_label
 _extract.date_fragments = _date_fragments
 _extract.score_when = _score_when
 
-collect_events = _extract.collect_events
+
+def collect_events(*args, **kwargs):
+    return _preserve_source_order(_original_collect_events(*args, **kwargs))
+
 
 __all__ = ["collect_events"]
