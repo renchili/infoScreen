@@ -15,7 +15,10 @@ The script writes local-only configuration to mac/local.env and creates a
 LaunchAgent under ~/Library/LaunchAgents. Neither file is committed to Git.
 
 Default remote path:
-  ~/infoscreen/surface/.env/schedule.json
+  /home/<ssh-user>/infoscreen/surface/.env/schedule.json
+
+Do not pass a macOS path such as /Users/<name>/... here. The destination is the
+Surface Linux runtime path.
 EOF
 }
 
@@ -52,6 +55,33 @@ find_eventkit_python() {
   return 1
 }
 
+normalize_remote_path() {
+  local user_name="$1"
+  local value="$2"
+
+  if [ -z "$value" ]; then
+    printf '/home/%s/infoscreen/surface/.env/schedule.json\n' "$user_name"
+    return 0
+  fi
+
+  case "$value" in
+    "~")
+      printf '/home/%s\n' "$user_name"
+      ;;
+    "~/"*)
+      printf '/home/%s/%s\n' "$user_name" "${value#~/}"
+      ;;
+    /Users/*)
+      echo "Remote schedule path points to macOS home, not Surface Linux: $value" >&2
+      echo "Use: /home/$user_name/infoscreen/surface/.env/schedule.json" >&2
+      return 1
+      ;;
+    *)
+      printf '%s\n' "$value"
+      ;;
+  esac
+}
+
 REPO_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 MAC_DIR="$REPO_DIR/mac"
 CONFIG_FILE="$MAC_DIR/local.env"
@@ -60,7 +90,7 @@ PLIST_FILE="$HOME/Library/LaunchAgents/com.renchili.infoscreen.schedule-sync.pli
 
 HOST=""
 USER_NAME=""
-REMOTE_PATH=""
+REMOTE_PATH_ARG=""
 REQUESTED_PYTHON=""
 INTERVAL="120"
 
@@ -75,7 +105,7 @@ while [ "$#" -gt 0 ]; do
       shift 2
       ;;
     --remote-path)
-      REMOTE_PATH="${2:-}"
+      REMOTE_PATH_ARG="${2:-}"
       shift 2
       ;;
     --python)
@@ -110,7 +140,6 @@ fi
 
 HOST="${HOST:-${SURFACE_HOST:-}}"
 USER_NAME="${USER_NAME:-${SURFACE_USER:-}}"
-REMOTE_PATH="${REMOTE_PATH:-${REMOTE_SCHEDULE_JSON:-~/infoscreen/surface/.env/schedule.json}}"
 
 if [ -z "$HOST" ] && [ -t 0 ]; then
   read -r -p "Surface SSH host: " HOST
@@ -124,6 +153,12 @@ if [ -z "$HOST" ] || [ -z "$USER_NAME" ]; then
   echo "Both --host and --user are required." >&2
   usage >&2
   exit 1
+fi
+
+if [ -n "$REMOTE_PATH_ARG" ]; then
+  REMOTE_PATH="$(normalize_remote_path "$USER_NAME" "$REMOTE_PATH_ARG")"
+else
+  REMOTE_PATH="$(normalize_remote_path "$USER_NAME" "${REMOTE_SCHEDULE_JSON:-}")"
 fi
 
 PYTHON_BIN="$(find_eventkit_python "$REQUESTED_PYTHON" "${PYTHON_BIN:-}" || true)"
