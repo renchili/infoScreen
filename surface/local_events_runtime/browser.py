@@ -182,6 +182,7 @@ CARD_JS = r"""
   const maxCards = args.maxCards || 60;
   const sourceId = args.sourceId || "source";
   const pageIndex = args.pageIndex || 0;
+  const adapter = args.adapter || "rendered_dom_card";
 
   function clean(value) {
     return String(value || "").replace(/[ \t\f\v]+/g, " ").replace(/\n\s+/g, "\n").replace(/\s+\n/g, "\n").trim();
@@ -234,12 +235,14 @@ CARD_JS = r"""
     return urls;
   }
 
-  function sameDomainUrls(el) {
+  function sameDomainNonListingUrls(el) {
     const urls = [];
     for (const a of Array.from(el.querySelectorAll("a[href]"))) {
       let abs = "";
       try { abs = new URL(a.getAttribute("href"), document.location.href).href; } catch { continue; }
-      if (sameDomain(abs) && !urls.includes(abs)) urls.push(abs);
+      if (!sameDomain(abs)) continue;
+      if (pathRole(abs) === "listing") continue;
+      if (!urls.includes(abs)) urls.push(abs);
     }
     return urls;
   }
@@ -266,7 +269,7 @@ CARD_JS = r"""
     let score = 0;
     const attrs = oneLine([el.className, el.id, el.getAttribute("role"), el.getAttribute("aria-label")].join(" "));
     const detailCount = detailUrls(el).length;
-    if (/\b(card|tile|item|event|programme|program|exhibition|listing|result|views-row)\b/i.test(attrs)) score += 45;
+    if (/\b(card|tile|item|event|programme|program|exhibition|listing|result)\b/i.test(attrs)) score += 45;
     if (/^(ARTICLE|LI)$/i.test(el.tagName)) score += 35;
     if (el.querySelector("h1,h2,h3,h4")) score += 25;
     if (hasDateText(text)) score += 55;
@@ -286,22 +289,14 @@ CARD_JS = r"""
     for (let depth = 0; el && depth < 10; depth++, el = el.parentElement) {
       candidates.push(el);
     }
-    const closest = anchor.closest("article, li, [class*='card' i], [class*='tile' i], [class*='event' i], [class*='programme' i], [class*='program' i], [class*='exhibition' i], [class*='listing' i], [class*='result' i], [class*='views-row' i]");
+    const closest = anchor.closest("article, li, [class*='card' i], [class*='tile' i], [class*='event' i], [class*='programme' i], [class*='program' i], [class*='exhibition' i], [class*='listing' i], [class*='result' i]");
     if (closest) candidates.push(closest);
     candidates.sort((a, b) => scoreContainer(b, anchor) - scoreContainer(a, anchor));
     const singleDetail = candidates.find(el => detailUrls(el).length === 1 && scoreContainer(el, anchor) > -999);
     return singleDetail || candidates[0] || anchor;
   }
 
-  function chosenUrl(el, text) {
-    const details = detailUrls(el);
-    if (details.length) return details[0];
-    const same = sameDomainUrls(el);
-    if (same.length) return same[0];
-    return document.location.href.split('#')[0] + '#infoscreen-' + textHash(text.slice(0, 600));
-  }
-
-  function cardPayload(el, url, linkText, fallback) {
+  function cardPayload(el, url, linkText, extractionMode) {
     const r = el.getBoundingClientRect();
     const lines = textLines(el);
     const text = lines.join("\n");
@@ -324,11 +319,20 @@ CARD_JS = r"""
       page_url: document.location.href,
       rect: {x: r.x, y: r.y, width: r.width, height: r.height},
       role: pathRole(url),
-      fallback_dom_card: Boolean(fallback)
+      extraction_mode: extractionMode
     };
   }
 
-  function likelyDomCard(el) {
+  function push(out, seen, el, url, linkText, extractionMode) {
+    if (!el || out.length >= maxCards) return;
+    const text = textLines(el).join("\n");
+    const key = (url || "") + "\n" + text.slice(0, 500);
+    if (!text.trim() || seen.has(key)) return;
+    seen.add(key);
+    out.push(cardPayload(el, url, linkText, extractionMode));
+  }
+
+  function nhbCard(el) {
     if (!el || !visible(el)) return false;
     const r = el.getBoundingClientRect();
     if (r.height > 900 || r.width < 120) return false;
@@ -339,38 +343,15 @@ CARD_JS = r"""
     const attrs = oneLine([el.className, el.id, el.getAttribute("role"), el.getAttribute("aria-label")].join(" "));
     if (/\b(filter|breadcrumb|pagination|pager|header|footer|nav|menu|modal|cookie|newsletter|search)\b/i.test(attrs)) return false;
     if (/^(HEADER|FOOTER|NAV|FORM|SELECT|OPTION)$/i.test(el.tagName)) return false;
-    const childCards = Array.from(el.querySelectorAll("article, li, [class*='card' i], [class*='tile' i], [class*='event' i], [class*='programme' i], [class*='program' i], [class*='exhibition' i], [class*='listing' i], [class*='result' i], [class*='views-row' i]")).filter(child => child !== el && visible(child) && hasDateText(textLines(child).join(' ')));
+    const childCards = Array.from(el.querySelectorAll("article, li, [class*='card' i], [class*='tile' i], [class*='event' i], [class*='programme' i], [class*='program' i], [class*='exhibition' i], [class*='listing' i], [class*='result' i]")).filter(child => child !== el && visible(child) && hasDateText(textLines(child).join(' ')));
     if (childCards.length >= 2) return false;
     return true;
   }
 
-  const out = [];
-  const seen = new Set();
-  const anchors = Array.from(document.querySelectorAll("a[href]")).filter(a => visible(a));
-
-  function push(el, url, linkText, fallback) {
-    if (!el || out.length >= maxCards) return;
-    const lines = textLines(el);
-    const text = lines.join("\n");
-    const key = (url || "") + "\n" + text.slice(0, 500);
-    if (!text.trim() || seen.has(key)) return;
-    seen.add(key);
-    out.push(cardPayload(el, url || chosenUrl(el, text), linkText, fallback));
-  }
-
-  for (const a of anchors) {
-    const abs = new URL(a.getAttribute("href"), document.location.href).href;
-    if (!sameDomain(abs) || pathRole(abs) !== "detail") continue;
-    const card = bestCard(a);
-    const linkText = oneLine(a.innerText || a.textContent || a.getAttribute("aria-label") || "");
-    push(card, abs, linkText, false);
-    if (out.length >= maxCards) break;
-  }
-
-  if (out.length < maxCards) {
-    const selectors = "article, li, [class*='card' i], [class*='tile' i], [class*='event' i], [class*='programme' i], [class*='program' i], [class*='exhibition' i], [class*='listing' i], [class*='result' i], [class*='views-row' i], [data-testid*='card' i], [data-testid*='event' i]";
+  function pushNhbCards(out, seen) {
+    const selectors = "article, li, [class*='card' i], [class*='tile' i], [class*='event' i], [class*='programme' i], [class*='program' i], [class*='exhibition' i], [class*='listing' i], [class*='result' i]";
     const candidates = Array.from(document.querySelectorAll(selectors))
-      .filter(likelyDomCard)
+      .filter(nhbCard)
       .sort((a, b) => {
         const ar = a.getBoundingClientRect();
         const br = b.getBoundingClientRect();
@@ -378,10 +359,27 @@ CARD_JS = r"""
       });
     for (const el of candidates) {
       const text = textLines(el).join("\n");
-      const firstLink = sameDomainUrls(el)[0] || "";
-      push(el, firstLink || chosenUrl(el, text), "", true);
+      const url = detailUrls(el)[0] || sameDomainNonListingUrls(el)[0] || (document.location.href.split('#')[0] + '#nhb-' + textHash(text.slice(0, 600)));
+      push(out, seen, el, url, "", "nhb_dom_card");
       if (out.length >= maxCards) break;
     }
+  }
+
+  const out = [];
+  const seen = new Set();
+  const anchors = Array.from(document.querySelectorAll("a[href]")).filter(a => visible(a));
+
+  for (const a of anchors) {
+    const abs = new URL(a.getAttribute("href"), document.location.href).href;
+    if (!sameDomain(abs) || pathRole(abs) !== "detail") continue;
+    const card = bestCard(a);
+    const linkText = oneLine(a.innerText || a.textContent || a.getAttribute("aria-label") || "");
+    push(out, seen, card, abs, linkText, "detail_link");
+    if (out.length >= maxCards) break;
+  }
+
+  if (adapter === "nhb" && out.length < maxCards) {
+    pushNhbCards(out, seen);
   }
 
   return out;
@@ -442,6 +440,7 @@ def render_listing_cards(source: dict[str, Any], url: str, debug_dir: Path, max_
     debug_dir.mkdir(parents=True, exist_ok=True)
     source_id = re.sub(r"[^a-z0-9]+", "-", str(source.get("id") or source.get("name") or "source").lower()).strip("-") or "source"
     allowed = [str(item).lower().replace("www.", "") for item in source.get("allowed_domains") or []]
+    adapter = str(source.get("adapter") or "rendered_dom_card")
 
     with sync_playwright() as p:
         browser = launch_chromium(p)
@@ -461,7 +460,7 @@ def render_listing_cards(source: dict[str, Any], url: str, debug_dir: Path, max_
 
             for page_index in range(MAX_LISTING_PAGES):
                 prepare = page.evaluate(PREPARE_PAGE_JS, {"maxRounds": LOAD_MORE_ROUNDS})
-                page_cards = page.evaluate(CARD_JS, {"allowedDomains": allowed, "maxCards": max_cards, "sourceId": source_id, "pageIndex": page_index})
+                page_cards = page.evaluate(CARD_JS, {"allowedDomains": allowed, "maxCards": max_cards, "sourceId": source_id, "pageIndex": page_index, "adapter": adapter})
                 if PAGE_SCREENSHOTS:
                     page_screenshot = debug_dir / f"{source_id}-{hashlib.sha1((url + str(page_index)).encode()).hexdigest()[:10]}-page-{page_index}.png"
                     page.screenshot(path=str(page_screenshot), full_page=True)
