@@ -4,14 +4,42 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 DEFAULT_URL = "https://www.acm.nhb.gov.sg/whats-on/overview?category=Exhibitions%2CLectures%2CProgrammes%2CGuided+Tours&time=Today%2CUpcoming"
 SURFACE_DIR = Path(__file__).resolve().parents[1]
+REPO_DIR = SURFACE_DIR.parent
 OUT = SURFACE_DIR / ".env" / "acm_network_debug.json"
 
+if str(SURFACE_DIR) not in sys.path:
+    sys.path.insert(0, str(SURFACE_DIR))
+
+from local_events_runtime.browser import launch_chromium  # noqa: E402
+
 JSON_HINT_RE = re.compile(r"(?:/api/|graphql|search|event|events|programme|programmes|exhibition|exhibitions|whatson|whats-on|_next/data|sitecore|jss)", re.I)
+
+
+BUTTONS_JS = r"""
+() => Array.from(document.querySelectorAll('button,a,[role=button]')).map(el => ({
+  tag: el.tagName,
+  text: String(el.innerText || el.textContent || el.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim(),
+  href: el.href || '',
+  cls: String(el.className || '')
+})).filter(x => x.text || x.href).slice(0, 200)
+"""
+
+
+SCRIPTS_JS = r"""
+() => Array.from(document.querySelectorAll('script[src],script[type*=json],script#__NEXT_DATA__')).map(s => ({
+  id: s.id || '',
+  type: s.type || '',
+  src: s.src || '',
+  size: (s.textContent || '').length,
+  preview: String(s.textContent || '').slice(0, 500)
+})).slice(0, 80)
+"""
 
 
 def short(text: str, limit: int = 800) -> str:
@@ -39,7 +67,7 @@ def main() -> int:
     failed: list[dict] = []
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
+        browser = launch_chromium(p)
         page = browser.new_page(viewport={"width": 1440, "height": 2200})
 
         def on_response(resp):
@@ -85,27 +113,8 @@ def main() -> int:
             page.goto(target, wait_until="domcontentloaded", timeout=20000)
         page.wait_for_timeout(int(args.seconds * 1000))
 
-        buttons = page.evaluate(
-            """
-            () => Array.from(document.querySelectorAll('button,a,[role=button]')).map(el => ({
-              tag: el.tagName,
-              text: String(el.innerText || el.textContent || el.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim(),
-              href: el.href || '',
-              cls: String(el.className || '')
-            })).filter(x => x.text || x.href).slice(0, 200)
-            """
-        )
-        scripts = page.evaluate(
-            """
-            () => Array.from(document.querySelectorAll('script[src],script[type*=json],script#__NEXT_DATA__')).map(s => ({
-              id: s.id || '',
-              type: s.type || '',
-              src: s.src || '',
-              size: (s.textContent || '').length,
-              preview: String(s.textContent || '').slice(0, 500)
-            })).slice(0, 80)
-            """
-        )
+        buttons = page.evaluate(BUTTONS_JS)
+        scripts = page.evaluate(SCRIPTS_JS)
         text_preview = page.evaluate("() => document.body ? document.body.innerText.slice(0, 5000) : ''")
         browser.close()
 
