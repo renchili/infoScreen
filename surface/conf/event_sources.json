@@ -52,6 +52,7 @@
       "official_home": "https://www.acm.nhb.gov.sg/",
       "allowed_domains": ["acm.nhb.gov.sg", "acm.org.sg"],
       "default_venue": "Asian Civilisations Museum",
+      "load_more_rounds": 4,
       "listing_urls": [
         "https://www.acm.nhb.gov.sg/whats-on/overview?category=Exhibitions%2CLectures%2CProgrammes%2CGuided+Tours&time=Today%2CUpcoming",
         "https://www.acm.nhb.gov.sg/whats-on/overview?category=Programmes&time=Today%2CUpcoming"
