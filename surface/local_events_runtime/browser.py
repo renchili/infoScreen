@@ -183,6 +183,7 @@ CARD_JS = r"""
   const sourceId = args.sourceId || "source";
   const pageIndex = args.pageIndex || 0;
   const adapter = args.adapter || "rendered_dom_card";
+  const officialHome = args.officialHome || "";
 
   function clean(value) {
     return String(value || "").replace(/[ \t\f\v]+/g, " ").replace(/\n\s+/g, "\n").replace(/\s+\n/g, "\n").trim();
@@ -359,7 +360,8 @@ CARD_JS = r"""
       });
     for (const el of candidates) {
       const text = textLines(el).join("\n");
-      const url = detailUrls(el)[0] || sameDomainNonListingUrls(el)[0] || (document.location.href.split('#')[0] + '#nhb-' + textHash(text.slice(0, 600)));
+      const base = officialHome || document.location.origin;
+      const url = detailUrls(el)[0] || sameDomainNonListingUrls(el)[0] || (base.replace(/\/$/, '') + '#nhb-' + textHash(text.slice(0, 600)));
       push(out, seen, el, url, "", "nhb_dom_card");
       if (out.length >= maxCards) break;
     }
@@ -441,6 +443,8 @@ def render_listing_cards(source: dict[str, Any], url: str, debug_dir: Path, max_
     source_id = re.sub(r"[^a-z0-9]+", "-", str(source.get("id") or source.get("name") or "source").lower()).strip("-") or "source"
     allowed = [str(item).lower().replace("www.", "") for item in source.get("allowed_domains") or []]
     adapter = str(source.get("adapter") or "rendered_dom_card")
+    official_home = str(source.get("official_home") or "")
+    load_more_rounds = int(source.get("load_more_rounds", 1 if adapter == "nhb" else LOAD_MORE_ROUNDS))
 
     with sync_playwright() as p:
         browser = launch_chromium(p)
@@ -459,8 +463,8 @@ def render_listing_cards(source: dict[str, Any], url: str, debug_dir: Path, max_
             rendered_pages = 0
 
             for page_index in range(MAX_LISTING_PAGES):
-                prepare = page.evaluate(PREPARE_PAGE_JS, {"maxRounds": LOAD_MORE_ROUNDS})
-                page_cards = page.evaluate(CARD_JS, {"allowedDomains": allowed, "maxCards": max_cards, "sourceId": source_id, "pageIndex": page_index, "adapter": adapter})
+                prepare = page.evaluate(PREPARE_PAGE_JS, {"maxRounds": load_more_rounds})
+                page_cards = page.evaluate(CARD_JS, {"allowedDomains": allowed, "maxCards": max_cards, "sourceId": source_id, "pageIndex": page_index, "adapter": adapter, "officialHome": official_home})
                 if PAGE_SCREENSHOTS:
                     page_screenshot = debug_dir / f"{source_id}-{hashlib.sha1((url + str(page_index)).encode()).hexdigest()[:10]}-page-{page_index}.png"
                     page.screenshot(path=str(page_screenshot), full_page=True)
