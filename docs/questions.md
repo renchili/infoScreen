@@ -46,13 +46,24 @@ Root-level web JavaScript and CSS files are not dashboard entrypoints.
 
 ## Python roles
 
+Entrypoints:
+
 ```text
 surface/serve_infoscreen.py     HTTP server and local API
 surface/fetch_live_data.py      market and weather refresh
 surface/search_local_events.py  local official event refresh
+surface/openapi_spec.py         OpenAPI payload builder
 ```
 
-Other Python files should be treated as support code only when imported by those entrypoints.
+Canonical local event implementation:
+
+```text
+surface/local_events_runtime/__init__.py
+surface/local_events_runtime/extract.py
+surface/local_events_runtime/browser.py
+```
+
+The active crawler path is `search_local_events.py` -> `local_events_runtime`. Do not add another local event engine or adapter package unless this path is being intentionally replaced.
 
 ## Server boundary
 
@@ -62,7 +73,8 @@ Other Python files should be treated as support code only when imported by those
 
 ```bash
 cd ~/infoscreen
+python3 -m py_compile surface/serve_infoscreen.py surface/search_local_events.py surface/local_events_runtime/__init__.py surface/local_events_runtime/browser.py surface/local_events_runtime/extract.py
 curl -s http://127.0.0.1:8765/ | grep -E "assets/js/dashboard.js|assets/js/local_event_card.js"
 curl -s http://127.0.0.1:8765/assets/js/dashboard.js | grep -n "market-arrow"
-find surface/web -maxdepth 1 -type f | sort
+find surface -maxdepth 2 -type f -name "*.py" | sort
 ```
