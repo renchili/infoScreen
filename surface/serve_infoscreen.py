@@ -4,6 +4,7 @@ from __future__ import annotations
 import email.utils
 import json
 import mimetypes
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -91,7 +92,26 @@ def market_config_json():
 
 
 def index_html() -> bytes:
-    return (WEB_DIR / "index.html").read_bytes()
+    html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+
+    # The legacy inline local-event renderer still exists in index.html and races
+    # with calendar_board.js. It renders .local-event-single, truncates details,
+    # and repeatedly overwrites the fixed one-card renderer. Remove it at serve
+    # time so there is exactly one owner for #localEventList.
+    html = re.sub(
+        r'\s*<script\s+id=["\']local-event-inline-script["\'][^>]*>.*?</script>',
+        "",
+        html,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+
+    cache_key = str(int((WEB_DIR / "calendar_board.js").stat().st_mtime))
+    html = re.sub(
+        r'calendar_board\.js(?:\?v=[^"\']*)?',
+        f"calendar_board.js?v={cache_key}",
+        html,
+    )
+    return html.encode("utf-8")
 
 
 def openapi_payload() -> dict:
