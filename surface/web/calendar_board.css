@@ -221,3 +221,56 @@
   display: none !important;
 }
 /* CALENDAR_TIME_FLIP_END */
+
+/* MARKET_DIRECTION_REPAIR_START
+   Compatibility repair for the currently served dashboard: market snapshot rows
+   and market tape spans already expose .ok/.warn/.up/.down state classes, but
+   the rendered price nodes do not carry those classes. These selectors restore
+   price color and arrow affordance from the adjacent state node without changing
+   data flow or server behavior. */
+.market-row:has(> .chg.ok) > .price,
+.market-row:has(> .chg.up) > .price,
+.global-tape-track > span:has(.up) > .price,
+.left-ticker-track > span:has(.up) > .price {
+  color: var(--green) !important;
+  font-weight: 950 !important;
+}
+
+.market-row:has(> .chg.warn) > .price,
+.market-row:has(> .chg.down) > .price,
+.global-tape-track > span:has(.down) > .price,
+.left-ticker-track > span:has(.down) > .price {
+  color: var(--red) !important;
+  font-weight: 950 !important;
+}
+
+.market-row:has(> .chg.flat) > .price,
+.global-tape-track > span:has(.flat) > .price,
+.left-ticker-track > span:has(.flat) > .price {
+  color: var(--muted) !important;
+  font-weight: 850 !important;
+}
+
+.market-row:has(> .chg.ok) > .price::before,
+.market-row:has(> .chg.up) > .price::before,
+.global-tape-track > span:has(.up) > .price::before,
+.left-ticker-track > span:has(.up) > .price::before {
+  content: "▲ " !important;
+  color: inherit !important;
+}
+
+.market-row:has(> .chg.warn) > .price::before,
+.market-row:has(> .chg.down) > .price::before,
+.global-tape-track > span:has(.down) > .price::before,
+.left-ticker-track > span:has(.down) > .price::before {
+  content: "▼ " !important;
+  color: inherit !important;
+}
+
+.market-row:has(> .chg.flat) > .price::before,
+.global-tape-track > span:has(.flat) > .price::before,
+.left-ticker-track > span:has(.flat) > .price::before {
+  content: "◆ " !important;
+  color: inherit !important;
+}
+/* MARKET_DIRECTION_REPAIR_END */
