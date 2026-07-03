@@ -40,3 +40,39 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.market-row > .price.up,
+.market-row > .chg.up,
+.global-tape-track .price.up,
+.global-tape-track .up {
+  color: var(--green) !important;
+  font-weight: 950 !important;
+}
+
+.market-row > .price.down,
+.market-row > .chg.down,
+.global-tape-track .price.down,
+.global-tape-track .down {
+  color: var(--red) !important;
+  font-weight: 950 !important;
+}
+
+.market-row > .price.flat,
+.market-row > .chg.flat,
+.global-tape-track .price.flat,
+.global-tape-track .flat {
+  color: var(--muted) !important;
+  font-weight: 850 !important;
+}
+
+.market-arrow {
+  color: inherit !important;
+  font-weight: 950 !important;
+  margin-right: 3px;
+}
+
+.market-session,
+.global-tape-track .session {
+  color: var(--text) !important;
+  font-weight: 850 !important;
+}
