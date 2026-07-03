@@ -1,154 +1,73 @@
 # InfoScreen
 
-InfoScreen is a local kiosk dashboard for a Surface or Ubuntu display.
+Local kiosk dashboard for a Surface or Ubuntu display.
 
-It shows calendar schedule, market watchlist, weather, event/news stream, local official events, photo wall, and runtime status.
-
-## Runtime files
-
-Runtime files are not source files. The Surface runtime directory is:
-
-```text
-~/infoscreen/surface/.env/
-```
-
-The schedule runtime file is:
-
-```text
-~/infoscreen/surface/.env/schedule.json
-```
-
-The repository root should not contain runtime `schedule.json`. The checked-in fixture is `sample/schedule.json`.
-
-HTTP logs:
-
-```text
-~/infoscreen/surface/.env/logs/http.log
-~/infoscreen/surface/.env/logs/http.err.log
-```
-
-## Repository layout
-
-```text
-deploy/                         systemd templates and install scripts
-docs/                           api-spec.md, design.md, questions.md
-mac/                            macOS calendar export and schedule sync
-sample/                         sample JSON fixtures
-scripts/                        repo/dev/status scripts
-surface/                        Surface app implementation
-surface/.env/                   local runtime state, ignored by Git
-surface/web/index.html          dashboard shell
-surface/web/assets/css/         checked-in CSS
-surface/web/assets/js/          checked-in browser JS
-metadata.json                   project requirements and plan
-```
-
-## Start on Surface / Ubuntu
+## Run
 
 ```bash
 cd ~/infoscreen
-bash deploy/scripts/install-user-systemd.sh
-systemctl --user daemon-reload
-systemctl --user enable --now infoscreen-http.service
 systemctl --user restart infoscreen-http.service
 ```
 
-Open:
+Open `http://127.0.0.1:8765/`.
 
-```text
-http://127.0.0.1:8765/
-```
-
-## Start without systemd
+Manual run:
 
 ```bash
 cd ~/infoscreen
 python3 surface/serve_infoscreen.py
 ```
 
-## Calendar schedule sync from Mac
-
-The Mac exports Apple Calendar and copies the result to the Surface runtime schedule path.
-
-Remote target:
+## Active source files
 
 ```text
-~/infoscreen/surface/.env/schedule.json
+surface/serve_infoscreen.py               HTTP server and local API
+surface/fetch_live_data.py                weather and market refresh
+surface/search_local_events.py            local event refresh
+surface/web/index.html                    dashboard shell
+surface/web/assets/css/app.css            base layout
+surface/web/assets/css/calendar_board.css calendar panel
+surface/web/assets/css/local_events.css   local event panel
+surface/web/assets/css/market_custom.css  market controls and colors
+surface/web/assets/js/dashboard.js        clock/weather/market/event stream
+surface/web/assets/js/calendar_board.js   calendar panel
+surface/web/assets/js/local_event_card.js local event panel
+surface/web/assets/js/market_custom.js    market controls
 ```
 
-Setup example:
+The active browser CSS and JS files are under `surface/web/assets/`. Root-level web JS/CSS files are not active entrypoints.
 
-```bash
-cd /path/to/infoScreen
-bash mac/scripts/setup-schedule-sync.sh \
-  --host "<surface-host>" \
-  --user "<surface-user>" \
-  --remote-path "~/infoscreen/surface/.env/schedule.json"
+## Runtime files
+
+Runtime files live under `~/infoscreen/surface/.env/` and are not source files.
+
+```text
+surface/.env/schedule.json
+surface/.env/weather.json
+surface/.env/market.json
+surface/.env/market_config.json
+surface/.env/event_stream.json
+surface/.env/local_event_search_results.json
+surface/.env/photos.json
+surface/.env/sync_status.json
+surface/.env/logs/http.log
+surface/.env/logs/http.err.log
 ```
 
-Manual sync:
-
-```bash
-bash mac/sync_schedule.sh
-```
-
-Verify on Surface:
-
-```bash
-cd ~/infoscreen
-curl -s http://127.0.0.1:8765/schedule.json -o /tmp/served_schedule.json
-sha256sum /tmp/served_schedule.json surface/.env/schedule.json
-```
-
-## Service status
-
-```bash
-systemctl --user status infoscreen-http.service --no-pager -l
-systemctl --user list-timers --all | grep -i infoscreen || true
-tail -n 80 ~/infoscreen/surface/.env/logs/http.log
-tail -n 80 ~/infoscreen/surface/.env/logs/http.err.log
-```
-
-## Market and weather refresh
+## Refresh commands
 
 ```bash
 cd ~/infoscreen
 python3 surface/fetch_live_data.py
-```
-
-## Local official events
-
-```bash
-cd ~/infoscreen
 python3 surface/search_local_events.py "Punggol Singapore"
 ```
 
-Local event source rules:
+## Verify
 
-```text
-official_source_registry.json stores official homepage/domain identity only
-event_sources.json stores verified event listing entrypoints
-no third-party aggregators
-no guessed domains or guessed /events paths
-```
-
-## API docs
-
-```text
-http://127.0.0.1:8765/docs
-http://127.0.0.1:8765/openapi.json
-```
-
-## Git hygiene
-
-Do not commit runtime data:
-
-```text
-schedule.json
-mac/schedule.json
-surface/.env/
-surface/.env/logs/
-*.log
-__pycache__/
-*.pyc
+```bash
+cd ~/infoscreen
+curl -s http://127.0.0.1:8765/ | grep -E "assets/js/dashboard.js|assets/js/local_event_card.js"
+curl -s http://127.0.0.1:8765/assets/js/dashboard.js | grep -n "market-arrow"
+curl -s http://127.0.0.1:8765/assets/css/market_custom.css | grep -n "price.up"
+find surface/web -maxdepth 1 -type f | sort
 ```
