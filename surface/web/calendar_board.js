@@ -272,11 +272,11 @@
     var style = document.createElement("style");
     style.id = "local-event-stable-style";
     style.textContent = [
-      "#localEventList .local-event-card{--le-source-size:11px;--le-title-size:16px;--le-kv-size:12px;--le-kv-label-size:10px;--le-desc-size:11px;--le-link-size:10px;--le-gap:4px;--le-pad-y:8px;--le-pad-x:10px;--le-desc-lines:3;height:100%!important;max-height:100%!important;box-sizing:border-box!important;display:grid!important;grid-template-rows:auto auto auto auto auto!important;align-content:start!important;gap:var(--le-gap)!important;overflow:hidden!important;padding:var(--le-pad-y) var(--le-pad-x) var(--le-pad-y) 12px!important;border-left:3px solid #ffe08a!important;background:rgba(255,224,138,.045)!important;color:#d7ddd9!important;text-decoration:none!important;}",
-      "#localEventList .local-event-card.fit-1{--le-source-size:10px;--le-title-size:15px;--le-kv-size:11px;--le-desc-size:10px;--le-link-size:9px;--le-gap:3px;--le-pad-y:7px;--le-desc-lines:3;}",
-      "#localEventList .local-event-card.fit-2{--le-source-size:9px;--le-title-size:14px;--le-kv-size:10px;--le-kv-label-size:9px;--le-desc-size:9px;--le-link-size:9px;--le-gap:2px;--le-pad-y:6px;--le-desc-lines:2;}",
-      "#localEventList .local-event-card.fit-3{--le-source-size:8px;--le-title-size:13px;--le-kv-size:9px;--le-kv-label-size:8px;--le-desc-size:8px;--le-link-size:8px;--le-gap:2px;--le-pad-y:5px;--le-desc-lines:1;}",
-      "#localEventList .local-event-card.fit-4{--le-source-size:8px;--le-title-size:12px;--le-kv-size:8px;--le-kv-label-size:8px;--le-desc-size:8px;--le-link-size:8px;--le-gap:1px;--le-pad-y:4px;--le-desc-lines:1;}",
+      "#localEventList .local-event-card{--le-source-size:11px;--le-title-size:16px;--le-kv-size:12px;--le-kv-label-size:10px;--le-desc-size:11px;--le-link-size:10px;--le-gap:4px;--le-pad-y:8px;--le-pad-x:10px;--le-desc-lines:6;height:100%!important;max-height:100%!important;box-sizing:border-box!important;display:grid!important;grid-template-rows:auto auto auto auto auto!important;align-content:start!important;gap:var(--le-gap)!important;overflow:hidden!important;padding:var(--le-pad-y) var(--le-pad-x) var(--le-pad-y) 12px!important;border-left:3px solid #ffe08a!important;background:rgba(255,224,138,.045)!important;color:#d7ddd9!important;text-decoration:none!important;}",
+      "#localEventList .local-event-card.fit-1{--le-source-size:10px;--le-title-size:15px;--le-kv-size:11px;--le-desc-size:10px;--le-link-size:9px;--le-gap:3px;--le-pad-y:7px;--le-desc-lines:5;}",
+      "#localEventList .local-event-card.fit-2{--le-source-size:9px;--le-title-size:14px;--le-kv-size:10px;--le-kv-label-size:9px;--le-desc-size:9px;--le-link-size:9px;--le-gap:2px;--le-pad-y:6px;--le-desc-lines:4;}",
+      "#localEventList .local-event-card.fit-3{--le-source-size:8px;--le-title-size:13px;--le-kv-size:9px;--le-kv-label-size:8px;--le-desc-size:8px;--le-link-size:8px;--le-gap:2px;--le-pad-y:5px;--le-desc-lines:3;}",
+      "#localEventList .local-event-card.fit-4{--le-source-size:8px;--le-title-size:12px;--le-kv-size:8px;--le-kv-label-size:8px;--le-desc-size:8px;--le-link-size:8px;--le-gap:1px;--le-pad-y:4px;--le-desc-lines:2;}",
       "#localEventList .local-event-card.fit-5{--le-source-size:8px;--le-title-size:11px;--le-kv-size:8px;--le-kv-label-size:8px;--le-desc-size:8px;--le-link-size:8px;--le-gap:1px;--le-pad-y:3px;--le-desc-lines:1;}",
       "#localEventList .local-event-source{max-width:calc(100% - 128px)!important;color:#8cecff!important;font-size:var(--le-source-size)!important;line-height:1.08!important;font-weight:950!important;letter-spacing:.08em!important;text-transform:uppercase!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;}",
       "#localEventList .local-event-title{color:#ffe08a!important;font-size:var(--le-title-size)!important;line-height:1.04!important;font-weight:950!important;letter-spacing:.01em!important;overflow:hidden!important;display:-webkit-box!important;-webkit-line-clamp:2!important;-webkit-box-orient:vertical!important;}",
@@ -308,8 +308,7 @@
   function cardOverflowing(card) {
     if (!card) return false;
     var title = card.querySelector(".local-event-title");
-    var desc = card.querySelector(".local-event-desc");
-    return overflowing(card) || overflowing(title) || overflowing(desc);
+    return overflowing(card) || overflowing(title);
   }
 
   function fitLocalEventCard() {
@@ -353,7 +352,7 @@
     if (page < 0) page = items.length - 1;
     if (page >= items.length) page = 0;
     var item = items[page];
-    var summary = short(item.summary, 220);
+    var summary = short(item.summary, 260);
     var html = [
       '<div class="local-event-card active" data-owned-by="calendar-board">',
       '<div class="local-event-source">' + esc(short(item.source || "Official source", 90)) + '</div>',
