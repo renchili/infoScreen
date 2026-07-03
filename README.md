@@ -21,8 +21,7 @@ python3 surface/serve_infoscreen.py
 ## Documentation map
 
 ```text
-README.md          run and verify the project
-surface/README.md  Surface Python source map and runtime ownership
+README.md          run, verify, and source overview
 docs/design.md     runtime architecture and data flow
 docs/api-spec.md   HTTP endpoints and Python owners
 docs/questions.md  current project decisions
@@ -30,7 +29,7 @@ docs/questions.md  current project decisions
 
 ## Active source overview
 
-Python entrypoints:
+Python entrypoints and support modules:
 
 ```text
 surface/serve_infoscreen.py       HTTP server and local API
@@ -38,8 +37,8 @@ surface/fetch_live_data.py        weather and market refresh
 surface/fetch_event_stream.py     event/news stream refresh
 surface/build_photos_json.py      photo wall JSON builder
 surface/search_local_events.py    local event refresh CLI used by the API
-surface/openapi_spec.py           OpenAPI payload builder
-surface/api_models.py             OpenAPI/Pydantic schema models
+surface/openapi_spec.py           support module for /openapi.json
+surface/api_models.py             schema support module for openapi_spec.py
 ```
 
 Local event implementation package:
