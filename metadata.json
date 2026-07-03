@@ -1,44 +1,6 @@
 {
-  "project": {
-    "name": "InfoScreen",
-    "purpose": "Local kiosk dashboard for a Surface or Ubuntu display.",
-    "primary_host": "Surface or Ubuntu",
-    "secondary_host": "macOS for Apple Calendar export"
-  },
-  "document_contract": {
-    "metadata.json": "Project requirements, constraints, implementation plan, and acceptance criteria.",
-    "README.md": "Usage, startup, verification, and troubleshooting.",
-    "docs/api-spec.md": "HTTP endpoint interactions.",
-    "docs/design.md": "System design contracts.",
-    "docs/questions.md": "Decision rationale."
-  },
-  "runtime_contract": {
-    "runtime_dir": "~/infoscreen/surface/.env/",
-    "schedule_json": "~/infoscreen/surface/.env/schedule.json",
-    "http_log": "~/infoscreen/surface/.env/logs/http.log",
-    "http_error_log": "~/infoscreen/surface/.env/logs/http.err.log"
-  },
-  "source_layout": {
-    "deploy/": "Systemd templates and install scripts.",
-    "docs/": "api-spec.md, design.md, questions.md.",
-    "mac/": "Calendar export and schedule sync.",
-    "sample/": "Sample JSON fixtures.",
-    "scripts/": "Developer and status scripts.",
-    "surface/": "Surface app implementation.",
-    "surface/web/assets/css/": "CSS.",
-    "surface/web/assets/js/": "Browser JavaScript."
-  },
-  "implementation_plan": [
-    "runtime-ignore-rules",
-    "http-file-logging",
-    "frontend-assets-layout",
-    "server-boundary",
-    "schedule-runtime-path"
-  ],
-  "acceptance_criteria": [
-    "Schedule endpoint reads the file under surface/.env/.",
-    "The root directory stays source-only.",
-    "HTTP file logs are written under surface/.env/logs/.",
-    "docs/ contains api-spec.md, design.md, and questions.md."
-  ]
+  "project": "InfoScreen",
+  "status": "Use README.md as the current source map.",
+  "active_dashboard": "surface/web/index.html plus surface/web/assets/",
+  "runtime_dir": "surface/.env/"
 }
