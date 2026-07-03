@@ -6,11 +6,9 @@
 
 Runtime JSON files live under `surface/.env/`.
 
-The detailed Python source map is `surface/README.md`.
-
 ## Python files
 
-Entrypoints and API/schema modules:
+Entrypoints and support modules:
 
 ```text
 surface/serve_infoscreen.py       HTTP server and local API
@@ -18,8 +16,8 @@ surface/fetch_live_data.py        weather and market refresh
 surface/fetch_event_stream.py     event/news stream refresh
 surface/build_photos_json.py      photo wall JSON builder
 surface/search_local_events.py    local event refresh CLI used by the API
-surface/openapi_spec.py           OpenAPI payload builder
-surface/api_models.py             OpenAPI/Pydantic schema models
+surface/openapi_spec.py           support module for /openapi.json
+surface/api_models.py             schema support module for openapi_spec.py
 ```
 
 Local event implementation package:
@@ -80,4 +78,6 @@ surface/web/assets/js/market_custom.js
 /event_stream.json         -> assets/js/dashboard.js
 /photos.json               -> assets/js/dashboard.js
 /api/local-events/search   -> assets/js/local_event_card.js
+/openapi.json              -> openapi_spec.py + api_models.py
+/docs                      -> Swagger UI for /openapi.json
 ```
