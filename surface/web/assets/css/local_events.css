@@ -1,200 +1,268 @@
 .local-event-static {
-  margin-top: 12px;
-  padding: 12px;
-  border: 1px solid rgba(127, 226, 255, 0.28);
-  background: rgba(3, 10, 18, 0.92);
-  color: #e7fbff;
+  min-height: 0 !important;
+  height: 100% !important;
+  overflow: hidden !important;
+  background:
+    radial-gradient(circle, rgba(215,221,217,0.055) 1px, transparent 1.3px),
+    var(--panel) !important;
+  background-size: 6px 6px !important;
 }
 
-.le2-header,
-.le2-row,
-.le2-source-list,
-.le2-group-title {
-  display: flex;
-  align-items: center;
+.local-event-static .inner {
+  height: 100% !important;
+  padding: 8px 10px !important;
+  overflow: hidden !important;
+  display: grid !important;
+  grid-template-rows: 26px minmax(0, 1fr) !important;
+  gap: 7px !important;
 }
 
-.le2-header {
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 10px;
+.local-event-toolbar {
+  height: 26px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 6px !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
 }
 
-.le2-kicker {
-  font-size: 10px;
-  letter-spacing: 0.16em;
-  color: #86eaff;
+#localEventCounter {
+  margin-right: auto !important;
+  color: var(--muted) !important;
+  font-size: 10px !important;
+  line-height: 1 !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.08em !important;
 }
 
-.le2-title {
-  margin: 2px 0 0;
-  font-size: 15px;
-  color: #ffffff;
+.local-event-icon-button {
+  height: 22px !important;
+  min-width: 28px !important;
+  border: 1px solid var(--line) !important;
+  background: #050606 !important;
+  color: var(--yellow) !important;
+  cursor: pointer !important;
+  font: 950 9px/1 inherit !important;
+  padding: 0 6px !important;
 }
 
-.le2-status {
-  max-width: 45%;
-  text-align: right;
-  font-size: 10px;
-  color: rgba(220, 246, 255, 0.62);
+.local-event-icon-button:disabled {
+  opacity: 0.35 !important;
+  cursor: default !important;
 }
 
-.le2-controls {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 7px;
-  margin-bottom: 10px;
+.local-event-list {
+  height: 100% !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+  display: block !important;
 }
 
-.le2-input,
-.le2-button {
-  min-height: 30px;
-  box-sizing: border-box;
-  border: 1px solid rgba(127, 226, 255, 0.32);
-  background: rgba(0, 8, 15, 0.95);
-  color: #ebfcff;
-  font: inherit;
+.local-event-card {
+  height: 100% !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 4px !important;
+  overflow: hidden !important;
+  padding: 6px 10px 7px 12px !important;
+  border-left: 3px solid var(--yellow) !important;
+  background: rgba(255,224,138,0.045) !important;
+  color: var(--text) !important;
+  text-decoration: none !important;
 }
 
-.le2-input {
-  min-width: 0;
-  padding: 0 8px;
+.local-event-source {
+  flex: 0 0 auto !important;
+  max-width: calc(100% - 132px) !important;
+  color: var(--cyan) !important;
+  font-size: 10px !important;
+  line-height: 1 !important;
+  font-weight: 950 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+  overflow: hidden !important;
+  white-space: nowrap !important;
+  text-overflow: ellipsis !important;
 }
 
-.le2-button {
-  padding: 0 11px;
-  color: #ffd979;
-  cursor: pointer;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+.local-event-title {
+  flex: 0 0 auto !important;
+  color: var(--yellow) !important;
+  font-size: 15px !important;
+  line-height: 1.06 !important;
+  font-weight: 950 !important;
+  letter-spacing: 0.01em !important;
+  overflow: hidden !important;
 }
 
-.le2-list {
-  display: grid;
-  max-height: 58vh;
-  overflow: auto;
-  gap: 9px;
-  padding-right: 2px;
+.local-event-facts {
+  flex: 0 0 auto !important;
+  display: grid !important;
+  gap: 2px !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
 }
 
-.le2-group {
-  display: grid;
-  gap: 7px;
+.local-event-kv {
+  display: grid !important;
+  grid-template-columns: 48px minmax(0,1fr) !important;
+  gap: 8px !important;
+  align-items: start !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
 }
 
-.le2-group-title {
-  justify-content: space-between;
-  padding: 5px 7px;
-  border: 1px solid rgba(127, 226, 255, 0.14);
-  background: rgba(0, 8, 15, 0.75);
-  color: rgba(231, 251, 255, 0.78);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.local-event-kv span {
+  color: var(--muted) !important;
+  font-size: 10px !important;
+  line-height: 1.05 !important;
+  font-weight: 950 !important;
+  letter-spacing: 0.12em !important;
+  text-transform: uppercase !important;
 }
 
-.le2-group-title span {
-  color: rgba(255, 225, 150, 0.78);
-  font-weight: 500;
-  letter-spacing: 0;
-  text-transform: none;
+.local-event-kv b {
+  color: var(--cyan) !important;
+  font-size: 11px !important;
+  line-height: 1.06 !important;
+  font-weight: 900 !important;
+  overflow: hidden !important;
 }
 
-.le2-card {
-  padding: 9px;
-  border: 1px solid rgba(127, 226, 255, 0.16);
-  background: rgba(0, 15, 26, 0.74);
+.local-event-desc {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  color: var(--text) !important;
 }
 
-.le2-row {
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 5px;
-  font-size: 10px;
+.local-event-desc-text {
+  height: 100% !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  font-size: 11px !important;
+  line-height: 1.1 !important;
+  font-weight: 760 !important;
 }
 
-.le2-source {
-  color: #8feaff;
+.local-event-actions {
+  flex: 0 0 auto !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  overflow: hidden !important;
+  line-height: 0 !important;
+  margin-top: 1px !important;
 }
 
-.le2-date {
-  max-width: 58%;
-  overflow: hidden;
-  color: #ffe196;
-  text-align: right;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.local-event-link,
+.local-event-no-link {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  height: 22px !important;
+  color: #050606 !important;
+  background: var(--yellow) !important;
+  border: 1px solid var(--yellow) !important;
+  border-radius: 999px !important;
+  padding: 0 10px !important;
+  font-size: 10px !important;
+  line-height: 1 !important;
+  font-weight: 950 !important;
+  letter-spacing: 0.08em !important;
+  text-decoration: none !important;
+  text-transform: uppercase !important;
+  white-space: nowrap !important;
+  box-sizing: border-box !important;
 }
 
-.le2-event-title {
-  display: block;
-  margin-bottom: 4px;
-  color: #ffffff;
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1.25;
-  text-decoration: none;
+.local-event-no-link {
+  color: var(--muted) !important;
+  background: transparent !important;
+  border-color: var(--line) !important;
 }
 
-.le2-event-title:hover {
-  text-decoration: underline;
+.local-event-empty {
+  height: 100% !important;
+  display: grid !important;
+  place-items: center !important;
+  color: var(--muted) !important;
+  font-size: 13px !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.05em !important;
+  text-transform: uppercase !important;
+  text-align: center !important;
 }
 
-.le2-venue {
-  margin: 0 0 4px;
-  color: rgba(167, 239, 255, 0.74);
-  font-size: 10px;
-  line-height: 1.25;
-  letter-spacing: 0.04em;
+.local-event-modal[hidden] {
+  display: none !important;
 }
 
-.le2-summary {
-  margin: 0;
-  color: rgba(224, 247, 255, 0.72);
-  font-size: 11px;
-  line-height: 1.35;
+.local-event-modal {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 200 !important;
+  display: grid !important;
+  place-items: center !important;
+  background: rgba(0,0,0,0.72) !important;
 }
 
-.le2-more {
-  padding: 7px 9px;
-  border: 1px dashed rgba(127, 226, 255, 0.18);
-  color: rgba(255, 225, 150, 0.78);
-  background: rgba(0, 8, 15, 0.48);
-  font-size: 10px;
-  line-height: 1.25;
+.local-event-modal-card {
+  width: min(420px, calc(100vw - 28px)) !important;
+  background: var(--panel2) !important;
+  border: 1px solid var(--line) !important;
+  padding: 16px !important;
+  color: var(--text) !important;
 }
 
-.le2-empty {
-  padding: 9px;
-  border: 1px dashed rgba(127, 226, 255, 0.22);
-  color: rgba(224, 247, 255, 0.68);
-  font-size: 11px;
-  line-height: 1.4;
+.local-event-modal-title {
+  color: var(--yellow) !important;
+  font-size: 14px !important;
+  font-weight: 950 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+  margin-bottom: 10px !important;
 }
 
-.le2-official-title {
-  margin: 11px 0 6px;
-  color: rgba(224, 247, 255, 0.58);
-  font-size: 10px;
-  letter-spacing: 0.13em;
+#localEventLocationInput {
+  width: 100% !important;
+  height: 34px !important;
+  background: #050606 !important;
+  color: var(--text) !important;
+  border: 1px solid var(--line) !important;
+  padding: 0 10px !important;
+  font: 900 13px/1 inherit !important;
+  outline: none !important;
 }
 
-.le2-source-list {
-  flex-wrap: wrap;
-  gap: 6px;
+#localEventModalError {
+  min-height: 18px !important;
+  color: var(--red) !important;
+  font-size: 12px !important;
+  font-weight: 800 !important;
+  margin-top: 8px !important;
 }
 
-.le2-source-link {
-  padding: 4px 7px;
-  border: 1px solid rgba(127, 226, 255, 0.24);
-  color: #a7efff;
-  font-size: 10px;
-  text-decoration: none;
+.local-event-modal-actions {
+  display: flex !important;
+  justify-content: flex-end !important;
+  gap: 8px !important;
+  margin-top: 12px !important;
 }
 
-.le2-source-link:hover {
-  border-color: rgba(127, 226, 255, 0.74);
-  color: #ffffff;
+.local-event-modal-actions button {
+  border: 1px solid var(--line) !important;
+  background: #050606 !important;
+  color: var(--text) !important;
+  padding: 7px 11px !important;
+  font: 900 12px/1 inherit !important;
+  cursor: pointer !important;
+}
+
+#localEventSearchButton {
+  color: var(--yellow) !important;
 }
