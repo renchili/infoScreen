@@ -272,20 +272,21 @@
   }
 
   function installStyle() {
-    if (document.getElementById("local-event-stable-style")) return;
+    var old = document.getElementById("local-event-stable-style");
+    if (old && old.parentNode) old.parentNode.removeChild(old);
     var style = document.createElement("style");
     style.id = "local-event-stable-style";
     style.textContent = [
       "#localEventList{height:100%!important;min-height:0!important;overflow:hidden!important;padding-top:0!important;display:block!important;grid-template-rows:none!important;gap:0!important;}",
-      "#localEventList .local-event-card{height:100%!important;width:100%!important;box-sizing:border-box!important;display:flex!important;flex-direction:column!important;gap:5px!important;overflow:hidden!important;padding:7px 10px 7px 12px!important;border-left:3px solid #ffe08a!important;background:rgba(255,224,138,.045)!important;color:#d7ddd9!important;text-decoration:none!important;}",
-      "#localEventList .local-event-source{max-width:calc(100% - 132px)!important;color:#8cecff!important;font-size:11px!important;line-height:1!important;font-weight:950!important;letter-spacing:.08em!important;text-transform:uppercase!important;overflow:hidden!important;white-space:nowrap!important;text-overflow:ellipsis!important;}",
-      "#localEventList .local-event-title{flex:0 0 auto!important;color:#ffe08a!important;font-size:16px!important;line-height:1.08!important;font-weight:950!important;letter-spacing:.01em!important;overflow:hidden!important;white-space:normal!important;}",
-      "#localEventList .local-event-facts{flex:0 0 auto!important;display:grid!important;gap:3px!important;min-height:0!important;overflow:hidden!important;}",
+      "#localEventList .local-event-card{height:100%!important;width:100%!important;box-sizing:border-box!important;display:flex!important;flex-direction:column!important;justify-content:flex-start!important;gap:4px!important;overflow:hidden!important;padding:6px 10px 7px 12px!important;border-left:3px solid #ffe08a!important;background:rgba(255,224,138,.045)!important;color:#d7ddd9!important;text-decoration:none!important;}",
+      "#localEventList .local-event-source{flex:0 0 auto!important;max-width:calc(100% - 132px)!important;color:#8cecff!important;font-size:10px!important;line-height:1!important;font-weight:950!important;letter-spacing:.08em!important;text-transform:uppercase!important;overflow:hidden!important;white-space:nowrap!important;text-overflow:ellipsis!important;}",
+      "#localEventList .local-event-title{flex:0 0 auto!important;color:#ffe08a!important;font-size:15px!important;line-height:1.06!important;font-weight:950!important;letter-spacing:.01em!important;overflow:hidden!important;white-space:normal!important;}",
+      "#localEventList .local-event-facts{flex:0 0 auto!important;display:grid!important;gap:2px!important;min-height:0!important;overflow:hidden!important;}",
       "#localEventList .local-event-kv{display:grid!important;grid-template-columns:48px minmax(0,1fr)!important;gap:8px!important;align-items:start!important;min-height:0!important;overflow:hidden!important;}",
       "#localEventList .local-event-kv span{color:#7d8782!important;font-size:10px!important;line-height:1.05!important;font-weight:950!important;letter-spacing:.12em!important;text-transform:uppercase!important;}",
-      "#localEventList .local-event-kv b{color:#8cecff!important;font-size:12px!important;line-height:1.08!important;font-weight:900!important;overflow:hidden!important;white-space:normal!important;}",
+      "#localEventList .local-event-kv b{color:#8cecff!important;font-size:11px!important;line-height:1.06!important;font-weight:900!important;overflow:hidden!important;white-space:normal!important;}",
       "#localEventList .local-event-desc{flex:1 1 auto!important;min-height:0!important;overflow:hidden!important;display:block!important;color:#d7ddd9!important;}",
-      "#localEventList .local-event-desc-text{display:block!important;width:100%!important;height:100%!important;min-height:0!important;font-size:12px!important;line-height:1.12!important;font-weight:760!important;overflow:hidden!important;white-space:normal!important;}",
+      "#localEventList .local-event-desc-text{display:block!important;width:100%!important;height:100%!important;min-height:0!important;font-size:11px!important;line-height:1.1!important;font-weight:760!important;overflow:hidden!important;white-space:normal!important;}",
       "#localEventList .local-event-actions{flex:0 0 auto!important;display:flex!important;align-items:center!important;justify-content:flex-start!important;overflow:hidden!important;line-height:0!important;margin-top:1px!important;}",
       "#localEventList .local-event-link{display:inline-flex!important;align-items:center!important;justify-content:center!important;height:22px!important;color:#050606!important;background:#ffe08a!important;border:1px solid #ffe08a!important;border-radius:999px!important;padding:0 10px!important;font-size:10px!important;line-height:1!important;font-weight:950!important;letter-spacing:.08em!important;text-decoration:none!important;text-transform:uppercase!important;white-space:nowrap!important;vertical-align:top!important;box-sizing:border-box!important;}",
       "#localEventList .local-event-empty{height:100%!important;display:grid!important;place-items:center!important;color:#7d8782!important;font-size:14px!important;font-weight:900!important;letter-spacing:.05em!important;text-transform:uppercase!important;text-align:center!important;}"
@@ -293,9 +294,43 @@
     document.head.appendChild(style);
   }
 
+  function applyStyles(el, styles) {
+    if (!el) return;
+    Object.keys(styles).forEach(function (key) { el.style[key] = styles[key]; });
+  }
+
+  function forceCardLayout(card) {
+    if (!card) return;
+    applyStyles(byId("localEventList"), {
+      height: "100%",
+      minHeight: "0",
+      overflow: "hidden",
+      paddingTop: "0",
+      display: "block"
+    });
+    applyStyles(card, {
+      height: "100%",
+      width: "100%",
+      boxSizing: "border-box",
+      display: "flex",
+      flexDirection: "column",
+      justifyContent: "flex-start",
+      gap: "4px",
+      overflow: "hidden",
+      padding: "6px 10px 7px 12px"
+    });
+    applyStyles(card.querySelector(".local-event-source"), { flex: "0 0 auto", lineHeight: "1", fontSize: "10px" });
+    applyStyles(card.querySelector(".local-event-title"), { flex: "0 0 auto", lineHeight: "1.06", fontSize: "15px" });
+    applyStyles(card.querySelector(".local-event-facts"), { flex: "0 0 auto", minHeight: "0", overflow: "hidden" });
+    applyStyles(card.querySelector(".local-event-desc"), { flex: "1 1 auto", minHeight: "0", overflow: "hidden", display: "block" });
+    applyStyles(card.querySelector(".local-event-desc-text"), { height: "100%", minHeight: "0", overflow: "hidden", display: "block", fontSize: "11px", lineHeight: "1.1" });
+    applyStyles(card.querySelector(".local-event-actions"), { flex: "0 0 auto", display: "flex", alignItems: "center", justifyContent: "flex-start", lineHeight: "0", marginTop: "1px" });
+    applyStyles(card.querySelector(".local-event-link"), { display: "inline-flex", alignItems: "center", justifyContent: "center", height: "22px", lineHeight: "1", boxSizing: "border-box" });
+  }
+
   function fact(label, value) {
     if (isPlaceholder(value)) return "";
-    return '<div class="local-event-kv"><span>' + esc(label) + '</span><b class="fit-field" data-fit-min="8" data-fit-start="12">' + esc(value) + '</b></div>';
+    return '<div class="local-event-kv"><span>' + esc(label) + '</span><b class="fit-field" data-fit-min="8" data-fit-start="11">' + esc(value) + '</b></div>';
   }
 
   function textOverflowing(el) {
@@ -331,15 +366,17 @@
   function fitLocalEventFields() {
     var card = document.querySelector("#localEventList .local-event-card");
     if (!card) return;
+    forceCardLayout(card);
     var title = card.querySelector(".local-event-title");
     var desc = card.querySelector(".local-event-desc-text");
-    fitField(title, 16, 8);
+    fitField(title, 15, 8);
     Array.prototype.forEach.call(card.querySelectorAll(".fit-field"), function (el) {
-      fitField(el, Number(el.getAttribute("data-fit-start") || 12), Number(el.getAttribute("data-fit-min") || 8));
+      fitField(el, Number(el.getAttribute("data-fit-start") || 11), Number(el.getAttribute("data-fit-min") || 8));
     });
-    fitField(desc, 12, 7);
-    shrinkUntilCardFits(card, desc, parseFloat(desc && desc.style.fontSize) || 12, 7);
-    shrinkUntilCardFits(card, title, parseFloat(title && title.style.fontSize) || 16, 8);
+    fitField(desc, 11, 7);
+    shrinkUntilCardFits(card, desc, parseFloat(desc && desc.style.fontSize) || 11, 7);
+    shrinkUntilCardFits(card, title, parseFloat(title && title.style.fontSize) || 15, 8);
+    forceCardLayout(card);
   }
 
   function renderEmpty(text) {
@@ -383,6 +420,8 @@
     ].join("");
     applying = true;
     list.innerHTML = html;
+    var card = list.querySelector(".local-event-card");
+    forceCardLayout(card);
     applying = false;
     if (counter) counter.textContent = (page + 1) + "/" + items.length;
     if (prev) prev.disabled = items.length <= 1;
@@ -498,6 +537,7 @@
       setTimeout(function () {
         var owned = list.querySelector('[data-owned-by="calendar-board"]');
         if (!owned && items.length) render();
+        else fitLocalEventFields();
       }, 0);
     });
     observer.observe(list, { childList: true, subtree: false });
