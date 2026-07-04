@@ -1,145 +1,86 @@
 (function () {
   "use strict";
-
-  var api = "/api/local-events/search";
+  var API = "/api/local-events/search";
   var list = [];
   var page = 0;
-  var currentLocation = localStorage.getItem("local_events_location") || "Punggol Singapore";
-
+  var timer = null;
+  var place = localStorage.getItem("local_events_location") || "Punggol Singapore";
   function el(id) { return document.getElementById(id); }
   function txt(v) { return String(v == null ? "" : v).replace(/\s+/g, " ").trim(); }
-  function enc(v) { return txt(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;").replace(/'/g, "&#39;"); }
+  function esc(v) { return txt(v).replace(/[&<>"']/g, function (c) { return { "&":"&amp;", "<":"&lt;", ">":"&gt;", "\"":"&quot;", "'":"&#39;" }[c]; }); }
+  function pick(row, keys) { for (var i = 0; i < keys.length; i++) { var v = txt(row && row[keys[i]]); if (v) return v; } return ""; }
+  function url(v) { v = txt(v); return v.indexOf("http://") === 0 || v.indexOf("https://") === 0 ? v : ""; }
+  function short(v, n) { v = txt(v); return v.length > n ? v.slice(0, n - 1).trim() + "…" : v; }
   function rows(data) { return Array.isArray(data) ? data : ((data && (data.results || data.items || data.events)) || []); }
-  function val(row, keys) { for (var i = 0; i < keys.length; i++) { var v = txt(row && row[keys[i]]); if (v) return v; } return ""; }
-  function okurl(v) { v = txt(v); return /^https?:\/\//i.test(v) ? v : ""; }
-  function item(row, i) {
-    return {
-      title: val(row, ["title", "what_text", "name", "event"]),
-      when: val(row, ["when", "when_text", "date", "date_text", "time", "time_text"]),
-      where: val(row, ["where", "venue", "place", "where_text", "location"]),
-      source: val(row, ["source_name", "host", "organizer", "source"]),
-      summary: val(row, ["summary", "description", "desc", "why_text"]),
-      link: okurl(val(row, ["url", "link", "href", "official_url"])),
-      order: Number(row && (row.source_order == null ? i : row.source_order))
-    };
+  function item(row, index) {
+    var title = pick(row, ["title", "what_text", "name", "event", "summary"]);
+    var source = pick(row, ["source_name", "host", "organizer", "source"]);
+    var where = pick(row, ["venue", "place", "where_text", "location", "address"]);
+    var when = pick(row, ["when_text", "date_text", "time_text", "when", "date", "time", "start"]);
+    var summary = pick(row, ["why_text", "description", "desc", "summary"]);
+    if (summary === title || summary === where || summary === source) summary = "";
+    return { title: title, source: source, where: where, when: when, summary: summary, link: url(pick(row, ["url", "link", "href", "official_url"])), order: Number(row && (row.source_order == null ? index : row.source_order)) };
   }
-  function fact(k, v) { v = txt(v); return v ? '<div class="local-event-kv"><span>' + enc(k) + '</span><b>' + enc(v) + '</b></div>' : ""; }
-  function setCounter() { var c = el("localEventCounter"); if (c) c.textContent = list.length ? ((page + 1) + "/" + list.length) : "0/0"; }
-  function drawEmpty(v) { var box = el("localEventList"); if (box) box.innerHTML = '<div class="local-event-empty">' + enc(v) + '</div>'; setCounter(); }
+  function clearTimer() { if (timer) { clearInterval(timer); timer = null; } }
+  function startTimer() { clearTimer(); if (list.length > 1) timer = setInterval(function () { page = (page + 1) % list.length; draw(); }, 15000); }
+  function kv(name, value) { value = txt(value); return value ? '<div class="local-event-kv"><span>' + esc(name) + '</span><b>' + esc(short(value, 170)) + '</b></div>' : ""; }
+  function drawEmpty(message) { var box = el("localEventList"); if (box) box.innerHTML = '<div class="local-event-empty">' + esc(message) + '</div>'; var c = el("localEventCounter"); if (c) c.textContent = ""; }
   function draw() {
     var box = el("localEventList");
     if (!box) return;
-    if (!list.length) return drawEmpty("NO RENDERABLE EVENTS");
+    if (!list.length) { drawEmpty("NO CLEAR EVENTS · TAP SEARCH"); return; }
     if (page < 0) page = list.length - 1;
     if (page >= list.length) page = 0;
     var x = list[page];
-    var action = x.link ? '<a class="local-event-link" href="' + enc(x.link) + '" target="_blank" rel="noopener">OFFICIAL</a>' : '<span class="local-event-no-link">OFFICIAL SOURCE</span>';
-    box.innerHTML = '<div class="local-event-card active">' +
-      '<div class="local-event-source">' + enc(x.source || "Official source") + '</div>' +
-      '<div class="local-event-title">' + enc(x.title || "Local event") + '</div>' +
-      '<div class="local-event-facts">' + fact("WHEN", x.when) + fact("WHERE", x.where) + '</div>' +
-      '<div class="local-event-desc"><div class="local-event-desc-text">' + enc(x.summary || "") + '</div></div>' +
-      '<div class="local-event-actions">' + action + '</div>' +
+    box.innerHTML = '<div class="local-event-card local-event-single active">' +
+      '<div class="local-event-label">EVENT</div>' +
+      '<div class="local-event-title">' + esc(short(x.title || "Local event", 120)) + '</div>' +
+      kv("WHEN", x.when || "Check official page") +
+      kv("WHERE", x.where || "Check official page") +
+      kv("HOST", x.source || "Official source") +
+      (x.summary ? '<div class="local-event-desc">' + esc(short(x.summary, 260)) + '</div>' : "") +
+      '<div class="local-event-actions">' + (x.link ? '<a class="local-event-link" href="' + esc(x.link) + '" target="_blank" rel="noopener noreferrer">OPEN OFFICIAL LINK</a>' : '<span class="local-event-no-link">NO LINK IN SOURCE</span>') + '</div>' +
       '</div>';
-    setCounter();
+    var c = el("localEventCounter"); if (c) c.textContent = (page + 1) + "/" + list.length;
   }
-  function normalize(data) {
-    return rows(data).map(item).filter(function (x) { return x.title; }).sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
+  function apply(data) { list = rows(data).map(item).filter(function (x) { return x.title; }).sort(function (a, b) { return (a.order || 0) - (b.order || 0); }); page = 0; draw(); startTimer(); }
+  function load() { fetch(API, { cache: "no-store" }).then(function (r) { return r.json(); }).then(apply).catch(function () { drawEmpty("LOCAL EVENTS UNAVAILABLE · TAP SEARCH"); }); }
+  function openModal() { var m = el("localEventModal"); var input = el("localEventLocationInput"); var err = el("localEventModalError"); if (err) err.textContent = ""; if (input) input.value = place; if (m) m.hidden = false; if (input) input.focus(); }
+  function closeModal() { var m = el("localEventModal"); if (m) m.hidden = true; }
+  function runSearch() {
+    var input = el("localEventLocationInput"); var err = el("localEventModalError"); var btn = el("localEventSearchButton"); var next = txt(input && input.value) || "Punggol Singapore";
+    if (btn) btn.disabled = true; if (err) err.textContent = "searching...";
+    fetch(API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ location: next, query: next, place: next }) })
+      .then(function (r) { return r.json(); }).then(function (data) { place = next; localStorage.setItem("local_events_location", next); closeModal(); apply(data); })
+      .catch(function () { if (err) err.textContent = "Search failed. Try another place."; })
+      .finally(function () { if (btn) btn.disabled = false; });
   }
-  function load() {
-    drawEmpty("LOADING LOCAL EVENTS");
-    fetch(api + "?_=" + Date.now(), { cache: "no-store" })
-      .then(function (r) { return r.json(); })
-      .then(function (data) { list = normalize(data); page = 0; draw(); })
-      .catch(function () { drawEmpty("LOCAL EVENTS UNAVAILABLE"); });
+  function ageText(seconds) { return seconds < 60 ? seconds + "s" : Math.floor(seconds / 60) + "m" + (seconds % 60) + "s"; }
+  function latestText(date) { return date.toLocaleString("zh-CN", { hour12: false, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }); }
+  function fileStatus(path, label, limit) {
+    return fetch(path + "?_=" + Date.now(), { method: "HEAD", cache: "no-store" }).then(function (r) {
+      var lm = r.headers.get("Last-Modified");
+      if (!r.ok || !lm) return { label: label, ok: false, state: "MISS", age: "--", latest: "--" };
+      var d = new Date(lm); var seconds = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000)); var ok = seconds <= limit;
+      return { label: label, ok: ok, state: ok ? "OK" : "STALE", age: ageText(seconds), latest: latestText(d) };
+    }).catch(function () { return { label: label, ok: false, state: "ERR", age: "--", latest: "--" }; });
   }
-  function search(location) {
-    drawEmpty("SEARCHING LOCAL EVENTS");
-    return fetch(api, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ location: location })
-    }).then(function (r) { return r.json(); }).then(function (data) {
-      currentLocation = location;
-      localStorage.setItem("local_events_location", location);
-      list = normalize(data);
-      page = 0;
-      draw();
-    });
-  }
-  function openModal() {
-    var modal = el("localEventModal");
-    var input = el("localEventLocationInput");
-    var err = el("localEventModalError");
-    if (err) err.textContent = "";
-    if (input) input.value = currentLocation;
-    if (modal) modal.hidden = false;
-    if (input) input.focus();
-  }
-  function closeModal() { var modal = el("localEventModal"); if (modal) modal.hidden = true; }
-  function runModalSearch() {
-    var input = el("localEventLocationInput");
-    var button = el("localEventSearchButton");
-    var err = el("localEventModalError");
-    var location = txt(input && input.value) || "Punggol Singapore";
-    if (button) button.disabled = true;
-    if (err) err.textContent = "searching...";
-    search(location).then(function () { closeModal(); }).catch(function (e) {
-      if (err) err.textContent = e && e.message ? e.message : "search failed";
-    }).finally(function () { if (button) button.disabled = false; });
-  }
-
-  function syncSpan(item) { return '<span class="' + enc(item.cls) + '">' + enc(item.label) + '</span>'; }
-  function bad(data) { return data && (data.error === "missing_runtime_json" || data.ok === false || data.status === "ERR"); }
-  function status(name, data) {
-    if (bad(data)) return { cls: "sync-fail", label: name + " FAIL" };
-    if (Array.isArray(data)) return { cls: data.length ? "sync-ok" : "sync-warn", label: name + " " + data.length };
-    if (!data || typeof data !== "object") return { cls: "sync-fail", label: name + " FAIL" };
-    if (Array.isArray(data.items)) return { cls: data.items.length ? "sync-ok" : "sync-warn", label: name + " " + data.items.length };
-    if (Array.isArray(data.results)) return { cls: data.results.length ? "sync-ok" : "sync-warn", label: name + " " + data.results.length };
-    if (data.status === "OK" || data.updated_at || data.temp_c != null) return { cls: "sync-ok", label: name + " OK" };
-    return { cls: "sync-warn", label: name + " WAIT" };
-  }
-  function probe(name, path) {
-    return fetch(path + "?_=" + Date.now(), { cache: "no-store" })
-      .then(function (r) { if (!r.ok) throw new Error("http"); return r.json(); })
-      .then(function (data) { return status(name, data); })
-      .catch(function () { return { cls: "sync-fail", label: name + " FAIL" }; });
-  }
-  function refreshSync() {
-    var tape = el("leftSyncTapeTrack");
-    if (!tape) return;
-    Promise.all([
-      probe("SCHEDULE", "schedule.json"),
-      probe("WEATHER", "weather.json"),
-      probe("MARKET", "market.json"),
-      probe("NEWS", "event_stream.json"),
-      probe("LOCAL", "local_event_search_results.json"),
-      probe("PHOTOS", "photos.json")
-    ]).then(function (items) {
-      var fail = items.some(function (x) { return x.cls === "sync-fail"; });
-      var warn = items.some(function (x) { return x.cls === "sync-warn"; });
-      var head = { cls: fail ? "sync-fail" : (warn ? "sync-warn" : "sync-ok"), label: fail ? "SYNC FAIL" : (warn ? "SYNC WARN" : "SYNC OK") };
-      var html = [head].concat(items).map(syncSpan).join("");
+  function loadSyncStatus() {
+    var tape = el("leftSyncTapeTrack"); if (!tape) return;
+    Promise.all([fileStatus("schedule.json", "SCHEDULE", 600), fileStatus("weather.json", "WEATHER", 900), fileStatus("market.json", "MARKET", 600), fileStatus("event_stream.json", "NEWS", 600)]).then(function (items) {
+      var html = items.map(function (x) { var cls = x.ok ? "sync-ok" : (x.state === "STALE" ? "sync-warn" : "sync-fail"); var icon = x.ok ? "●" : (x.state === "STALE" ? "▲" : "■"); return '<span class="' + cls + '">' + icon + ' ' + esc(x.label) + ' ' + esc(x.state) + '</span><span class="sync-muted">LATEST ' + esc(x.latest) + '</span><span class="sync-muted">AGE ' + esc(x.age) + '</span>'; }).join("");
       tape.innerHTML = html + html;
     });
   }
-
   document.addEventListener("DOMContentLoaded", function () {
-    var prev = el("localEventPrevButton");
-    var next = el("localEventNextButton");
-    var locate = el("localEventLocationButton");
-    var cancel = el("localEventCancelButton");
-    var submit = el("localEventSearchButton");
-    var input = el("localEventLocationInput");
-    if (prev) prev.onclick = function () { page--; draw(); };
-    if (next) next.onclick = function () { page++; draw(); };
-    if (locate) locate.onclick = openModal;
+    var prev = el("localEventPrevButton"), next = el("localEventNextButton"), searchBtn = el("localEventLocationButton"), cancel = el("localEventCancelButton"), submit = el("localEventSearchButton"), input = el("localEventLocationInput"), modal = el("localEventModal");
+    if (prev) prev.onclick = function () { clearTimer(); page--; draw(); startTimer(); };
+    if (next) next.onclick = function () { clearTimer(); page++; draw(); startTimer(); };
+    if (searchBtn) searchBtn.onclick = openModal;
     if (cancel) cancel.onclick = closeModal;
-    if (submit) submit.onclick = runModalSearch;
-    if (input) input.onkeydown = function (event) { if (event.key === "Enter") runModalSearch(); if (event.key === "Escape") closeModal(); };
-    load();
-    refreshSync();
-    setInterval(refreshSync, 60000);
+    if (submit) submit.onclick = runSearch;
+    if (input) input.onkeydown = function (e) { if (e.key === "Enter") runSearch(); if (e.key === "Escape") closeModal(); };
+    if (modal) modal.onclick = function (e) { if (e.target === modal) closeModal(); };
+    load(); loadSyncStatus(); setInterval(loadSyncStatus, 60000);
   });
 })();
