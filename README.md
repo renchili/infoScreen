@@ -27,6 +27,23 @@ docs/api-spec.md   HTTP endpoints and Python owners
 docs/questions.md  current project decisions
 ```
 
+## Repository root policy
+
+The repository root is for control files and documentation only. Dashboard runtime JSON, CSS, and JavaScript files do not belong in the root.
+
+Allowed root-level project files include:
+
+```text
+README.md
+AGENTS.md
+AGENT.md
+.gitignore
+docs/
+surface/
+```
+
+Runtime JSON belongs under `surface/.env/`. Browser CSS and JavaScript belong under `surface/web/assets/`.
+
 ## Active source overview
 
 Server and API support:
@@ -139,7 +156,10 @@ python3 -m py_compile surface/*.py surface/jobs/*.py surface/local_events_runtim
 python3 surface/build_photos_json.py
 curl -s http://127.0.0.1:8765/ | grep -E "assets/js/dashboard.js|assets/js/local_event_card.js"
 curl -s http://127.0.0.1:8765/assets/js/local_event_card.js | grep -n "local-event-source-top"
-curl -s http://127.0.0.1:8765/assets/css/local_events.css | grep -n "market-config-button\|local-event-source-top"
+curl -s http://127.0.0.1:8765/assets/css/local_events.css | grep -n "local-event-source-top"
+curl -s http://127.0.0.1:8765/assets/js/market_custom.js | grep -n "marketConfigButton"
 curl -s http://127.0.0.1:8765/photos.json | grep -n "items"
+find . -maxdepth 1 -type f \( -name "*.json" -o -name "*.js" -o -name "*.css" \) -print
+find surface/web -maxdepth 1 -type f \( -name "*.js" -o -name "*.css" \) -print
 find surface -maxdepth 3 -type f -name "*.py" | sort
 ```
