@@ -29,20 +29,31 @@ docs/questions.md  current project decisions
 
 ## Repository root policy
 
-The repository root is for control files and documentation only. Dashboard runtime JSON, CSS, and JavaScript files do not belong in the root.
+The repository root is for repository control and documentation only. Project code and local runtime state do not belong in the root.
 
-Allowed root-level project files include:
+Allowed root-level project paths:
 
 ```text
 README.md
 AGENTS.md
 AGENT.md
 .gitignore
+.githooks/
 docs/
+skills/
 surface/
 ```
 
-Runtime JSON belongs under `surface/.env/`. Browser CSS and JavaScript belong under `surface/web/assets/`.
+Runtime JSON belongs under `surface/.env/`. Browser CSS and JavaScript belong under `surface/web/assets/`. Local photos belong under `surface/.env/photos/`.
+
+Enable the local pre-commit guard once per clone:
+
+```bash
+git config core.hooksPath .githooks
+chmod +x .githooks/pre-commit
+```
+
+The hook blocks staged root project code, root runtime files, local env files, `photo/`, `photos/`, `public_photos/`, and legacy `surface/web/*.js` or `surface/web/*.css` files.
 
 ## Active source overview
 
@@ -112,15 +123,13 @@ The kiosk dashboard must show a compact market configuration button, not an alwa
 Photo wall:
 
 ```text
-photos/
-photo/
 surface/.env/photos/
 surface/build_photos_json.py
 surface/.env/photos.json
 surface/.env/public_photos/
 ```
 
-Put user photos in the repository-level `photos/` directory. `surface/build_photos_json.py` also supports the singular root `photo/` directory and the legacy `surface/.env/photos/` directory. After adding photos, run the photo builder so `photos.json` and `public_photos/` are regenerated.
+Put user photos in `surface/.env/photos/`. After adding photos, run the photo builder so `photos.json` and `public_photos/` are regenerated.
 
 ## Runtime files
 
@@ -160,7 +169,7 @@ curl -s http://127.0.0.1:8765/assets/js/local_event_card.js | grep -n "local-eve
 curl -s http://127.0.0.1:8765/assets/css/local_events.css | grep -n "local-event-source-top"
 curl -s http://127.0.0.1:8765/assets/js/market_custom.js | grep -n "marketConfigButton"
 curl -s http://127.0.0.1:8765/photos.json | grep -n "items"
-find . -maxdepth 1 -type f \( -name "*.json" -o -name "*.js" -o -name "*.css" \) -print
+find . -maxdepth 1 -type f \( ! -name "README.md" ! -name "AGENTS.md" ! -name "AGENT.md" ! -name ".gitignore" \) -print
 find surface/web -maxdepth 1 -type f \( -name "*.js" -o -name "*.css" \) -print
 find surface -maxdepth 3 -type f -name "*.py" | sort
 ```
