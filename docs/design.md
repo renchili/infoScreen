@@ -6,6 +6,23 @@
 
 Runtime JSON files live under `surface/.env/`.
 
+## Repository root policy
+
+The repository root is reserved for control files and documentation. Dashboard runtime JSON, browser CSS, and browser JavaScript must not live in the repository root.
+
+Allowed root-level project files are limited to control and documentation files such as:
+
+```text
+README.md
+AGENTS.md
+AGENT.md
+.gitignore
+docs/
+surface/
+```
+
+Runtime JSON belongs under `surface/.env/`. Browser CSS and JavaScript belong under `surface/web/assets/`. Legacy static files directly under `surface/web/*.js` or `surface/web/*.css` are not active source paths and should be removed instead of replaced with placeholders.
+
 ## Python files
 
 Server and API support:
