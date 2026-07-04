@@ -100,7 +100,7 @@ surface/web/assets/js/local_event_card.js
 surface/web/assets/css/local_events.css
 ```
 
-The card must keep the compact TTY style: no dotted background in the local-event panel, compact `‹` / `›` / `⌕` controls, the counter next to those controls on the right, source/organization at the card top-left, no separate `EVENT` label, compact `WHEN` and `WHERE` rows, and the official link directly after the content rather than pushed to the bottom.
+The card must keep the compact TTY style: no dotted background in the local-event panel, compact `‹` / `›` / `⌕` controls with the counter on the top-right, source/organization at the card top-left, no separate `EVENT` label, compact `WHEN` and `WHERE` rows, and the official link pinned to the bottom of the card.
 
 Sync ticker:
 
@@ -118,7 +118,7 @@ surface/web/assets/js/market_custom.js
 surface/web/assets/css/market_custom.css
 ```
 
-The kiosk dashboard must show a compact market configuration button, not an always-visible inline editor that shifts the market rows. Clicking the button opens the symbol editor overlay; market symbols remain configurable through `/api/market-config` and refresh through `/api/market-refresh`.
+The kiosk dashboard must show a compact market configuration button that does not cover quote rows. Clicking the button opens the symbol editor overlay; market symbols remain configurable through `/api/market-config` and refresh through `/api/market-refresh`.
 
 Photo wall:
 
@@ -166,7 +166,7 @@ python3 -m py_compile surface/*.py surface/jobs/*.py surface/local_events_runtim
 python3 surface/build_photos_json.py
 curl -s http://127.0.0.1:8765/ | grep -E "assets/js/dashboard.js|assets/js/local_event_card.js"
 curl -s http://127.0.0.1:8765/assets/js/local_event_card.js | grep -n "local-event-source-top"
-curl -s http://127.0.0.1:8765/assets/css/local_events.css | grep -n "local-event-source-top"
+curl -s http://127.0.0.1:8765/assets/css/local_events.css | grep -n "margin-top: auto"
 curl -s http://127.0.0.1:8765/assets/js/market_custom.js | grep -n "marketConfigButton"
 curl -s http://127.0.0.1:8765/photos.json | grep -n "items"
 find . -maxdepth 1 -type f \( ! -name "README.md" ! -name "AGENTS.md" ! -name "AGENT.md" ! -name ".gitignore" \) -print
