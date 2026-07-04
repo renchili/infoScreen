@@ -19,13 +19,36 @@ InfoScreen is a local kiosk dashboard for a Surface or Ubuntu display.
 
 The repository root is `~/infoscreen`. Do not create another project root.
 
+## Repository root policy
+
+The repository root is for control files and documentation only.
+
+Do not place dashboard runtime JSON, browser CSS, or browser JavaScript in the repository root.
+
+Allowed root-level project files include:
+
+```text
+README.md
+AGENTS.md
+AGENT.md
+.gitignore
+docs/
+surface/
+skills/
+```
+
+Runtime JSON belongs under `surface/.env/`.
+
+Browser CSS and JavaScript belong under `surface/web/assets/`.
+
+Do not replace removed root or legacy static files with placeholders.
+
 ## Documentation locations
 
 Project documentation belongs in:
 
 ```text
 README.md
-metadata.json
 docs/design.md
 docs/api-spec.md
 docs/questions.md
@@ -64,6 +87,8 @@ surface/web/assets/js/
 ```
 
 Do not restore root-level `surface/web/*.js` or `surface/web/*.css` as active dashboard entrypoints.
+
+Do not keep stale compatibility placeholders for removed frontend files.
 
 ## Python model
 
@@ -121,7 +146,9 @@ Report only checks actually run.
 Useful checks:
 
 ```bash
-python3 -m py_compile surface/*.py surface/local_events_runtime/*.py
+python3 -m py_compile surface/*.py surface/jobs/*.py surface/local_events_runtime/*.py
+find . -maxdepth 1 -type f \( -name "*.json" -o -name "*.js" -o -name "*.css" \) -print
+find surface/web -maxdepth 1 -type f \( -name "*.js" -o -name "*.css" \) -print
 find surface -maxdepth 3 -type f -name "*.py" | sort
 curl -s http://127.0.0.1:8765/ | grep -E "assets/js/dashboard.js|assets/js/local_event_card.js"
 curl -s http://127.0.0.1:8765/openapi.json >/tmp/infoscreen-openapi.json
