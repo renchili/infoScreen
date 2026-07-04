@@ -2,35 +2,26 @@
   min-height: 0 !important;
   height: 100% !important;
   overflow: hidden !important;
-  background:
-    radial-gradient(circle, rgba(215,221,217,0.055) 1px, transparent 1.3px),
-    var(--panel) !important;
-  background-size: 6px 6px !important;
-}
-
-.local-event-static::before {
-  z-index: 3 !important;
+  background: var(--panel) !important;
 }
 
 .local-event-static .inner {
   height: 100% !important;
-  padding: 18px 10px 8px !important;
+  padding: 8px 10px !important;
   overflow: hidden !important;
   display: grid !important;
-  grid-template-rows: 28px minmax(0, 1fr) !important;
-  gap: 6px !important;
+  grid-template-rows: 26px minmax(0, 1fr) !important;
+  gap: 7px !important;
 }
 
 .local-event-toolbar {
-  height: 28px !important;
+  height: 26px !important;
   display: flex !important;
   align-items: center !important;
   justify-content: flex-end !important;
   gap: 6px !important;
   min-width: 0 !important;
   overflow: hidden !important;
-  position: relative !important;
-  z-index: 2 !important;
 }
 
 #localEventCounter {
@@ -44,14 +35,14 @@
 }
 
 .local-event-icon-button {
-  height: 23px !important;
-  min-width: 32px !important;
+  height: 22px !important;
+  min-width: 28px !important;
   border: 1px solid var(--line) !important;
   background: #050606 !important;
   color: var(--yellow) !important;
   cursor: pointer !important;
   font: 950 9px/1 inherit !important;
-  padding: 0 7px !important;
+  padding: 0 6px !important;
   border-radius: 999px !important;
   white-space: nowrap !important;
 }
@@ -74,14 +65,23 @@
   width: 100% !important;
   box-sizing: border-box !important;
   display: grid !important;
-  grid-template-rows: auto auto auto minmax(0, 1fr) auto !important;
-  gap: 5px !important;
+  grid-template-rows: auto auto auto auto auto minmax(0, 1fr) auto !important;
+  gap: 6px !important;
   overflow: hidden !important;
-  padding: 8px 10px 8px 12px !important;
-  border-left: 3px solid var(--yellow) !important;
-  background: rgba(255,224,138,0.045) !important;
+  padding: 9px !important;
+  border: 1px solid rgba(127, 226, 255, 0.16) !important;
+  background: rgba(0, 15, 26, 0.74) !important;
   color: var(--text) !important;
   text-decoration: none !important;
+}
+
+.local-event-label {
+  color: rgba(224, 247, 255, 0.58) !important;
+  font-size: 10px !important;
+  line-height: 1 !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.13em !important;
+  text-transform: uppercase !important;
 }
 
 .local-event-source {
@@ -99,8 +99,8 @@
 
 .local-event-title {
   color: var(--yellow) !important;
-  font-size: 14px !important;
-  line-height: 1.08 !important;
+  font-size: 15px !important;
+  line-height: 1.12 !important;
   font-weight: 950 !important;
   letter-spacing: 0.01em !important;
   overflow: hidden !important;
@@ -109,16 +109,9 @@
   -webkit-box-orient: vertical !important;
 }
 
-.local-event-facts {
-  display: grid !important;
-  gap: 3px !important;
-  min-height: 0 !important;
-  overflow: hidden !important;
-}
-
 .local-event-kv {
   display: grid !important;
-  grid-template-columns: 48px minmax(0, 1fr) !important;
+  grid-template-columns: 58px minmax(0, 1fr) !important;
   gap: 8px !important;
   align-items: start !important;
   min-height: 0 !important;
@@ -137,7 +130,7 @@
 .local-event-kv b {
   color: var(--cyan) !important;
   font-size: 11px !important;
-  line-height: 1.1 !important;
+  line-height: 1.12 !important;
   font-weight: 900 !important;
   overflow: hidden !important;
   display: -webkit-box !important;
@@ -148,7 +141,13 @@
 .local-event-desc {
   min-height: 0 !important;
   overflow: hidden !important;
-  color: var(--text) !important;
+  color: rgba(224, 247, 255, 0.72) !important;
+  font-size: 11px !important;
+  line-height: 1.35 !important;
+  font-weight: 760 !important;
+  display: -webkit-box !important;
+  -webkit-line-clamp: 5 !important;
+  -webkit-box-orient: vertical !important;
 }
 
 .local-event-desc-text {
@@ -156,11 +155,7 @@
   min-height: 0 !important;
   overflow: hidden !important;
   font-size: 11px !important;
-  line-height: 1.12 !important;
-  font-weight: 760 !important;
-  display: -webkit-box !important;
-  -webkit-line-clamp: 8 !important;
-  -webkit-box-orient: vertical !important;
+  line-height: 1.35 !important;
 }
 
 .local-event-actions {
@@ -168,7 +163,6 @@
   align-items: center !important;
   justify-content: flex-start !important;
   overflow: hidden !important;
-  margin-top: 2px !important;
 }
 
 .local-event-link,
@@ -176,12 +170,11 @@
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
-  height: 23px !important;
-  color: #050606 !important;
-  background: var(--yellow) !important;
-  border: 1px solid var(--yellow) !important;
-  border-radius: 999px !important;
-  padding: 0 10px !important;
+  min-height: 22px !important;
+  border: 1px solid rgba(127, 226, 255, 0.24) !important;
+  color: #a7efff !important;
+  background: rgba(0, 8, 15, 0.48) !important;
+  padding: 4px 8px !important;
   font-size: 10px !important;
   line-height: 1 !important;
   font-weight: 950 !important;
@@ -193,26 +186,25 @@
 }
 
 .local-event-no-link {
-  color: var(--muted) !important;
-  background: transparent !important;
-  border-color: var(--line) !important;
+  color: rgba(224, 247, 255, 0.58) !important;
+  border-style: dashed !important;
 }
 
 .local-event-empty {
   height: 100% !important;
   display: grid !important;
   place-items: center !important;
-  color: var(--muted) !important;
-  font-size: 13px !important;
+  border: 1px dashed rgba(127, 226, 255, 0.22) !important;
+  background: rgba(0, 8, 15, 0.48) !important;
+  color: rgba(224, 247, 255, 0.68) !important;
+  font-size: 11px !important;
   font-weight: 900 !important;
-  letter-spacing: 0.05em !important;
+  letter-spacing: 0.06em !important;
   text-transform: uppercase !important;
   text-align: center !important;
 }
 
-.local-event-modal[hidden] {
-  display: none !important;
-}
+.local-event-modal[hidden] { display: none !important; }
 
 .local-event-modal {
   position: fixed !important;
@@ -275,6 +267,4 @@
   cursor: pointer !important;
 }
 
-#localEventSearchButton {
-  color: var(--yellow) !important;
-}
+#localEventSearchButton { color: var(--yellow) !important; }
