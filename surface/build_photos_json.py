@@ -8,12 +8,15 @@ from datetime import datetime
 from pathlib import Path
 
 SURFACE_DIR = Path(__file__).resolve().parent
+REPO_DIR = SURFACE_DIR.parent
 ENV_DIR = SURFACE_DIR / ".env"
-SRC_DIR = ENV_DIR / "photos"
+ROOT_SRC_DIR = REPO_DIR / "photos"
+LEGACY_SRC_DIR = ENV_DIR / "photos"
 OUT_DIR = ENV_DIR / "public_photos"
 OUT_JSON = ENV_DIR / "photos.json"
 
-SRC_DIR.mkdir(parents=True, exist_ok=True)
+ROOT_SRC_DIR.mkdir(parents=True, exist_ok=True)
+LEGACY_SRC_DIR.mkdir(parents=True, exist_ok=True)
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 NATIVE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
@@ -66,41 +69,65 @@ def convert_heic(src: Path, dst: Path) -> bool:
     return False
 
 
-def main() -> None:
-    items = []
-    native_stems = {path.stem for path in SRC_DIR.iterdir() if path.is_file() and path.suffix.lower() in (NATIVE_EXTS | GIF_EXTS)}
+def photo_sources() -> list[Path]:
+    paths = [ROOT_SRC_DIR, LEGACY_SRC_DIR]
+    seen = set()
+    out = []
+    for directory in paths:
+        for path in sorted(directory.iterdir()):
+            if not path.is_file():
+                continue
+            ext = path.suffix.lower()
+            if ext not in (NATIVE_EXTS | GIF_EXTS | HEIC_EXTS):
+                continue
+            key = path.name.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(path)
+    return out
 
-    for path in sorted(SRC_DIR.iterdir()):
-        if not path.is_file():
-            continue
+
+def output_name(path: Path, suffix: str) -> str:
+    return f"{path.stem}{suffix}"
+
+
+def main() -> None:
+    ENV_DIR.mkdir(exist_ok=True)
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    items = []
+    sources = photo_sources()
+    native_stems = {path.stem for path in sources if path.suffix.lower() in (NATIVE_EXTS | GIF_EXTS)}
+
+    for path in sources:
         ext = path.suffix.lower()
 
         if ext in NATIVE_EXTS:
-            out = OUT_DIR / f"{path.stem}.jpg"
+            out = OUT_DIR / output_name(path, ".jpg")
             if not out.exists() or path.stat().st_mtime > out.stat().st_mtime:
                 if not make_web_jpg(path, out):
                     print(f"SKIP: cannot normalize {path}")
                     continue
-            items.append({"src": cache_url(out, "public_photos/" + out.name), "name": path.stem, "type": "native-normalized"})
+            items.append({"src": cache_url(out, "public_photos/" + out.name), "name": path.stem, "type": "native-normalized", "source_path": str(path)})
 
         elif ext in GIF_EXTS:
             out = OUT_DIR / path.name
             if not out.exists() or path.stat().st_mtime > out.stat().st_mtime:
                 shutil.copy2(path, out)
-            items.append({"src": cache_url(out, "public_photos/" + out.name), "name": path.stem, "type": "gif-copy"})
+            items.append({"src": cache_url(out, "public_photos/" + out.name), "name": path.stem, "type": "gif-copy", "source_path": str(path)})
 
         elif ext in HEIC_EXTS:
             if path.stem in native_stems:
                 print(f"SKIP HEIC because native image exists: {path.name}")
                 continue
-            out = OUT_DIR / f"{path.stem}.jpg"
+            out = OUT_DIR / output_name(path, ".jpg")
             if not out.exists() or path.stat().st_mtime > out.stat().st_mtime:
                 if not convert_heic(path, out):
                     print(f"SKIP: cannot convert {path}")
                     continue
-            items.append({"src": cache_url(out, "public_photos/" + out.name), "name": path.stem, "type": "heic-converted"})
+            items.append({"src": cache_url(out, "public_photos/" + out.name), "name": path.stem, "type": "heic-converted", "source_path": str(path)})
 
-    OUT_JSON.write_text(json.dumps({"updated_at": datetime.now().isoformat(timespec="seconds"), "items": items}, ensure_ascii=False, indent=2), encoding="utf-8")
+    OUT_JSON.write_text(json.dumps({"updated_at": datetime.now().isoformat(timespec="seconds"), "source_dirs": [str(ROOT_SRC_DIR), str(LEGACY_SRC_DIR)], "items": items}, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"wrote {OUT_JSON}, photos={len(items)}")
 
 
