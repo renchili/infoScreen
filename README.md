@@ -102,6 +102,8 @@ surface/web/assets/css/local_events.css
 
 The card must keep the compact TTY style: no dotted background in the local-event panel, compact `‹` / `›` / `⌕` controls with the counter on the top-right, source/organization at the card top-left, no separate `EVENT` label, compact `WHEN` and `WHERE` rows, and the official link pinned to the bottom of the card.
 
+The local-event backend owns data collection and should provide full available fields without presentation truncation. The frontend owns display fitting: it decides wrapping, clipping, scrolling, and any visual ellipsis based on the current card size.
+
 Sync ticker:
 
 ```text
@@ -166,7 +168,7 @@ python3 -m py_compile surface/*.py surface/jobs/*.py surface/local_events_runtim
 python3 surface/build_photos_json.py
 curl -s http://127.0.0.1:8765/ | grep -E "assets/js/dashboard.js|assets/js/local_event_card.js"
 curl -s http://127.0.0.1:8765/assets/js/local_event_card.js | grep -n "local-event-source-top"
-curl -s http://127.0.0.1:8765/assets/css/local_events.css | grep -n "margin-top: auto"
+curl -s http://127.0.0.1:8765/assets/css/local_events.css | grep -n "local-event-desc"
 curl -s http://127.0.0.1:8765/assets/js/market_custom.js | grep -n "marketConfigButton"
 curl -s http://127.0.0.1:8765/photos.json | grep -n "items"
 find . -maxdepth 1 -type f \( ! -name "README.md" ! -name "AGENTS.md" ! -name "AGENT.md" ! -name ".gitignore" \) -print
