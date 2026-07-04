@@ -15,6 +15,7 @@ mac/schedule.json
 
 # generated runtime directories
 logs/
+photo/
 photos/
 public_photos/
 __pycache__/
