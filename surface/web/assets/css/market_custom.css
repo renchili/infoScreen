@@ -4,8 +4,8 @@
 
 .market-config-button {
   position: absolute;
-  top: 4px;
   right: 7px;
+  bottom: 7px;
   z-index: 4;
   width: 24px;
   height: 21px;
@@ -24,9 +24,9 @@
 
 .market-custom-panel {
   position: absolute;
-  top: 29px;
   left: 7px;
   right: 7px;
+  bottom: 34px;
   z-index: 5;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
