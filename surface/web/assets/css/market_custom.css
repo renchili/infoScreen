@@ -1,12 +1,44 @@
-.market-custom {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 6px;
-  align-items: center;
-  margin-bottom: 8px;
+.left > .box[data-title="market"] .inner {
+  position: relative;
 }
 
-.market-custom input {
+.market-config-button {
+  position: absolute;
+  top: 4px;
+  right: 7px;
+  z-index: 4;
+  width: 24px;
+  height: 21px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #050606;
+  color: var(--yellow);
+  font: 950 12px/1 inherit;
+  cursor: pointer;
+}
+
+.market-custom-panel[hidden] {
+  display: none !important;
+}
+
+.market-custom-panel {
+  position: absolute;
+  top: 29px;
+  left: 7px;
+  right: 7px;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 5px;
+  align-items: center;
+  padding: 7px;
+  border: 1px solid var(--line);
+  background: rgba(5, 6, 6, 0.96);
+  box-shadow: 0 10px 28px rgba(0,0,0,0.45);
+}
+
+.market-custom-panel input {
   min-width: 0;
   height: 24px;
   padding: 0 8px;
@@ -19,7 +51,7 @@
   outline: none;
 }
 
-.market-custom button {
+.market-custom-panel button {
   height: 24px;
   padding: 0 8px;
   background: #070908;
