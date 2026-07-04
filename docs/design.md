@@ -88,10 +88,10 @@ The local event panel must keep the compact TTY visual style:
 no dotted local-event background
 compact ‹ / › / ⌕ controls
 EVENT / WHEN / WHERE / HOST fields
-official link action at the card bottom
+official link action immediately after the content
 ```
 
-Local event content must remain visible below the toolbar when `/api/local-events/search` has results. The CSS must not hide, absolutely overlap, or grid-collapse the `EVENT`, title, `WHEN`, `WHERE`, `HOST`, description, or official-link rows.
+Local event content must remain visible below the toolbar when `/api/local-events/search` has results. The CSS must not hide, absolutely overlap, grid-collapse, or stretch the card to waste the full panel height. The official-link action must not be pushed to the bottom by `margin-top: auto`.
 
 ## Sync ticker contract
 
