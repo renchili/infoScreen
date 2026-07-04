@@ -78,6 +78,14 @@ surface/search_local_events.py
 
 Legacy duplicate local event engines/adapters are not active source paths.
 
+## Local event data/display boundary
+
+The backend owns collection, extraction, normalization, and API delivery. It should return the best available local-event data without presentation-driven truncation.
+
+The frontend owns presentation. `surface/web/assets/js/local_event_card.js` and `surface/web/assets/css/local_events.css` decide how much text is visible in the current card, including wrapping, clipping, scrolling, and visual ellipsis.
+
+Backend changes must not be used to make text fit a particular screen size. UI fitting belongs in CSS/JS.
+
 ## Browser dashboard files
 
 Active HTML:
