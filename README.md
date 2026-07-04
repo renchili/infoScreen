@@ -29,19 +29,25 @@ docs/questions.md  current project decisions
 
 ## Active source overview
 
-Python entrypoints and support modules:
+Server and API support:
 
 ```text
 surface/serve_infoscreen.py       HTTP server and local API
-surface/fetch_live_data.py        weather and market refresh
-surface/fetch_event_stream.py     event/news stream refresh
-surface/build_photos_json.py      photo wall JSON builder
-surface/search_local_events.py    local event refresh CLI used by the API
 surface/openapi_spec.py           support module for /openapi.json
 surface/api_models.py             schema support module for openapi_spec.py
 ```
 
-Local event implementation package:
+Jobs and wrappers:
+
+```text
+surface/fetch_live_data.py         weather and market refresh
+surface/fetch_event_stream.py      event/news stream refresh
+surface/build_photos_json.py       photo wall JSON builder
+surface/search_local_events.py     wrapper for local event refresh
+surface/jobs/local_event_search.py local event refresh job
+```
+
+Local event extraction support:
 
 ```text
 surface/local_events_runtime/__init__.py
@@ -56,6 +62,25 @@ surface/web/index.html
 surface/web/assets/css/
 surface/web/assets/js/
 ```
+
+## Frontend behavior notes
+
+Local event card:
+
+```text
+surface/web/assets/js/local_event_card.js
+surface/web/assets/css/local_events.css
+```
+
+The card must keep the compact TTY style: no dotted background in the local-event panel, compact `‹` / `›` / `⌕` controls, and event fields rendered as `EVENT`, `WHEN`, `WHERE`, `HOST`, and official link action.
+
+Sync ticker:
+
+```text
+surface/web/assets/js/local_event_card.js
+```
+
+The left sync ticker must show file freshness, not only source counts. It checks `Last-Modified` through `HEAD` requests and displays `OK` / `STALE` / `MISS` / `ERR`, `LATEST`, and `AGE` for schedule, weather, market, and news runtime JSON.
 
 ## Runtime files
 
@@ -88,9 +113,9 @@ python3 surface/search_local_events.py "Punggol Singapore"
 
 ```bash
 cd ~/infoscreen
-python3 -m py_compile surface/*.py surface/local_events_runtime/*.py
+python3 -m py_compile surface/*.py surface/jobs/*.py surface/local_events_runtime/*.py
 curl -s http://127.0.0.1:8765/ | grep -E "assets/js/dashboard.js|assets/js/local_event_card.js"
-curl -s http://127.0.0.1:8765/assets/js/dashboard.js | grep -n "market-arrow"
-curl -s http://127.0.0.1:8765/assets/css/market_custom.css | grep -n "price.up"
-find surface -maxdepth 2 -type f -name "*.py" | sort
+curl -s http://127.0.0.1:8765/assets/js/local_event_card.js | grep -n "Last-Modified"
+curl -s http://127.0.0.1:8765/assets/css/local_events.css | grep -n "background: var(--panel)"
+find surface -maxdepth 3 -type f -name "*.py" | sort
 ```
