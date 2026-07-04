@@ -106,6 +106,50 @@ LATEST
 AGE
 ```
 
+## Photo wall contract
+
+User photos should be placed in:
+
+```text
+photos/
+```
+
+For compatibility, the builder also reads:
+
+```text
+surface/.env/photos/
+```
+
+`surface/build_photos_json.py` converts or copies images into `surface/.env/public_photos/` and writes `surface/.env/photos.json`.
+
+The browser does not scan the filesystem directly. After adding images, the builder must run before the dashboard can display them.
+
+## Market UI contract
+
+The visible kiosk market card must show market rows only. It must not inject the inline symbol editor into the dashboard panel.
+
+`surface/web/assets/js/market_custom.js` is intentionally disabled for kiosk rendering. Symbol management stays behind the existing HTTP APIs:
+
+```text
+GET /api/market-config
+POST /api/market-config
+POST /api/market-refresh
+```
+
+## News ticker contract
+
+The event stream writes `items_by_lang.en`, `items_by_lang.fr`, and `items_by_lang.zh`.
+
+The browser must render the three rows with fixed row labels:
+
+```text
+EN
+FR
+中文
+```
+
+It must not expose translated source labels such as `TR-*` as row labels.
+
 ## Runtime data flow
 
 ```text
