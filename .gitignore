@@ -4,12 +4,29 @@ surface/.env/
 schedule.json
 mac/schedule.json
 
+# root-level stray runtime/static files do not belong in the repository root
+/*.json
+/*.css
+/*.js
+!/package.json
+!/package-lock.json
+!/AGENTS.md
+!/AGENT.md
+
 # generated runtime directories
 logs/
 photos/
 public_photos/
 __pycache__/
 *.pyc
+
+# generated/runtime content under the app tree
+surface/.env/
+surface/**/__pycache__/
+surface/**/*.pyc
+surface/web/*.js
+surface/web/*.css
+!surface/web/index.html
 
 # local backups / editor artifacts
 *.bak*
