@@ -1,0 +1,110 @@
+.left > .box[data-title="market"] .inner {
+  position: relative;
+}
+
+.market-config-button {
+  position: absolute;
+  right: 7px;
+  bottom: 7px;
+  z-index: 4;
+  width: 24px;
+  height: 21px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #050606;
+  color: var(--yellow);
+  font: 950 12px/1 inherit;
+  cursor: pointer;
+}
+
+.market-custom-panel[hidden] {
+  display: none !important;
+}
+
+.market-custom-panel {
+  position: absolute;
+  left: 7px;
+  right: 7px;
+  bottom: 34px;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 5px;
+  align-items: center;
+  padding: 7px;
+  border: 1px solid var(--line);
+  background: rgba(5, 6, 6, 0.96);
+  box-shadow: 0 10px 28px rgba(0,0,0,0.45);
+}
+
+.market-custom-panel input {
+  min-width: 0;
+  height: 24px;
+  padding: 0 8px;
+  background: #050606;
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  outline: none;
+}
+
+.market-custom-panel button {
+  height: 24px;
+  padding: 0 8px;
+  background: #070908;
+  border: 1px solid var(--line);
+  color: var(--yellow);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.market-custom-status {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.market-row > .price.up,
+.market-row > .chg.up,
+.global-tape-track .price.up,
+.global-tape-track .up {
+  color: var(--green) !important;
+  font-weight: 950 !important;
+}
+
+.market-row > .price.down,
+.market-row > .chg.down,
+.global-tape-track .price.down,
+.global-tape-track .down {
+  color: var(--red) !important;
+  font-weight: 950 !important;
+}
+
+.market-row > .price.flat,
+.market-row > .chg.flat,
+.global-tape-track .price.flat,
+.global-tape-track .flat {
+  color: var(--muted) !important;
+  font-weight: 850 !important;
+}
+
+.market-arrow {
+  color: inherit !important;
+  font-weight: 950 !important;
+  margin-right: 3px;
+}
+
+.market-session,
+.global-tape-track .session {
+  color: var(--text) !important;
+  font-weight: 850 !important;
+}

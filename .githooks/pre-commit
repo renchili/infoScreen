@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# InfoScreen repository hygiene guard.
+# Root is for repo control/docs only. Project code and local runtime state must stay under the documented directories.
+
+fail=0
+bad_entries=()
+
+add_bad() {
+  bad_entries+=("$1 :: $2")
+  fail=1
+}
+
+is_allowed_root_file() {
+  case "$1" in
+    .gitignore|README.md|AGENTS.md|AGENT.md)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+is_allowed_root_dir() {
+  case "$1" in
+    docs|skills|surface|.githooks)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+is_local_runtime_path() {
+  case "$1" in
+    .env/*|surface/.env/*|logs/*|.review_delete/*|__pycache__/*|photo/*|photos/*|public_photos/*|chatgpt-ui-once/*)
+      return 0
+      ;;
+    *.pyc|*.tmp|*.log|*.bak|*.backup|*.bak.*|*.backup.*|*.DS_Store|.DS_Store)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+while IFS= read -r path; do
+  [ -n "$path" ] || continue
+  path="${path#./}"
+
+  if is_local_runtime_path "$path"; then
+    add_bad "$path" "local runtime/cache/personal file must not be committed"
+    continue
+  fi
+
+  case "$path" in
+    surface/web/*.js|surface/web/*.css)
+      add_bad "$path" "legacy frontend root asset; use surface/web/assets/js or surface/web/assets/css"
+      continue
+      ;;
+  esac
+
+  if [[ "$path" != */* ]]; then
+    if ! is_allowed_root_file "$path"; then
+      add_bad "$path" "root files are restricted to repo control/docs files"
+    fi
+    continue
+  fi
+
+  top="${path%%/*}"
+  if ! is_allowed_root_dir "$top"; then
+    add_bad "$path" "top-level directory is not allowed in this repository"
+  fi
+done < <(git diff --cached --name-only --diff-filter=ACMR)
+
+if [ "$fail" -ne 0 ]; then
+  echo "pre-commit: blocked repository hygiene violations" >&2
+  echo >&2
+  for entry in "${bad_entries[@]}"; do
+    echo "  - $entry" >&2
+  done
+  echo >&2
+  echo "Move runtime JSON to surface/.env/, browser assets to surface/web/assets/, and local photos to surface/.env/photos/." >&2
+  echo "Use 'git restore --staged <path>' to unstage a blocked file." >&2
+  exit 1
+fi

@@ -1,0 +1,9 @@
+{
+  "name": "InfoScreen",
+  "prompt": "InfoScreen is a local-first personal information screen for an always-on Surface or Ubuntu display. The project should work as a calm, reliable, glanceable dashboard that can stay open for long periods without constant user interaction. It should help the user quickly understand the current day, nearby context, personal schedule, market movement, public information, local activity options, photo memories, and whether the displayed data is fresh. The screen should prioritize readability from a distance, compact information density, stable layout, and predictable behavior over decorative effects. The required product tasks are: present current weather and meaningful weather changes; present calendar items and upcoming schedules in a way that makes the day easy to understand; present selected market quotes and movement without hiding important values behind controls; present news and event updates in a compact feed; present official local events near a chosen location with clear source, title, time, place, description, and official link; present a local photo wall using user-provided photos; show whether data sources are fresh, stale, missing, or failed; allow the user to maintain local preferences and content without depending on cloud accounts; separate personal runtime data from project source files; avoid clutter in the project root; keep the interface readable, stable, and suitable for continuous kiosk use; make future fixes follow the product intent instead of adding unrelated duplicate implementations.",
+  "frontend language": "HTML, CSS, JavaScript",
+  "frontend framework": "Vanilla web stack, no frontend framework",
+  "backend language": "Python",
+  "backend framework": "Python standard library HTTP server, no backend framework",
+  "database": "Local JSON runtime data"
+}

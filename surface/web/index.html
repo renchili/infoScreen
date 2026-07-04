@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Surface Info TTY</title>
+  <link rel="stylesheet" href="assets/css/app.css" />
+  <link rel="stylesheet" href="assets/css/calendar_board.css" />
+  <link rel="stylesheet" href="assets/css/local_events.css" />
+  <link rel="stylesheet" href="assets/css/market_custom.css" />
+</head>
+<body>
+  <main class="screen">
+    <section class="box global-market-tape" data-title="market tape">
+      <div class="global-tape-mask"><div class="global-tape-track" id="globalMarketTapeTrack"><span class="flat">LOADING MARKET DATA</span><span class="flat">WAITING FOR market.json</span><span class="up">SURFACE TIMER ACTIVE</span><span class="flat">LOADING MARKET DATA</span><span class="flat">WAITING FOR market.json</span><span class="up">SURFACE TIMER ACTIVE</span></div></div>
+    </section>
+
+    <section class="box top">
+      <div><div class="brand">SURFACE_INFO_TTY</div><div class="brand-sub">ubuntu kiosk display / local dashboard</div></div>
+      <div class="clock"><div class="time" id="time">--:--</div><div class="date" id="date">----</div><div class="time-status-mini" id="timeStatusMini"><span class="mini-ok">DISPLAY ONLINE</span><span class="mini-warn">AC ONLY</span><span class="mini-dim">LOCAL DASHBOARD</span></div></div>
+      <div class="top-right"><div><span class="ok">●</span> display: online</div><div><span class="warn">▲</span> power: ac-only</div></div>
+    </section>
+
+    <section class="col left">
+      <div class="box" data-title="market"><div class="inner"><div class="market-list" id="marketList"><div class="market-row"><span class="ticker">LOAD</span><span class="price flat"><span class="market-arrow">◆</span> market.json</span><span class="chg flat">WAIT</span></div></div></div></div>
+
+      <div class="box local-event-static" data-title="local event" id="localEventBox"><div class="inner"><div class="local-event-toolbar"><span id="localEventCounter"></span><button id="localEventPrevButton" class="local-event-icon-button" type="button" title="Previous page" aria-label="Previous page">‹</button><button id="localEventNextButton" class="local-event-icon-button" type="button" title="Next page" aria-label="Next page">›</button><button id="localEventLocationButton" class="local-event-icon-button" type="button" title="Search another place" aria-label="Search another place">⌕</button></div><div class="local-event-list" id="localEventList"><div class="local-event-empty">LOADING LOCAL EVENTS</div></div><div id="localEventModal" class="local-event-modal" hidden><div class="local-event-modal-card" role="dialog" aria-modal="true" aria-label="Search local events"><div class="local-event-modal-title">Search local events</div><input id="localEventLocationInput" type="text" placeholder="Punggol Singapore" autocomplete="off" spellcheck="false" /><div id="localEventModalError"></div><div class="local-event-modal-actions"><button id="localEventCancelButton" type="button">Cancel</button><button id="localEventSearchButton" type="button">Search</button></div></div></div></div></div>
+
+      <div class="box left-ticker-tape" data-title="ticker tape"><div class="left-ticker-mask"><div class="left-ticker-track" id="leftSyncTapeTrack"><span class="sync-muted">CHECKING SYNC STATUS</span><span class="sync-muted">SCHEDULE / WEATHER / MARKET / NEWS</span><span class="sync-muted">CHECKING SYNC STATUS</span><span class="sync-muted">SCHEDULE / WEATHER / MARKET / NEWS</span></div></div></div>
+    </section>
+
+    <section class="col center"><div class="box" data-title="event stream"><div class="inner news-ticker-panel" id="eventFeed"><div class="news-ticker-row"><div class="news-ticker-track" id="newsTickerTrackEN"></div></div><div class="news-ticker-row"><div class="news-ticker-track" id="newsTickerTrackFR"></div></div><div class="news-ticker-row"><div class="news-ticker-track" id="newsTickerTrackZH"></div></div><div class="photo-flip-wall" id="photoFlipWall"><div class="photo-flip-empty">ADD PHOTOS TO ~/infoscreen/photos</div></div></div></div></section>
+
+    <section class="col right">
+      <div class="box" data-title="weather"><div class="inner weather"><div class="weather-temp" id="weatherTemp">--°C</div><div class="weather-desc" id="weatherDesc">loading weather...<br />source: weather.json</div></div></div>
+      <div class="box" data-title="metrics"><div class="inner compact-metrics"><div class="mini-metric"><div class="mini-label">CPU</div><div class="mini-bar"><div class="mini-fill" id="cpuBar" style="width: 28%"></div></div><div class="mini-value" id="cpuText">28%</div></div><div class="mini-metric"><div class="mini-label">MEM</div><div class="mini-bar"><div class="mini-fill" id="memBar" style="width: 51%"></div></div><div class="mini-value" id="memText">51%</div></div><div class="mini-metric"><div class="mini-label">DSK</div><div class="mini-bar"><div class="mini-fill" id="diskBar" style="width: 42%"></div></div><div class="mini-value" id="diskText">42%</div></div><div class="mini-metric"><div class="mini-label">NET</div><div class="mini-bar"><div class="mini-fill" id="netBar" style="width: 70%"></div></div><div class="mini-value ok" id="netText">OK</div></div></div></div>
+      <div class="box" data-title="calendar"><div class="inner agenda calendar-board" id="agendaList"><div class="calendar-board-head"><span>TIME</span><span>EVENT</span></div><div class="calendar-board-rows" id="calendarBoardRows"></div></div></div>
+    </section>
+
+    <section class="bottom"><div class="box stat"><div class="stat-label">POWER</div><div class="stat-value warn">AC_ONLY</div></div><div class="box stat"><div class="stat-label">DISPLAY</div><div class="stat-value ok">ONLINE</div></div><div class="box stat"><div class="stat-label">NETWORK</div><div class="stat-value cyan">LAN_OK</div></div><div class="box stat"><div class="stat-label">REFRESH</div><div class="stat-value" id="refresh">--:--</div></div><div class="box stat"><div class="stat-label">UPTIME</div><div class="stat-value" id="uptime">00:00</div></div></section>
+  </main>
+
+  <script src="assets/js/dashboard.js"></script>
+  <script src="assets/js/calendar_board.js"></script>
+  <script src="assets/js/local_event_card.js"></script>
+  <script src="assets/js/market_custom.js"></script>
+</body>
+</html>

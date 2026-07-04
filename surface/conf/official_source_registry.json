@@ -1,0 +1,37 @@
+{
+  "version": 2,
+  "purpose": "Confirmed official institution homepages only. This file is stage 1. Do not store event listings, event detail URLs, tickets pages, or third-party aggregators here.",
+  "policy": {
+    "stage": "official_site_confirmation_only",
+    "allow": "confirmed institution official homepage or official subsite",
+    "reject": [
+      "event listing URL",
+      "event detail URL",
+      "ticketing site",
+      "tourism guide",
+      "blog",
+      "social media",
+      "third-party aggregator"
+    ]
+  },
+  "institutions": [
+    {"name": "Children's Museum Singapore", "official_site": "https://www.childrensmuseum.sg/", "allowed_domains": ["heritage.sg", "childrensmuseum.sg"], "status": "confirmed"},
+    {"name": "National Gallery Singapore", "official_site": "https://www.nationalgallery.sg/", "allowed_domains": ["nationalgallery.sg"], "status": "confirmed"},
+    {"name": "National Museum Singapore", "aliases": ["National Museum of Singapore"], "official_site": "https://www.nationalmuseum.nhb.gov.sg/", "allowed_domains": ["nationalmuseum.nhb.gov.sg"], "status": "confirmed"},
+    {"name": "Asian Civilisations Museum", "official_site": "https://www.acm.nhb.gov.sg/", "allowed_domains": ["acm.nhb.gov.sg", "acm.org.sg"], "status": "confirmed"},
+    {"name": "Peranakan Museum", "official_site": "https://www.peranakanmuseum.nhb.gov.sg/", "allowed_domains": ["peranakanmuseum.nhb.gov.sg", "peranakanmuseum.org.sg"], "status": "confirmed"},
+    {"name": "ArtScience Museum", "official_site": "https://www.marinabaysands.com/museum.html", "allowed_domains": ["marinabaysands.com"], "status": "confirmed"},
+    {"name": "Science Centre Singapore", "official_site": "https://www.science.edu.sg/", "allowed_domains": ["science.edu.sg"], "status": "confirmed"},
+    {"name": "National Library Board", "aliases": ["NLB"], "official_site": "https://www.nlb.gov.sg/", "allowed_domains": ["nlb.gov.sg", "nlb.libcal.com"], "status": "confirmed"},
+    {"name": "onePA / People's Association", "aliases": ["onePA", "People's Association"], "official_site": "https://www.onepa.gov.sg/", "allowed_domains": ["onepa.gov.sg"], "status": "confirmed"},
+    {"name": "SAFRA", "official_site": "https://www.safra.sg/", "allowed_domains": ["safra.sg"], "status": "confirmed"},
+    {"name": "One Punggol", "official_site": "https://www.onepunggol.sg/", "allowed_domains": ["onepunggol.sg"], "status": "confirmed"},
+    {"name": "Waterway Point", "official_site": "https://www.waterwaypoint.com.sg/", "allowed_domains": ["waterwaypoint.com.sg", "frasersproperty.com"], "status": "confirmed"},
+    {"name": "Mandai Wildlife Group", "aliases": ["Mandai Wildlife Reserve", "Singapore Zoo", "Bird Paradise", "River Wonders", "Night Safari"], "official_site": "https://www.mandai.com/", "allowed_domains": ["mandai.com"], "status": "confirmed"},
+    {"name": "Sentosa", "official_site": "https://www.sentosa.com.sg/", "allowed_domains": ["sentosa.com.sg"], "status": "confirmed"},
+    {"name": "Resorts World Sentosa", "aliases": ["RWS", "Universal Studios Singapore", "SEA Aquarium"], "official_site": "https://www.rwsentosa.com/", "allowed_domains": ["rwsentosa.com"], "status": "confirmed"},
+    {"name": "Gardens by the Bay", "official_site": "https://www.gardensbythebay.com.sg/", "allowed_domains": ["gardensbythebay.com.sg"], "status": "confirmed"},
+    {"name": "Esplanade", "official_site": "https://www.esplanade.com/", "allowed_domains": ["esplanade.com"], "status": "confirmed"},
+    {"name": "The Kallang", "aliases": ["Singapore Sports Hub"], "official_site": "https://www.thekallang.com.sg/", "allowed_domains": ["thekallang.com.sg", "sportshub.com.sg"], "status": "confirmed"}
+  ]
+}

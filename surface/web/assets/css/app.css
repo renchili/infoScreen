@@ -1217,3 +1217,102 @@
   font-weight: 850 !important;
 }
 /* MARKET_PRICE_COLOR_END */
+
+/* LOCAL_EVENT_ONE_CARD_START */
+.local-event-list {
+  height: 100% !important;
+  min-height: 0 !important;
+  padding-top: 24px !important;
+  display: grid !important;
+  grid-template-rows: 1fr !important;
+  gap: 0 !important;
+  overflow: hidden !important;
+}
+
+.local-event-single {
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 7px !important;
+  padding: 10px 10px 9px 11px !important;
+  border-left: 3px solid var(--yellow) !important;
+  background: rgba(255,224,138,0.035) !important;
+}
+
+.local-event-label {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 950;
+  letter-spacing: 0.14em;
+}
+
+.local-event-title {
+  color: var(--yellow);
+  font-size: 15px;
+  font-weight: 950;
+  line-height: 1.16;
+  max-height: 54px;
+  overflow: hidden;
+}
+
+.local-event-kv {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  gap: 7px;
+  align-items: start;
+  min-height: 0;
+}
+
+.local-event-kv span {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+}
+
+.local-event-kv b {
+  color: var(--cyan);
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1.18;
+  max-height: 40px;
+  overflow: hidden;
+}
+
+.local-event-desc {
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1.22;
+  max-height: 74px;
+  overflow: hidden;
+  opacity: 0.9;
+}
+
+.local-event-actions {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.local-event-link {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  border: 1px solid var(--line);
+  padding: 0 9px;
+  color: var(--yellow);
+  background: #050606;
+  text-decoration: none;
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+}
+
+.local-event-no-link {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 850;
+}
+/* LOCAL_EVENT_ONE_CARD_END */

@@ -1,222 +1,177 @@
 # InfoScreen
 
-InfoScreen is a local dashboard for an always-on display. It shows schedule items, stock watchlist quotes, local event discovery, weather, photos, event streams, and system status.
+Local kiosk dashboard for a Surface or Ubuntu display.
 
-Runtime data is intentionally excluded from git.
+## Run
 
-## Architecture
+```bash
+cd ~/infoscreen
+systemctl --user restart infoscreen-http.service
+```
 
-Mac side:
+Open `http://127.0.0.1:8765/`.
 
-    mac/export.py
-    mac/sync_schedule.sh
-    launchd timer
-    schedule.json push over SSH
+Manual run:
 
-Surface / Ubuntu side:
+```bash
+cd ~/infoscreen
+python3 surface/serve_infoscreen.py
+```
 
-    serve_infoscreen.py
-    fetch_live_data.py
-    search_local_events.py
-    user systemd services
-    dashboard on port 8765
+## Documentation map
 
-Browser side:
+```text
+README.md          run, verify, and source overview
+docs/design.md     runtime architecture and data flow
+docs/api-spec.md   HTTP endpoints and Python owners
+docs/questions.md  current project decisions
+```
 
-    index.html
-    calendar_board.js
-    calendar_board.css
-    market_custom.js
-    market_custom.css
+## Repository root policy
 
-Data flow:
+The repository root is for repository control and documentation only. Project code and local runtime state do not belong in the root.
 
-    Mac Calendar
-      -> mac/export.py
-      -> schedule.json
-      -> pushed to Surface / Ubuntu
-      -> calendar_board.js renders it
+Allowed root-level project paths:
 
-    Browser market controls
-      -> /api/market-config
-      -> market_config.json
-      -> fetch_live_data.py
-      -> market.json
-      -> index.html renders it
+```text
+README.md
+AGENTS.md
+AGENT.md
+.gitignore
+.githooks/
+docs/
+skills/
+surface/
+```
 
-## Quick Start
+Runtime JSON belongs under `surface/.env/`. Browser CSS and JavaScript belong under `surface/web/assets/`. Local photos belong under `surface/.env/photos/`.
 
-Clone the repository on the Surface / Ubuntu host:
+Enable the local pre-commit guard once per clone:
 
-    git clone <repo-url> infoscreen
-    cd infoscreen
+```bash
+git config core.hooksPath .githooks
+chmod +x .githooks/pre-commit
+```
 
-Install user services:
+The hook blocks staged root project code, root runtime files, local env files, `photo/`, `photos/`, `public_photos/`, and legacy `surface/web/*.js` or `surface/web/*.css` files.
 
-    bash deploy/scripts/install-user-systemd.sh
+## Active source overview
 
-Open the dashboard:
+Server and API support:
 
-    http://<surface-host>:8765/index.html
+```text
+surface/serve_infoscreen.py       HTTP server and local API
+surface/openapi_spec.py           support module for /openapi.json
+surface/api_models.py             schema support module for openapi_spec.py
+```
 
-## Surface / Ubuntu Services
+Jobs and wrappers:
 
-The Surface / Ubuntu host owns the HTTP server and live-data refresh jobs.
+```text
+surface/fetch_live_data.py         weather and market refresh
+surface/fetch_event_stream.py      event/news stream refresh
+surface/build_photos_json.py       photo wall JSON builder
+surface/search_local_events.py     wrapper for local event refresh
+surface/jobs/local_event_search.py local event refresh job
+```
 
-Expected services:
+Local event extraction support:
 
-    infoscreen-http.service
-    infoscreen-live-data.timer
-    infoscreen-event-stream.timer
-    infoscreen-local-events.timer
+```text
+surface/local_events_runtime/__init__.py
+surface/local_events_runtime/browser.py
+surface/local_events_runtime/extract.py
+```
 
-Check status:
+Browser dashboard files live under:
 
-    systemctl --user status infoscreen-http.service --no-pager -l
-    systemctl --user list-timers --all --no-pager | grep infoscreen
+```text
+surface/web/index.html
+surface/web/assets/css/
+surface/web/assets/js/
+```
 
-View logs:
+## Frontend behavior notes
 
-    journalctl --user -u infoscreen-http.service -f
-    tail -f logs/http.log logs/http.err.log
+Local event card:
 
-The Surface / Ubuntu host must not generate calendar data. It only receives schedule.json from the Mac.
+```text
+surface/web/assets/js/local_event_card.js
+surface/web/assets/css/local_events.css
+```
 
-## Mac Schedule Sync
-
-The Mac exports calendar data and pushes schedule.json to the Surface / Ubuntu host.
-
-Create local config:
-
-    cp mac/local.env.example mac/local.env
-
-Edit mac/local.env locally:
-
-    SURFACE_USER="<surface-ssh-user>"
-    SURFACE_HOST="<surface-host-or-ip>"
-    REMOTE_SCHEDULE_JSON="<remote-repo-path>/schedule.json"
-    PYTHON_BIN="<python-with-eventkit>"
-
-Install launchd:
-
-    bash mac/scripts/install-launchd-schedule-sync.sh
-
-Check status:
-
-    launchctl print gui/$(id -u)/com.renchili.infoscreen.schedule-sync
-
-Check logs:
-
-    tail -n 80 ~/Library/Logs/infoscreen-schedule-sync.out.log
-    tail -n 80 ~/Library/Logs/infoscreen-schedule-sync.err.log
-
-## Market Watchlist
-
-The watchlist is stored in market_config.json at runtime.
-
-Use the dashboard controls:
-
-    SAVE
-    REFRESH
-
-Or create a local config from the example:
-
-    cp examples/market_config.example.json market_config.json
-
-Refresh manually:
-
-    python3 fetch_live_data.py
-
-market.json is runtime data and must not be committed.
-
-## Local Events
-
-Local event discovery is handled by:
-
-    search_local_events.py
-    local_event_search_results.json
-
-Run manually:
-
-    python3 search_local_events.py "<location>"
-
-Refresh through API:
-
-    curl -X POST http://127.0.0.1:8765/api/local-events/search -H 'Content-Type: application/json' -d '{"location":"<location>"}'
-
-local_event_search_results.json is runtime data and must not be committed.
-
-## Calendar Board
-
-The calendar board is rendered by:
-
-    calendar_board.js
-    calendar_board.css
-
-It reads schedule.json generated by the Mac sync process.
-
-## Privacy
-
-Do not commit runtime data, logs, backups, local env files, SSH keys, personal calendar exports, personal photos, private IP addresses, personal email addresses, absolute home paths, passwords, tokens, or API keys.
-
-Excluded runtime files include:
-
-    schedule.json
-    market.json
-    market_config.json
-    weather.json
-    event_stream.json
-    local_event_search_results.json
-    photos/
-    public_photos/
-    logs/
-    *.bak*
-
-## CI
-
-Run locally:
-
-    bash scripts/ci_check.sh
-
-GitHub Actions runs the same check on push and pull request.
-
-Checks include:
-
-    Python syntax
-    JavaScript syntax
-    JSON example validity
-    README required sections
-    privacy leak scan
-
-## Troubleshooting
-
-API returns 501:
-
-    systemctl --user restart infoscreen-http.service
-    curl -i http://127.0.0.1:8765/api/market-config
-
-Market data is stale:
-
-    python3 fetch_live_data.py
-    python3 -m json.tool market.json | head
-    journalctl --user -u infoscreen-live-data.service -n 120 --no-pager
-
-Schedule is empty:
-
-    Check Mac launchd logs first.
-    Then check schedule.json on the Surface / Ubuntu host.
-
-Local events are poor quality:
-
-    python3 search_local_events.py "<location>"
-    python3 -m json.tool local_event_search_results.json | head -n 120
-
-## Backup and Rollback
-
-Create a backup tag:
-
-    git tag "backup-$(date +%Y%m%d-%H%M%S)"
-
-Rollback to a tag:
-
-    git checkout <tag>
+The card must keep the compact TTY style: no dotted background in the local-event panel, compact `‹` / `›` / `⌕` controls with the counter on the top-right, source/organization at the card top-left, no separate `EVENT` label, compact `WHEN` and `WHERE` rows, and the official link pinned to the bottom of the card.
+
+The local-event backend owns data collection and should provide full available fields without presentation truncation. The frontend owns display fitting: it decides wrapping, clipping, scrolling, and any visual ellipsis based on the current card size.
+
+Sync ticker:
+
+```text
+surface/web/assets/js/local_event_card.js
+```
+
+The left sync ticker must show file freshness, not only source counts. It checks `Last-Modified` through `HEAD` requests and displays `OK` / `STALE` / `MISS` / `ERR`, `LATEST`, and `AGE` for schedule, weather, market, and news runtime JSON.
+
+Market panel:
+
+```text
+surface/web/assets/js/dashboard.js
+surface/web/assets/js/market_custom.js
+surface/web/assets/css/market_custom.css
+```
+
+The kiosk dashboard must show a compact market configuration button that does not cover quote rows. Clicking the button opens the symbol editor overlay; market symbols remain configurable through `/api/market-config` and refresh through `/api/market-refresh`.
+
+Photo wall:
+
+```text
+surface/.env/photos/
+surface/build_photos_json.py
+surface/.env/photos.json
+surface/.env/public_photos/
+```
+
+Put user photos in `surface/.env/photos/`. After adding photos, run the photo builder so `photos.json` and `public_photos/` are regenerated.
+
+## Runtime files
+
+Runtime files live under `~/infoscreen/surface/.env/` and are not source files.
+
+```text
+surface/.env/schedule.json
+surface/.env/weather.json
+surface/.env/market.json
+surface/.env/market_config.json
+surface/.env/event_stream.json
+surface/.env/local_event_search_results.json
+surface/.env/photos.json
+surface/.env/sync_status.json
+surface/.env/logs/http.log
+surface/.env/logs/http.err.log
+```
+
+## Refresh commands
+
+```bash
+cd ~/infoscreen
+python3 surface/fetch_live_data.py
+python3 surface/fetch_event_stream.py
+python3 surface/build_photos_json.py
+python3 surface/search_local_events.py "Punggol Singapore"
+```
+
+## Verify
+
+```bash
+cd ~/infoscreen
+python3 -m py_compile surface/*.py surface/jobs/*.py surface/local_events_runtime/*.py
+python3 surface/build_photos_json.py
+curl -s http://127.0.0.1:8765/ | grep -E "assets/js/dashboard.js|assets/js/local_event_card.js"
+curl -s http://127.0.0.1:8765/assets/js/local_event_card.js | grep -n "local-event-source-top"
+curl -s http://127.0.0.1:8765/assets/css/local_events.css | grep -n "local-event-desc"
+curl -s http://127.0.0.1:8765/assets/js/market_custom.js | grep -n "marketConfigButton"
+curl -s http://127.0.0.1:8765/photos.json | grep -n "items"
+find . -maxdepth 1 -type f \( ! -name "README.md" ! -name "AGENTS.md" ! -name "AGENT.md" ! -name ".gitignore" \) -print
+find surface/web -maxdepth 1 -type f \( -name "*.js" -o -name "*.css" \) -print
+find surface -maxdepth 3 -type f -name "*.py" | sort
+```
