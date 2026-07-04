@@ -91,6 +91,8 @@ EVENT / WHEN / WHERE / HOST fields
 official link action at the card bottom
 ```
 
+Local event content must remain visible below the toolbar when `/api/local-events/search` has results. The CSS must not hide, absolutely overlap, or grid-collapse the `EVENT`, title, `WHEN`, `WHERE`, `HOST`, description, or official-link rows.
+
 ## Sync ticker contract
 
 The left sync ticker is a freshness indicator, not only a count indicator.
