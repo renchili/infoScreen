@@ -11,12 +11,13 @@ SURFACE_DIR = Path(__file__).resolve().parent
 REPO_DIR = SURFACE_DIR.parent
 ENV_DIR = SURFACE_DIR / ".env"
 ROOT_SRC_DIR = REPO_DIR / "photos"
+ROOT_LEGACY_SRC_DIR = REPO_DIR / "photo"
 LEGACY_SRC_DIR = ENV_DIR / "photos"
 OUT_DIR = ENV_DIR / "public_photos"
 OUT_JSON = ENV_DIR / "photos.json"
 
-ROOT_SRC_DIR.mkdir(parents=True, exist_ok=True)
-LEGACY_SRC_DIR.mkdir(parents=True, exist_ok=True)
+for source_dir in (ROOT_SRC_DIR, ROOT_LEGACY_SRC_DIR, LEGACY_SRC_DIR):
+    source_dir.mkdir(parents=True, exist_ok=True)
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 NATIVE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
@@ -69,11 +70,14 @@ def convert_heic(src: Path, dst: Path) -> bool:
     return False
 
 
+def photo_source_dirs() -> list[Path]:
+    return [ROOT_SRC_DIR, ROOT_LEGACY_SRC_DIR, LEGACY_SRC_DIR]
+
+
 def photo_sources() -> list[Path]:
-    paths = [ROOT_SRC_DIR, LEGACY_SRC_DIR]
     seen = set()
     out = []
-    for directory in paths:
+    for directory in photo_source_dirs():
         for path in sorted(directory.iterdir()):
             if not path.is_file():
                 continue
@@ -127,7 +131,7 @@ def main() -> None:
                     continue
             items.append({"src": cache_url(out, "public_photos/" + out.name), "name": path.stem, "type": "heic-converted", "source_path": str(path)})
 
-    OUT_JSON.write_text(json.dumps({"updated_at": datetime.now().isoformat(timespec="seconds"), "source_dirs": [str(ROOT_SRC_DIR), str(LEGACY_SRC_DIR)], "items": items}, ensure_ascii=False, indent=2), encoding="utf-8")
+    OUT_JSON.write_text(json.dumps({"updated_at": datetime.now().isoformat(timespec="seconds"), "source_dirs": [str(path) for path in photo_source_dirs()], "items": items}, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"wrote {OUT_JSON}, photos={len(items)}")
 
 
