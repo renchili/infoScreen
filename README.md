@@ -82,6 +82,27 @@ surface/web/assets/js/local_event_card.js
 
 The left sync ticker must show file freshness, not only source counts. It checks `Last-Modified` through `HEAD` requests and displays `OK` / `STALE` / `MISS` / `ERR`, `LATEST`, and `AGE` for schedule, weather, market, and news runtime JSON.
 
+Market panel:
+
+```text
+surface/web/assets/js/dashboard.js
+surface/web/assets/js/market_custom.js
+```
+
+The kiosk dashboard must not inject the inline market editor panel into the visible market card. `market_custom.js` is disabled in kiosk mode; market symbols remain configurable through `/api/market-config` and refresh through `/api/market-refresh`.
+
+Photo wall:
+
+```text
+photos/
+surface/.env/photos/
+surface/build_photos_json.py
+surface/.env/photos.json
+surface/.env/public_photos/
+```
+
+Put user photos in the repository-level `photos/` directory. `surface/build_photos_json.py` also supports the legacy `surface/.env/photos/` directory. After adding photos, run the photo builder so `photos.json` and `public_photos/` are regenerated.
+
 ## Runtime files
 
 Runtime files live under `~/infoscreen/surface/.env/` and are not source files.
@@ -114,8 +135,10 @@ python3 surface/search_local_events.py "Punggol Singapore"
 ```bash
 cd ~/infoscreen
 python3 -m py_compile surface/*.py surface/jobs/*.py surface/local_events_runtime/*.py
+python3 surface/build_photos_json.py
 curl -s http://127.0.0.1:8765/ | grep -E "assets/js/dashboard.js|assets/js/local_event_card.js"
 curl -s http://127.0.0.1:8765/assets/js/local_event_card.js | grep -n "Last-Modified"
-curl -s http://127.0.0.1:8765/assets/css/local_events.css | grep -n "background: var(--panel)"
+curl -s http://127.0.0.1:8765/photos.json | grep -n "items"
+curl -s http://127.0.0.1:8765/assets/js/market_custom.js | grep -n "Kiosk mode"
 find surface -maxdepth 3 -type f -name "*.py" | sort
 ```
