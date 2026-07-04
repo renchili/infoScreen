@@ -7,14 +7,17 @@
 
 .local-event-static .inner {
   height: 100% !important;
+  min-height: 0 !important;
   padding: 8px 10px !important;
   overflow: hidden !important;
-  display: grid !important;
-  grid-template-rows: 26px minmax(0, 1fr) !important;
+  display: flex !important;
+  flex-direction: column !important;
   gap: 7px !important;
+  box-sizing: border-box !important;
 }
 
 .local-event-toolbar {
+  flex: 0 0 26px !important;
   height: 26px !important;
   display: flex !important;
   align-items: center !important;
@@ -22,6 +25,8 @@
   gap: 6px !important;
   min-width: 0 !important;
   overflow: hidden !important;
+  position: static !important;
+  z-index: 2 !important;
 }
 
 #localEventCounter {
@@ -32,17 +37,21 @@
   font-weight: 900 !important;
   letter-spacing: 0.08em !important;
   white-space: nowrap !important;
+  opacity: 0.85 !important;
+  min-width: 0 !important;
+  text-align: left !important;
 }
 
 .local-event-icon-button {
   height: 22px !important;
+  width: 28px !important;
   min-width: 28px !important;
   border: 1px solid var(--line) !important;
   background: #050606 !important;
   color: var(--yellow) !important;
   cursor: pointer !important;
-  font: 950 9px/1 inherit !important;
-  padding: 0 6px !important;
+  font: 950 13px/1 inherit !important;
+  padding: 0 !important;
   border-radius: 999px !important;
   white-space: nowrap !important;
 }
@@ -53,60 +62,70 @@
 }
 
 .local-event-list {
-  height: 100% !important;
+  flex: 1 1 auto !important;
+  height: auto !important;
   min-height: 0 !important;
   overflow: hidden !important;
   padding: 0 !important;
-  display: block !important;
+  display: flex !important;
+  flex-direction: column !important;
 }
 
-.local-event-card {
-  height: 100% !important;
+.local-event-card,
+.local-event-card.local-event-single,
+.local-event-card.local-event-single.active {
+  flex: 1 1 auto !important;
+  height: auto !important;
+  min-height: 0 !important;
   width: 100% !important;
   box-sizing: border-box !important;
-  display: grid !important;
-  grid-template-rows: auto auto auto auto auto minmax(0, 1fr) auto !important;
-  gap: 6px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 7px !important;
   overflow: hidden !important;
-  padding: 9px !important;
+  padding: 10px 11px !important;
   border: 1px solid rgba(127, 226, 255, 0.16) !important;
-  background: rgba(0, 15, 26, 0.74) !important;
+  border-left: 3px solid var(--yellow) !important;
+  background: rgba(0, 15, 26, 0.72) !important;
   color: var(--text) !important;
   text-decoration: none !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+.local-event-label,
+.local-event-title,
+.local-event-kv,
+.local-event-desc,
+.local-event-actions {
+  position: static !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  min-width: 0 !important;
+  flex: 0 0 auto !important;
 }
 
 .local-event-label {
   color: rgba(224, 247, 255, 0.58) !important;
   font-size: 10px !important;
   line-height: 1 !important;
-  font-weight: 900 !important;
+  font-weight: 950 !important;
   letter-spacing: 0.13em !important;
   text-transform: uppercase !important;
-}
-
-.local-event-source {
-  color: var(--cyan) !important;
-  font-size: 10px !important;
-  line-height: 1.05 !important;
-  font-weight: 950 !important;
-  letter-spacing: 0.08em !important;
-  text-transform: uppercase !important;
-  overflow: hidden !important;
-  white-space: nowrap !important;
-  text-overflow: ellipsis !important;
-  min-width: 0 !important;
+  display: block !important;
 }
 
 .local-event-title {
   color: var(--yellow) !important;
-  font-size: 15px !important;
-  line-height: 1.12 !important;
+  font-size: 16px !important;
+  line-height: 1.15 !important;
   font-weight: 950 !important;
   letter-spacing: 0.01em !important;
   overflow: hidden !important;
   display: -webkit-box !important;
   -webkit-line-clamp: 2 !important;
   -webkit-box-orient: vertical !important;
+  max-height: none !important;
 }
 
 .local-event-kv {
@@ -114,14 +133,13 @@
   grid-template-columns: 58px minmax(0, 1fr) !important;
   gap: 8px !important;
   align-items: start !important;
-  min-height: 0 !important;
-  overflow: hidden !important;
+  overflow: visible !important;
 }
 
 .local-event-kv span {
   color: var(--muted) !important;
   font-size: 10px !important;
-  line-height: 1.05 !important;
+  line-height: 1.1 !important;
   font-weight: 950 !important;
   letter-spacing: 0.12em !important;
   text-transform: uppercase !important;
@@ -129,36 +147,39 @@
 
 .local-event-kv b {
   color: var(--cyan) !important;
-  font-size: 11px !important;
-  line-height: 1.12 !important;
+  font-size: 12px !important;
+  line-height: 1.16 !important;
   font-weight: 900 !important;
   overflow: hidden !important;
   display: -webkit-box !important;
   -webkit-line-clamp: 2 !important;
   -webkit-box-orient: vertical !important;
+  max-height: none !important;
 }
 
 .local-event-desc {
   min-height: 0 !important;
   overflow: hidden !important;
-  color: rgba(224, 247, 255, 0.72) !important;
+  color: rgba(224, 247, 255, 0.76) !important;
   font-size: 11px !important;
-  line-height: 1.35 !important;
+  line-height: 1.28 !important;
   font-weight: 760 !important;
   display: -webkit-box !important;
-  -webkit-line-clamp: 5 !important;
+  -webkit-line-clamp: 6 !important;
   -webkit-box-orient: vertical !important;
+  max-height: none !important;
 }
 
 .local-event-desc-text {
-  height: 100% !important;
+  height: auto !important;
   min-height: 0 !important;
-  overflow: hidden !important;
+  overflow: visible !important;
   font-size: 11px !important;
-  line-height: 1.35 !important;
+  line-height: 1.28 !important;
 }
 
 .local-event-actions {
+  margin-top: auto !important;
   display: flex !important;
   align-items: center !important;
   justify-content: flex-start !important;
@@ -191,7 +212,8 @@
 }
 
 .local-event-empty {
-  height: 100% !important;
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
   display: grid !important;
   place-items: center !important;
   border: 1px dashed rgba(127, 226, 255, 0.22) !important;
