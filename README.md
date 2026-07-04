@@ -113,13 +113,14 @@ Photo wall:
 
 ```text
 photos/
+photo/
 surface/.env/photos/
 surface/build_photos_json.py
 surface/.env/photos.json
 surface/.env/public_photos/
 ```
 
-Put user photos in the repository-level `photos/` directory. `surface/build_photos_json.py` also supports the legacy `surface/.env/photos/` directory. After adding photos, run the photo builder so `photos.json` and `public_photos/` are regenerated.
+Put user photos in the repository-level `photos/` directory. `surface/build_photos_json.py` also supports the singular root `photo/` directory and the legacy `surface/.env/photos/` directory. After adding photos, run the photo builder so `photos.json` and `public_photos/` are regenerated.
 
 ## Runtime files
 
