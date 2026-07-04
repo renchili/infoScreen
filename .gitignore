@@ -1,40 +1,37 @@
-# local machine configuration and runtime state
-.env/
-surface/.env/
-schedule.json
-mac/schedule.json
-
-# root-level stray runtime/static files do not belong in the repository root
-/*.json
-/*.css
-/*.js
-!/package.json
-!/package-lock.json
+# Repository root allowlist.
+# Root is for repo control/docs only; project code and local runtime state do not belong here.
+/*
+!/.gitignore
+!/README.md
 !/AGENTS.md
 !/AGENT.md
+!/docs/
+!/docs/**
+!/skills/
+!/skills/**
+!/surface/
+!/surface/**
 
-# generated runtime directories
+# Local/runtime state.
+.env/
+surface/.env/
 logs/
-photo/
-photos/
-public_photos/
+.review_delete/
 __pycache__/
 *.pyc
-
-# generated/runtime content under the app tree
-surface/.env/
-surface/**/__pycache__/
-surface/**/*.pyc
-surface/web/*.js
-surface/web/*.css
-!surface/web/index.html
-
-# local backups / editor artifacts
-*.bak*
-*.backup*
 *.tmp
 *.log
 .DS_Store
 
-# unrelated local tools
+# Frontend source must live under surface/web/assets/, not directly under surface/web/.
+surface/web/*.js
+surface/web/*.css
+!surface/web/index.html
+
+# Local photos are runtime input, not repo root source.
+photo/
+photos/
+public_photos/
+
+# Unrelated local tools.
 chatgpt-ui-once/
