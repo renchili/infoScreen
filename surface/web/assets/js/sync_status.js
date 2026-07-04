@@ -1,51 +1,45 @@
 (function () {
   "use strict";
-
-  function id(name) { return document.getElementById(name); }
-  function text(value) { return String(value == null ? "" : value).replace(/\s+/g, " ").trim(); }
-  function esc(value) {
-    return text(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;").replace(/'/g, "&#39;");
+  function el(id) { return document.getElementById(id); }
+  function clean(value) { return String(value || "").replace(/\s+/g, " ").trim(); }
+  function esc(value) { return clean(value).replace(/[&<>"']/g, function (ch) { return { "&":"&amp;", "<":"&lt;", ">":"&gt;", "\"":"&quot;", "'":"&#39;" }[ch]; }); }
+  function ageText(seconds) { return seconds < 60 ? seconds + "s" : Math.floor(seconds / 60) + "m" + (seconds % 60) + "s"; }
+  function latestText(date) { return date.toLocaleString("zh-CN", { hour12: false, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }); }
+  function fileStatus(path, label, limitSeconds) {
+    return fetch(path + "?_=" + Date.now(), { method: "HEAD", cache: "no-store" }).then(function (res) {
+      var lm = res.headers.get("Last-Modified");
+      if (!res.ok || !lm) return { label: label, ok: false, state: "MISS", age: "--", latest: "--" };
+      var date = new Date(lm);
+      var seconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+      var ok = seconds <= limitSeconds;
+      return { label: label, ok: ok, state: ok ? "OK" : "STALE", age: ageText(seconds), latest: latestText(date) };
+    }).catch(function () {
+      return { label: label, ok: false, state: "ERR", age: "--", latest: "--" };
+    });
   }
-  function span(item) { return '<span class="' + esc(item.cls) + '">' + esc(item.label) + '</span>'; }
-  function bad(data) { return data && (data.error === "missing_runtime_json" || data.ok === false || data.status === "ERR" || data.status === "FAIL"); }
-  function status(name, data) {
-    if (bad(data)) return { cls: "sync-fail", label: name + " FAIL" };
-    if (Array.isArray(data)) return { cls: data.length ? "sync-ok" : "sync-warn", label: name + " " + data.length };
-    if (!data || typeof data !== "object") return { cls: "sync-fail", label: name + " FAIL" };
-    if (Array.isArray(data.items)) return { cls: data.items.length ? "sync-ok" : "sync-warn", label: name + " " + data.items.length };
-    if (Array.isArray(data.results)) return { cls: data.results.length ? "sync-ok" : "sync-warn", label: name + " " + data.results.length };
-    if (data.status === "OK" || data.updated_at || data.temp_c != null) return { cls: "sync-ok", label: name + " OK" };
-    return { cls: "sync-warn", label: name + " WAIT" };
-  }
-  async function probe(name, url) {
-    try {
-      var response = await fetch(url + "?_=" + Date.now(), { cache: "no-store" });
-      if (!response.ok) return { cls: "sync-fail", label: name + " HTTP" + response.status };
-      return status(name, await response.json());
-    } catch (error) {
-      return { cls: "sync-fail", label: name + " FAIL" };
-    }
-  }
-  async function refresh() {
-    var tape = id("leftSyncTapeTrack");
+  function render(items) {
+    var tape = el("leftSyncTapeTrack");
     if (!tape) return;
-    var items = await Promise.all([
-      probe("SCHEDULE", "schedule.json"),
-      probe("WEATHER", "weather.json"),
-      probe("MARKET", "market.json"),
-      probe("NEWS", "event_stream.json"),
-      probe("LOCAL", "local_event_search_results.json"),
-      probe("PHOTOS", "photos.json")
-    ]);
-    var hasFail = items.some(function (item) { return item.cls === "sync-fail"; });
-    var hasWarn = items.some(function (item) { return item.cls === "sync-warn"; });
-    var head = { cls: hasFail ? "sync-fail" : (hasWarn ? "sync-warn" : "sync-ok"), label: hasFail ? "SYNC FAIL" : (hasWarn ? "SYNC WARN" : "SYNC OK") };
-    var html = [head].concat(items).map(span).join("");
+    var html = items.map(function (x) {
+      var cls = x.ok ? "sync-ok" : (x.state === "STALE" ? "sync-warn" : "sync-fail");
+      var icon = x.ok ? "●" : (x.state === "STALE" ? "▲" : "■");
+      return '<span class="' + cls + '">' + icon + ' ' + esc(x.label) + ' ' + esc(x.state) + '</span>' +
+        '<span class="sync-muted">LATEST ' + esc(x.latest) + '</span>' +
+        '<span class="sync-muted">AGE ' + esc(x.age) + '</span>';
+    }).join("");
     tape.innerHTML = html + html;
   }
-
+  function loadSyncStatus() {
+    Promise.all([
+      fileStatus("schedule.json", "SCHEDULE", 600),
+      fileStatus("weather.json", "WEATHER", 900),
+      fileStatus("market.json", "MARKET", 600),
+      fileStatus("event_stream.json", "NEWS", 600)
+    ]).then(render);
+  }
   document.addEventListener("DOMContentLoaded", function () {
-    refresh();
-    setInterval(refresh, 60000);
+    loadSyncStatus();
+    setInterval(loadSyncStatus, 60000);
   });
+  window.loadSyncStatus = loadSyncStatus;
 })();
