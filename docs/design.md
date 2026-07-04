@@ -129,19 +129,20 @@ AGE
 
 ## Photo wall contract
 
-User photos should be placed in:
+Preferred user photo directory:
 
 ```text
 photos/
 ```
 
-For compatibility, the builder also reads:
+Supported compatibility directories:
 
 ```text
+photo/
 surface/.env/photos/
 ```
 
-`surface/build_photos_json.py` converts or copies images into `surface/.env/public_photos/` and writes `surface/.env/photos.json`.
+`surface/build_photos_json.py` reads those photo source directories, converts or copies images into `surface/.env/public_photos/`, and writes `surface/.env/photos.json`.
 
 The browser does not scan the filesystem directly. After adding images, the builder must run before the dashboard can display them.
 
