@@ -21,17 +21,18 @@ The repository root is `~/infoscreen`. Do not create another project root.
 
 ## Repository root policy
 
-The repository root is for control files and documentation only.
+The repository root is for repository control and documentation only.
 
-Do not place dashboard runtime JSON, browser CSS, or browser JavaScript in the repository root.
+Do not place project code, local environment files, dashboard runtime JSON, browser CSS, browser JavaScript, local photos, generated output, or caches in the repository root.
 
-Allowed root-level project files include:
+Allowed root-level project paths:
 
 ```text
 README.md
 AGENTS.md
 AGENT.md
 .gitignore
+.githooks/
 docs/
 surface/
 skills/
@@ -40,6 +41,10 @@ skills/
 Runtime JSON belongs under `surface/.env/`.
 
 Browser CSS and JavaScript belong under `surface/web/assets/`.
+
+Local photo inputs belong under `surface/.env/photos/`.
+
+The local commit guard is `.githooks/pre-commit`. Keep it aligned with this policy and document setup commands when changing it.
 
 Do not replace removed root or legacy static files with placeholders.
 
@@ -147,8 +152,11 @@ Useful checks:
 
 ```bash
 python3 -m py_compile surface/*.py surface/jobs/*.py surface/local_events_runtime/*.py
-find . -maxdepth 1 -type f \( -name "*.json" -o -name "*.js" -o -name "*.css" \) -print
+find . -maxdepth 1 -type f \( ! -name "README.md" ! -name "AGENTS.md" ! -name "AGENT.md" ! -name ".gitignore" \) -print
 find surface/web -maxdepth 1 -type f \( -name "*.js" -o -name "*.css" \) -print
+git config core.hooksPath .githooks
+chmod +x .githooks/pre-commit
+git diff --cached --name-only | .githooks/pre-commit
 find surface -maxdepth 3 -type f -name "*.py" | sort
 curl -s http://127.0.0.1:8765/ | grep -E "assets/js/dashboard.js|assets/js/local_event_card.js"
 curl -s http://127.0.0.1:8765/openapi.json >/tmp/infoscreen-openapi.json
