@@ -1,6 +1,0 @@
-{
-  "project": "InfoScreen",
-  "status": "Use README.md as the current source map.",
-  "active_dashboard": "surface/web/index.html plus surface/web/assets/",
-  "runtime_dir": "surface/.env/"
-}
