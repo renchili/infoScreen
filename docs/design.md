@@ -114,14 +114,14 @@ The local event panel must keep the compact TTY visual style:
 
 ```text
 no dotted local-event background
-counter aligned with ‹ / › / ⌕ controls on the right
+counter aligned with ‹ / › / ⌕ controls on the top-right
 source or organization at the card top-left
 no standalone EVENT label
 compact WHEN and WHERE rows
-official link immediately after content, not pushed to the panel bottom
+official link pinned to the bottom of the card
 ```
 
-Local event content must remain visible below the toolbar when `/api/local-events/search` has results. The CSS must not hide, absolutely overlap, grid-collapse, nest excessive padded boxes, or stretch the card to waste the full panel height.
+Local event content must remain visible when `/api/local-events/search` has results. The CSS must not hide, absolutely overlap the source/title, grid-collapse, nest excessive padded boxes, or place controls where they obscure source text.
 
 ## Sync ticker contract
 
@@ -152,7 +152,7 @@ The browser does not scan the filesystem directly. After adding images, the buil
 
 ## Market UI contract
 
-The visible kiosk market card must show market rows by default and must not inject an always-visible inline symbol editor that shifts or compresses the rows.
+The visible kiosk market card must show market rows by default. The config control must not cover quote rows or sit on top of the first quote line.
 
 `surface/web/assets/js/market_custom.js` owns a compact config button. Clicking that button may open a temporary editor overlay. Symbol management stays behind the existing HTTP APIs:
 
