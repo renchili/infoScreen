@@ -8,20 +8,31 @@ Runtime JSON files live under `surface/.env/`.
 
 ## Repository root policy
 
-The repository root is reserved for control files and documentation. Dashboard runtime JSON, browser CSS, and browser JavaScript must not live in the repository root.
+The repository root is reserved for repository control and documentation. Project code and local runtime state must not live in the repository root.
 
-Allowed root-level project files are limited to control and documentation files such as:
+Allowed root-level project paths:
 
 ```text
 README.md
 AGENTS.md
 AGENT.md
 .gitignore
+.githooks/
 docs/
+skills/
 surface/
 ```
 
-Runtime JSON belongs under `surface/.env/`. Browser CSS and JavaScript belong under `surface/web/assets/`. Legacy static files directly under `surface/web/*.js` or `surface/web/*.css` are not active source paths and should be removed instead of replaced with placeholders.
+Runtime JSON belongs under `surface/.env/`. Browser CSS and JavaScript belongs under `surface/web/assets/`. Local photo inputs belong under `surface/.env/photos/`.
+
+The local pre-commit hook at `.githooks/pre-commit` enforces this root policy for staged files. Enable it once per clone with:
+
+```bash
+git config core.hooksPath .githooks
+chmod +x .githooks/pre-commit
+```
+
+Legacy static files directly under `surface/web/*.js` or `surface/web/*.css` are not active source paths and should be removed instead of replaced with placeholders.
 
 ## Python files
 
@@ -129,20 +140,13 @@ AGE
 
 ## Photo wall contract
 
-Preferred user photo directory:
+User photo inputs should be placed in:
 
 ```text
-photos/
-```
-
-Supported compatibility directories:
-
-```text
-photo/
 surface/.env/photos/
 ```
 
-`surface/build_photos_json.py` reads those photo source directories, converts or copies images into `surface/.env/public_photos/`, and writes `surface/.env/photos.json`.
+`surface/build_photos_json.py` reads that runtime input directory, converts or copies images into `surface/.env/public_photos/`, and writes `surface/.env/photos.json`.
 
 The browser does not scan the filesystem directly. After adding images, the builder must run before the dashboard can display them.
 
