@@ -5,6 +5,8 @@
 !/README.md
 !/AGENTS.md
 !/AGENT.md
+!/.githooks/
+!/.githooks/**
 !/docs/
 !/docs/**
 !/skills/
