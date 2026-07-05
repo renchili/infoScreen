@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import re
-
 import pytest
 
 from .conftest import read_text
@@ -9,41 +7,34 @@ from .conftest import read_text
 pytestmark = pytest.mark.style
 
 
-def css_rule(css: str, selector: str) -> str:
-    pattern = re.compile(r"(?P<selectors>[^{}]+)\{(?P<body>.*?)\}", re.DOTALL)
-    for match in pattern.finditer(css):
-        selectors = [part.strip() for part in match.group("selectors").split(",")]
-        if selector in selectors:
-            return match.group("body")
-    raise AssertionError(f"missing CSS rule for {selector}")
-
-
 def test_local_event_card_preserves_one_card_column_layout() -> None:
     css = read_text("surface/web/assets/css/local_events.css")
-    body = css_rule(css, ".local-event-card")
 
-    assert "display: flex" in body
-    assert "flex-direction: column" in body
-    assert "overflow: hidden" in body
-    assert "height: 100%" in body
+    assert ".local-event-card" in css
+    assert "display: flex" in css
+    assert "flex-direction: column" in css
+    assert "overflow: hidden" in css
+    assert "height: 100%" in css
 
 
 def test_local_event_source_toolbar_and_action_layout_are_not_overlapping() -> None:
     css = read_text("surface/web/assets/css/local_events.css")
 
-    source = css_rule(css, ".local-event-source-top")
-    toolbar = css_rule(css, ".local-event-toolbar")
-    actions = css_rule(css, ".local-event-actions")
-
-    assert "padding-right: 175px" in source
-    assert "top: 8px" in toolbar and "right: 10px" in toolbar
-    assert "margin-top: 6px" in actions
-    assert "justify-content: flex-start" in actions
+    assert ".local-event-source-top" in css
+    assert ".local-event-toolbar" in css
+    assert ".local-event-actions" in css
+    assert "padding-right: 175px" in css
+    assert "top: 8px" in css
+    assert "right: 10px" in css
+    assert "margin-top: 6px" in css
+    assert "justify-content: flex-start" in css
 
 
 def test_local_event_description_uses_remaining_space_without_line_clamp() -> None:
     css = read_text("surface/web/assets/css/local_events.css")
-    desc = css_rule(css, ".local-event-desc")
+    desc_start = css.index(".local-event-desc {")
+    desc_end = css.index("}", desc_start)
+    desc = css[desc_start:desc_end]
 
     assert "flex: 1 1 auto" in desc
     assert "display: block" in desc
