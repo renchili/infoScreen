@@ -15,7 +15,7 @@ add_bad() {
 
 is_allowed_root_file() {
   case "$1" in
-    .gitignore|README.md|AGENTS.md|AGENT.md|metadata.json)
+    .gitignore|README.md|AGENTS.md|AGENT.md|metadata.json|pyproject.toml)
       return 0
       ;;
     *)
@@ -26,7 +26,7 @@ is_allowed_root_file() {
 
 is_allowed_root_dir() {
   case "$1" in
-    docs|skills|surface|.githooks|.github|deploy|mac|scripts)
+    docs|skills|surface|.githooks|.github|deploy|mac|scripts|tests)
       return 0
       ;;
     *)
@@ -37,10 +37,10 @@ is_allowed_root_dir() {
 
 is_local_runtime_path() {
   case "$1" in
-    .env/*|surface/.env/*|logs/*|.review_delete/*|__pycache__/*|photo/*|photos/*|public_photos/*|chatgpt-ui-once/*)
+    .env/*|surface/.env/*|logs/*|.review_delete/*|__pycache__/*|.pytest_cache/*|htmlcov/*|test-results/*|artifacts/*|photo/*|photos/*|public_photos/*|chatgpt-ui-once/*)
       return 0
       ;;
-    mac/local.env|mac/schedule.json|mac/*.log)
+    .coverage|coverage.xml|mac/local.env|mac/schedule.json|mac/*.log)
       return 0
       ;;
     *.pyc|*.tmp|*.log|*.bak|*.backup|*.bak.*|*.backup.*|*.DS_Store|.DS_Store)
@@ -57,7 +57,7 @@ while IFS= read -r path; do
   path="${path#./}"
 
   if is_local_runtime_path "$path"; then
-    add_bad "$path" "local runtime/cache/personal file must not be committed"
+    add_bad "$path" "local runtime/cache/personal/test-output file must not be committed"
     continue
   fi
 
@@ -70,7 +70,7 @@ while IFS= read -r path; do
 
   if [[ "$path" != */* ]]; then
     if ! is_allowed_root_file "$path"; then
-      add_bad "$path" "root files are restricted to repo control/docs/metadata files"
+      add_bad "$path" "root files are restricted to repo control/docs/metadata/test config files"
     fi
     continue
   fi
