@@ -1,0 +1,16 @@
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+pythonpath = [".", "surface"]
+addopts = [
+  "-ra",
+  "--strict-config",
+  "--strict-markers"
+]
+markers = [
+  "backend: backend and API unit tests",
+  "frontend: frontend content and DOM contract tests",
+  "style: CSS and layout contract tests",
+  "scripts: shell script and CI entrypoint tests",
+  "integration: local closed-loop HTTP tests"
+]
