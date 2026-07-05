@@ -6,6 +6,7 @@
 !/AGENTS.md
 !/AGENT.md
 !/metadata.json
+!/pyproject.toml
 !/.githooks/
 !/.githooks/**
 !/.github/
@@ -22,6 +23,8 @@
 !/mac/**
 !/scripts/
 !/scripts/**
+!/tests/
+!/tests/**
 
 # Local/runtime state.
 .env/
@@ -29,6 +32,10 @@ surface/.env/
 logs/
 .review_delete/
 __pycache__/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
 *.pyc
 *.tmp
 *.log
@@ -38,6 +45,10 @@ __pycache__/
 mac/local.env
 mac/schedule.json
 mac/*.log
+
+# Test-generated artifacts must be uploaded from /tmp or ignored locally.
+test-results/
+artifacts/
 
 # Frontend source must live under surface/web/assets/, not directly under surface/web/.
 surface/web/*.js
