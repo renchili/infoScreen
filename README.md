@@ -22,14 +22,21 @@ python3 surface/serve_infoscreen.py
 
 ```text
 README.md          run, verify, and source overview
+AGENTS.md          agent bootstrap and required read order
+AGENT.md           project-specific repository rules
+metadata.json      compact product metadata and product prompt
+pyproject.toml     pytest configuration
+.github/workflows/ CI workflow definitions, when GitHub Actions is enabled
 docs/design.md     runtime architecture and data flow
 docs/api-spec.md   HTTP endpoints and Python owners
 docs/questions.md  current project decisions
+skills/            agent workflow and hard-gate skills
+tests/             local closed-loop unit, contract, and runtime tests
 ```
 
 ## Repository root policy
 
-The repository root is for repository control and documentation only. Project code and local runtime state do not belong in the root.
+The repository root is for repository control, documentation, project metadata, CI/test configuration, and operator/deployment entrypoints only. Dashboard runtime JSON, local environment files, browser CSS, browser JavaScript, local photos, generated output, caches, and compiled files do not belong in the repository root.
 
 Allowed root-level project paths:
 
@@ -37,14 +44,21 @@ Allowed root-level project paths:
 README.md
 AGENTS.md
 AGENT.md
+metadata.json
+pyproject.toml
 .gitignore
 .githooks/
+.github/
 docs/
 skills/
 surface/
+deploy/
+mac/
+scripts/
+tests/
 ```
 
-Runtime JSON belongs under `surface/.env/`. Browser CSS and JavaScript belong under `surface/web/assets/`. Local photos belong under `surface/.env/photos/`.
+Runtime JSON belongs under `surface/.env/`. Browser CSS and JavaScript belong under `surface/web/assets/`. Local photos belong under `surface/.env/photos/`. Test fixtures belong under `tests/fixtures/`; generated test reports, logs, JUnit XML, OpenAPI snapshots, and other test artifacts belong under `${ACCEPTANCE_ARTIFACT_DIR:-/tmp/infoscreen-acceptance}` or another ignored local artifact path.
 
 Enable the local pre-commit guard once per clone:
 
@@ -53,7 +67,7 @@ git config core.hooksPath .githooks
 chmod +x .githooks/pre-commit
 ```
 
-The hook blocks staged root project code, root runtime files, local env files, `photo/`, `photos/`, `public_photos/`, and legacy `surface/web/*.js` or `surface/web/*.css` files.
+The hook blocks staged root project code outside the allowlist, runtime files, local env files, generated test output, `photo/`, `photos/`, `public_photos/`, and legacy `surface/web/*.js` or `surface/web/*.css` files.
 
 ## Active source overview
 
@@ -160,18 +174,37 @@ python3 surface/build_photos_json.py
 python3 surface/search_local_events.py "Punggol Singapore"
 ```
 
+## Test and acceptance commands
+
+The local closed-loop test runner uses committed fixture data and writes logs and reports under `/tmp/infoscreen-acceptance` by default.
+
+```bash
+cd ~/infoscreen
+python3 -m pip install pytest pydantic
+bash scripts/run_full_ci_tests.sh
+```
+
+The compatibility entrypoint delegates to the same runner:
+
+```bash
+bash scripts/run_acceptance.sh
+```
+
+When GitHub Actions is enabled, `.github/workflows/acceptance.yml` runs the same local closed-loop test script. It does not upload test artifacts; the job log remains the CI evidence surface.
+
 ## Verify
 
 ```bash
 cd ~/infoscreen
 python3 -m py_compile surface/*.py surface/jobs/*.py surface/local_events_runtime/*.py
-python3 surface/build_photos_json.py
+python3 -m pytest
+bash scripts/run_full_ci_tests.sh
 curl -s http://127.0.0.1:8765/ | grep -E "assets/js/dashboard.js|assets/js/local_event_card.js"
 curl -s http://127.0.0.1:8765/assets/js/local_event_card.js | grep -n "local-event-source-top"
 curl -s http://127.0.0.1:8765/assets/css/local_events.css | grep -n "local-event-desc"
 curl -s http://127.0.0.1:8765/assets/js/market_custom.js | grep -n "marketConfigButton"
 curl -s http://127.0.0.1:8765/photos.json | grep -n "items"
-find . -maxdepth 1 -type f \( ! -name "README.md" ! -name "AGENTS.md" ! -name "AGENT.md" ! -name ".gitignore" \) -print
+find . -maxdepth 1 -type f \( ! -name "README.md" ! -name "AGENTS.md" ! -name "AGENT.md" ! -name "metadata.json" ! -name "pyproject.toml" ! -name ".gitignore" \) -print
 find surface/web -maxdepth 1 -type f \( -name "*.js" -o -name "*.css" \) -print
 find surface -maxdepth 3 -type f -name "*.py" | sort
 ```
