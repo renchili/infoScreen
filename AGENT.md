@@ -13,7 +13,7 @@ Before planning or editing repository files, read:
 5. `README.md`
 6. `metadata.json`
 7. `docs/design.md`, `docs/api-spec.md`, and `docs/questions.md`
-8. relevant source, scripts, deploy files, CI workflows, and configs
+8. relevant source, tests, scripts, deploy files, CI workflows, and configs
 
 ## Project identity
 
@@ -23,7 +23,7 @@ The repository root is `~/infoscreen`. Do not create another project root.
 
 ## Repository root policy
 
-The repository root is for repository control, documentation, project metadata, CI, and operator/deployment entrypoints only.
+The repository root is for repository control, documentation, project metadata, CI, test configuration, and operator/deployment entrypoints only.
 
 Do not place dashboard runtime JSON, local environment files, browser CSS, browser JavaScript, local photos, generated output, caches, or compiled files in the repository root.
 
@@ -34,6 +34,7 @@ README.md
 AGENTS.md
 AGENT.md
 metadata.json
+pyproject.toml
 .gitignore
 .githooks/
 .github/
@@ -43,6 +44,7 @@ surface/
 deploy/
 mac/
 scripts/
+tests/
 ```
 
 Runtime JSON belongs under `surface/.env/`.
@@ -50,6 +52,8 @@ Runtime JSON belongs under `surface/.env/`.
 Browser CSS and JavaScript belong under `surface/web/assets/`.
 
 Local photo inputs belong under `surface/.env/photos/`.
+
+Test fixtures belong under `tests/fixtures/`. Test reports, logs, JUnit XML, and other generated artifacts must be written to `${ACCEPTANCE_ARTIFACT_DIR:-/tmp/infoscreen-acceptance}` or another ignored local artifact path, not committed.
 
 The local commit guard is `.githooks/pre-commit`. Keep it aligned with this policy and document setup commands when changing it.
 
@@ -120,6 +124,22 @@ surface/web/                 static frontend
 
 Compatibility wrappers may remain at `surface/*.py` only when current systemd units, scripts, or HTTP subprocess calls depend on those paths.
 
+## Test model
+
+Use `pytest` for unit and contract tests.
+
+Required test categories:
+
+```text
+tests/test_backend_*.py       backend/API/schema/runtime JSON unit tests
+tests/test_frontend_*.py      frontend DOM/content contract tests
+tests/test_style_*.py         CSS/layout contract tests
+tests/test_scripts_*.py       shell/script/CI entrypoint tests
+tests/fixtures/               closed-loop fixture data
+```
+
+Tests must not require external network access. When a test needs runtime data, use committed fixtures and copy them into a temporary or ignored runtime directory.
+
 ## Jobs
 
 A job is a Python command that refreshes or generates runtime state and exits.
@@ -166,7 +186,8 @@ python3 - <<'PY'
 from surface.openapi_spec import build_openapi
 build_openapi()
 PY
-find . -maxdepth 1 -type f \( ! -name "README.md" ! -name "AGENTS.md" ! -name "AGENT.md" ! -name "metadata.json" ! -name ".gitignore" \) -print
+python3 -m pytest
+find . -maxdepth 1 -type f \( ! -name "README.md" ! -name "AGENTS.md" ! -name "AGENT.md" ! -name "metadata.json" ! -name "pyproject.toml" ! -name ".gitignore" \) -print
 find surface/web -maxdepth 1 -type f \( -name "*.js" -o -name "*.css" \) -print
 git config core.hooksPath .githooks
 chmod +x .githooks/pre-commit
@@ -175,6 +196,7 @@ find surface -maxdepth 3 -type f -name "*.py" | sort
 curl -s http://127.0.0.1:8765/ | grep -E "assets/js/dashboard.js|assets/js/local_event_card.js"
 curl -s http://127.0.0.1:8765/openapi.json >/tmp/infoscreen-openapi.json
 bash scripts/run_acceptance.sh
+ACCEPTANCE_START_SERVER=1 bash scripts/run_acceptance.sh
 ```
 
 When paths change, update the compile command.
