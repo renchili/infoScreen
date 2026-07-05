@@ -2,7 +2,8 @@
 set -euo pipefail
 
 # InfoScreen repository hygiene guard.
-# Root is for repo control/docs only. Project code and local runtime state must stay under the documented directories.
+# Root is for repo control/docs/metadata/CI/operator entrypoints only.
+# Project runtime state must stay under documented local runtime directories and must not be committed.
 
 fail=0
 bad_entries=()
@@ -14,7 +15,7 @@ add_bad() {
 
 is_allowed_root_file() {
   case "$1" in
-    .gitignore|README.md|AGENTS.md|AGENT.md)
+    .gitignore|README.md|AGENTS.md|AGENT.md|metadata.json)
       return 0
       ;;
     *)
@@ -25,7 +26,7 @@ is_allowed_root_file() {
 
 is_allowed_root_dir() {
   case "$1" in
-    docs|skills|surface|.githooks)
+    docs|skills|surface|.githooks|.github|deploy|mac|scripts)
       return 0
       ;;
     *)
@@ -37,6 +38,9 @@ is_allowed_root_dir() {
 is_local_runtime_path() {
   case "$1" in
     .env/*|surface/.env/*|logs/*|.review_delete/*|__pycache__/*|photo/*|photos/*|public_photos/*|chatgpt-ui-once/*)
+      return 0
+      ;;
+    mac/local.env|mac/schedule.json|mac/*.log)
       return 0
       ;;
     *.pyc|*.tmp|*.log|*.bak|*.backup|*.bak.*|*.backup.*|*.DS_Store|.DS_Store)
@@ -66,7 +70,7 @@ while IFS= read -r path; do
 
   if [[ "$path" != */* ]]; then
     if ! is_allowed_root_file "$path"; then
-      add_bad "$path" "root files are restricted to repo control/docs files"
+      add_bad "$path" "root files are restricted to repo control/docs/metadata files"
     fi
     continue
   fi
