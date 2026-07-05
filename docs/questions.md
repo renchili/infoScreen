@@ -1,96 +1,51 @@
-# InfoScreen decisions
+# InfoScreen questions
 
-This file records durable project decisions.
+这个文件用问答方式记录会影响项目推进的长期选择。记录的是“决定了什么”和“为什么这么决定”，不是执行流水、临时问题清单、清理记录或归因记录。
 
-Entries use this shape:
+## 什么内容应该写进这里？
 
-- Decision: accepted project direction.
-- Rationale: why the direction was chosen.
-- Consequence: what changes for code, tests, docs, or operations.
-- Verification: how the decision can be checked.
+当实现走不通、测试暴露缺口、验收标准发生变化，并且这些反馈改变了项目方向时，应该把最终形成的项目决策写进来。
 
-When implementation or test feedback changes project direction, record the resulting decision and rationale. Temporary execution notes belong outside this file.
+写法应该是：先提出项目问题，再回答当前决定和原因。一次性的实现问题直接在代码、测试或配置里修掉，不在这里保留过程。
 
-## Repository root and source layout
+## 根目录为什么要限制文件？
 
-Decision: the repository root is reserved for repository control, documentation, metadata, CI/test configuration, and operator/deployment entrypoints.
+决定：根目录只放仓库控制文件、文档、项目元数据、测试配置、CI 配置和部署/操作入口。
 
-Rationale: source files, local runtime data, personal data, generated output, caches, and compiled files need clear separation.
+原因：InfoScreen 是本地长期运行的 kiosk 项目，源码、运行时数据、个人照片、生成物、缓存文件如果混在根目录，会让后续维护和验收很难判断哪些是项目代码、哪些是本机状态。
 
-Consequence: allowed root-level paths are README, AGENTS, AGENT, metadata, pyproject, gitignore, githooks, github workflows, docs, skills, surface, deploy, mac, scripts, and tests. Browser assets live under `surface/web/assets`. Runtime data lives under `surface/.env`. Fixtures live under `tests/fixtures`.
+## 前端入口为什么只能是 `surface/web/index.html` 和 `surface/web/assets/`？
 
-Verification: root contents, ignore rules, and pre-commit rules match AGENT.md and README.md.
+决定：dashboard 的 HTML 入口是 `surface/web/index.html`，CSS 和 JavaScript 放在 `surface/web/assets/` 下。
 
-## Frontend entrypoints
+原因：这样可以避免根目录或 `surface/web/` 下出现重复、过期、不可判断是否仍然生效的前端文件。前端入口越少，后续修改和验收越稳定。
 
-Decision: `surface/web/index.html` is the dashboard shell and checked-in browser files are loaded from `surface/web/assets`.
+## 运行时数据为什么放在 `surface/.env/`？
 
-Rationale: one shell plus one asset tree keeps the kiosk frontend simple and prevents stale duplicate entrypoints.
+决定：天气、日程、市场、本地活动、照片索引、日志等运行时数据放在 `surface/.env/`，用户照片输入放在 `surface/.env/photos/`。
 
-Consequence: root-level JavaScript/CSS and direct `surface/web` JavaScript/CSS are not active dashboard assets.
+原因：这些内容属于本机状态或个人数据，不是项目源码。源码仓库应该只保存程序、文档、测试 fixture 和部署入口。
 
-Verification: dashboard HTML references assets under `surface/web/assets`.
+## 为什么测试使用 pytest 和 fixture 做本地闭环？
 
-## Runtime data
+决定：测试使用 pytest，覆盖 backend/API、frontend content、CSS layout contract、runtime fixture、HTTP closed-loop、script/workflow contract。
 
-Decision: runtime JSON, logs, generated photo indexes, and local photo input live under `surface/.env`.
+原因：这个项目需要能在本地、容器、CI runner、agent 环境里重复验证。使用 committed fixture 可以避免测试依赖外网、真实账户或真实 `surface/.env/` 数据。
 
-Rationale: these files are local machine state, not source code.
+## 仓库卫生为什么不做成一堆产品单元测试？
 
-Consequence: runtime data is ignored by git and is not committed. Local photo input lives under `surface/.env/photos`.
+决定：仓库卫生主要由目录规则、`.gitignore`、`.githooks/pre-commit` 和文档里的验证命令约束；产品测试聚焦产品行为和稳定 contract。
 
-Verification: runtime jobs and dashboard empty states point to `~/infoscreen/surface/.env` paths.
+原因：产品测试应该证明 dashboard、API、数据和脚本行为正确，不应该变成宽泛的文件树扫描器。源布局规则需要存在，但它属于仓库治理，不是业务功能。
 
-## Python roles
+## GitHub Actions 关闭时怎么验收？
 
-Decision: Python files are grouped by role: HTTP server/API support, refresh jobs, local-event implementation, and static frontend.
+决定：GitHub Actions 可以由操作者关闭；关闭时缺少 workflow run 不算项目代码失败。
 
-Rationale: separating long-running serving code from refresh jobs keeps operations clear.
+原因：Hosted CI 是否运行是仓库设置问题，不等同于源码是否正确。验收报告需要区分代码问题、文档问题、测试覆盖缺口、运行证据缺口和 CI 未运行。
 
-Consequence: `surface/serve_infoscreen.py` owns local HTTP serving; refresh jobs remain standalone commands; `openapi_spec.py` and `api_models.py` support the API contract.
+## 为什么默认不上传测试 artifact？
 
-Verification: compile checks and import tests cover these modules.
+决定：默认不上传 GitHub Actions artifact，除非明确要求。CI/job log 和本地 runner 输出作为主要证据面。
 
-Decision: the canonical local event implementation path is `search_local_events.py` to `jobs.local_event_search` to `local_events_runtime`.
-
-Rationale: one active local event path keeps behavior traceable.
-
-Consequence: a new local event engine is only added when this path is intentionally replaced.
-
-Verification: local event refresh and tests route through that path.
-
-## Test model
-
-Decision: use pytest for backend, frontend contract, CSS contract, runtime fixture, HTTP closed-loop, and script/workflow tests.
-
-Rationale: pytest provides deterministic local tests that run without external services.
-
-Consequence: tests use committed fixture JSON and isolated runtime directories.
-
-Verification: `python3 -m pytest` and `bash scripts/run_full_ci_tests.sh` run the local closed-loop suite.
-
-Decision: repository hygiene is enforced through source layout rules, ignore rules, commit guard, and verification commands.
-
-Rationale: product tests should focus on product behavior and stable contracts.
-
-Consequence: broad file-tree policy belongs in repository policy and commit guards, not in product behavior tests.
-
-Verification: review root policy docs, ignore rules, commit guard, and verification commands when source layout changes.
-
-## Acceptance and CI decisions
-
-Decision: GitHub Actions may be disabled by the operator.
-
-Rationale: hosted CI availability is an operator setting, separate from source readiness.
-
-Consequence: missing workflow runs are not a project-code failure when Actions are disabled.
-
-Verification: acceptance reports mark disabled Actions as not run or out of scope.
-
-Decision: the workflow may run `scripts/run_full_ci_tests.sh` when enabled, but does not upload test artifacts unless requested.
-
-Rationale: local and CI job logs are the evidence surface unless downloadable artifacts are requested.
-
-Consequence: workflow configuration has no artifact upload by default.
-
-Verification: inspect the acceptance workflow when CI behavior changes.
+原因：当前项目更需要 runner、容器和 agent 能直接读到日志，而不是默认把测试结果打包上传。需要可下载产物时再单独开启。
