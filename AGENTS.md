@@ -11,7 +11,7 @@ Before planning, editing, reviewing, validating, or reporting repository work, r
 1. `AGENTS.md` — this bootstrap entrypoint.
 2. `AGENT.md` — InfoScreen project-specific rules.
 3. `skills/SKILL.md` — repository workflow, evidence, validation, and delivery rules.
-4. `skills/full-project-acceptance-hard-gates/SKILL.md` — full-project acceptance rules when the task is validation, acceptance, or release readiness.
+4. `skills/full-project-acceptance-hard-gates` — full-project acceptance rules when the task is validation, acceptance, or release readiness.
 5. `README.md` — operator-facing project overview and verification commands.
 6. `metadata.json` — compact product metadata and natural-language product prompt.
 7. `docs/design.md`, `docs/api-spec.md`, and `docs/questions.md` when relevant.
