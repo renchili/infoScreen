@@ -1,18 +1,27 @@
 # Repository root allowlist.
-# Root is for repo control/docs only; project code and local runtime state do not belong here.
+# Root is for repo control/docs/metadata/CI/operator entrypoints only; runtime state does not belong here.
 /*
 !/.gitignore
 !/README.md
 !/AGENTS.md
 !/AGENT.md
+!/metadata.json
 !/.githooks/
 !/.githooks/**
+!/.github/
+!/.github/**
 !/docs/
 !/docs/**
 !/skills/
 !/skills/**
 !/surface/
 !/surface/**
+!/deploy/
+!/deploy/**
+!/mac/
+!/mac/**
+!/scripts/
+!/scripts/**
 
 # Local/runtime state.
 .env/
@@ -24,6 +33,11 @@ __pycache__/
 *.tmp
 *.log
 .DS_Store
+
+# Mac-side local schedule sync runtime state.
+mac/local.env
+mac/schedule.json
+mac/*.log
 
 # Frontend source must live under surface/web/assets/, not directly under surface/web/.
 surface/web/*.js
