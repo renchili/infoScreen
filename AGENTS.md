@@ -1,88 +1,62 @@
 # Agent Execution Bootstrap
 
-This file is the repository entry point for agents. It tells agents what to read first, what rule sources must be respected, what may be generated or updated, and how to continue safely after context loss.
+This file is the repository entry point for agents working on `renchili/infoScreen`.
 
-`AGENTS.md` does not replace `AGENT.md` and does not replace `.chatgpt/skills/ironpage-production-workflow/SKILL.md`.
-
-## Rule source roles
-
-The rule sources have different jobs:
-
-- `AGENT.md` is the IronPage Vault project-adapted agent file. It is generated from the project constraints and the referenced Skill, then specialised for this repository. It controls what IronPage Vault is and what the implementation must enforce.
-- `.chatgpt/skills/ironpage-production-workflow/SKILL.md` is the reusable workflow Skill. It controls how agents must perform repository work, including repository hygiene, documentation output, evidence, validation, branch/PR behaviour, final responses, and compact-safe working records.
-- `AGENTS.md` is only the bootstrap entrypoint. It tells agents to read and obey `AGENT.md`, then apply the Skill workflow. It must not duplicate the full project specification or copy the full Skill.
+It does not replace the project-specific rules in `AGENT.md` and it does not replace the reusable workflow rules in `skills/SKILL.md`. It only defines the read order and the safe operating boundary for this repository.
 
 ## Required reading order
 
-Before planning, editing, generating files, reviewing, or reporting completion, agents must read and apply these files in order:
+Before planning, editing, reviewing, validating, or reporting repository work, read these files in order:
 
 1. `AGENTS.md` — this bootstrap entrypoint.
-2. `AGENT.md` — IronPage Vault project rules, including product scope, domain model, architecture, security, RBAC, workflow, audit, PDF lifecycle, database, backup, API behaviour, and required tests.
-3. `.chatgpt/skills/ironpage-production-workflow/SKILL.md` — agent workflow rules for repository hygiene, documentation output, evidence, validation, branch/PR behaviour, final responses, and compact-safe working records.
-4. `README.md`, when present.
-5. Existing `docs/` files, when present.
-6. Existing source layout, tests, scripts, CI, Docker/deployment files, migrations, and configuration files.
+2. `AGENT.md` — InfoScreen project-specific rules.
+3. `skills/SKILL.md` — repository workflow, evidence, validation, and delivery rules.
+4. `skills/full-project-acceptance-hard-gates/SKILL.md` — full-project acceptance rules when the task is validation, acceptance, or release readiness.
+5. `README.md` — operator-facing project overview and verification commands.
+6. `metadata.json` — compact product metadata and natural-language product prompt.
+7. `docs/design.md`, `docs/api-spec.md`, and `docs/questions.md` when relevant.
+8. Relevant source, scripts, deployment files, CI workflows, and configuration files.
 
 If a required rule source cannot be read, stop and ask the user. Do not continue from memory or guess missing rules.
 
-## What agents must generate or update
+## Project identity
 
-For repository work, generate or update only the artefacts required by the current user request, `AGENT.md`, the Skill, and existing repository conventions.
+InfoScreen is a local-first personal information screen for an always-on Surface or Ubuntu display. The repository root is `~/infoscreen`.
 
-Allowed output categories are:
+Do not create another project root, duplicate app, placeholder implementation, unrelated demo, or generated runtime output in source control.
 
-- production code in the existing source layout.
-- tests in the existing test layout.
-- migrations or schema files when data shape changes.
-- configuration files when runtime behaviour requires configuration.
-- scripts only when they fit the existing repository workflow or are required for validation.
-- `docs/api-spec.md` when API usage or behaviour changes.
-- `docs/design.md` when architecture, implementation strategy, runtime behaviour, configuration, logging, validation, or requirement mapping changes.
-- `docs/questions.md` only for clarification answers about unclear process, acceptance, testing, runtime, delivery, usage, or verification points.
-- PR notes and final responses containing evidence, checks run, checks not run, and remaining gaps.
+## Output boundaries
 
-Do not generate duplicate project roots, sample applications, placeholder files, noop files, arbitrary reports, unrelated demos, or artefacts outside the repository convention.
+Agents may create or update only files required by the current request and consistent with the repository layout:
 
-## What agents must obey
+- project documentation and metadata at the repository root or under `docs/`.
+- project skills under `skills/`.
+- dashboard backend, frontend, configuration, and runtime-job source under `surface/`.
+- deployment and operator scripts under `deploy/`, `mac/`, or `scripts/` when the task is operational.
+- CI workflows under `.github/workflows/` when the task requires automated validation.
 
-- Respect `AGENT.md` as the project-specific controlling rule source.
-- Use the Skill as the controlling workflow rule source.
-- Use existing repository structure to decide where files belong.
-- Treat the latest user feedback as the current correction or narrowed scope.
+Runtime JSON, local environment files, logs, local photos, generated photo outputs, caches, and compiled files must stay out of source control.
 
-If these sources appear to conflict, stop and ask the user which rule controls. Do not silently choose one.
+## Evidence rules
 
-## Boundary requirements
+Every repository-work response must distinguish:
 
-Agents must keep implementation, tests, demos, fixtures, and acceptance aids separate.
-
-- Production code must not depend on test helpers, mocks, random sample data, or demo-only configuration.
-- Tests, fixtures, mocks, and sample data must stay in test, fixture, example, or docs paths.
-- Acceptance probing aids must be documented as testing aids, not product frontend scope.
-- Documentation must describe implemented behaviour and verified evidence, not desired behaviour without code or proof.
-
-## Context continuation
-
-After compaction, model switch, long pause, or a new continuation, agents must re-read `AGENT.md` and the Skill before continuing repository work.
-
-A compact working record must preserve:
-
-- current branch and base branch.
-- files changed.
-- user corrections that changed the requirement.
-- checks run.
+- code changed.
+- static inspection performed.
+- local commands executed.
+- CI or workflow evidence available.
 - checks not run.
-- open risks or evidence gaps.
-- user-local commands given and whether results were received.
+- remaining gaps or risks.
+
+Do not claim full acceptance, CI success, browser validation, deployment success, or runtime correctness unless there is direct evidence for the exact commit being discussed.
 
 ## Final response requirements
 
-Every final response for repository work must include:
+For repository work, include:
 
+- branch name.
+- commit SHA or PR number when applicable.
 - exact files changed.
-- branch name and PR number when created.
 - checks run.
 - checks not run.
 - remaining evidence gaps or risks.
-
-Do not present generated artifacts or documentation under names different from their actual file paths.
