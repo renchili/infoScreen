@@ -23,19 +23,18 @@ jobs:
       - name: Install acceptance dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pydantic
+          python -m pip install pytest pydantic
 
-      - name: Run acceptance checks
+      - name: Run full local closed-loop tests
         env:
-          ACCEPTANCE_START_SERVER: '1'
           ACCEPTANCE_ARTIFACT_DIR: /tmp/infoscreen-acceptance
-        run: bash scripts/run_acceptance.sh
+        run: bash scripts/run_full_ci_tests.sh
 
       - name: Upload acceptance artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: infoscreen-acceptance-${{ github.sha }}
+          name: infoscreen-acceptance
           path: /tmp/infoscreen-acceptance
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 14
