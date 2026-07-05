@@ -4,23 +4,42 @@ from typing import Any
 
 from pydantic import TypeAdapter
 
-from api_models import (
-    ErrorResponse,
-    EventStreamResponse,
-    LocalEventItem,
-    LocalEventRuntimeInfo,
-    LocalEventSearchRequest,
-    LocalEventSearchResponse,
-    LocalEventSourceDebug,
-    LocalEventSourceSummary,
-    MarketConfigRequest,
-    MarketConfigResponse,
-    MarketRefreshResponse,
-    PhotoItem,
-    PhotosResponse,
-    RuntimeMissingResponse,
-    ScheduleItem,
-)
+try:
+    from .api_models import (
+        ErrorResponse,
+        EventStreamResponse,
+        LocalEventItem,
+        LocalEventRuntimeInfo,
+        LocalEventSearchRequest,
+        LocalEventSearchResponse,
+        LocalEventSourceDebug,
+        LocalEventSourceSummary,
+        MarketConfigRequest,
+        MarketConfigResponse,
+        MarketRefreshResponse,
+        PhotoItem,
+        PhotosResponse,
+        RuntimeMissingResponse,
+        ScheduleItem,
+    )
+except ImportError:
+    from api_models import (
+        ErrorResponse,
+        EventStreamResponse,
+        LocalEventItem,
+        LocalEventRuntimeInfo,
+        LocalEventSearchRequest,
+        LocalEventSearchResponse,
+        LocalEventSourceDebug,
+        LocalEventSourceSummary,
+        MarketConfigRequest,
+        MarketConfigResponse,
+        MarketRefreshResponse,
+        PhotoItem,
+        PhotosResponse,
+        RuntimeMissingResponse,
+        ScheduleItem,
+    )
 
 OPENAPI_VERSION = "3.1.0"
 
