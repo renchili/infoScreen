@@ -9,9 +9,11 @@ Before planning or editing repository files, read:
 1. `AGENTS.md`
 2. `AGENT.md`
 3. `skills/SKILL.md`
-4. `README.md`
-5. `docs/design.md`, `docs/api-spec.md`, and `docs/questions.md`
-6. relevant source, scripts, deploy files, and configs
+4. `skills/full-project-acceptance-hard-gates/SKILL.md` when validating or accepting the full project
+5. `README.md`
+6. `metadata.json`
+7. `docs/design.md`, `docs/api-spec.md`, and `docs/questions.md`
+8. relevant source, scripts, deploy files, CI workflows, and configs
 
 ## Project identity
 
@@ -21,9 +23,9 @@ The repository root is `~/infoscreen`. Do not create another project root.
 
 ## Repository root policy
 
-The repository root is for repository control and documentation only.
+The repository root is for repository control, documentation, project metadata, CI, and operator/deployment entrypoints only.
 
-Do not place project code, local environment files, dashboard runtime JSON, browser CSS, browser JavaScript, local photos, generated output, or caches in the repository root.
+Do not place dashboard runtime JSON, local environment files, browser CSS, browser JavaScript, local photos, generated output, caches, or compiled files in the repository root.
 
 Allowed root-level project paths:
 
@@ -31,11 +33,16 @@ Allowed root-level project paths:
 README.md
 AGENTS.md
 AGENT.md
+metadata.json
 .gitignore
 .githooks/
+.github/
 docs/
-surface/
 skills/
+surface/
+deploy/
+mac/
+scripts/
 ```
 
 Runtime JSON belongs under `surface/.env/`.
@@ -54,12 +61,14 @@ Project documentation belongs in:
 
 ```text
 README.md
+metadata.json
 docs/design.md
 docs/api-spec.md
 docs/questions.md
 AGENTS.md
 AGENT.md
 skills/SKILL.md
+skills/full-project-acceptance-hard-gates/SKILL.md
 ```
 
 Do not add nested source-directory README files such as `surface/README.md` unless the user explicitly asks for one.
@@ -152,7 +161,12 @@ Useful checks:
 
 ```bash
 python3 -m py_compile surface/*.py surface/jobs/*.py surface/local_events_runtime/*.py
-find . -maxdepth 1 -type f \( ! -name "README.md" ! -name "AGENTS.md" ! -name "AGENT.md" ! -name ".gitignore" \) -print
+python3 -m json.tool metadata.json >/tmp/infoscreen-metadata.json
+python3 - <<'PY'
+from surface.openapi_spec import build_openapi
+build_openapi()
+PY
+find . -maxdepth 1 -type f \( ! -name "README.md" ! -name "AGENTS.md" ! -name "AGENT.md" ! -name "metadata.json" ! -name ".gitignore" \) -print
 find surface/web -maxdepth 1 -type f \( -name "*.js" -o -name "*.css" \) -print
 git config core.hooksPath .githooks
 chmod +x .githooks/pre-commit
@@ -160,6 +174,7 @@ git diff --cached --name-only | .githooks/pre-commit
 find surface -maxdepth 3 -type f -name "*.py" | sort
 curl -s http://127.0.0.1:8765/ | grep -E "assets/js/dashboard.js|assets/js/local_event_card.js"
 curl -s http://127.0.0.1:8765/openapi.json >/tmp/infoscreen-openapi.json
+bash scripts/run_acceptance.sh
 ```
 
 When paths change, update the compile command.
