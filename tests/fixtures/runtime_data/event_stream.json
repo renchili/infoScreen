@@ -1,0 +1,10 @@
+{
+  "items": [
+    {"title": "Fixture EN headline", "source": "fixture"}
+  ],
+  "items_by_lang": {
+    "en": [{"title": "Fixture EN headline", "source": "fixture-en"}],
+    "fr": [{"title": "Titre FR de test", "source": "fixture-fr"}],
+    "zh": [{"title": "中文测试标题", "source": "fixture-zh"}]
+  }
+}
