@@ -11,6 +11,7 @@ pytestmark = pytest.mark.scripts
 
 SHELL_SCRIPTS = [
     "scripts/run_acceptance.sh",
+    "scripts/run_full_ci_tests.sh",
     "scripts/infoscreen_status.sh",
     "scripts/setup_surface_go.sh",
     "deploy/scripts/install-user-systemd.sh",
@@ -26,32 +27,31 @@ def test_shell_scripts_parse_with_bash_noexec() -> None:
         subprocess.run(["bash", "-n", str(path)], cwd=ROOT, check=True, capture_output=True, text=True)
 
 
-def test_acceptance_script_collects_agent_accessible_artifacts() -> None:
-    script = read_text("scripts/run_acceptance.sh")
+def test_full_ci_script_collects_agent_accessible_artifacts() -> None:
+    script = read_text("scripts/run_full_ci_tests.sh")
 
     assert "ACCEPTANCE_ARTIFACT_DIR" in script
     assert "summary.md" in script
     assert "pytest-junit.xml" in script
     assert "openapi.json" in script
-    assert "server.log" in script
+    assert "report.json" in script
     assert "cat \"$SUMMARY\"" in script
 
 
-def test_acceptance_script_runs_closed_loop_data_and_http_checks() -> None:
-    script = read_text("scripts/run_acceptance.sh")
+def test_full_ci_script_runs_closed_loop_fixture_data() -> None:
+    script = read_text("scripts/run_full_ci_tests.sh")
 
     assert "tests/fixtures/runtime_data" in script
     assert "seed_runtime_data" in script
-    assert "ACCEPTANCE_START_SERVER" in script
-    assert "http_market_fixture" in script
-    assert "http_local_event_fixture" in script
+    assert "INFOSCREEN_ENV_DIR" in script
+    assert "fixture-photo.txt" in script
 
 
-def test_ci_workflow_runs_acceptance_and_uploads_artifacts() -> None:
+def test_ci_workflow_runs_full_tests_and_uploads_artifacts() -> None:
     workflow = read_text(".github/workflows/acceptance.yml")
 
-    assert "bash scripts/run_acceptance.sh" in workflow
-    assert "ACCEPTANCE_START_SERVER" in workflow
+    assert "bash scripts/run_full_ci_tests.sh" in workflow
+    assert "ACCEPTANCE_ARTIFACT_DIR" in workflow
     assert "actions/upload-artifact" in workflow
     assert "pydantic" in workflow
     assert "pytest" in workflow
