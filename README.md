@@ -29,7 +29,7 @@ pyproject.toml     pytest configuration
 .github/workflows/ CI workflow definitions, when GitHub Actions is enabled
 docs/design.md     runtime architecture and data flow
 docs/api-spec.md   HTTP endpoints and Python owners
-docs/questions.md  current project decisions and review-driven choices
+docs/questions.md  current project decisions
 skills/            agent workflow and hard-gate skills
 tests/             local closed-loop unit, contract, and runtime tests
 ```
@@ -190,7 +190,7 @@ tests/test_scripts_contract.py     shell syntax and workflow configuration check
 tests/fixtures/runtime_data/       closed-loop weather, market, event stream, local events, photo, and schedule data
 ```
 
-These tests are product and contract tests. They are not a replacement for manual/browser validation, and they should not grow one-off checks just to prove a previous generated cleanup was performed. If a bad file is accidentally added, remove the file and align docs/rules instead.
+These tests are product and contract tests. They do not replace manual/browser validation, and they should remain focused on stable product behavior, API contracts, UI contracts, fixture data contracts, and script contracts.
 
 ## Test and acceptance commands
 
@@ -210,7 +210,7 @@ bash scripts/run_acceptance.sh
 
 When GitHub Actions is enabled, `.github/workflows/acceptance.yml` runs the same local closed-loop test script. It does not upload test artifacts; the job log remains the CI evidence surface.
 
-Project decisions made during review belong in `docs/questions.md`. If a conversation changes repository policy, test scope, CI behavior, runtime boundaries, or active source paths, update `docs/questions.md` in the same change set.
+Project-direction decisions belong in `docs/questions.md`. If repository policy, test scope, CI behavior, runtime boundaries, or active source paths change, update `docs/questions.md` in the same change set.
 
 ## Verify
 
