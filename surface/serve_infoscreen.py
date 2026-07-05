@@ -4,6 +4,7 @@ from __future__ import annotations
 import email.utils
 import json
 import mimetypes
+import os
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -13,7 +14,7 @@ from urllib.parse import unquote, urlparse
 
 SURFACE_DIR = Path(__file__).resolve().parent
 WEB_DIR = SURFACE_DIR / "web"
-ENV_DIR = SURFACE_DIR / ".env"
+ENV_DIR = Path(os.environ.get("INFOSCREEN_ENV_DIR", str(SURFACE_DIR / ".env"))).expanduser().resolve()
 CONF_DIR = SURFACE_DIR / "conf"
 
 JSON_DEFAULTS = {
@@ -282,7 +283,7 @@ class Handler(SimpleHTTPRequestHandler):
 
 def main() -> None:
     ENV_DIR.mkdir(exist_ok=True)
-    print(f"InfoScreen server on 0.0.0.0:8765 from {WEB_DIR}", flush=True)
+    print(f"InfoScreen server on 0.0.0.0:8765 from {WEB_DIR} with env {ENV_DIR}", flush=True)
     ThreadingHTTPServer(("0.0.0.0", 8765), Handler).serve_forever()
 
 
