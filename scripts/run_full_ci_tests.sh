@@ -12,6 +12,7 @@ export INFOSCREEN_ENV_DIR="$RUNTIME_ENV"
 mkdir -p "$ARTIFACT_DIR" "$RUNTIME_ENV" "$RUNTIME_ENV/public_photos"
 SUMMARY="$ARTIFACT_DIR/summary.md"
 : > "$SUMMARY"
+FAILURES=0
 
 log_step() {
   local name="$1"
@@ -23,7 +24,7 @@ log_step() {
   else
     echo "FAIL $name" | tee -a "$SUMMARY"
     cat "$log_file" >&2 || true
-    return 1
+    FAILURES=$((FAILURES + 1))
   fi
 }
 
@@ -34,7 +35,11 @@ log_step openapi_generation python3 -c 'import json, os; from pathlib import Pat
 log_step shell_syntax bash -n scripts/run_full_ci_tests.sh
 log_step pytest python3 -m pytest --junitxml "$ARTIFACT_DIR/pytest-junit.xml"
 
-python3 -c 'import json, os, subprocess; from pathlib import Path; d=Path(os.environ["ARTIFACT_DIR"]); report={"commit": subprocess.check_output(["git","rev-parse","HEAD"], text=True).strip(), "artifact_dir": str(d), "runtime_env": os.environ["INFOSCREEN_ENV_DIR"], "logs": sorted(str(p) for p in d.glob("*.log")), "junit": str(d/"pytest-junit.xml"), "summary": str(d/"summary.md")}; (d/"report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")'
+python3 -c 'import json, os, subprocess; from pathlib import Path; d=Path(os.environ["ARTIFACT_DIR"]); summary=d/"summary.md"; report={"commit": subprocess.check_output(["git","rev-parse","HEAD"], text=True).strip(), "artifact_dir": str(d), "runtime_env": os.environ["INFOSCREEN_ENV_DIR"], "logs": sorted(str(p) for p in d.glob("*.log")), "junit": str(d/"pytest-junit.xml"), "summary": str(summary), "summary_text": summary.read_text(encoding="utf-8")}; (d/"report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")'
 
 find "$ARTIFACT_DIR" -maxdepth 2 -type f | sort
 cat "$SUMMARY"
+
+if [ "$FAILURES" -ne 0 ]; then
+  exit 1
+fi
