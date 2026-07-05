@@ -9,7 +9,7 @@ Before planning or editing repository files, read:
 1. `AGENTS.md`
 2. `AGENT.md`
 3. `skills/SKILL.md`
-4. `skills/full-project-acceptance-hard-gates/SKILL.md` when validating or accepting the full project
+4. `skills/full-project-acceptance-hard-gates` when validating or accepting the full project
 5. `README.md`
 6. `metadata.json`
 7. `docs/design.md`, `docs/api-spec.md`, and `docs/questions.md`
@@ -68,7 +68,7 @@ docs/questions.md
 AGENTS.md
 AGENT.md
 skills/SKILL.md
-skills/full-project-acceptance-hard-gates/SKILL.md
+skills/full-project-acceptance-hard-gates
 ```
 
 Do not add nested source-directory README files such as `surface/README.md` unless the user explicitly asks for one.
