@@ -5,6 +5,7 @@ ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$ROOT"
 
 ARTIFACT_DIR="${ACCEPTANCE_ARTIFACT_DIR:-/tmp/infoscreen-acceptance}"
+export ARTIFACT_DIR
 rm -rf "$ARTIFACT_DIR"
 mkdir -p "$ARTIFACT_DIR"
 SUMMARY="$ARTIFACT_DIR/summary.md"
@@ -56,10 +57,11 @@ run_step python_compile python3 -m compileall -q surface
 
 run_step openapi_generation bash -lc 'python3 - <<"PY"
 import json
+import os
 from pathlib import Path
 from surface.openapi_spec import build_openapi
 payload = build_openapi()
-Path("$ARTIFACT_DIR/openapi.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+Path(os.environ["ARTIFACT_DIR"], "openapi.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 PY'
 
 run_step frontend_asset_contract bash -lc 'grep -q "assets/js/dashboard.js" surface/web/index.html && grep -q "assets/js/local_event_card.js" surface/web/index.html && grep -q "surface/.env/photos" surface/web/index.html && test -z "$(find surface/web -maxdepth 1 -type f \( -name "*.js" -o -name "*.css" \) -print -quit)"'
