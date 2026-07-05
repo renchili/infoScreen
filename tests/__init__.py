@@ -1,0 +1,1 @@
+"""InfoScreen test package."""
