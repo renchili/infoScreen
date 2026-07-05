@@ -1,0 +1,8 @@
+{
+  "source": "fixture-market",
+  "updated_at": "2026-07-05T00:00:00+00:00",
+  "items": [
+    {"symbol": "AAPL", "price": "213.25", "percent": "+0.42%", "session": "regular"},
+    {"symbol": "NVDA", "price": "145.10", "percent": "-0.31%", "session": "regular"}
+  ]
+}
