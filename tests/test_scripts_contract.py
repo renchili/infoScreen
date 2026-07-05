@@ -27,7 +27,7 @@ def test_shell_scripts_parse_with_bash_noexec() -> None:
         subprocess.run(["bash", "-n", str(path)], cwd=ROOT, check=True, capture_output=True, text=True)
 
 
-def test_full_ci_script_collects_agent_accessible_artifacts() -> None:
+def test_full_ci_script_collects_agent_accessible_logs() -> None:
     script = read_text("scripts/run_full_ci_tests.sh")
 
     assert "ACCEPTANCE_ARTIFACT_DIR" in script
@@ -47,11 +47,12 @@ def test_full_ci_script_runs_closed_loop_fixture_data() -> None:
     assert "fixture-photo.txt" in script
 
 
-def test_ci_workflow_runs_full_tests_and_uploads_artifacts() -> None:
+def test_ci_workflow_runs_full_tests_without_uploading_artifacts() -> None:
     workflow = read_text(".github/workflows/acceptance.yml")
 
     assert "bash scripts/run_full_ci_tests.sh" in workflow
     assert "ACCEPTANCE_ARTIFACT_DIR" in workflow
-    assert "actions/upload-artifact" in workflow
     assert "pydantic" in workflow
     assert "pytest" in workflow
+    assert "actions/upload-artifact" not in workflow
+    assert "Upload acceptance artifacts" not in workflow
