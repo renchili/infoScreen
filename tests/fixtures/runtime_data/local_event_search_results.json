@@ -1,0 +1,29 @@
+{
+  "ok": true,
+  "version": 1,
+  "extractor": "fixture-extractor",
+  "updated_at": "2026-07-05T00:00:00+00:00",
+  "location": "Punggol Singapore",
+  "source_count": 1,
+  "count": 1,
+  "sources": [
+    {"title": "People's Association", "url": "https://www.onepa.gov.sg/"}
+  ],
+  "results": [
+    {
+      "title": "Fixture Community Fitness Session",
+      "when": "2026-07-12 09:00",
+      "where": "Punggol Community Club",
+      "host": "People's Association",
+      "source_name": "People's Association",
+      "url": "https://www.onepa.gov.sg/events/fixture-community-fitness-session",
+      "summary": "Closed-loop fixture event used for CI and agent-readable acceptance tests.",
+      "start_date": "2026-07-12",
+      "kind": "event",
+      "source_type": "rendered_dom_card"
+    }
+  ],
+  "debug_by_source": [
+    {"source": "People's Association", "listing_fetched": 1, "cards_found": 1, "accepted": 1}
+  ]
+}
