@@ -10,15 +10,17 @@ pytestmark = pytest.mark.style
 
 
 def css_rule(css: str, selector: str) -> str:
-    pattern = re.compile(re.escape(selector) + r"\s*\{(?P<body>.*?)\}", re.DOTALL)
-    match = pattern.search(css)
-    assert match, f"missing CSS rule for {selector}"
-    return match.group("body")
+    pattern = re.compile(r"(?P<selectors>[^{}]+)\{(?P<body>.*?)\}", re.DOTALL)
+    for match in pattern.finditer(css):
+        selectors = [part.strip() for part in match.group("selectors").split(",")]
+        if selector in selectors:
+            return match.group("body")
+    raise AssertionError(f"missing CSS rule for {selector}")
 
 
 def test_local_event_card_preserves_one_card_column_layout() -> None:
     css = read_text("surface/web/assets/css/local_events.css")
-    body = css_rule(css, ".local-event-card,")
+    body = css_rule(css, ".local-event-card")
 
     assert "display: flex" in body
     assert "flex-direction: column" in body
