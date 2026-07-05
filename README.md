@@ -29,7 +29,7 @@ pyproject.toml     pytest configuration
 .github/workflows/ CI workflow definitions, when GitHub Actions is enabled
 docs/design.md     runtime architecture and data flow
 docs/api-spec.md   HTTP endpoints and Python owners
-docs/questions.md  current project decisions
+docs/questions.md  current project decisions and review-driven choices
 skills/            agent workflow and hard-gate skills
 tests/             local closed-loop unit, contract, and runtime tests
 ```
@@ -174,9 +174,27 @@ python3 surface/build_photos_json.py
 python3 surface/search_local_events.py "Punggol Singapore"
 ```
 
+## Test model
+
+The test suite is a local closed-loop pytest suite. It uses committed fixture JSON and an isolated runtime directory, so tests do not require external network access and do not write into the real `surface/.env/`.
+
+Test groups:
+
+```text
+tests/test_backend_api.py          backend helpers, OpenAPI coverage, and Pydantic model contracts
+tests/test_frontend_content.py     dashboard HTML, mount points, asset paths, and frontend content contracts
+tests/test_style_contract.py       CSS/layout contracts for local events, market controls, and photo wall structure
+tests/test_runtime_data_contract.py fixture JSON shape and renderability contracts
+tests/test_http_closed_loop.py     in-process HTTP server checks using fixture runtime data
+tests/test_scripts_contract.py     shell syntax and workflow configuration checks
+tests/fixtures/runtime_data/       closed-loop weather, market, event stream, local events, photo, and schedule data
+```
+
+These tests are product and contract tests. They are not a replacement for manual/browser validation, and they should not grow one-off checks just to prove a previous generated cleanup was performed. If a bad file is accidentally added, remove the file and align docs/rules instead.
+
 ## Test and acceptance commands
 
-The local closed-loop test runner uses committed fixture data and writes logs and reports under `/tmp/infoscreen-acceptance` by default.
+The local closed-loop runner seeds fixture data and writes logs, JUnit XML, generated OpenAPI, and summary output under `/tmp/infoscreen-acceptance` by default.
 
 ```bash
 cd ~/infoscreen
@@ -191,6 +209,8 @@ bash scripts/run_acceptance.sh
 ```
 
 When GitHub Actions is enabled, `.github/workflows/acceptance.yml` runs the same local closed-loop test script. It does not upload test artifacts; the job log remains the CI evidence surface.
+
+Project decisions made during review belong in `docs/questions.md`. If a conversation changes repository policy, test scope, CI behavior, runtime boundaries, or active source paths, update `docs/questions.md` in the same change set.
 
 ## Verify
 
