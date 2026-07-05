@@ -1,6 +1,8 @@
 # InfoScreen decisions
 
-This file records current project decisions, including decisions made during review conversations that affect repository direction. When the conversation changes project policy, update this file in the same change set as code, tests, README, or agent-rule changes.
+This file records current project decisions that affect repository direction, source layout, runtime boundaries, test scope, CI behavior, and operator workflow.
+
+Decision records should describe the target state of the project. They should not preserve implementation mistakes, cleanup history, incident narratives, or blame. When a review changes project policy, record the resulting decision here in neutral project language.
 
 ## Repository root policy
 
@@ -28,9 +30,9 @@ tests/
 
 Dashboard runtime JSON, local environment files, browser CSS, browser JavaScript, photos, generated output, caches, and compiled files do not belong in the repository root.
 
-Root-level browser assets such as `*.js` and `*.css` are not valid active source files. Active browser assets must live under `surface/web/assets/`.
+Root-level browser assets such as `*.js` and `*.css` are not active source files. Active browser assets must live under `surface/web/assets/`.
 
-Direct `surface/web/*.js` and `surface/web/*.css` files are also not active source paths.
+Direct `surface/web/*.js` and `surface/web/*.css` files are not active source paths.
 
 Local commit protection is implemented by `.githooks/pre-commit`. Enable it once per clone:
 
@@ -128,7 +130,7 @@ The server supports `INFOSCREEN_ENV_DIR` so tests can run against isolated fixtu
 
 ## Test model
 
-Use `pytest` for project tests. Tests should validate product behavior and contracts, not add permanent tests only to prove a one-time cleanup was done.
+Use `pytest` for project tests. Tests should validate product behavior, data contracts, UI contracts, HTTP serving behavior, and script contracts.
 
 Current test groups:
 
@@ -144,7 +146,7 @@ tests/fixtures/runtime_data/       local closed-loop JSON fixtures
 
 The closed-loop tests must not require external network access. Runtime data used by tests comes from committed fixtures and is copied into a temporary or ignored runtime directory.
 
-Do not add a permanent pytest file just to check a mistake introduced by a previous cleanup. If a bad generated file is present, remove the file and align docs/rules instead.
+Repository hygiene is enforced through source layout rules, `.gitignore`, `.githooks/pre-commit`, and documented verification commands. Product tests should stay focused on product behavior and stable contracts.
 
 ## Acceptance and CI decisions
 
