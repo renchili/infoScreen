@@ -47,6 +47,14 @@ def test_full_ci_script_runs_closed_loop_fixture_data() -> None:
     assert "fixture-photo.txt" in script
 
 
+def test_full_ci_script_runs_repository_hygiene_checker() -> None:
+    script = read_text("scripts/run_full_ci_tests.sh")
+
+    assert "scripts/ci/check_repo.py" in script
+    assert "--suite all" in script
+    assert "--scope repository" in script
+
+
 def test_ci_workflow_runs_full_tests_without_uploading_artifacts() -> None:
     workflow = read_text(".github/workflows/acceptance.yml")
 
