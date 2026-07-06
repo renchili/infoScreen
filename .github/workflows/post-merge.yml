@@ -68,8 +68,11 @@ jobs:
 
       - name: Serve and verify dashboard entry page
         shell: bash
+        env:
+          INFOSCREEN_ENV_DIR: /tmp/infoscreen-post-merge-env
         run: |
-          python3 -m http.server 8765 --bind 127.0.0.1 > server.log 2>&1 &
+          mkdir -p "$INFOSCREEN_ENV_DIR"
+          python3 surface/serve_infoscreen.py > server.log 2>&1 &
           server_pid=$!
 
           cleanup() {
@@ -86,4 +89,5 @@ jobs:
 
           test -s index-response.html
           grep -qi '<html' index-response.html
-          grep -qi 'surface_info_tty' index-response.html
+          grep -q 'assets/js/dashboard.js' index-response.html
+          grep -q 'assets/js/local_event_card.js' index-response.html
