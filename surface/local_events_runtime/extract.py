@@ -334,6 +334,8 @@ def event_looks_wrong(source: dict[str, Any], card: dict[str, Any], title: str, 
         return "fake_title"
     if MEDIA_URL_RE.search(url):
         return "media_asset_url"
+    if "#nhb" in url and VENUE_RE.search(title) and not EVENT_WORD_RE.search(title):
+        return "synthetic_venue_title"
     if "#nhb" in url and (len(title.split()) > 10 or SUMMARY_LIKE_TITLE_RE.search(title)):
         return "synthetic_summary_title"
     if NON_EVENT_URL_RE.search(url) or NON_EVENT_TITLE_RE.search(title):
