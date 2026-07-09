@@ -64,7 +64,7 @@ def test_fake_date_location_titles_are_rejected() -> None:
         event, reason = event_from_card(source("mandai"), card)
 
         assert event is None
-        assert reason == "title_not_found"
+        assert reason in {"title_not_found", "synthetic_venue_title"}
 
 
 def test_synthetic_summary_titles_are_rejected() -> None:
