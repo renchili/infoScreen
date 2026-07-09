@@ -6,13 +6,15 @@ import json
 import os
 from pathlib import Path
 
-os.environ.setdefault("LOCAL_EVENTS_MAX_SECONDS", "260")
-os.environ.setdefault("LOCAL_EVENTS_SOURCE_CONCURRENCY", "2")
-os.environ.setdefault("LOCAL_EVENTS_SOURCE_TIMEOUT_SECONDS", "55")
-os.environ.setdefault("LOCAL_EVENTS_MAX_LISTING_PAGES", "1")
-os.environ.setdefault("LOCAL_EVENTS_LOAD_MORE_ROUNDS", "0")
-os.environ.setdefault("LOCAL_EVENTS_NAV_TIMEOUT_MS", "12000")
-os.environ.setdefault("LOCAL_EVENTS_DOM_TIMEOUT_MS", "12000")
+os.environ.setdefault("LOCAL_EVENTS_MAX_SECONDS", "520")
+os.environ.setdefault("LOCAL_EVENTS_SOURCE_CONCURRENCY", "3")
+os.environ.setdefault("LOCAL_EVENTS_SOURCE_TIMEOUT_SECONDS", "95")
+os.environ.setdefault("LOCAL_EVENTS_MAX_LISTING_PAGES", "2")
+os.environ.setdefault("LOCAL_EVENTS_LOAD_MORE_ROUNDS", "2")
+os.environ.setdefault("LOCAL_EVENTS_NAV_TIMEOUT_MS", "25000")
+os.environ.setdefault("LOCAL_EVENTS_DOM_TIMEOUT_MS", "25000")
+os.environ.setdefault("LOCAL_EVENTS_NHB_DETAIL_LIMIT", "18")
+os.environ.setdefault("LOCAL_EVENTS_NHB_DETAIL_TIMEOUT_MS", "16000")
 os.environ.setdefault("LOCAL_EVENTS_PAGE_SCREENSHOTS", "0")
 os.environ.setdefault("LOCAL_EVENTS_CARD_SCREENSHOTS", "0")
 
