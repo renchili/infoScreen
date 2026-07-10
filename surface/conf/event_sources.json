@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "purpose": "Verified official event listing entrypoints. Sources that need detail-page date extraction use the detail-enriched adapter.",
   "policy": {
     "no_recursive_site_crawl": true,
@@ -83,7 +83,7 @@
     {
       "id": "sciencecentre",
       "name": "Science Centre Singapore",
-      "adapter": "nhb",
+      "adapter": "rendered_dom_card",
       "official_home": "https://www.science.edu.sg/",
       "allowed_domains": ["science.edu.sg"],
       "default_venue": "Science Centre Singapore",
