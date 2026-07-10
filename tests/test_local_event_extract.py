@@ -32,7 +32,7 @@ def test_event_box_title_falls_back_to_detail_text_title() -> None:
         "link_text": "Event box",
         "headings": ["Event box"],
         "image_alts": [],
-        "text": f"Learn Digital - Gen AI: Basics, Risks, and Misinformation\nThursday, July 10, {year}\nCentral Public Library",
+        "text": f"Learn Digital - Gen AI: Basics, Risks, and Misinformation\n10 July {year}\nCentral Public Library",
     }
 
     event, reason = event_from_card(source("nlb"), card)
@@ -40,7 +40,7 @@ def test_event_box_title_falls_back_to_detail_text_title() -> None:
     assert reason == "accepted"
     assert event is not None
     assert event["title"] == "Learn Digital - Gen AI: Basics, Risks, and Misinformation"
-    assert event["when"] == f"July 10, {year}"
+    assert event["when"] == f"10 July {year}"
 
 
 def test_media_asset_urls_are_rejected() -> None:
