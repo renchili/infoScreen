@@ -14,9 +14,9 @@ def source(source_id: str = "test") -> dict:
 
 
 def test_month_first_dates_are_recognised() -> None:
-    dates = label_dates("Thursday, July 10, 2026, 2:00 PM")
+    dates = label_dates("Thursday, July 10, 2027, 2:00 PM")
 
-    assert any(item.isoformat() == "2026-07-10" for item in dates)
+    assert any(item.isoformat() == "2027-07-10" for item in dates)
 
 
 def test_event_box_title_falls_back_to_detail_text_title() -> None:
@@ -25,7 +25,7 @@ def test_event_box_title_falls_back_to_detail_text_title() -> None:
         "link_text": "Event box",
         "headings": ["Event box"],
         "image_alts": [],
-        "text": "Learn Digital - Gen AI: Basics, Risks, and Misinformation\nThursday, July 10, 2026\nCentral Public Library",
+        "text": "Learn Digital - Gen AI: Basics, Risks, and Misinformation\nThursday, July 10, 2027\nCentral Public Library",
     }
 
     event, reason = event_from_card(source("nlb"), card)
@@ -33,7 +33,7 @@ def test_event_box_title_falls_back_to_detail_text_title() -> None:
     assert reason == "accepted"
     assert event is not None
     assert event["title"] == "Learn Digital - Gen AI: Basics, Risks, and Misinformation"
-    assert event["when"] == "July 10, 2026"
+    assert event["when"] == "July 10, 2027"
 
 
 def test_media_asset_urls_are_rejected() -> None:
@@ -42,7 +42,7 @@ def test_media_asset_urls_are_rejected() -> None:
         "link_text": "Minions Summer",
         "headings": ["Minions Summer"],
         "image_alts": [],
-        "text": "Minions Summer\n29 May to 11 Aug 2026\nSentosa",
+        "text": "Minions Summer\n29 May to 11 Aug 2027\nSentosa",
     }
 
     event, reason = event_from_card(source("sentosa"), card)
@@ -58,7 +58,7 @@ def test_fake_date_location_titles_are_rejected() -> None:
             "link_text": title,
             "headings": [title],
             "image_alts": [],
-            "text": f"{title}\n1 Apr – 31 Jul 2026\nNight Safari",
+            "text": f"{title}\n1 Apr – 31 Jul 2027\nNight Safari",
         }
 
         event, reason = event_from_card(source("mandai"), card)
@@ -73,7 +73,7 @@ def test_synthetic_summary_titles_are_rejected() -> None:
         "link_text": "Step up alongside family and friends for a meaningful cause at Resorts World Sentosa's inaugural RWS Cares Festival.",
         "headings": ["Step up alongside family and friends for a meaningful cause at Resorts World Sentosa's inaugural RWS Cares Festival."],
         "image_alts": [],
-        "text": "Step up alongside family and friends for a meaningful cause at Resorts World Sentosa's inaugural RWS Cares Festival.\n22 - 23 August 2026\nResorts World Sentosa",
+        "text": "Step up alongside family and friends for a meaningful cause at Resorts World Sentosa's inaugural RWS Cares Festival.\n22 - 23 August 2027\nResorts World Sentosa",
     }
 
     event, reason = event_from_card(source("rws"), card)
