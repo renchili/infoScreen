@@ -107,6 +107,16 @@ def test_local_event_frontend_orders_by_institution_then_result_order() -> None:
     assert "a.sourceOrder - b.sourceOrder || a.resultOrder - b.resultOrder" in js
 
 
+def test_local_event_frontend_rejects_media_asset_records() -> None:
+    js = read_text("surface/web/assets/js/local_event_card.js")
+
+    assert "function mediaAssetUrl" in js
+    assert "invalidMediaLink: mediaAssetUrl(rawLink)" in js
+    assert "x.title && !x.invalidMediaLink" in js
+    assert "/-/media/" in js
+    assert "jpe?g|png|webp|gif|svg|pdf" in js
+
+
 def test_frontend_references_closed_loop_runtime_files() -> None:
     js = read_text("surface/web/assets/js/local_event_card.js")
 
