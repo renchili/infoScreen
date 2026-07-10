@@ -95,7 +95,16 @@ def test_local_event_frontend_uses_official_link_and_escape_contract() -> None:
     assert "OPEN OFFICIAL LINK" in js
     assert "function esc" in js
     assert "items_by_lang" in js
-    assert "method: \"HEAD\"" in js
+    assert 'method: "HEAD"' in js
+
+
+def test_local_event_frontend_orders_by_institution_then_result_order() -> None:
+    js = read_text("surface/web/assets/js/local_event_card.js")
+
+    assert "function sourceOrderMap" in js
+    assert "row.source_order" in js
+    assert "row.result_order" in js
+    assert "a.sourceOrder - b.sourceOrder || a.resultOrder - b.resultOrder" in js
 
 
 def test_frontend_references_closed_loop_runtime_files() -> None:
