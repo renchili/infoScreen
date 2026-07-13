@@ -76,44 +76,6 @@ surface/local_events_runtime/extract.py
 surface/local_events_runtime/browser.py
 ```
 
-## Calendar schedule sync design
-
-Calendar data is different from the other refresh jobs because the source is macOS Calendar/EventKit on the Mac.
-
-The Surface does not pull Calendar data by itself. The Mac exports and pushes it.
-
-```text
-Mac Calendar/EventKit
-  -> mac/export.py
-  -> mac/schedule.json
-  -> mac/sync_schedule.sh
-  -> scp
-  -> Surface ~/infoscreen/surface/.env/schedule.json
-  -> surface/serve_infoscreen.py
-  -> /schedule.json
-  -> surface/web/assets/js/calendar_board.js and sync freshness ticker
-```
-
-`mac/scripts/setup-schedule-sync.sh` writes local-only configuration to `mac/local.env` and installs `~/Library/LaunchAgents/com.renchili.infoscreen.schedule-sync.plist`.
-
-`mac/sync_schedule.sh` must read `mac/local.env`. It must not hard-code the Surface IP or write to `~/infoscreen/schedule.json`.
-
-Default remote target:
-
-```text
-~/infoscreen/surface/.env/schedule.json
-```
-
-Wrong remote target:
-
-```text
-~/infoscreen/schedule.json
-```
-
-That wrong target pollutes the repository root and is not read by the runtime env model.
-
-Operations and troubleshooting commands live in `docs/operations.md`.
-
 ## Local event implementation
 
 The active local event code path is:
@@ -239,12 +201,45 @@ It must not expose translated source labels such as `TR-*` as row labels.
 ## Runtime data flow
 
 ```text
-/schedule.json             -> assets/js/calendar_board.js and sync freshness ticker
-/weather.json              -> assets/js/dashboard.js and sync freshness ticker
-/market.json               -> assets/js/dashboard.js and sync freshness ticker
-/event_stream.json         -> assets/js/dashboard.js and sync freshness ticker
-/photos.json               -> assets/js/dashboard.js
-/api/local-events/search   -> assets/js/local_event_card.js
-/openapi.json              -> openapi_spec.py + api_models.py
-/docs                      -> Swagger UI for /openapi.json
+Mac Calendar/EventKit
+  -> mac/export.py
+  -> mac/sync_schedule.sh
+  -> surface/.env/schedule.json
+  -> /schedule.json
+  -> assets/js/calendar_board.js and sync freshness ticker
+
+surface/fetch_live_data.py
+  -> surface/.env/weather.json
+  -> /weather.json
+  -> assets/js/dashboard.js and sync freshness ticker
+
+surface/fetch_live_data.py
+  -> surface/.env/market.json
+  -> /market.json
+  -> assets/js/dashboard.js and sync freshness ticker
+
+surface/fetch_event_stream.py
+  -> surface/.env/event_stream.json
+  -> /event_stream.json
+  -> assets/js/dashboard.js and sync freshness ticker
+
+surface/build_photos_json.py
+  -> surface/.env/photos.json and surface/.env/public_photos/
+  -> /photos.json and /public_photos/*
+  -> assets/js/dashboard.js
+
+surface/search_local_events.py
+  -> surface/.env/local_event_search_results.json
+  -> /api/local-events/search
+  -> assets/js/local_event_card.js
+
+surface/.env/market_config.json
+  <-> /api/market-config
+  -> assets/js/market_custom.js
+
+surface/openapi_spec.py + surface/api_models.py
+  -> /openapi.json
+  -> /docs
 ```
+
+The Surface address used by `mac/sync_schedule.sh` is local deployment configuration in `mac/local.env`, not committed source. All runtime JSON targets remain under `surface/.env/`.
