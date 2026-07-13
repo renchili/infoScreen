@@ -75,11 +75,11 @@ def write_payload(payload: dict) -> None:
 
 def self_test() -> int:
     payload = collect_events(CONFIG, DEFAULT_LOCATION, DEBUG_DIR)
-    assert payload["extractor"] == "rendered-dom-card-v46-source-order"
-    assert payload["version"] == 46
+    assert payload["extractor"] == "official-source-v47-source-order"
+    assert payload["version"] == 47
     assert isinstance(payload.get("results"), list)
     assert isinstance(payload.get("debug_by_source"), list)
-    print("local-event rendered DOM self-test passed")
+    print("local-event official-source self-test passed")
     return 0
 
 
