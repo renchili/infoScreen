@@ -2,13 +2,13 @@
 
 ## Runtime ownership
 
-`surface/serve_infoscreen.py` owns HTTP serving and local API endpoints.
+`surface/serve_infoscreen.py` owns HTTP serving, static dashboard delivery, runtime JSON delivery, and local API endpoints.
 
-Runtime JSON files live under `surface/.env/`.
+Runtime JSON files live under `surface/.env/`. They are local machine state, not source files.
 
 ## Repository root policy
 
-The repository root is reserved for repository control and documentation. Project code and local runtime state must not live in the repository root.
+The repository root is reserved for repository control, documentation, metadata, CI/test configuration, and operator/deployment entrypoints.
 
 Allowed root-level project paths:
 
@@ -16,21 +16,35 @@ Allowed root-level project paths:
 README.md
 AGENTS.md
 AGENT.md
+metadata.json
+pyproject.toml
 .gitignore
 .githooks/
+.github/
 docs/
 skills/
 surface/
+deploy/
+mac/
+scripts/
+tests/
 ```
 
-Runtime JSON belongs under `surface/.env/`. Browser CSS and JavaScript belongs under `surface/web/assets/`. Local photo inputs belong under `surface/.env/photos/`.
+Runtime JSON belongs under `surface/.env/`. Browser CSS and JavaScript belongs under `surface/web/assets/`. Local photo inputs belong under `surface/.env/photos/`. Test fixtures belong under `tests/fixtures/`.
 
-The local pre-commit hook at `.githooks/pre-commit` enforces this root policy for staged files. Enable it once per clone with:
+These paths are not runtime locations and should stay absent from the repository root:
 
-```bash
-git config core.hooksPath .githooks
-chmod +x .githooks/pre-commit
+```text
+schedule.json
+weather.json
+market.json
+event_stream.json
+photos.json
+*.css
+*.js
 ```
+
+The local pre-commit hook at `.githooks/pre-commit` and the repository-wide checker at `scripts/ci/check_repo.py --suite all --scope repository` enforce this policy for committed files.
 
 Legacy static files directly under `surface/web/*.js` or `surface/web/*.css` are not active source paths and should be removed instead of replaced with placeholders.
 
@@ -61,6 +75,44 @@ surface/local_events_runtime/__init__.py
 surface/local_events_runtime/extract.py
 surface/local_events_runtime/browser.py
 ```
+
+## Calendar schedule sync design
+
+Calendar data is different from the other refresh jobs because the source is macOS Calendar/EventKit on the Mac.
+
+The Surface does not pull Calendar data by itself. The Mac exports and pushes it.
+
+```text
+Mac Calendar/EventKit
+  -> mac/export.py
+  -> mac/schedule.json
+  -> mac/sync_schedule.sh
+  -> scp
+  -> Surface ~/infoscreen/surface/.env/schedule.json
+  -> surface/serve_infoscreen.py
+  -> /schedule.json
+  -> surface/web/assets/js/calendar_board.js and sync freshness ticker
+```
+
+`mac/scripts/setup-schedule-sync.sh` writes local-only configuration to `mac/local.env` and installs `~/Library/LaunchAgents/com.renchili.infoscreen.schedule-sync.plist`.
+
+`mac/sync_schedule.sh` must read `mac/local.env`. It must not hard-code the Surface IP or write to `~/infoscreen/schedule.json`.
+
+Default remote target:
+
+```text
+~/infoscreen/surface/.env/schedule.json
+```
+
+Wrong remote target:
+
+```text
+~/infoscreen/schedule.json
+```
+
+That wrong target pollutes the repository root and is not read by the runtime env model.
+
+Operations and troubleshooting commands live in `docs/operations.md`.
 
 ## Local event implementation
 
