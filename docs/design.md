@@ -147,18 +147,27 @@ Local event content must remain visible when `/api/local-events/search` has resu
 
 ## Sync ticker contract
 
-The left sync ticker is a freshness indicator, not only a count indicator.
+The left sync ticker is a freshness indicator, not only a count indicator. `surface/web/assets/js/local_event_card.js` owns the freshness requests and ticker DOM only; it does not own the monitored product panels.
 
-It must check runtime file freshness through `HEAD` requests and the `Last-Modified` header.
+It sends `HEAD` requests to the runtime JSON paths, reads `Last-Modified`, and calculates `AGE` from the browser clock. `AGE` is the runtime file age, not an event timestamp and not the JSON payload's `updated_at` field.
 
-The ticker must show:
+| Stat | Scheduler / job | Producer | Runtime JSON | Product UI | Stale threshold |
+| --- | --- | --- | --- | --- | --- |
+| `SCHEDULE` | Mac LaunchAgent `com.renchili.infoscreen.schedule-sync`, default 120 seconds | `mac/export.py` then `mac/sync_schedule.sh` | `surface/.env/schedule.json` | `calendar_board.js` calendar panel | 600 seconds |
+| `WEATHER` | Surface `infoscreen-live-data.timer`, every 5 minutes | `surface/fetch_live_data.py` | `surface/.env/weather.json` | `dashboard.js` weather panel | 900 seconds |
+| `MARKET` | Surface `infoscreen-live-data.timer`, every 5 minutes | `surface/fetch_live_data.py` | `surface/.env/market.json` | `dashboard.js` market card and global tape | 600 seconds |
+| `NEWS` | Surface `infoscreen-event-stream.timer`, every 5 minutes | `surface/fetch_event_stream.py` | `surface/.env/event_stream.json` | news ticker | 600 seconds |
+
+Ticker states:
 
 ```text
-SCHEDULE / WEATHER / MARKET / NEWS
-OK / STALE / MISS / ERR
-LATEST
-AGE
+OK     file exists and AGE is within its threshold
+STALE  file exists but AGE exceeds its threshold
+MISS   HTTP path is missing or has no Last-Modified header
+ERR    HEAD request failed; check HTTP/network before assuming producer failure
 ```
+
+Troubleshooting follows producer ownership. `SCHEDULE` is repaired on the Mac by checking the LaunchAgent, `mac/local.env`, and `~/Library/Logs/infoscreen-sync/`. `WEATHER` and `MARKET` are repaired on the Surface through `infoscreen-live-data.timer` and `infoscreen-live-data.service`. `NEWS` is repaired through `infoscreen-event-stream.timer` and `infoscreen-event-stream.service`. If a newly written file still shows a large `AGE`, compare the browser, Surface, and for schedule the Mac system clocks.
 
 ## Photo wall contract
 
@@ -174,9 +183,13 @@ The browser does not scan the filesystem directly. After adding images, the buil
 
 ## Market UI contract
 
-The visible kiosk market card must show market rows by default. The config control must not cover quote rows or sit on top of the first quote line.
+`surface/web/assets/js/dashboard.js` is the only renderer allowed to write `marketList` and `globalMarketTapeTrack`. It reads `market.json`, assigns `up`, `down`, or `flat` consistently, and renders both the market card and the global market tape.
 
-`surface/web/assets/js/market_custom.js` owns a compact config button. Clicking that button may open a temporary editor overlay. Symbol management stays behind the existing HTTP APIs:
+`surface/web/assets/js/market_custom.js` owns the compact config button and editor overlay. After saving or manually refreshing, it calls `window.loadMarket()` instead of rendering quote rows itself.
+
+`surface/web/assets/js/local_event_card.js` must not fetch `market.json`, define a secondary market renderer, or write either Market DOM mount point. Multiple asynchronous renderers cause the correct dashboard output to flash first and then be overwritten by incompatible classes and markup.
+
+Symbol management stays behind the existing HTTP APIs:
 
 ```text
 GET /api/market-config
@@ -202,26 +215,26 @@ It must not expose translated source labels such as `TR-*` as row labels.
 
 ```text
 Mac Calendar/EventKit
+  -> Mac LaunchAgent com.renchili.infoscreen.schedule-sync
   -> mac/export.py
   -> mac/sync_schedule.sh
   -> surface/.env/schedule.json
   -> /schedule.json
   -> assets/js/calendar_board.js and sync freshness ticker
 
-surface/fetch_live_data.py
-  -> surface/.env/weather.json
-  -> /weather.json
+Surface infoscreen-live-data.timer
+  -> infoscreen-live-data.service
+  -> surface/fetch_live_data.py
+  -> surface/.env/weather.json and surface/.env/market.json
+  -> /weather.json and /market.json
   -> assets/js/dashboard.js and sync freshness ticker
 
-surface/fetch_live_data.py
-  -> surface/.env/market.json
-  -> /market.json
-  -> assets/js/dashboard.js and sync freshness ticker
-
-surface/fetch_event_stream.py
+Surface infoscreen-event-stream.timer
+  -> infoscreen-event-stream.service
+  -> surface/fetch_event_stream.py
   -> surface/.env/event_stream.json
   -> /event_stream.json
-  -> assets/js/dashboard.js and sync freshness ticker
+  -> news ticker and sync freshness ticker
 
 surface/build_photos_json.py
   -> surface/.env/photos.json and surface/.env/public_photos/
