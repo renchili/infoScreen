@@ -12,6 +12,10 @@ BAD_OPEN_DATE_LINE_RE = re.compile(
     re.I,
 )
 CLOSED_RANGE_RE = re.compile(r"(?:\bto\b|\buntil\b|\btill\b|[-–—])", re.I)
+WEEKDAY_PREFIX_RE = re.compile(
+    r"\b(?:mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\s*,?\s*",
+    re.I,
+)
 COMPLETE_DETAIL_DATE_RE = re.compile(
     r"\b20\d{2}-\d{1,2}-\d{1,2}\b|"
     + rf"\b\d{{1,2}}(?:st|nd|rd|th)?\s+(?:{_extract.MONTH_WORD})[a-z]*\b|"
@@ -22,6 +26,22 @@ NARRATIVE_VENUE_RE = re.compile(
     r"\b(?:presents?|explore|discover|celebrates?|considers?|invites?|journey|exhibition|performance|live at|co-curated|with ryan|newly revamped)\b",
     re.I,
 )
+
+
+_original_label_dates = _extract.label_dates
+_original_score_when = _extract.score_when
+_original_pick_venue = _extract.pick_venue
+_original_event_looks_wrong = _extract.event_looks_wrong
+_original_event_from_card = _extract.event_from_card
+_original_collect_events = _extract.collect_events
+
+
+def _strip_weekdays(value: object) -> str:
+    return _extract.clean(WEEKDAY_PREFIX_RE.sub("", str(value or "")))
+
+
+def _label_dates(label: str):
+    return _original_label_dates(_strip_weekdays(label))
 
 
 def _open_ended_date_label(label: str) -> bool:
@@ -49,6 +69,7 @@ def _date_fragments(text: str) -> list[str]:
     if BAD_OPEN_DATE_LINE_RE.search(line):
         return []
 
+    search_line = _strip_weekdays(line)
     found: list[tuple[int, int, str]] = []
     patterns = [
         _extract.FULL_RANGE_RE,
@@ -60,7 +81,7 @@ def _date_fragments(text: str) -> list[str]:
         _extract.MONTH_FIRST_DATE_RE,
     ]
     for priority, pattern in enumerate(patterns):
-        for match in pattern.finditer(line):
+        for match in pattern.finditer(search_line):
             fragment = _extract.clean(match.group(0))
             candidate = fragment
             if (
@@ -150,13 +171,6 @@ def _event_from_card(source: dict, card: dict):
     return event, reason
 
 
-_original_score_when = _extract.score_when
-_original_pick_venue = _extract.pick_venue
-_original_event_looks_wrong = _extract.event_looks_wrong
-_original_event_from_card = _extract.event_from_card
-_original_collect_events = _extract.collect_events
-
-
 def _score_when(fragment: str, source_line: str) -> int:
     score = _original_score_when(fragment, source_line)
     if _open_ended_date_label(fragment) or _open_ended_date_label(source_line):
@@ -209,6 +223,7 @@ def _preserve_source_order(payload: dict) -> dict:
 
 
 _browser.DETAIL_DATE_RE = COMPLETE_DETAIL_DATE_RE
+_extract.label_dates = _label_dates
 _extract.current_date_label = _current_date_label
 _extract.date_fragments = _date_fragments
 _extract.score_when = _score_when
@@ -220,8 +235,8 @@ _extract.event_from_card = _event_from_card
 
 def collect_events(*args, **kwargs):
     payload = dict(_original_collect_events(*args, **kwargs))
-    payload["version"] = 44
-    payload["extractor"] = "rendered-dom-card-v44"
+    payload["version"] = 45
+    payload["extractor"] = "rendered-dom-card-v45"
     return _preserve_source_order(payload)
 
 
