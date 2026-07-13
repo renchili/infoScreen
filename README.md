@@ -164,6 +164,29 @@ surface/.env/logs/http.log
 surface/.env/logs/http.err.log
 ```
 
+### Schedule sync — run on the Mac
+
+`schedule.json` is not generated on the Surface. macOS Calendar/EventKit is the data source, so the scheduled export and sync run on the Mac and push the file to the Surface runtime directory.
+
+Run this on the Mac to configure or update the Surface SSH address and install or refresh the LaunchAgent:
+
+```bash
+cd ~/infoscreen
+bash mac/scripts/setup-schedule-sync.sh \
+  --host <surface-ip-or-hostname> \
+  --user rody \
+  --remote-path '~/infoscreen/surface/.env/schedule.json' \
+  --interval 120
+```
+
+This writes the local-only `mac/local.env` and installs `~/Library/LaunchAgents/com.renchili.infoscreen.schedule-sync.plist`. Trigger one sync immediately with:
+
+```bash
+launchctl kickstart -k gui/$(id -u)/com.renchili.infoscreen.schedule-sync
+```
+
+The remote target must remain `~/infoscreen/surface/.env/schedule.json`; `~/infoscreen/schedule.json` is not a valid runtime path.
+
 ## Refresh commands
 
 ```bash
