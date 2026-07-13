@@ -72,6 +72,21 @@ def test_mac_schedule_sync_uses_local_config_and_runtime_target() -> None:
     assert "/home/rody/infoscreen/schedule.json" not in setup_script
 
 
+def test_schedule_sync_operator_documentation_is_discoverable() -> None:
+    readme = read_text("README.md")
+    design = read_text("docs/design.md")
+
+    assert "Schedule sync — run on the Mac" in readme
+    assert "macOS Calendar/EventKit is the data source" in readme
+    assert "bash mac/scripts/setup-schedule-sync.sh" in readme
+    assert "--host <surface-ip-or-hostname>" in readme
+    assert "mac/local.env" in readme
+    assert "~/infoscreen/surface/.env/schedule.json" in readme
+    assert "Mac Calendar/EventKit" in design
+    assert "mac/sync_schedule.sh" in design
+    assert "surface/.env/schedule.json" in design
+
+
 def test_ci_workflow_runs_full_tests_without_uploading_artifacts() -> None:
     workflow = read_text(".github/workflows/acceptance.yml")
 
