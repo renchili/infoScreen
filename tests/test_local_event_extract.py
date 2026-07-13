@@ -7,6 +7,7 @@ from .conftest import SURFACE
 
 sys.path.insert(0, str(SURFACE))
 
+import local_events_runtime as runtime  # noqa: E402
 from local_events_runtime import card_has_date, event_from_card, label_dates  # noqa: E402
 
 
@@ -40,6 +41,9 @@ def test_weekday_prefixed_range_is_preserved() -> None:
     assert reason == "accepted"
     assert event is not None
     assert event["when"] == f"3 Jul - 10 Aug {year}"
+    assert event["start_date"] == f"{year}-07-03"
+    assert event["end_date"] == f"{year}-08-10"
+    assert event["where"] == "Flower Dome"
     assert [item.isoformat() for item in label_dates(event["when"])] == [
         f"{year}-07-03",
         f"{year}-08-10",
@@ -61,6 +65,35 @@ def test_weekday_prefixed_range_split_across_dom_lines_is_preserved() -> None:
     assert reason == "accepted"
     assert event is not None
     assert event["when"] == f"3 Jul - 10 Aug {year}"
+    assert event["start_date"] == f"{year}-07-03"
+    assert event["end_date"] == f"{year}-08-10"
+    assert event["where"] == "Flower Dome"
+
+
+def test_gardens_ongoing_range_remains_in_output(monkeypatch) -> None:
+    monkeypatch.setattr(runtime._extract, "TODAY", date(2026, 7, 14))
+    card = {
+        "url": "https://www.gardensbythebay.com.sg#nhb-cb0737f3",
+        "link_text": "Orchid Extravaganza",
+        "headings": ["Orchid Extravaganza"],
+        "image_alts": [],
+        "text": (
+            "Orchid Extravaganza\n"
+            "Fri, 3 Jul - Mon, 10 Aug 2026\n"
+            "9.00am - 9.00pm\n"
+            "Flower Dome"
+        ),
+    }
+
+    event, reason = event_from_card(source("gardensbythebay", "Gardens by the Bay"), card)
+
+    assert reason == "accepted"
+    assert event is not None
+    assert event["title"] == "Orchid Extravaganza"
+    assert event["when"] == "3 Jul - 10 Aug 2026"
+    assert event["start_date"] == "2026-07-03"
+    assert event["end_date"] == "2026-08-10"
+    assert event["where"] == "Flower Dome"
 
 
 def test_detail_enrichment_requires_a_complete_date() -> None:
