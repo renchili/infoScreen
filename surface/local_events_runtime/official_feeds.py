@@ -345,7 +345,11 @@ def structured_event_from_object(obj: dict[str, Any], listing_url: str, default_
         return None
 
     raw_url = first_field(fields, URL_KEYS)
-    official_url = urljoin(listing_url, raw_url) if raw_url else listing_url
+    if raw_url:
+        official_url = urljoin(listing_url, raw_url)
+    else:
+        digest = hashlib.sha1(f"{title}|{when}".encode("utf-8")).hexdigest()[:12]
+        official_url = f"{listing_url.split('#', 1)[0]}#structured-{digest}"
     if not official_url.startswith(("http://", "https://")):
         official_url = listing_url
 
@@ -455,39 +459,51 @@ def render_structured_first_cards(source: dict[str, Any], url: str, debug_dir: P
     official_home = str(source.get("official_home") or "")
     load_more_rounds = int(source.get("load_more_rounds", 1 if adapter == "nhb" else _browser.LOAD_MORE_ROUNDS))
 
+    pending_responses: list[Any] = []
+    drained_response_count = 0
     network_payloads: list[object] = []
     network_urls: list[str] = []
     network_errors = 0
     embedded_payloads: list[object] = []
+    embedded_signatures: set[str] = set()
     embedded_origins: list[str] = []
 
-    def capture_response(response) -> None:
-        nonlocal network_errors
-        if len(network_payloads) >= 200:
+    def record_response(response) -> None:
+        if len(pending_responses) >= 300:
             return
         try:
             resource_type = str(response.request.resource_type or "")
             content_type = str(response.headers.get("content-type") or "").lower()
-            if resource_type not in {"xhr", "fetch"} and "json" not in content_type:
-                return
-            data = response.json()
-            if not isinstance(data, (dict, list)):
-                return
-            network_payloads.append(data)
-            network_urls.append(response.url)
+            if resource_type in {"xhr", "fetch"} or "json" in content_type:
+                pending_responses.append(response)
         except Exception:
-            network_errors += 1
+            return
+
+    def drain_network_payloads() -> None:
+        nonlocal drained_response_count, network_errors
+        while drained_response_count < len(pending_responses) and len(network_payloads) < 200:
+            response = pending_responses[drained_response_count]
+            drained_response_count += 1
+            try:
+                data = response.json()
+                if not isinstance(data, (dict, list)):
+                    continue
+                network_payloads.append(data)
+                network_urls.append(response.url)
+            except Exception:
+                network_errors += 1
 
     with sync_playwright() as playwright:
         browser = _browser.launch_chromium(playwright)
         try:
             page = browser.new_page(viewport={"width": 1440, "height": 2200}, device_scale_factor=1)
-            page.on("response", capture_response)
+            page.on("response", record_response)
             try:
                 page.goto(url, wait_until="networkidle", timeout=_browser.NAV_TIMEOUT_MS)
             except Exception:
                 page.goto(url, wait_until="domcontentloaded", timeout=_browser.DOM_TIMEOUT_MS)
             page.wait_for_timeout(max(_browser.LOAD_WAIT_MS, 1200))
+            drain_network_payloads()
 
             all_cards: list[dict[str, Any]] = []
             seen_cards: set[str] = set()
@@ -498,15 +514,17 @@ def render_structured_first_cards(source: dict[str, Any], url: str, debug_dir: P
             for page_index in range(_browser.MAX_LISTING_PAGES):
                 prepare = page.evaluate(_browser.PREPARE_PAGE_JS, {"maxRounds": load_more_rounds})
                 page.wait_for_timeout(600)
+                drain_network_payloads()
 
                 for item in page.evaluate(EMBEDDED_JSON_JS) or []:
                     if not isinstance(item, dict) or not isinstance(item.get("value"), (dict, list)):
                         continue
                     origin = clean(item.get("origin"))
                     signature = origin + "\n" + json.dumps(item["value"], ensure_ascii=False, sort_keys=True)[:600]
-                    if signature in embedded_origins:
+                    if signature in embedded_signatures:
                         continue
-                    embedded_origins.append(signature)
+                    embedded_signatures.add(signature)
+                    embedded_origins.append(origin)
                     embedded_payloads.append(item["value"])
 
                 events = extract_structured_events(
@@ -572,24 +590,28 @@ def render_structured_first_cards(source: dict[str, Any], url: str, debug_dir: P
                 except Exception:
                     page.wait_for_timeout(_browser.NEXT_WAIT_MS)
                 page.wait_for_timeout(600)
+                drain_network_payloads()
 
+            structured_debug = {
+                "network_candidate_response_count": len(pending_responses),
+                "network_payload_count": len(network_payloads),
+                "network_parse_errors": network_errors,
+                "network_response_urls": network_urls,
+                "embedded_payload_count": len(embedded_payloads),
+                "embedded_origins": embedded_origins,
+                "event_count": sum(1 for card in all_cards if card.get("structured_event")),
+                "fallback_dom_used": any(not card.get("structured_event") for card in all_cards),
+            }
             return {
                 "ok": True,
                 "url": url,
                 "rendered_pages": rendered_pages,
                 "pagination": pagination,
+                "prepare": {"structured": structured_debug},
                 "screenshot": screenshots[0] if screenshots else "",
                 "screenshots": screenshots,
                 "cards": all_cards,
-                "structured": {
-                    "network_payload_count": len(network_payloads),
-                    "network_parse_errors": network_errors,
-                    "network_response_urls": network_urls,
-                    "embedded_payload_count": len(embedded_payloads),
-                    "embedded_origins": [item.split("\n", 1)[0] for item in embedded_origins],
-                    "event_count": sum(1 for card in all_cards if card.get("structured_event")),
-                    "fallback_dom_used": any(not card.get("structured_event") for card in all_cards),
-                },
+                "structured": structured_debug,
             }
         finally:
             browser.close()
