@@ -26,6 +26,18 @@
 
 原因：这些内容属于本机状态或个人数据，不是项目源码。源码仓库应该只保存程序、文档、测试 fixture 和部署入口。
 
+## Mac 日历为什么是推送到 Surface？
+
+决定：日历数据源是 Mac 上的 macOS Calendar/EventKit，所以由 Mac 的 LaunchAgent 定时运行 `mac/sync_schedule.sh`，导出 `mac/schedule.json` 后用 `scp` 推到 Surface 的 `~/infoscreen/surface/.env/schedule.json`。
+
+原因：Surface/Ubuntu 端没有 macOS EventKit，不能直接读取 Mac Calendar。把 `schedule.json` 放在 `surface/.env/` 可以保持 runtime 数据边界清楚，也避免 `~/infoscreen/schedule.json` 污染仓库根目录。
+
+## Surface IP 改了应该改哪里？
+
+决定：不要改 committed 脚本里的 IP。运行 `bash mac/scripts/setup-schedule-sync.sh --host <surface-ip> --user rody --remote-path '~/infoscreen/surface/.env/schedule.json'`，让它写入本地未提交的 `mac/local.env` 并刷新 LaunchAgent。
+
+原因：IP 是本机部署状态，不是源码。把 IP 写死在 repo 会导致网络变化后定时任务继续推错机器，也会让文档和脚本失去可信度。
+
 ## 为什么测试使用 pytest 和 fixture 做本地闭环？
 
 决定：测试使用 pytest，覆盖 backend/API、frontend content、CSS layout contract、runtime fixture、HTTP closed-loop、script/workflow contract。
@@ -34,9 +46,9 @@
 
 ## 仓库卫生为什么不做成一堆产品单元测试？
 
-决定：仓库卫生主要由目录规则、`.gitignore`、`.githooks/pre-commit` 和文档里的验证命令约束；产品测试聚焦产品行为和稳定 contract。
+决定：仓库卫生主要由目录规则、`.gitignore`、`.githooks/pre-commit`、`scripts/ci/check_repo.py` 和文档里的验证命令约束；产品测试聚焦产品行为和稳定 contract。
 
-原因：产品测试应该证明 dashboard、API、数据和脚本行为正确，不应该变成宽泛的文件树扫描器。源布局规则需要存在，但它属于仓库治理，不是业务功能。
+原因：产品测试应该证明 dashboard、API、数据和脚本行为正确，不应该变成宽泛的文件树扫描器。源布局规则需要存在，并且 acceptance runner 要执行 repo-wide hygiene check。
 
 ## GitHub Actions 关闭时怎么验收？
 
