@@ -36,7 +36,6 @@ _original_pick_venue = _extract.pick_venue
 _original_event_looks_wrong = _extract.event_looks_wrong
 _original_event_from_card = _extract.event_from_card
 _original_collect_events = _extract.collect_events
-_original_render_listing_cards = _extract.render_listing_cards
 
 
 def _strip_weekdays(value: object) -> str:
@@ -232,7 +231,7 @@ def _structured_event_from_card(source: dict, card: dict):
         "start_date": start_date,
         "end_date": end.isoformat() if end else "",
         "kind": "event",
-        "source_type": "official_network_json",
+        "source_type": "official_structured_data",
         "debug_screenshot": card.get("screenshot") or "",
         "debug_detail_url_count": 0,
     }, "accepted"
@@ -269,10 +268,7 @@ def _score_when(fragment: str, source_line: str) -> int:
 
 
 def _render_listing_cards(source: dict, url: str, debug_dir, max_cards: int = 60):
-    adapter = str(source.get("adapter") or "rendered_dom_card")
-    if adapter == "official_network_json":
-        return _official_feeds.render_official_network_cards(source, url, debug_dir, max_cards=max_cards)
-    return _original_render_listing_cards(source, url, debug_dir, max_cards=max_cards)
+    return _official_feeds.render_structured_first_cards(source, url, debug_dir, max_cards=max_cards)
 
 
 def _source_order(payload: dict) -> dict[str, int]:
@@ -334,8 +330,8 @@ _extract.render_listing_cards = _render_listing_cards
 
 def collect_events(*args, **kwargs):
     payload = dict(_original_collect_events(*args, **kwargs))
-    payload["version"] = 47
-    payload["extractor"] = "official-source-v47"
+    payload["version"] = 48
+    payload["extractor"] = "structured-first-v48"
     return _preserve_source_order(payload)
 
 
