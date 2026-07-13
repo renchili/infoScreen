@@ -22,7 +22,6 @@ python3 surface/serve_infoscreen.py
 
 ```text
 README.md          run, verify, and source overview
-docs/operations.md operator runbook, schedule sync, runtime file locations, troubleshooting
 AGENTS.md          agent bootstrap and required read order
 AGENT.md           project-specific repository rules
 metadata.json      compact product metadata and product prompt
@@ -34,8 +33,6 @@ docs/questions.md  current project decisions
 skills/            agent workflow and hard-gate skills
 tests/             local closed-loop unit, contract, and runtime tests
 ```
-
-Start with `docs/operations.md` for live kiosk problems such as stale `schedule.json`, changed Surface IP, missing runtime JSON, or repository-root pollution.
 
 ## Repository root policy
 
@@ -167,39 +164,6 @@ surface/.env/logs/http.log
 surface/.env/logs/http.err.log
 ```
 
-## Calendar schedule sync
-
-Calendar data is exported on the Mac because macOS Calendar/EventKit is the data source. The Surface does not pull calendar data by itself.
-
-```text
-Mac LaunchAgent
-  -> /bin/bash mac/sync_schedule.sh
-  -> mac/export.py
-  -> mac/schedule.json
-  -> scp to Surface
-  -> ~/infoscreen/surface/.env/schedule.json
-  -> InfoScreen /schedule.json
-```
-
-The committed script is `mac/sync_schedule.sh`. It reads local-only config from `mac/local.env`. Create or update that config and the LaunchAgent with:
-
-```bash
-cd ~/infoscreen
-bash mac/scripts/setup-schedule-sync.sh \
-  --host <surface-ip> \
-  --user rody \
-  --remote-path '~/infoscreen/surface/.env/schedule.json' \
-  --interval 120
-```
-
-Trigger one sync now:
-
-```bash
-launchctl kickstart -k gui/$(id -u)/com.renchili.infoscreen.schedule-sync
-```
-
-The wrong root path `~/infoscreen/schedule.json` is not a runtime location and should not exist. Detailed troubleshooting is in `docs/operations.md`.
-
 ## Refresh commands
 
 ```bash
@@ -261,7 +225,6 @@ curl -s http://127.0.0.1:8765/assets/css/local_events.css | grep -n "local-event
 curl -s http://127.0.0.1:8765/assets/js/market_custom.js | grep -n "marketConfigButton"
 curl -s http://127.0.0.1:8765/photos.json | grep -n "items"
 find . -maxdepth 1 -type f \( ! -name "README.md" ! -name "AGENTS.md" ! -name "AGENT.md" ! -name "metadata.json" ! -name "pyproject.toml" ! -name ".gitignore" \) -print
-find . -maxdepth 1 -type f \( -name "*.json" -o -name "*.js" -o -name "*.css" \) -print
 find surface/web -maxdepth 1 -type f \( -name "*.js" -o -name "*.css" \) -print
 find surface -maxdepth 3 -type f -name "*.py" | sort
 ```
