@@ -213,3 +213,19 @@ For repository work, include:
 - remaining evidence gaps or risks.
 
 Use the conclusion format from `skills/SKILL.md`.
+
+## Constraint compliance statement
+
+After every repository operation, the final response must explicitly verify and state whether the work complied with the active user and repository constraints.
+
+The response must include:
+
+- `约束遵守：是` only when supported by evidence, otherwise `约束遵守：否`.
+- current branch name.
+- whether any branch was created, switched, moved, reset, force-pushed, or deleted.
+- exact files changed and commits created.
+- checks actually run and their results.
+- checks not run.
+- any remaining evidence gap, regression risk, or unverified claim.
+
+Do not claim constraint compliance, test success, runtime success, or bug resolution without tool evidence.
