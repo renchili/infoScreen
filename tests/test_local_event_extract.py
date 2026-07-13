@@ -46,6 +46,23 @@ def test_weekday_prefixed_range_is_preserved() -> None:
     ]
 
 
+def test_weekday_prefixed_range_split_across_dom_lines_is_preserved() -> None:
+    year = future_year()
+    card = {
+        "url": "https://www.gardensbythebay.com.sg#nhb-orchid-split",
+        "link_text": "Orchid Extravaganza",
+        "headings": ["Orchid Extravaganza"],
+        "image_alts": [],
+        "text": f"Orchid Extravaganza\nFri, 3 Jul -\nMon, 10 Aug {year}\n9.00am - 9.00pm\nFlower Dome",
+    }
+
+    event, reason = event_from_card(source("gardensbythebay", "Gardens by the Bay"), card)
+
+    assert reason == "accepted"
+    assert event is not None
+    assert event["when"] == f"3 Jul - 10 Aug {year}"
+
+
 def test_detail_enrichment_requires_a_complete_date() -> None:
     year = future_year()
 
