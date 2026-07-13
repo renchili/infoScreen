@@ -75,8 +75,8 @@ def write_payload(payload: dict) -> None:
 
 def self_test() -> int:
     payload = collect_events(CONFIG, DEFAULT_LOCATION, DEBUG_DIR)
-    assert payload["extractor"] == "structured-first-v48-source-order"
-    assert payload["version"] == 48
+    assert payload["extractor"] == "structured-first-v49-source-order"
+    assert payload["version"] == 49
     assert isinstance(payload.get("results"), list)
     assert isinstance(payload.get("debug_by_source"), list)
     print("local-event structured-first self-test passed")
