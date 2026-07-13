@@ -66,29 +66,57 @@ def _current_date_label(label: str) -> bool:
     return max(dates) >= _extract.TODAY - _extract.timedelta(days=_extract.PAST_GRACE_DAYS)
 
 
+def _unique_fragments(found: list[tuple[int, int, str]]) -> list[str]:
+    unique: list[str] = []
+    for _, _, fragment in sorted(found, key=lambda item: (item[0], item[1], -len(item[2]))):
+        if any(fragment != existing and fragment in existing for existing in unique):
+            continue
+        if fragment not in unique:
+            unique.append(fragment)
+    return unique
+
+
 def _date_fragments(text: str) -> list[str]:
     line = _extract.clean(text)
     if BAD_OPEN_DATE_LINE_RE.search(line):
         return []
 
     search_line = _strip_weekdays(line)
-    found: list[tuple[int, int, str]] = []
-    patterns = [
+
+    # A closed range is one value. Resolve it before individual dates so an
+    # ongoing event cannot collapse to only its end date.
+    range_found: list[tuple[int, int, str]] = []
+    range_patterns = [
         _extract.FULL_RANGE_RE,
         _extract.END_YEAR_RANGE_RE,
         _extract.SAME_MONTH_RANGE_RE,
         _extract.MONTH_FIRST_RANGE_RE,
+    ]
+    for priority, pattern in enumerate(range_patterns):
+        for match in pattern.finditer(search_line):
+            fragment = _extract.clean(match.group(0))
+            dates = _extract.label_dates(fragment)
+            if len(dates) < 2:
+                continue
+            if max(dates) < _extract.TODAY - _extract.timedelta(days=_extract.PAST_GRACE_DAYS):
+                continue
+            range_found.append((priority, match.start(), fragment))
+
+    if range_found:
+        return _unique_fragments(range_found)
+
+    found: list[tuple[int, int, str]] = []
+    single_patterns = [
         _extract.ISO_DATE_RE,
         _extract.TEXT_DATE_RE,
         _extract.MONTH_FIRST_DATE_RE,
     ]
-    for priority, pattern in enumerate(patterns):
+    for priority, pattern in enumerate(single_patterns, start=len(range_patterns)):
         for match in pattern.finditer(search_line):
             fragment = _extract.clean(match.group(0))
             candidate = fragment
             if (
-                priority in {5, 6}
-                and OPEN_ENDED_START_RE.search(line)
+                OPEN_ENDED_START_RE.search(line)
                 and len(_extract.label_dates(line)) == 1
                 and len(line) <= 120
             ):
@@ -97,13 +125,7 @@ def _date_fragments(text: str) -> list[str]:
                 continue
             found.append((priority, match.start(), candidate))
 
-    unique: list[str] = []
-    for _, _, fragment in sorted(found, key=lambda item: (item[0], item[1], -len(item[2]))):
-        if any(fragment != existing and fragment in existing for existing in unique):
-            continue
-        if fragment not in unique:
-            unique.append(fragment)
-    return unique
+    return _unique_fragments(found)
 
 
 def _pick_when(card: dict) -> tuple[str, str]:
@@ -196,6 +218,15 @@ def _iso_date(value: object) -> date | None:
         return None
 
 
+def _date_bounds(label: str) -> tuple[date | None, date | None]:
+    dates = _extract.label_dates(label)
+    if not dates:
+        return None, None
+    if _open_ended_date_label(label):
+        return min(dates), None
+    return min(dates), max(dates)
+
+
 def _structured_event_from_card(source: dict, card: dict):
     structured = card.get("structured_event")
     if not isinstance(structured, dict):
@@ -254,9 +285,16 @@ def _event_from_card(source: dict, card: dict):
         if not fragments:
             return None, "date_label_too_verbose"
         when = fragments[0]
-        event = dict(event)
-        event["when"] = when
-        event["start_date"] = _extract.best_start_date(when)
+
+    normalized_when = _strip_weekdays(when)
+    if _extract.label_dates(normalized_when):
+        when = normalized_when
+
+    start, end = _date_bounds(when)
+    event = dict(event)
+    event["when"] = when
+    event["start_date"] = start.isoformat() if start else ""
+    event["end_date"] = end.isoformat() if end else ""
     return event, reason
 
 
