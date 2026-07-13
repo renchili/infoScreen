@@ -1,6 +1,6 @@
 {
-  "version": 5,
-  "purpose": "Verified official event listing entrypoints. Sources use official structured feeds when available, otherwise source-specific rendered-page adapters.",
+  "version": 4,
+  "purpose": "Verified official event listing entrypoints. Sources that need detail-page date extraction use the detail-enriched adapter.",
   "policy": {
     "no_recursive_site_crawl": true,
     "no_sitemap_primary_flow": true,
@@ -190,7 +190,7 @@
     {
       "id": "gardensbythebay",
       "name": "Gardens by the Bay",
-      "adapter": "official_network_json",
+      "adapter": "nhb",
       "official_home": "https://www.gardensbythebay.com.sg/",
       "allowed_domains": ["gardensbythebay.com.sg"],
       "default_venue": "Gardens by the Bay",
