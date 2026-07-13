@@ -89,27 +89,7 @@
     }
   }
 
-  async function loadEventStream() {
-    var names = ["newsTickerTrackEN", "newsTickerTrackFR", "newsTickerTrackZH"];
-    try {
-      var response = await fetch("event_stream.json?_=" + Date.now(), { cache: "no-store" });
-      var data = await response.json();
-      var items = Array.isArray(data.items) ? data.items : [];
-      if (!items.length) items = [{ title: "WAITING FOR EVENT STREAM", source: "LOCAL" }];
-      var block = items.slice(0, 8).map(function (item) { return '<span class="news-item"><span class="news-source">' + html(item.source || item.source_name || "SRC") + '</span><span class="news-title">' + html(item.title || item.text || item.summary || "event") + '</span><span class="news-sep">◆</span></span>'; }).join("");
-      names.forEach(function (name) { var el = id(name); if (el) el.innerHTML = block + block; });
-    } catch (error) {
-      names.forEach(function (name) { var el = id(name); if (el) el.innerHTML = '<span class="news-item"><span class="news-source">LOCAL</span><span class="news-title">EVENT STREAM UNAVAILABLE</span><span class="news-sep">◆</span></span>'; });
-    }
-  }
-
-  async function loadSyncTape() {
-    var tape = id("leftSyncTapeTrack");
-    if (!tape) return;
-    tape.innerHTML = '<span class="sync-muted">SCHEDULE / WEATHER / MARKET / NEWS</span><span class="sync-ok">DISPLAY ONLINE</span><span class="sync-muted">SCHEDULE / WEATHER / MARKET / NEWS</span><span class="sync-ok">DISPLAY ONLINE</span>';
-  }
-
-  function updateMetrics() {
+  function updateDemoMetrics() {
     [["cpuBar", "cpuText", 10 + Math.floor(Math.random() * 35), "%"], ["memBar", "memText", 42 + Math.floor(Math.random() * 26), "%"], ["diskBar", "diskText", 38 + Math.floor(Math.random() * 10), "%"], ["netBar", "netText", 70 + Math.floor(Math.random() * 20), "OK"]].forEach(function (row) {
       var bar = id(row[0]);
       var label = id(row[1]);
@@ -124,16 +104,12 @@
 
   document.addEventListener("DOMContentLoaded", function () {
     updateClock();
-    updateMetrics();
+    updateDemoMetrics();
     loadWeather();
     loadMarket();
-    loadEventStream();
-    loadSyncTape();
     setInterval(updateClock, 1000);
-    setInterval(updateMetrics, 6000);
+    setInterval(updateDemoMetrics, 6000);
     setInterval(loadWeather, 300000);
     setInterval(loadMarket, 60000);
-    setInterval(loadEventStream, 300000);
-    setInterval(loadSyncTape, 60000);
   });
 })();
