@@ -50,6 +50,30 @@ def test_local_event_payload_is_normalized_before_runtime_delivery() -> None:
     assert normalized["normalized_text_fields"] == 2
 
 
+def test_description_alias_is_cleaned_and_promoted_to_summary() -> None:
+    payload = {
+        "results": [
+            {
+                "title": "What Happens After Someone Dies: A Practical Guide for Families",
+                "when": "July 14, 2026",
+                "where": "Central Public Library",
+                "description": (
+                    '<p><strong>About the Event</strong><span style="background-color:#00ffff;"></span></p>'
+                    '<p>This talk is a compassionate and practical guide to navigating loss.</p>'
+                ),
+            }
+        ]
+    }
+
+    event = normalize_payload(payload)["results"][0]
+
+    expected = "This talk is a compassionate and practical guide to navigating loss."
+    assert event["description"] == expected
+    assert event["summary"] == expected
+    assert "<" not in event["description"]
+    assert "<" not in event["summary"]
+
+
 def test_local_event_payload_promotes_venue_alias_to_where() -> None:
     normalized = normalize_payload(
         {
