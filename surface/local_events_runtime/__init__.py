@@ -28,6 +28,11 @@ NARRATIVE_VENUE_RE = re.compile(
     r"\b(?:presents?|explore|discover|celebrates?|considers?|invites?|journey|exhibition|performance|live at|co-curated|with ryan|newly revamped)\b",
     re.I,
 )
+GARDENS_SOURCE_ID = "gardensbythebay"
+GARDENS_CARD_NOISE_RE = re.compile(
+    r"^(?:view details?|learn more|read more|find out more|book now|buy tickets?|admission\b.*|tickets?\b.*|free\b.*)$",
+    re.I,
+)
 
 
 _original_label_dates = _extract.label_dates
@@ -196,6 +201,84 @@ def _iso_date(value: object) -> date | None:
         return None
 
 
+def _gardens_closed_range(card: dict) -> tuple[str, date, date, int] | None:
+    lines = _extract.lines(card.get("text") or "")
+    range_patterns = (
+        _extract.FULL_RANGE_RE,
+        _extract.END_YEAR_RANGE_RE,
+        _extract.SAME_MONTH_RANGE_RE,
+        _extract.MONTH_FIRST_RANGE_RE,
+    )
+    candidates: list[tuple[int, int, int, str, date, date]] = []
+
+    for start_index in range(len(lines)):
+        for width in (1, 2, 3):
+            end_index = start_index + width
+            if end_index > len(lines):
+                continue
+            window = _strip_weekdays(" ".join(lines[start_index:end_index]))
+            for priority, pattern in enumerate(range_patterns):
+                match = pattern.search(window)
+                if not match:
+                    continue
+                label = _extract.clean(match.group(0))
+                dates = _extract.label_dates(label)
+                if len(dates) < 2:
+                    continue
+                range_start = min(dates)
+                range_end = max(dates)
+                if range_end < _extract.TODAY - _extract.timedelta(days=_extract.PAST_GRACE_DAYS):
+                    continue
+                candidates.append((priority, width, start_index, label, range_start, range_end))
+
+    if not candidates:
+        return None
+    _, width, start_index, label, range_start, range_end = min(
+        candidates,
+        key=lambda item: (item[0], item[1], item[2]),
+    )
+    return label, range_start, range_end, start_index + width
+
+
+def _gardens_venue_after_range(card: dict, title: str, line_index: int) -> str:
+    lines = _extract.lines(card.get("text") or "")
+    title_key = _extract.norm_key(title)
+
+    for line in lines[line_index:]:
+        if not line or _extract.norm_key(line) == title_key:
+            continue
+        if _extract.DATE_LINE_RE.search(line) or _extract.TIME_RE.search(line) or _extract.BAD_LINE_RE.search(line):
+            continue
+        if _extract.GENERIC_TITLE_RE.match(line) or _extract.FAKE_TITLE_RE.match(line):
+            continue
+        if GARDENS_CARD_NOISE_RE.match(line):
+            continue
+        if len(line) > 80 or len(line.split()) > 10:
+            continue
+        return line
+    return ""
+
+
+def _apply_gardens_card_fields(source: dict, card: dict, event: dict) -> dict:
+    if _extract.clean(source.get("id") or "").lower() != GARDENS_SOURCE_ID:
+        return event
+
+    closed_range = _gardens_closed_range(card)
+    if not closed_range:
+        return event
+
+    label, range_start, range_end, next_line_index = closed_range
+    repaired = dict(event)
+    repaired["when"] = label
+    repaired["start_date"] = range_start.isoformat()
+    repaired["end_date"] = range_end.isoformat()
+
+    venue = _gardens_venue_after_range(card, repaired.get("title") or "", next_line_index)
+    if venue:
+        repaired["where"] = venue
+    return repaired
+
+
 def _structured_event_from_card(source: dict, card: dict):
     structured = card.get("structured_event")
     if not isinstance(structured, dict):
@@ -257,7 +340,8 @@ def _event_from_card(source: dict, card: dict):
         event = dict(event)
         event["when"] = when
         event["start_date"] = _extract.best_start_date(when)
-    return event, reason
+
+    return _apply_gardens_card_fields(source, card, event), reason
 
 
 def _score_when(fragment: str, source_line: str) -> int:
@@ -330,8 +414,8 @@ _extract.render_listing_cards = _render_listing_cards
 
 def collect_events(*args, **kwargs):
     payload = dict(_original_collect_events(*args, **kwargs))
-    payload["version"] = 48
-    payload["extractor"] = "structured-first-v48"
+    payload["version"] = 49
+    payload["extractor"] = "structured-first-v49"
     return _preserve_source_order(payload)
 
 
