@@ -104,6 +104,38 @@ def _date_fragments(text: str) -> list[str]:
     return unique
 
 
+def _pick_when(card: dict) -> tuple[str, str]:
+    card_lines = _extract.lines(card.get("text") or "")
+    scored: list[tuple[int, str, str]] = []
+
+    for index, line in enumerate(card_lines):
+        windows = [line]
+        if index + 1 < len(card_lines):
+            windows.append(" ".join(card_lines[index:index + 2]))
+        if index + 2 < len(card_lines):
+            windows.append(" ".join(card_lines[index:index + 3]))
+
+        for window in windows:
+            if BAD_OPEN_DATE_LINE_RE.search(window):
+                continue
+            for fragment in _date_fragments(window):
+                score = _extract.score_when(fragment, window)
+                normalized = _strip_weekdays(fragment)
+                if (
+                    _extract.FULL_RANGE_RE.search(normalized)
+                    or _extract.END_YEAR_RANGE_RE.search(normalized)
+                    or _extract.SAME_MONTH_RANGE_RE.search(normalized)
+                    or _extract.MONTH_FIRST_RANGE_RE.search(normalized)
+                ):
+                    score += 100
+                scored.append((score, fragment, window))
+
+    if not scored:
+        return "", ""
+    scored.sort(key=lambda item: (-item[0], len(item[1])))
+    return _extract.short(scored[0][1], 180), scored[0][2]
+
+
 def _candidate_title(raw: object) -> str:
     title = _extract.normalise_title(raw)
     if not title or _extract.GENERIC_TITLE_RE.match(title):
@@ -226,6 +258,7 @@ _browser.DETAIL_DATE_RE = COMPLETE_DETAIL_DATE_RE
 _extract.label_dates = _label_dates
 _extract.current_date_label = _current_date_label
 _extract.date_fragments = _date_fragments
+_extract.pick_when = _pick_when
 _extract.score_when = _score_when
 _extract.pick_title = _pick_title
 _extract.pick_venue = _pick_venue
@@ -235,8 +268,8 @@ _extract.event_from_card = _event_from_card
 
 def collect_events(*args, **kwargs):
     payload = dict(_original_collect_events(*args, **kwargs))
-    payload["version"] = 45
-    payload["extractor"] = "rendered-dom-card-v45"
+    payload["version"] = 46
+    payload["extractor"] = "rendered-dom-card-v46"
     return _preserve_source_order(payload)
 
 
