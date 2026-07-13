@@ -107,6 +107,15 @@ def test_local_event_frontend_orders_by_institution_then_result_order() -> None:
     assert "a.sourceOrder - b.sourceOrder || a.resultOrder - b.resultOrder" in js
 
 
+def test_local_event_frontend_does_not_filter_api_results() -> None:
+    js = read_text("surface/web/assets/js/local_event_card.js")
+
+    assert ".map(function (row, index) { return item(row, index, sourceOrders); }).sort(" in js
+    assert ".filter(function (x) { return x.title; })" not in js
+    assert "invalidMediaLink" not in js
+    assert "mediaAssetUrl" not in js
+
+
 def test_frontend_references_closed_loop_runtime_files() -> None:
     js = read_text("surface/web/assets/js/local_event_card.js")
 
