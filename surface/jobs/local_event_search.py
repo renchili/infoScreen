@@ -20,6 +20,7 @@ os.environ.setdefault("LOCAL_EVENTS_PAGE_SCREENSHOTS", "0")
 os.environ.setdefault("LOCAL_EVENTS_CARD_SCREENSHOTS", "0")
 
 from local_events_runtime import collect_events  # noqa: E402
+from local_events_runtime.output import normalize_payload  # noqa: E402
 
 SURFACE_DIR = Path(__file__).resolve().parents[1]
 ENV_DIR = SURFACE_DIR / ".env"
@@ -74,9 +75,10 @@ def write_payload(payload: dict) -> None:
 
 
 def self_test() -> int:
-    payload = collect_events(CONFIG, DEFAULT_LOCATION, DEBUG_DIR)
+    payload = normalize_payload(collect_events(CONFIG, DEFAULT_LOCATION, DEBUG_DIR))
     assert payload["extractor"] == "structured-first-v49-source-order"
     assert payload["version"] == 49
+    assert payload["text_normalizer"] == "plain-text-v1"
     assert isinstance(payload.get("results"), list)
     assert isinstance(payload.get("debug_by_source"), list)
     print("local-event structured-first self-test passed")
@@ -95,7 +97,7 @@ def main(argv: list[str] | None = None) -> int:
     location = " ".join(args.location).strip() or DEFAULT_LOCATION
     ENV_DIR.mkdir(exist_ok=True)
     DEBUG_DIR.mkdir(parents=True, exist_ok=True)
-    payload = collect_events(CONFIG, location, DEBUG_DIR)
+    payload = normalize_payload(collect_events(CONFIG, location, DEBUG_DIR))
     write_payload(payload)
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0
