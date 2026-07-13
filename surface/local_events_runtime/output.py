@@ -41,6 +41,7 @@ BLOCK_TAGS = {
 IGNORED_TAGS = {"script", "style", "noscript", "template"}
 TEXT_FIELDS = ("title", "when", "where", "host", "source_name", "summary")
 WHERE_ALIASES = ("venue", "place", "where_text", "location", "address")
+SUMMARY_ALIASES = ("why_text", "description", "desc")
 
 
 class _PlainTextParser(HTMLParser):
@@ -100,26 +101,36 @@ def plain_text(value: object) -> str:
     return _collapse(text)
 
 
+def _clean_summary(value: object) -> str:
+    return SUMMARY_HEADING_RE.sub("", plain_text(value)).strip()
+
+
 def normalize_event(event: dict[str, Any]) -> tuple[dict[str, Any], int]:
     normalized = dict(event)
     changed = 0
 
-    for key in TEXT_FIELDS:
+    for key in TEXT_FIELDS + WHERE_ALIASES + SUMMARY_ALIASES:
         if key not in normalized:
             continue
         original = str(normalized.get(key) or "")
-        cleaned = plain_text(original)
-        if key == "summary":
-            cleaned = SUMMARY_HEADING_RE.sub("", cleaned).strip()
+        cleaned = _clean_summary(original) if key == "summary" or key in SUMMARY_ALIASES else plain_text(original)
         if cleaned != original:
             changed += 1
         normalized[key] = cleaned
 
     if not normalized.get("where"):
         for alias in WHERE_ALIASES:
-            candidate = plain_text(normalized.get(alias))
+            candidate = normalized.get(alias)
             if candidate:
                 normalized["where"] = candidate
+                changed += 1
+                break
+
+    if not normalized.get("summary"):
+        for alias in SUMMARY_ALIASES:
+            candidate = normalized.get(alias)
+            if candidate:
+                normalized["summary"] = candidate
                 changed += 1
                 break
 
