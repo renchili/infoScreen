@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import re
+from datetime import date
 
 from . import browser as _browser
 from . import extract as _extract
+from . import official_feeds as _official_feeds
 
 OPEN_ENDED_DATE_RE = re.compile(r"\b(?:from|since|ongoing|permanent)\b", re.I)
 OPEN_ENDED_START_RE = re.compile(r"^\s*(?:from|since|ongoing|permanent)\b", re.I)
@@ -34,6 +36,7 @@ _original_pick_venue = _extract.pick_venue
 _original_event_looks_wrong = _extract.event_looks_wrong
 _original_event_from_card = _extract.event_from_card
 _original_collect_events = _extract.collect_events
+_original_render_listing_cards = _extract.render_listing_cards
 
 
 def _strip_weekdays(value: object) -> str:
@@ -184,7 +187,62 @@ def _event_looks_wrong(source: dict, card: dict, title: str, when: str) -> str:
     return ""
 
 
+def _iso_date(value: object) -> date | None:
+    text = _extract.clean(value)
+    if not text:
+        return None
+    try:
+        return date.fromisoformat(text[:10])
+    except ValueError:
+        return None
+
+
+def _structured_event_from_card(source: dict, card: dict):
+    structured = card.get("structured_event")
+    if not isinstance(structured, dict):
+        return None
+
+    title = _extract.clean(structured.get("title"))
+    when = _extract.clean(structured.get("when"))
+    if not title:
+        return None, "title_not_found"
+    if not when:
+        return None, "current_date_not_found_in_card"
+
+    start = _iso_date(structured.get("start_date"))
+    end = _iso_date(structured.get("end_date")) or start
+    if end and end < _extract.TODAY - _extract.timedelta(days=_extract.PAST_GRACE_DAYS):
+        return None, "past_date"
+    if not end and not _current_date_label(when):
+        return None, "past_date"
+
+    where = _extract.clean(structured.get("where")) or str(source.get("default_venue") or source.get("name") or "")
+    summary = _extract.clean(structured.get("summary")) or "Open the official page for details."
+    url = _extract.clean(structured.get("url"))
+    start_date = start.isoformat() if start else _extract.best_start_date(when)
+
+    return {
+        "title": title,
+        "when": when,
+        "where": where,
+        "host": source.get("name") or "Official source",
+        "source_name": source.get("name") or "Official source",
+        "url": url,
+        "summary": summary,
+        "start_date": start_date,
+        "end_date": end.isoformat() if end else "",
+        "kind": "event",
+        "source_type": "official_network_json",
+        "debug_screenshot": card.get("screenshot") or "",
+        "debug_detail_url_count": 0,
+    }, "accepted"
+
+
 def _event_from_card(source: dict, card: dict):
+    structured_result = _structured_event_from_card(source, card)
+    if structured_result is not None:
+        return structured_result
+
     event, reason = _original_event_from_card(source, card)
     if not event:
         return event, reason
@@ -208,6 +266,13 @@ def _score_when(fragment: str, source_line: str) -> int:
     if _open_ended_date_label(fragment) or _open_ended_date_label(source_line):
         score += 45
     return score
+
+
+def _render_listing_cards(source: dict, url: str, debug_dir, max_cards: int = 60):
+    adapter = str(source.get("adapter") or "rendered_dom_card")
+    if adapter == "official_network_json":
+        return _official_feeds.render_official_network_cards(source, url, debug_dir, max_cards=max_cards)
+    return _original_render_listing_cards(source, url, debug_dir, max_cards=max_cards)
 
 
 def _source_order(payload: dict) -> dict[str, int]:
@@ -264,12 +329,13 @@ _extract.pick_title = _pick_title
 _extract.pick_venue = _pick_venue
 _extract.event_looks_wrong = _event_looks_wrong
 _extract.event_from_card = _event_from_card
+_extract.render_listing_cards = _render_listing_cards
 
 
 def collect_events(*args, **kwargs):
     payload = dict(_original_collect_events(*args, **kwargs))
-    payload["version"] = 46
-    payload["extractor"] = "rendered-dom-card-v46"
+    payload["version"] = 47
+    payload["extractor"] = "official-source-v47"
     return _preserve_source_order(payload)
 
 
