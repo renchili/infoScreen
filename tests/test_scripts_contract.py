@@ -55,6 +55,23 @@ def test_full_ci_script_runs_repository_hygiene_checker() -> None:
     assert "--scope repository" in script
 
 
+def test_mac_schedule_sync_uses_local_config_and_runtime_target() -> None:
+    sync_script = read_text("mac/sync_schedule.sh")
+    setup_script = read_text("mac/scripts/setup-schedule-sync.sh")
+
+    assert "CONFIG_FILE=\"$SCRIPT_DIR/local.env\"" in sync_script
+    assert "source \"$CONFIG_FILE\"" in sync_script
+    assert "SURFACE_HOST:?SURFACE_HOST is required" in sync_script
+    assert "~/infoscreen/surface/.env/schedule.json" in sync_script
+    assert "mkdir -p $REMOTE_DIR" in sync_script
+    assert "scp -q" in sync_script
+    assert "${REMOTE_SCHEDULE_JSON:-~/infoscreen/surface/.env/schedule.json}" in setup_script
+    assert "~/infoscreen/schedule.json" not in sync_script
+    assert "~/infoscreen/schedule.json" not in setup_script
+    assert "/home/rody/infoscreen/schedule.json" not in sync_script
+    assert "/home/rody/infoscreen/schedule.json" not in setup_script
+
+
 def test_ci_workflow_runs_full_tests_without_uploading_artifacts() -> None:
     workflow = read_text(".github/workflows/acceptance.yml")
 
