@@ -28,6 +28,10 @@ NARRATIVE_VENUE_RE = re.compile(
     r"\b(?:presents?|explore|discover|celebrates?|considers?|invites?|journey|exhibition|performance|live at|co-curated|with ryan|newly revamped)\b",
     re.I,
 )
+VENUE_HINT_RE = re.compile(
+    r"\b(?:dome|gallery|galleries|room|hall|theatre|theater|foyer|atrium|concourse|library|museum|park|zoo|safari|centre|center|stadium|arena|gardens?|forest|fantasy)\b",
+    re.I,
+)
 
 
 _original_label_dates = _extract.label_dates
@@ -190,8 +194,28 @@ def _pick_title(card: dict) -> str:
 
 
 def _pick_venue(source: dict, card: dict, when: str, when_line: str) -> str:
-    venue = _original_pick_venue(source, card, when, when_line)
     default = str(source.get("default_venue") or source.get("name") or "")
+    venue = _original_pick_venue(source, card, when, when_line)
+
+    # Prefer an explicit concise venue line from the same card. This covers
+    # valid venue names such as "Flower Dome" that the base noun list misses.
+    explicit: list[str] = []
+    for line in _extract.lines(card.get("text") or ""):
+        if line == when_line or line == when:
+            continue
+        if _extract.DATE_LINE_RE.search(line) or _extract.TIME_RE.search(line):
+            continue
+        if _extract.FAKE_TITLE_RE.match(line) or NARRATIVE_VENUE_RE.search(line):
+            continue
+        if len(line) > 80 or len(line.split()) > 12:
+            continue
+        if VENUE_HINT_RE.search(line):
+            explicit.append(line)
+
+    if explicit:
+        explicit.sort(key=lambda item: (len(item.split()), len(item), item))
+        return explicit[0]
+
     if len(venue) > 80 or len(venue.split()) > 12 or NARRATIVE_VENUE_RE.search(venue):
         return default
     return venue
