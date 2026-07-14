@@ -55,11 +55,13 @@ def is_partial(payload: dict) -> bool:
 
 
 def write_payload(payload: dict) -> None:
-    old = read_json(OUT)
+    payload = normalize_payload(payload)
+    old = normalize_payload(read_json(OUT))
     new_count = result_count(payload)
     old_count = result_count(old)
 
     if is_partial(payload) and old_count > new_count:
+        OUT.write_text(json.dumps(old, ensure_ascii=False, indent=2), encoding="utf-8")
         payload = {
             **payload,
             "ok": False,
