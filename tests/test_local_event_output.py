@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 import sys
 
 from .conftest import SURFACE
 
 sys.path.insert(0, str(SURFACE))
 
+from jobs import local_event_search as job  # noqa: E402
 from local_events_runtime.output import normalize_payload, plain_text  # noqa: E402
 
 
@@ -20,6 +22,20 @@ def test_plain_text_removes_html_markup_and_hidden_content() -> None:
     assert plain_text(raw) == (
         "About the Event This talk is a compassionate and practical guide. "
         "• What to do first • Where to get help"
+    )
+
+
+def test_plain_text_removes_repeatedly_escaped_detail_markup() -> None:
+    raw = (
+        "&amp;lt;p&amp;gt;&amp;lt;strong&amp;gt;About the Event&amp;lt;/strong&amp;gt;"
+        "&amp;lt;span style=&amp;quot;background-color: transparent;&amp;quot;&amp;gt;"
+        "&amp;lt;/span&amp;gt;&amp;lt;/p&amp;gt;"
+        "&amp;lt;p&amp;gt;This talk is a compassionate and practical guide to navigating loss."
+        "&amp;lt;/p&amp;gt;"
+    )
+
+    assert plain_text(raw) == (
+        "About the Event This talk is a compassionate and practical guide to navigating loss."
     )
 
 
@@ -90,3 +106,49 @@ def test_local_event_payload_promotes_venue_alias_to_where() -> None:
     )
 
     assert normalized["results"][0]["where"] == "NLB Building, Level 1"
+
+
+def test_partial_refresh_cleans_the_complete_result_it_keeps(tmp_path, monkeypatch) -> None:
+    out = tmp_path / "local_event_search_results.json"
+    partial_out = tmp_path / "local_event_search_results.partial.json"
+    out.write_text(
+        json.dumps(
+            {
+                "source_count": 1,
+                "debug_by_source": [{"source": "NLB"}],
+                "results": [
+                    {
+                        "title": "What Happens After Someone Dies: A Practical Guide for Families",
+                        "when": "14 Jul 2026",
+                        "where": "Central Public Library",
+                        "description": (
+                            '<p><strong>About the Event</strong></p>'
+                            '<p>This talk is a compassionate and practical guide to navigating loss.</p>'
+                        ),
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(job, "OUT", out)
+    monkeypatch.setattr(job, "PARTIAL_OUT", partial_out)
+
+    job.write_payload(
+        {
+            "source_count": 2,
+            "debug_by_source": [{"source": "NLB"}],
+            "results": [],
+        }
+    )
+
+    retained = json.loads(out.read_text(encoding="utf-8"))
+    retained_event = retained["results"][0]
+    partial = json.loads(partial_out.read_text(encoding="utf-8"))
+
+    expected = "This talk is a compassionate and practical guide to navigating loss."
+    assert retained_event["summary"] == expected
+    assert retained_event["description"] == expected
+    assert "<" not in retained_event["summary"]
+    assert retained["text_normalizer"] == "plain-text-v1"
+    assert partial["write_policy"] == "kept_previous_complete_result"
