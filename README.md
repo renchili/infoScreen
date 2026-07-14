@@ -105,6 +105,29 @@ surface/web/assets/css/
 surface/web/assets/js/
 ```
 
+## Page UI, jobs, and data sources
+
+`infoscreen-http.service` runs `surface/serve_infoscreen.py` and serves the dashboard, runtime JSON, public photos, and local APIs. Each visible mount point has one data/render owner.
+
+| Page area | DOM / frontend owner | Scheduler or trigger | Producer and runtime/API | Data source | Notes |
+| --- | --- | --- | --- | --- | --- |
+| Header clock and date | `#time`, `#date`; `dashboard.js:updateClock()` | Browser every second | No backend job or runtime JSON | Browser device clock | Local browser time only |
+| Bottom `REFRESH` and `UPTIME` | `#refresh`, `#uptime`; `dashboard.js:updateClock()` | Browser every second | No backend job | Browser clock and page load time | `UPTIME` is page-session uptime, not OS uptime |
+| Market card | `#marketList`; `dashboard.js:loadMarket()` | `infoscreen-live-data.timer` every 5 minutes; manual `/api/market-refresh` | `surface/fetch_live_data.py` → `surface/.env/market.json` → `/market.json` | Nasdaq, CNBC, Stooq, then Yahoo fallback/cache | `dashboard.js` is the only quote renderer |
+| Global market tape | `#globalMarketTapeTrack`; `dashboard.js:loadMarket()` | Same Market job | Same `market.json` | Same market providers | Must not be rewritten by `local_event_card.js` |
+| Market config overlay | `market_custom.js` | User save/refresh | `/api/market-config`, `/api/market-refresh`, `surface/.env/market_config.json` | User-selected symbols | Calls `window.loadMarket()` after refresh; does not render quotes itself |
+| Local event card | `#localEventList`; `local_event_card.js` | `infoscreen-local-events.timer` every 6 hours; POST search on demand | `surface/search_local_events.py` → `surface/jobs/local_event_search.py` → `surface/.env/local_event_search_results.json` → `/api/local-events/search` | Official event listing pages configured in `surface/conf/event_sources.json` | Search location comes from the UI or service default |
+| Sync ticker | `#leftSyncTapeTrack`; `local_event_card.js:loadSyncStatus()` | Browser every 60 seconds | `HEAD /schedule.json`, `/weather.json`, `/market.json`, `/event_stream.json` | HTTP `Last-Modified` from runtime files | Monitors producers; it does not generate data |
+| EN/FR/中文 news ticker | `#newsTickerTrackEN/FR/ZH`; `local_event_card.js:repairNews()` | `infoscreen-event-stream.timer` every 5 minutes | `surface/fetch_event_stream.py` → `surface/.env/event_stream.json` → `/event_stream.json` | Google News RSS, CNA, France24, RFI, BBC Chinese; Google Translate for aligned EN/FR/ZH rows | `local_event_card.js` is the only news renderer |
+| Photo wall | `#photoFlipWall`; `local_event_card.js:repairPhotoWall()` | Manual `python3 surface/build_photos_json.py` after photo changes | `surface/.env/photos/` → `surface/build_photos_json.py` → `surface/.env/photos.json` and `surface/.env/public_photos/` → `/photos.json`, `/public_photos/*` | User-owned local image files | No systemd timer currently generates the photo index |
+| Weather card | `#weatherTemp`, `#weatherDesc`; `dashboard.js:loadWeather()` | `infoscreen-live-data.timer` every 5 minutes | `surface/fetch_live_data.py` → `surface/.env/weather.json` → `/weather.json` | Open-Meteo for Singapore | Weather and Market share one Surface job |
+| CPU/MEM/DSK/NET bars | `#cpuBar/#memBar/#diskBar/#netBar`; `dashboard.js:updateDemoMetrics()` | Browser every 6 seconds | No backend job or runtime JSON | `Math.random()` demo values | These are simulated UI values, not system monitoring |
+| Calendar board | `#agendaList`; `calendar_board.js` | Mac LaunchAgent `com.renchili.infoscreen.schedule-sync`, default 120 seconds | `mac/export.py` → `mac/sync_schedule.sh` → `surface/.env/schedule.json` → `/schedule.json` | macOS Calendar/EventKit on the Mac | Schedule producer runs on the Mac, not the Surface |
+| POWER/DISPLAY/NETWORK labels | Static HTML in `index.html` | None | No job, API, or runtime JSON | Static text | These labels are not health checks |
+| OpenAPI pages | `/openapi.json`, `/docs`; server route | HTTP request | `surface/openapi_spec.py` + `surface/api_models.py` | Committed API definitions | Not part of the kiosk panels |
+
+Detailed ownership and failure routing are in `docs/design.md`. Long-term decisions are recorded in `docs/questions.md`.
+
 ## Frontend behavior notes
 
 Local event card:
@@ -124,7 +147,16 @@ Sync ticker:
 surface/web/assets/js/local_event_card.js
 ```
 
-The left sync ticker must show file freshness, not only source counts. It checks `Last-Modified` through `HEAD` requests and displays `OK` / `STALE` / `MISS` / `ERR`, `LATEST`, and `AGE` for schedule, weather, market, and news runtime JSON.
+The left sync ticker checks `Last-Modified` through `HEAD` requests and displays `OK` / `STALE` / `MISS` / `ERR`, `LATEST`, and `AGE` for schedule, weather, market, and news runtime JSON.
+
+| Stat | Producer | Runtime JSON | Product UI | Stale threshold |
+| --- | --- | --- | --- | --- |
+| `SCHEDULE` | Mac LaunchAgent → `mac/export.py` + `mac/sync_schedule.sh` | `schedule.json` | Calendar board | 600 seconds |
+| `WEATHER` | `infoscreen-live-data.timer` → `surface/fetch_live_data.py` | `weather.json` | Weather card | 900 seconds |
+| `MARKET` | `infoscreen-live-data.timer` → `surface/fetch_live_data.py` | `market.json` | Market card and tape | 600 seconds |
+| `NEWS` | `infoscreen-event-stream.timer` → `surface/fetch_event_stream.py` | `event_stream.json` | Three-language news ticker | 600 seconds |
+
+`OK` means the file age is within the threshold. `STALE` means the file exists but is too old. `MISS` means the HTTP path or `Last-Modified` is missing. `ERR` means the browser's `HEAD` request failed; check HTTP/network before assuming the producer failed.
 
 Market panel:
 
@@ -134,7 +166,7 @@ surface/web/assets/js/market_custom.js
 surface/web/assets/css/market_custom.css
 ```
 
-The kiosk dashboard must show a compact market configuration button that does not cover quote rows. Clicking the button opens the symbol editor overlay; market symbols remain configurable through `/api/market-config` and refresh through `/api/market-refresh`.
+`dashboard.js` is the only renderer for `marketList` and `globalMarketTapeTrack`. `market_custom.js` owns only the config control and calls `/api/market-config` or `/api/market-refresh`.
 
 Photo wall:
 
@@ -163,6 +195,31 @@ surface/.env/sync_status.json
 surface/.env/logs/http.log
 surface/.env/logs/http.err.log
 ```
+
+### Schedule sync — run on the Mac
+
+`schedule.json` is not generated on the Surface. macOS Calendar/EventKit is the data source, so the scheduled export and sync run on the Mac and push the file to the Surface runtime directory.
+
+Run this on the Mac to configure or update the Surface SSH address and install or refresh the LaunchAgent:
+
+```bash
+cd ~/infoscreen
+bash mac/scripts/setup-schedule-sync.sh \
+  --host <surface-ip-or-hostname> \
+  --user rody \
+  --remote-path '~/infoscreen/surface/.env/schedule.json' \
+  --interval 120
+```
+
+This writes the local-only `mac/local.env` and installs `~/Library/LaunchAgents/com.renchili.infoscreen.schedule-sync.plist`. Trigger one sync immediately with:
+
+```bash
+launchctl kickstart -k gui/$(id -u)/com.renchili.infoscreen.schedule-sync
+```
+
+The remote target must remain `~/infoscreen/surface/.env/schedule.json`; `~/infoscreen/schedule.json` is not a valid runtime path.
+
+When `SCHEDULE` is stale or missing, check the Mac LaunchAgent, `mac/local.env`, and `~/Library/Logs/infoscreen-sync/`. When `WEATHER` or `MARKET` is stale, check `infoscreen-live-data.timer` and `.service` on the Surface. When `NEWS` is stale, check `infoscreen-event-stream.timer` and `.service`. If a file was just written but `AGE` is still large, compare the browser, Surface, and for schedule the Mac system clocks.
 
 ## Refresh commands
 
