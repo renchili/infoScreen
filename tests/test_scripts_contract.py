@@ -111,7 +111,7 @@ def test_page_ui_job_and_source_mapping_is_documented() -> None:
         "surface/conf/event_sources.json",
         "Open-Meteo",
         "Nasdaq, CNBC, Stooq",
-        "Math.random() demo values",
+        "`Math.random()` demo values",
     ]
     for value in required_readme:
         assert value in readme
