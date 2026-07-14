@@ -33,6 +33,7 @@ GARDENS_CARD_NOISE_RE = re.compile(
     r"^(?:view details?|learn more|read more|find out more|book now|buy tickets?|admission\b.*|tickets?\b.*|free\b.*)$",
     re.I,
 )
+NON_EVENT_CARPARK_RE = re.compile(r"\b(?:car\s*parks?|carparks?)\b", re.I)
 
 
 _original_label_dates = _extract.label_dates
@@ -181,11 +182,16 @@ def _pick_venue(source: dict, card: dict, when: str, when_line: str) -> str:
 
 
 def _event_looks_wrong(source: dict, card: dict, title: str, when: str) -> str:
+    url = _extract.clean(card.get("url") or "")
+    text = _extract.clean(card.get("text") or "")
+    combined = " ".join([title, url, text[:500]])
+    if NON_EVENT_CARPARK_RE.search(combined):
+        return "non_event_carpark_facility"
+
     reason = _original_event_looks_wrong(source, card, title, when)
     if reason:
         return reason
     source_id = _extract.clean(source.get("id") or "").lower()
-    url = _extract.clean(card.get("url") or "")
     if source_id == "mandai" and "#nhb" in url:
         return "synthetic_mandai_location_card"
     return ""
@@ -290,6 +296,10 @@ def _structured_event_from_card(source: dict, card: dict):
         return None, "title_not_found"
     if not when:
         return None, "current_date_not_found_in_card"
+
+    bad = _event_looks_wrong(source, card, title, when)
+    if bad:
+        return None, bad
 
     start = _iso_date(structured.get("start_date"))
     end = _iso_date(structured.get("end_date")) or start
