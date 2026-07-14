@@ -42,6 +42,7 @@ IGNORED_TAGS = {"script", "style", "noscript", "template"}
 TEXT_FIELDS = ("title", "when", "where", "host", "source_name", "summary")
 WHERE_ALIASES = ("venue", "place", "where_text", "location", "address")
 SUMMARY_ALIASES = ("why_text", "description", "desc")
+MAX_ENTITY_DECODE_ROUNDS = 3
 
 
 class _PlainTextParser(HTMLParser):
@@ -84,8 +85,18 @@ def _collapse(value: object) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def _decode_entities(value: object) -> str:
+    decoded = str(value or "")
+    for _ in range(MAX_ENTITY_DECODE_ROUNDS):
+        next_value = html.unescape(decoded)
+        if next_value == decoded:
+            break
+        decoded = next_value
+    return decoded
+
+
 def plain_text(value: object) -> str:
-    raw = html.unescape(str(value or ""))
+    raw = _decode_entities(value)
     if not raw:
         return ""
     if not HTML_TAG_RE.search(raw):
