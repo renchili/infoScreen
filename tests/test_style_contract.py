@@ -30,15 +30,30 @@ def test_local_event_source_toolbar_and_action_layout_are_not_overlapping() -> N
     assert "justify-content: flex-start" in css
 
 
-def test_local_event_description_uses_remaining_space_without_line_clamp() -> None:
+def test_local_event_description_is_contained_in_remaining_card_space() -> None:
     css = read_text("surface/web/assets/css/local_events.css")
     desc_start = css.index(".local-event-desc {")
     desc_end = css.index("}", desc_start)
     desc = css[desc_start:desc_end]
 
-    assert "flex: 1 1 auto" in desc
-    assert "display: block" in desc
-    assert "-webkit-line-clamp" not in desc
+    assert "flex: 1 1 0" in desc
+    assert "min-height: 0" in desc
+    assert "max-width: 100%" in desc
+    assert "max-height: 100%" in desc
+    assert "overflow: hidden" in desc
+    assert "overflow-wrap: anywhere" in desc
+    assert "word-break: break-word" in desc
+    assert "white-space: normal" in desc
+    assert "contain: paint" in desc
+
+
+def test_local_event_title_and_metadata_wrap_unbroken_content() -> None:
+    css = read_text("surface/web/assets/css/local_events.css")
+
+    assert css.count("overflow-wrap: anywhere") >= 3
+    assert css.count("word-break: break-word") >= 3
+    assert ".local-event-kv" in css
+    assert "overflow: hidden" in css
 
 
 def test_market_config_control_is_not_inside_quote_row_layout() -> None:
