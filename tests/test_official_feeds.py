@@ -169,3 +169,34 @@ def test_safra_structured_carpark_facility_is_rejected() -> None:
 
     assert event is None
     assert reason == "non_event_carpark_facility"
+
+
+def test_real_safra_event_can_mention_carpark_in_summary() -> None:
+    year = future_year()
+    card = {
+        "url": "https://www.safra.sg/whats-on/family-sports-day",
+        "text": (
+            f"Family Sports Day\n10 Aug {year}\nSAFRA Punggol\n"
+            "Carpark access remains available during the event."
+        ),
+        "structured_event": {
+            "title": "Family Sports Day",
+            "when": f"10 Aug {year}",
+            "where": "SAFRA Punggol",
+            "url": "https://www.safra.sg/whats-on/family-sports-day",
+            "summary": "Carpark access remains available during the event.",
+            "start_date": f"{year}-08-10",
+            "end_date": f"{year}-08-10",
+        },
+    }
+    safra = {
+        "id": "safra",
+        "name": "SAFRA",
+        "default_venue": "SAFRA Clubs",
+    }
+
+    event, reason = event_from_card(safra, card)
+
+    assert reason == "accepted"
+    assert event is not None
+    assert event["title"] == "Family Sports Day"
