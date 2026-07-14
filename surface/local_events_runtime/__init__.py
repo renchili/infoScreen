@@ -33,7 +33,10 @@ GARDENS_CARD_NOISE_RE = re.compile(
     r"^(?:view details?|learn more|read more|find out more|book now|buy tickets?|admission\b.*|tickets?\b.*|free\b.*)$",
     re.I,
 )
-NON_EVENT_CARPARK_RE = re.compile(r"\b(?:car\s*parks?|carparks?)\b", re.I)
+NON_EVENT_CARPARK_TITLE_RE = re.compile(
+    r"^(?:car\s*parks?|carparks?)(?:\s+(?:rates?|charges?|information|details))?$",
+    re.I,
+)
 
 
 _original_label_dates = _extract.label_dates
@@ -182,16 +185,14 @@ def _pick_venue(source: dict, card: dict, when: str, when_line: str) -> str:
 
 
 def _event_looks_wrong(source: dict, card: dict, title: str, when: str) -> str:
-    url = _extract.clean(card.get("url") or "")
-    text = _extract.clean(card.get("text") or "")
-    combined = " ".join([title, url, text[:500]])
-    if NON_EVENT_CARPARK_RE.search(combined):
+    if NON_EVENT_CARPARK_TITLE_RE.fullmatch(_extract.clean(title)):
         return "non_event_carpark_facility"
 
     reason = _original_event_looks_wrong(source, card, title, when)
     if reason:
         return reason
     source_id = _extract.clean(source.get("id") or "").lower()
+    url = _extract.clean(card.get("url") or "")
     if source_id == "mandai" and "#nhb" in url:
         return "synthetic_mandai_location_card"
     return ""
