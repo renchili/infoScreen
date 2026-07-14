@@ -95,7 +95,52 @@ def test_local_event_frontend_uses_official_link_and_escape_contract() -> None:
     assert "OPEN OFFICIAL LINK" in js
     assert "function esc" in js
     assert "items_by_lang" in js
-    assert "method: \"HEAD\"" in js
+    assert 'method: "HEAD"' in js
+
+
+def test_market_rendering_has_one_owner() -> None:
+    dashboard = read_text("surface/web/assets/js/dashboard.js")
+    local_event = read_text("surface/web/assets/js/local_event_card.js")
+    market_custom = read_text("surface/web/assets/js/market_custom.js")
+
+    assert "async function loadMarket()" in dashboard
+    assert 'id("marketList")' in dashboard
+    assert 'id("globalMarketTapeTrack")' in dashboard
+    assert "window.loadMarket = loadMarket" in dashboard
+
+    assert "repairMarket" not in local_event
+    assert 'el("marketList")' not in local_event
+    assert 'el("globalMarketTapeTrack")' not in local_event
+    assert 'fetch("market.json' not in local_event
+
+    assert "window.loadMarket" in market_custom
+    assert 'byId("marketList")' in market_custom
+    assert "list.innerHTML" not in market_custom
+    assert "globalMarketTapeTrack" not in market_custom
+    assert 'fetch("market.json' not in market_custom
+
+
+def test_news_and_sync_ticker_have_one_owner() -> None:
+    dashboard = read_text("surface/web/assets/js/dashboard.js")
+    local_event = read_text("surface/web/assets/js/local_event_card.js")
+
+    assert "loadEventStream" not in dashboard
+    assert "loadSyncTape" not in dashboard
+    assert "newsTickerTrackEN" not in dashboard
+    assert "leftSyncTapeTrack" not in dashboard
+
+    assert "function repairNews()" in local_event
+    assert "function loadSyncStatus()" in local_event
+    assert 'el("newsTickerTrackEN")' in local_event
+    assert 'el("leftSyncTapeTrack")' in local_event
+
+
+def test_demo_metrics_are_explicit_in_source() -> None:
+    dashboard = read_text("surface/web/assets/js/dashboard.js")
+
+    assert "function updateDemoMetrics()" in dashboard
+    assert "Math.random()" in dashboard
+    assert "updateMetrics" not in dashboard
 
 
 def test_frontend_references_closed_loop_runtime_files() -> None:

@@ -72,6 +72,86 @@ def test_mac_schedule_sync_uses_local_config_and_runtime_target() -> None:
     assert "/home/rody/infoscreen/schedule.json" not in setup_script
 
 
+def test_schedule_sync_operator_documentation_is_discoverable() -> None:
+    readme = read_text("README.md")
+    design = read_text("docs/design.md")
+    questions = read_text("docs/questions.md")
+
+    assert "Schedule sync — run on the Mac" in readme
+    assert "macOS Calendar/EventKit is the data source" in readme
+    assert "bash mac/scripts/setup-schedule-sync.sh" in readme
+    assert "--host <surface-ip-or-hostname>" in readme
+    assert "mac/local.env" in readme
+    assert "~/infoscreen/surface/.env/schedule.json" in readme
+    assert "Mac Calendar/EventKit" in design
+    assert "mac/sync_schedule.sh" in design
+    assert "surface/.env/schedule.json" in design
+    assert "该任务不在 Surface 上运行" in questions
+
+
+def test_page_ui_job_and_source_mapping_is_documented() -> None:
+    readme = read_text("README.md")
+    design = read_text("docs/design.md")
+    questions = read_text("docs/questions.md")
+
+    required_readme = [
+        "Page UI, jobs, and data sources",
+        "Market card",
+        "Global market tape",
+        "Local event card",
+        "Sync ticker",
+        "EN/FR/中文 news ticker",
+        "Photo wall",
+        "Weather card",
+        "CPU/MEM/DSK/NET bars",
+        "Calendar board",
+        "POWER/DISPLAY/NETWORK labels",
+        "OpenAPI pages",
+        "infoscreen-local-events.timer",
+        "surface/conf/event_sources.json",
+        "Open-Meteo",
+        "Nasdaq, CNBC, Stooq",
+        "`Math.random()` demo values",
+    ]
+    for value in required_readme:
+        assert value in readme
+
+    required_design = [
+        "Page UI ownership and data sources",
+        "Browser renderer ownership",
+        "infoscreen-http.service",
+        "infoscreen-live-data.timer",
+        "infoscreen-event-stream.timer",
+        "infoscreen-local-events.timer",
+        "Mac LaunchAgent",
+        "Simulated and static UI contract",
+        "local_event_card.js photo renderer",
+        "dashboard.js + sync ticker",
+    ]
+    for value in required_design:
+        assert value in design
+
+    assert "页面区域为什么必须有唯一 renderer owner" in questions
+    assert "哪些页面状态不是真实系统监控" in questions
+    assert "本地活动和照片为什么不属于四个 sync stat" in questions
+
+
+def test_documented_systemd_job_cadence_matches_units() -> None:
+    live_service = read_text("deploy/systemd/user/infoscreen-live-data.service")
+    live_timer = read_text("deploy/systemd/user/infoscreen-live-data.timer")
+    news_service = read_text("deploy/systemd/user/infoscreen-event-stream.service")
+    news_timer = read_text("deploy/systemd/user/infoscreen-event-stream.timer")
+    local_service = read_text("deploy/systemd/user/infoscreen-local-events.service")
+    local_timer = read_text("deploy/systemd/user/infoscreen-local-events.timer")
+
+    assert "surface/fetch_live_data.py" in live_service
+    assert "OnUnitActiveSec=5min" in live_timer
+    assert "surface/fetch_event_stream.py" in news_service
+    assert "OnUnitActiveSec=5min" in news_timer
+    assert "surface/search_local_events.py Punggol Singapore" in local_service
+    assert "OnUnitActiveSec=6h" in local_timer
+
+
 def test_ci_workflow_runs_full_tests_without_uploading_artifacts() -> None:
     workflow = read_text(".github/workflows/acceptance.yml")
 
