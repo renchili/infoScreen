@@ -43,12 +43,20 @@ SEP = r"(?:-|–|—|to|until|till)"
 FULL_RANGE_RE = re.compile(rf"\b(\d{{1,2}})\s+({MONTH_WORD})[a-z]*\s+(20\d{{2}})\s*{SEP}\s*(\d{{1,2}})\s+({MONTH_WORD})[a-z]*\s+(20\d{{2}})\b", re.I)
 END_YEAR_RANGE_RE = re.compile(rf"\b(\d{{1,2}})\s+({MONTH_WORD})[a-z]*\s*{SEP}\s*(\d{{1,2}})\s+({MONTH_WORD})[a-z]*\s+(20\d{{2}})\b", re.I)
 SAME_MONTH_RANGE_RE = re.compile(rf"\b(\d{{1,2}})\s*{SEP}\s*(\d{{1,2}})\s+({MONTH_WORD})[a-z]*\s*(20\d{{2}})?\b", re.I)
+MONTH_FIRST_RANGE_RE = re.compile(rf"\b({MONTH_WORD})[a-z]*\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?\s*{SEP}\s*(\d{{1,2}})(?:st|nd|rd|th)?(?:,)?\s*(20\d{{2}})?\b", re.I)
+MONTH_FIRST_DATE_RE = re.compile(rf"\b({MONTH_WORD})[a-z]*\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?(?:,)?\s*(20\d{{2}})?\b", re.I)
 TEXT_DATE_RE = re.compile(rf"\b(\d{{1,2}})\s+({MONTH_WORD})[a-z]*\s*(20\d{{2}})?\b", re.I)
 ISO_DATE_RE = re.compile(r"\b(20\d{2})-(\d{1,2})-(\d{1,2})\b")
-DATE_LINE_RE = re.compile(r"\b20\d{2}-\d{1,2}-\d{1,2}\b|" + rf"\b\d{{1,2}}\s+(?:{MONTH_WORD})[a-z]*\s*(?:{SEP})?\s*\d{{0,2}}\s*(?:{MONTH_WORD})?[a-z]*\s*\d{{0,4}}\b", re.I)
+DATE_LINE_RE = re.compile(
+    r"\b20\d{2}-\d{1,2}-\d{1,2}\b|"
+    + rf"\b\d{{1,2}}\s+(?:{MONTH_WORD})[a-z]*\s*(?:{SEP})?\s*\d{{0,2}}\s*(?:{MONTH_WORD})?[a-z]*\s*\d{{0,4}}\b|"
+    + rf"\b(?:{MONTH_WORD})[a-z]*\.?\s+\d{{1,2}}(?:st|nd|rd|th)?(?:\s*{SEP}\s*\d{{1,2}}(?:st|nd|rd|th)?)?(?:,)?\s*\d{{0,4}}\b",
+    re.I,
+)
 TIME_RE = re.compile(r"\b(?:\d{1,2}(?::|\.)\d{2}\s*(?:am|pm)?|\d{1,2}\s*(?:am|pm)|daily|selected dates|all day|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun)\b", re.I)
 BAD_LINE_RE = re.compile(r"\b(previous programme|next programme|related|recommended|last updated|newsletter|privacy|terms of use|copyright|©|cookie)\b", re.I)
-GENERIC_TITLE_RE = re.compile(r"^(events?|exhibitions?(?:\s*&\s*programmes?)?|programmes?|programs?|activities?|view all|overview|what'?s on|read more|learn more|find out more|view details|details|more|book now)$", re.I)
+GENERIC_TITLE_RE = re.compile(r"^(events?|exhibitions?(?:\s*&\s*programmes?)?|programmes?|programs?|activities?|view all|overview|what'?s on|read more|learn more|find out more|view details|details|more|book now|explore more)$", re.I)
+FAKE_TITLE_RE = re.compile(r"^(?:box|event\s*box|image\s*in\s*card|date:?|location:?|venue:?|time:?|from:?|to:?|galleries|details?)$", re.I)
 CATEGORY_PREFIX_RE = re.compile(r"^(?:exhibitions?(?:\s*&\s*programmes?)?|programmes?|programs?|events?|activities?)\s+", re.I)
 VENUE_RE = re.compile(r"\b(museum|gallery|galleries|zoo|safari|park|library|safra|punggol|waterway|mandai|level|foyer|hall|theatre|theater|room|atrium|concourse|centre|center|esplanade|kallang|stadium|arena|gardens)\b", re.I)
 VENUE_PHRASE_RE = re.compile(
@@ -62,6 +70,8 @@ SUMMARY_START_RE = re.compile(r"\b(?:Embark|Join|Discover|Explore|Experience|Lea
 NON_EVENT_URL_RE = re.compile(r"/(?:facilit(?:y|ies)|amenit(?:y|ies)|membership|member|club|clubs|venue-hire|booking|bookings|sports|swimming|gym|pool|fnb|dining|parking|contact|about|overview)(?:/|[-_]|$)", re.I)
 NON_EVENT_TITLE_RE = re.compile(r"\b(?:overview|swimming\s*pool|pool|gym|membership|member\s*benefits|club\s*facilities|facilities|venue\s*hire|bookings?|parking|faq)\b", re.I)
 EVENT_WORD_RE = re.compile(r"\b(?:event|exhibition|programme|program|activity|workshop|tour|talk|lecture|festival|performance|concert|screening|class|course|guided|show|market|fair)\b", re.I)
+MEDIA_URL_RE = re.compile(r"(?:/-/media/|\.(?:jpg|jpeg|png|webp|gif|svg|pdf)(?:[?#]|$))", re.I)
+SUMMARY_LIKE_TITLE_RE = re.compile(r"^(?:join|step|one night only|catch|relive|don.t miss|more than|don’t miss|don’t miss your chance|learn|experience|explore|visit|enjoy)\b", re.I)
 
 
 def now_iso() -> str:
@@ -69,7 +79,7 @@ def now_iso() -> str:
 
 
 def clean(value: object) -> str:
-    text = html.unescape(str(value or "")).replace("\\/", "/").replace("\\u002F", "/")
+    text = html.unescape(str(value or "")).replace("\/", "/").replace("\u002F", "/")
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
@@ -126,7 +136,13 @@ def label_dates(label: str) -> list[date]:
     for d1, d2, m, y in SAME_MONTH_RANGE_RE.findall(text):
         year = y or inherited
         add(parse_date(d1, m, year)); add(parse_date(d2, m, year))
+    for m, d1, d2, y in MONTH_FIRST_RANGE_RE.findall(text):
+        year = y or inherited
+        add(parse_date(d1, m, year)); add(parse_date(d2, m, year))
     for d, m, y in TEXT_DATE_RE.findall(text):
+        year = y or inherited
+        add(parse_date(d, m, year))
+    for m, d, y in MONTH_FIRST_DATE_RE.findall(text):
         year = y or inherited
         add(parse_date(d, m, year))
     for y, m, d in ISO_DATE_RE.findall(text):
@@ -154,8 +170,12 @@ def best_start_date(label: str) -> str:
 
 
 def title_from_url(url: str) -> str:
+    if MEDIA_URL_RE.search(url):
+        return ""
     leaf = unquote(urlparse(url).path.rstrip("/").split("/")[-1])
     leaf = re.sub(r"\.html$", "", leaf)
+    if not leaf or leaf.isdigit():
+        return ""
     parts = [part for part in re.split(r"[-_]+", leaf) if part and not part.isdigit()]
     return " ".join(part.capitalize() for part in parts)
 
@@ -164,12 +184,15 @@ def normalise_title(raw: object) -> str:
     title = clean(raw)
     title = re.sub(r"^(previous programme|next programme)\s+", "", title, flags=re.I)
     title = CATEGORY_PREFIX_RE.sub("", title)
+    title = title.strip(" -–—:|")
+    if FAKE_TITLE_RE.match(title):
+        return ""
     return clean(title)
 
 
 def date_fragments(text: str) -> list[str]:
     found: list[tuple[int, int, str]] = []
-    patterns = [FULL_RANGE_RE, END_YEAR_RANGE_RE, SAME_MONTH_RANGE_RE, ISO_DATE_RE, TEXT_DATE_RE]
+    patterns = [FULL_RANGE_RE, END_YEAR_RANGE_RE, SAME_MONTH_RANGE_RE, MONTH_FIRST_RANGE_RE, ISO_DATE_RE, TEXT_DATE_RE, MONTH_FIRST_DATE_RE]
     for priority, pattern in enumerate(patterns):
         for match in pattern.finditer(text):
             frag = clean(match.group(0))
@@ -189,7 +212,7 @@ def score_when(fragment: str, source_line: str) -> int:
     score = 10
     if re.search(r"\b20\d{2}\b", fragment):
         score += 35
-    if FULL_RANGE_RE.search(fragment) or END_YEAR_RANGE_RE.search(fragment):
+    if FULL_RANGE_RE.search(fragment) or END_YEAR_RANGE_RE.search(fragment) or MONTH_FIRST_RANGE_RE.search(fragment):
         score += 60
     if TIME_RE.search(source_line):
         score += 8
@@ -248,6 +271,8 @@ def pick_venue(source: dict[str, Any], card: dict[str, Any], when: str, when_lin
             continue
         if DATE_LINE_RE.search(line) or TIME_RE.search(line):
             continue
+        if FAKE_TITLE_RE.match(line):
+            continue
         tails.append(line)
 
     for text in tails:
@@ -293,7 +318,7 @@ def pick_summary(card: dict[str, Any], title: str, when: str, where: str) -> str
             continue
         if where and where.lower() in line.lower():
             continue
-        if DATE_LINE_RE.search(line) or GENERIC_TITLE_RE.match(line):
+        if DATE_LINE_RE.search(line) or GENERIC_TITLE_RE.match(line) or FAKE_TITLE_RE.match(line):
             continue
         if len(line) >= 35:
             return short(line, 260)
@@ -305,6 +330,14 @@ def event_looks_wrong(source: dict[str, Any], card: dict[str, Any], title: str, 
     text = clean(card.get("text") or "")
     source_id = clean(source.get("id") or "").lower()
     combined = " ".join([title, url, text[:500]])
+    if FAKE_TITLE_RE.match(title):
+        return "fake_title"
+    if MEDIA_URL_RE.search(url):
+        return "media_asset_url"
+    if "#nhb" in url and VENUE_RE.search(title) and not EVENT_WORD_RE.search(title):
+        return "synthetic_venue_title"
+    if "#nhb" in url and (len(title.split()) > 10 or SUMMARY_LIKE_TITLE_RE.search(title)):
+        return "synthetic_summary_title"
     if NON_EVENT_URL_RE.search(url) or NON_EVENT_TITLE_RE.search(title):
         if not EVENT_WORD_RE.search(combined):
             return "non_event_overview_or_facility_page"
@@ -533,8 +566,8 @@ def collect_events(config_path: Path, location: str, debug_dir: Path) -> dict[st
     all_items.sort(key=lambda item: (-local_score(item, location), str(item.get("source_name", "")), str(item.get("start_date", "")), str(item.get("title", ""))))
     return {
         "ok": True,
-        "version": 42,
-        "extractor": "rendered-dom-card-v42",
+        "version": 43,
+        "extractor": "rendered-dom-card-v43",
         "updated_at": now_iso(),
         "location": location,
         "runtime": runtime_info(config_path),

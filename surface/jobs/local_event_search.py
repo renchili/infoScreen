@@ -6,17 +6,21 @@ import json
 import os
 from pathlib import Path
 
-os.environ.setdefault("LOCAL_EVENTS_MAX_SECONDS", "260")
-os.environ.setdefault("LOCAL_EVENTS_SOURCE_CONCURRENCY", "2")
-os.environ.setdefault("LOCAL_EVENTS_SOURCE_TIMEOUT_SECONDS", "55")
-os.environ.setdefault("LOCAL_EVENTS_MAX_LISTING_PAGES", "1")
-os.environ.setdefault("LOCAL_EVENTS_LOAD_MORE_ROUNDS", "0")
-os.environ.setdefault("LOCAL_EVENTS_NAV_TIMEOUT_MS", "12000")
-os.environ.setdefault("LOCAL_EVENTS_DOM_TIMEOUT_MS", "12000")
+os.environ.setdefault("LOCAL_EVENTS_MAX_SECONDS", "520")
+os.environ.setdefault("LOCAL_EVENTS_SOURCE_CONCURRENCY", "3")
+os.environ.setdefault("LOCAL_EVENTS_SOURCE_TIMEOUT_SECONDS", "95")
+os.environ.setdefault("LOCAL_EVENTS_MAX_LISTING_PAGES", "2")
+os.environ.setdefault("LOCAL_EVENTS_LOAD_MORE_ROUNDS", "2")
+os.environ.setdefault("LOCAL_EVENTS_MAX_TOTAL_EVENTS", "180")
+os.environ.setdefault("LOCAL_EVENTS_NAV_TIMEOUT_MS", "25000")
+os.environ.setdefault("LOCAL_EVENTS_DOM_TIMEOUT_MS", "25000")
+os.environ.setdefault("LOCAL_EVENTS_NHB_DETAIL_LIMIT", "18")
+os.environ.setdefault("LOCAL_EVENTS_NHB_DETAIL_TIMEOUT_MS", "16000")
 os.environ.setdefault("LOCAL_EVENTS_PAGE_SCREENSHOTS", "0")
 os.environ.setdefault("LOCAL_EVENTS_CARD_SCREENSHOTS", "0")
 
 from local_events_runtime import collect_events  # noqa: E402
+from local_events_runtime.output import normalize_payload  # noqa: E402
 
 SURFACE_DIR = Path(__file__).resolve().parents[1]
 ENV_DIR = SURFACE_DIR / ".env"
@@ -51,11 +55,13 @@ def is_partial(payload: dict) -> bool:
 
 
 def write_payload(payload: dict) -> None:
-    old = read_json(OUT)
+    payload = normalize_payload(payload)
+    old = normalize_payload(read_json(OUT))
     new_count = result_count(payload)
     old_count = result_count(old)
 
     if is_partial(payload) and old_count > new_count:
+        OUT.write_text(json.dumps(old, ensure_ascii=False, indent=2), encoding="utf-8")
         payload = {
             **payload,
             "ok": False,
@@ -71,11 +77,13 @@ def write_payload(payload: dict) -> None:
 
 
 def self_test() -> int:
-    payload = collect_events(CONFIG, DEFAULT_LOCATION, DEBUG_DIR)
-    assert payload["extractor"] == "rendered-dom-card-v42"
+    payload = normalize_payload(collect_events(CONFIG, DEFAULT_LOCATION, DEBUG_DIR))
+    assert payload["extractor"] == "structured-first-v49-source-order"
+    assert payload["version"] == 49
+    assert payload["text_normalizer"] == "plain-text-v1"
     assert isinstance(payload.get("results"), list)
     assert isinstance(payload.get("debug_by_source"), list)
-    print("local-event rendered DOM self-test passed")
+    print("local-event structured-first self-test passed")
     return 0
 
 
@@ -91,7 +99,7 @@ def main(argv: list[str] | None = None) -> int:
     location = " ".join(args.location).strip() or DEFAULT_LOCATION
     ENV_DIR.mkdir(exist_ok=True)
     DEBUG_DIR.mkdir(parents=True, exist_ok=True)
-    payload = collect_events(CONFIG, location, DEBUG_DIR)
+    payload = normalize_payload(collect_events(CONFIG, location, DEBUG_DIR))
     write_payload(payload)
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0

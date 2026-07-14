@@ -56,5 +56,42 @@ def test_http_runtime_json_uses_seeded_fixture_data(http_base: str) -> None:
     assert news["items_by_lang"]["zh"][0]["title"] == "中文测试标题"
 
 
+def test_http_local_event_details_are_plain_text_for_stale_runtime(
+    http_base: str,
+    seeded_env: Path,
+) -> None:
+    raw_details = (
+        "&amp;lt;p&amp;gt;&amp;lt;strong&amp;gt;About the Event&amp;lt;/strong&amp;gt;"
+        "&amp;lt;span style=&amp;quot;background-color: transparent;&amp;quot;&amp;gt;"
+        "&amp;lt;/span&amp;gt;&amp;lt;/p&amp;gt;"
+        "&amp;lt;p&amp;gt;This talk is a compassionate and practical guide to navigating loss."
+        "&amp;lt;/p&amp;gt;"
+    )
+    payload = {
+        "results": [
+            {
+                "title": "What Happens After Someone Dies: A Practical Guide for Families",
+                "when": "14 Jul 2026",
+                "where": "Central Public Library",
+                "description": raw_details,
+            }
+        ]
+    }
+    (seeded_env / "local_event_search_results.json").write_text(
+        json.dumps(payload),
+        encoding="utf-8",
+    )
+
+    expected = "This talk is a compassionate and practical guide to navigating loss."
+    for path in ("/local_event_search_results.json", "/api/local-events/search"):
+        delivered = fetch_json(http_base, path)
+        event = delivered["results"][0]
+        assert event["summary"] == expected
+        assert event["description"] == expected
+        assert "<" not in event["summary"]
+        assert "&lt;" not in event["summary"]
+        assert delivered["text_normalizer"] == "plain-text-v1"
+
+
 def test_http_public_photo_fixture_is_served(http_base: str) -> None:
     assert fetch_text(http_base, "/public_photos/fixture-photo.txt") == "fixture photo bytes\n"

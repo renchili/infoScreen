@@ -1,6 +1,6 @@
 {
-  "version": 2,
-  "purpose": "Verified official event listing entrypoints. This is separate from official_source_registry.json, which remains homepage/domain confirmation only.",
+  "version": 4,
+  "purpose": "Verified official event listing entrypoints. Sources that need detail-page date extraction use the detail-enriched adapter.",
   "policy": {
     "no_recursive_site_crawl": true,
     "no_sitemap_primary_flow": true,
@@ -11,7 +11,7 @@
     {
       "id": "childrensmuseum",
       "name": "Children's Museum Singapore",
-      "adapter": "rendered_dom_card",
+      "adapter": "nhb",
       "official_home": "https://www.childrensmuseum.sg/",
       "allowed_domains": ["heritage.sg", "childrensmuseum.sg"],
       "default_venue": "Children's Museum Singapore",
@@ -94,7 +94,7 @@
     {
       "id": "nlb",
       "name": "National Library Board",
-      "adapter": "rendered_dom_card",
+      "adapter": "nhb",
       "official_home": "https://www.nlb.gov.sg/",
       "allowed_domains": ["nlb.gov.sg", "nlb.libcal.com"],
       "default_venue": "NLB Libraries",
@@ -106,7 +106,7 @@
     {
       "id": "onepa",
       "name": "onePA / People's Association",
-      "adapter": "rendered_dom_card",
+      "adapter": "nhb",
       "official_home": "https://www.onepa.gov.sg/",
       "allowed_domains": ["onepa.gov.sg"],
       "default_venue": "People's Association CCs",
@@ -140,7 +140,7 @@
     {
       "id": "waterwaypoint",
       "name": "Waterway Point",
-      "adapter": "rendered_dom_card",
+      "adapter": "nhb",
       "official_home": "https://www.waterwaypoint.com.sg/",
       "allowed_domains": ["waterwaypoint.com.sg", "frasersproperty.com"],
       "default_venue": "Waterway Point",
@@ -152,7 +152,7 @@
     {
       "id": "mandai",
       "name": "Mandai Wildlife Group",
-      "adapter": "mandai",
+      "adapter": "nhb",
       "official_home": "https://www.mandai.com/",
       "allowed_domains": ["mandai.com"],
       "default_venue": "Mandai Wildlife Reserve",
@@ -168,7 +168,7 @@
     {
       "id": "sentosa",
       "name": "Sentosa",
-      "adapter": "rendered_dom_card",
+      "adapter": "nhb",
       "official_home": "https://www.sentosa.com.sg/",
       "allowed_domains": ["sentosa.com.sg"],
       "default_venue": "Sentosa",
@@ -179,7 +179,7 @@
     {
       "id": "rws",
       "name": "Resorts World Sentosa",
-      "adapter": "rendered_dom_card",
+      "adapter": "nhb",
       "official_home": "https://www.rwsentosa.com/",
       "allowed_domains": ["rwsentosa.com"],
       "default_venue": "Resorts World Sentosa",
@@ -190,7 +190,7 @@
     {
       "id": "gardensbythebay",
       "name": "Gardens by the Bay",
-      "adapter": "rendered_dom_card",
+      "adapter": "nhb",
       "official_home": "https://www.gardensbythebay.com.sg/",
       "allowed_domains": ["gardensbythebay.com.sg"],
       "default_venue": "Gardens by the Bay",

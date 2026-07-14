@@ -68,11 +68,21 @@ def runtime_path(name: str) -> Path:
     return ENV_DIR / name
 
 
+def normalize_runtime_payload(name: str, payload):
+    if name != "local_event_search_results.json" or not isinstance(payload, dict):
+        return payload
+    try:
+        from .local_events_runtime.output import normalize_payload
+    except ImportError:
+        from local_events_runtime.output import normalize_payload
+    return normalize_payload(payload)
+
+
 def runtime_json(name: str):
     default = JSON_DEFAULTS.get(name, {})
     path = runtime_path(name)
     if path.exists():
-        return read_json(path, default)
+        return normalize_runtime_payload(name, read_json(path, default))
     payload = dict(default) if isinstance(default, dict) else default
     if isinstance(payload, dict):
         payload = {
@@ -81,7 +91,7 @@ def runtime_json(name: str):
             "error": "missing_runtime_json",
             "expected_path": str(path),
         }
-    return payload
+    return normalize_runtime_payload(name, payload)
 
 
 def market_config_json():
