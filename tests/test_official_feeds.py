@@ -134,3 +134,38 @@ def test_structured_card_bypasses_dom_date_guessing_for_any_source() -> None:
     assert event["start_date"] == f"{year}-07-03"
     assert event["end_date"] == f"{year}-08-10"
     assert event["source_type"] == "official_structured_data"
+
+
+def test_safra_structured_carpark_facility_is_rejected() -> None:
+    card = {
+        "url": "https://www.safra.sg/amenities-offerings/carpark",
+        "text": (
+            "Carpark\n"
+            "18 Mar 2024 - 31 Dec 2029\n"
+            "SAFRA Mount Faber, SAFRA Punggol, SAFRA Toa Payoh, "
+            "SAFRA Choa Chu Kang, SAFRA Tampines\n"
+            "Carpark Rates"
+        ),
+        "structured_event": {
+            "title": "Carpark",
+            "when": "18 Mar 2024 - 31 Dec 2029",
+            "where": (
+                "SAFRA Mount Faber, SAFRA Punggol, SAFRA Toa Payoh, "
+                "SAFRA Choa Chu Kang, SAFRA Tampines"
+            ),
+            "url": "https://www.safra.sg/amenities-offerings/carpark",
+            "summary": "Carpark Rates",
+            "start_date": "2024-03-18",
+            "end_date": "2029-12-31",
+        },
+    }
+    safra = {
+        "id": "safra",
+        "name": "SAFRA",
+        "default_venue": "SAFRA Clubs",
+    }
+
+    event, reason = event_from_card(safra, card)
+
+    assert event is None
+    assert reason == "non_event_carpark_facility"
