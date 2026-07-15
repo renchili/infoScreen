@@ -1,186 +1,259 @@
-# InfoScreen implementation rationale and validation limits
+# InfoScreen supplementary context
 
-This document preserves project context that cannot be understood from code structure alone. It records why selected behaviours exist, what real-world observations led to them, and where automated validation stops.
+This document records project-specific background that is difficult to infer from code alone. It focuses on requirements and real deployment observations that changed the current implementation. It does not repeat the complete architecture, deployment procedure, or source-code inventory.
 
-It is not a conversation transcript, a changelog, or a list of implementation mistakes. The most important purpose of this file is to prevent a future maintainer from simplifying the Local Events collector based only on passing repository tests while ignoring the conditions observed on the real sites and the real display environment.
+## TTY visual language without a dot-matrix background
 
-## TTY style is an information language, not dot-matrix decoration
+The requested TTY style comes from monospaced typography, aligned values, concise labels, restrained status colours, compact spacing, and clear panel boundaries.
 
-The requested TTY style refers to monospaced typography, compact spacing, aligned values, concise labels, restrained status colours, and clear panel boundaries.
+A dot-matrix wallpaper, pixel grid, noisy CRT texture, or decorative pattern was explicitly not required. Those effects compete with the information and reduce readability on an always-on display. The background should remain quiet; the terminal character should come from typography and information layout.
 
-It does not require a dot-matrix background, pixel grid, noisy CRT texture, or decorative pattern. Those effects were explicitly not required because they compete with the information and reduce readability on an always-on display.
+## Schedule export through macOS EventKit
 
-The terminal character of the interface should come from typography, hierarchy, alignment, borders, and state presentation. The background should remain visually quiet.
+Schedule data is exported on the Mac because macOS Calendar already owns the Calendar accounts, permissions, timezone context, and authoritative event view. The Surface does not maintain a second Calendar account or attempt to recreate EventKit access.
 
-## Local Events cannot be validated end to end by repository tests
+The active path is:
 
-The Local Events feature reads external official websites whose behaviour depends on the live page, network path, JavaScript execution, region, cookies, timing, anti-bot controls, and changes made by the publishing organisation.
+```text
+macOS Calendar/EventKit
+  -> mac/export.py
+  -> mac/schedule.json
+  -> mac/sync_schedule.sh
+  -> SSH/SCP
+  -> surface/.env/schedule.json
+  -> /schedule.json
+  -> calendar_board.js
+```
 
-The repository test suite does not prove that an official website is currently reachable, that its JavaScript still renders the same content, that its anti-bot behaviour permits collection, or that the current page still exposes the fields expected by the collector.
+This design keeps private Calendar configuration on the device that already owns it while allowing the Surface to remain a simple runtime and display host.
 
-The development environment used for code changes cannot reproduce every real Surface and live-site condition. For this feature, validation by the project owner on the real network and real display is part of the development process, not an optional final check.
+## EventKit-capable Python and LaunchAgent execution
 
-A passing fixture or parser test means only that a known input is handled as expected. It does not mean that a live source currently produces that input.
+A normal `python3` executable is not automatically suitable for the Mac exporter. The actual requirement is a Python runtime that can import the macOS `EventKit` bridge.
 
-## Human verification is part of the Local Events development loop
+The setup script therefore verifies candidate Python executables with `import EventKit` and writes the selected executable to the uncommitted `mac/local.env` file. The LaunchAgent uses that explicit path instead of relying on the interactive shell environment.
 
-The effective development loop is:
+The sync script also defines an explicit PATH, resolves its own directory, and writes logs under `~/Library/Logs/infoscreen-sync/`. These details exist because launchd does not run with the same environment as an interactive terminal.
 
-1. run the collector on the real Surface or equivalent real browser/network environment;
-2. inspect what is actually displayed and what was written to the runtime JSON;
-3. identify the affected official source and exact listing/detail page;
-4. inspect `debug_by_source`, captured structured payloads, rendered cards, detail-page evidence, and rejection reasons;
-5. describe the real failure precisely, such as a false event, missing date, wrong venue, missing source, partial coverage, or blocked page;
-6. change the smallest appropriate source configuration, adapter, extraction rule, or output policy;
-7. add an offline regression test or fixture that preserves the observed case;
-8. rerun the real collector to confirm that the live behaviour is actually corrected.
+## Canonical Schedule runtime destination
 
-The offline regression test is the final protection against reintroducing a known problem. It is not a replacement for step 1 or step 8.
+The Schedule push and the dashboard must use the same file. The canonical Surface destination is:
 
-## Why the collector is source-specific
+```text
+~/infoscreen/surface/.env/schedule.json
+```
 
-The current collector is not a universal web scraper. The official sources do not expose events through one stable contract.
+The Mac setup script, sync script, HTTP server, Calendar board, Sync ticker, documentation, and tests all use this path. The sync script creates the remote runtime directory before copying the file.
 
-Observed and implemented source patterns include:
+A successful `scp` to another path does not update the page, even though the transfer itself succeeded.
+
+## Schedule production, freshness, and board rotation
+
+Schedule has three independent timing behaviours:
+
+- the Mac LaunchAgent normally exports and pushes a new file every 120 seconds;
+- the Sync ticker checks the served file age every 60 seconds;
+- the Calendar board rotates already-loaded event groups every seven seconds.
+
+The board reads `schedule.json` at page startup. A newly pushed file can therefore appear fresh in the Sync ticker while the board continues rotating the previous in-memory list until the page reloads.
+
+The split-flap board animation is presentation only. It does not refresh Calendar data.
+
+## Market redundancy after public data-source instability
+
+The Market implementation does not rely on one unauthenticated public quote endpoint. Real use showed that public sources can reject requests, rate-limit, return HTML, omit expected fields, or behave differently for stocks and ETFs.
+
+The current per-symbol fallback order is:
+
+1. Nasdaq stock endpoint;
+2. Nasdaq ETF endpoint;
+3. CNBC quote service;
+4. Stooq daily CSV;
+5. Yahoo chart data;
+6. the previous usable item from `market.json`.
+
+Every symbol runs through the fallback chain independently. One provider failure or unsupported symbol therefore does not erase quotes that succeeded through another path.
+
+The runtime payload records the aggregate source as `nasdaq+cnbc+stooq+yahoo`, while every row records the provider that actually supplied that value.
+
+## Explicit stale and failed Market rows
+
+When every live provider fails for a symbol, the previous usable quote may be retained. The retained value is explicitly marked:
+
+```text
+session: STALE
+provider: stale-cache
+```
+
+The provider errors remain attached to the row. When no live value and no previous value exist, the row is written as `N/A` with `session: ERR` and `provider: none`.
+
+This preserves useful last-known information during temporary outages without presenting it as current or inventing a plausible price.
+
+## Market movement and provider-state presentation
+
+Market movement, provider state, and runtime metadata have different meanings:
+
+- percentage movement controls the up/down/flat arrow and colour;
+- session/provider labels describe where or in what state the quote was obtained;
+- the file-level source and timestamp describe the generated runtime payload.
+
+A negative percentage must remain visually negative even when a session label is present. Session labels such as `NSDQ`, `CNBC`, `DLY`, `STALE`, or a Yahoo market state are supplementary metadata and must not replace the movement semantics.
+
+The Market card and the global Market tape use the same `market.json` rows so they present the same price and direction.
+
+## Runtime Market symbol configuration
+
+The symbol list is runtime configuration rather than source-code configuration.
+
+```text
+Committed defaults: surface/conf/market_config.default.json
+Active symbols:     surface/.env/market_config.json
+```
+
+The UI uppercases symbols, removes duplicates, and keeps at most 12. `SAVE` writes the active configuration and then runs a refresh. `REFRESH` runs the producer without changing the list.
+
+Browser local storage only helps repopulate the control when the API cannot be read. The producer reads the runtime JSON file as the authoritative configuration.
+
+## Shared Market and Weather producer
+
+Market and Weather are produced by the same one-shot job, `surface/fetch_live_data.py`, and the same five-minute systemd timer. A manual Market refresh therefore also refreshes Weather.
+
+They remain separate products with different runtime files, schemas, panels, and freshness thresholds. A Weather failure preserves available previous fields but changes the status to `ERR` and records the current error instead of silently presenting the old reading as a successful refresh.
+
+## Per-file Sync freshness
+
+A real display remained online while runtime data had not been updated for a long period. A generic display-online message was therefore insufficient.
+
+The Sync ticker observes the final served artifacts separately:
+
+- `SCHEDULE` → `/schedule.json`;
+- `WEATHER` → `/weather.json`;
+- `MARKET` → `/market.json`;
+- `NEWS` → `/event_stream.json`.
+
+It reports `OK`, `STALE`, `MISS`, or `ERR` together with `LATEST` and `AGE`, calculated from the HTTP `Last-Modified` header.
+
+This verifies the final producer-to-runtime-to-HTTP path. It does not identify the failing internal provider, and a large `AGE` can also expose clock skew between the browser, Surface, and Mac.
+
+## Aligned multilingual News stories
+
+The English, French, and Chinese ticker rows represent three language versions of the same selected stories, not three unrelated feeds.
+
+The producer collects real RSS items, removes exact duplicate titles, selects a base set, and creates a complete EN/FR/ZH triple for each selected story. Chinese output must contain CJK text, and English/French output must contain sufficient Latin text.
+
+A story is skipped when one language cannot be produced after retries. Skipping the whole triple preserves semantic alignment across the three rows.
+
+Ticker motion is only visual rotation. It does not prove that `event_stream.json` is fresh.
+
+## Local Photo inputs and browser-safe outputs
+
+The Photo wall was designed around local personal files, including iPhone HEIC images.
+
+Original files remain under:
+
+```text
+surface/.env/photos/
+```
+
+The builder creates browser-facing outputs under `surface/.env/public_photos/` and writes `photos.json`:
+
+- JPEG, PNG, and WebP inputs are normalized to web JPEG files;
+- GIF files are copied without flattening their animation;
+- HEIC/HEIF inputs are converted to JPEG with `ffmpeg` when available;
+- a native image with the same stem takes priority over a HEIC duplicate;
+- generated URLs include the output modification time for cache invalidation.
+
+The browser reads only `photos.json` and `/public_photos/*`; it does not enumerate arbitrary local filesystem paths.
+
+## Local Events validation in the real deployment environment
+
+Local Events depends on live official pages, JavaScript rendering, the deployment network, region, cookies, timing, anti-bot controls, and source-site changes. Repository tests cannot prove that a source is reachable today or that it still produces the stored DOM or structured payload.
+
+The effective validation loop includes the project owner on the real Surface or an equivalent real browser/network environment:
+
+1. run the collector against the real sources;
+2. inspect the displayed card and runtime JSON;
+3. identify the affected organisation and exact page;
+4. inspect `debug_by_source`, structured payloads, rendered cards, detail-page evidence, and rejection reasons;
+5. change the smallest appropriate source configuration, adapter, extraction rule, or output policy;
+6. add an offline regression test that preserves the observed case;
+7. rerun the real collector and inspect the final UI.
+
+An offline test protects a known parsing or policy case. It does not replace the initial or final live-source verification.
+
+## Source-specific Local Events collection
+
+The collector is source-specific because the official sites do not expose one stable event contract.
+
+Observed patterns include:
 
 - structured JSON returned through XHR or embedded page state;
 - cards that appear only after JavaScript rendering;
 - listing cards with incomplete or ambiguous dates;
 - useful fields available only on detail pages;
-- facilities, memberships, promotions, navigation objects, or operating information mixed with event data;
+- facilities, memberships, promotions, navigation objects, and operating information mixed with event data;
 - source-specific date and venue layouts;
-- pages that time out, block automation, or return only partial coverage.
+- pages that time out, block automation, or return partial coverage.
 
-For that reason, `surface/conf/event_sources.json` records the official entrypoints, allowed domains, default venues, source order, and adapter choice for each organisation. The shared collector provides common stages, while source-specific handling exists where real pages require it.
+`surface/conf/event_sources.json` therefore stores official entrypoints, allowed domains, default venues, source order, and adapter choice. The shared collector provides common stages, while targeted handling remains where real pages require it.
 
-Removing an adapter or targeted rule because a synthetic test still passes can remove live coverage that the test never exercised.
+A targeted rule that appears unnecessary in an isolated test may still be required by the live rendered page. A rule may also become obsolete after a site redesign. Live-page evidence is required before removing or generalising it.
 
-## Why structured data is preferred but not trusted blindly
+## Positive event intent from the SAFRA Carpark result
 
-Structured JSON is preferred because it can contain explicit start/end dates, venue fields, canonical URLs, and descriptions that are more reliable than guessing from rendered text.
+A real Local Events result displayed a SAFRA record titled `Carpark`, with a 2024–2029 range and the description `Carpark Rates`. The source exposed enough structured fields for the record to look event-shaped even though it was facility information.
 
-Repository tests preserve several useful structured-data behaviours:
+The result established that a title and date range do not prove event meaning. It did not establish that the word `carpark` should be added to a growing blacklist.
 
-- separate `startDate` and `endDate` values become one closed display range;
-- a structured record can replace a poorer same-title DOM date guess;
-- a structured event bypasses DOM date guessing once it has already supplied canonical dates;
-- explicit `@type: Event` is accepted even when the URL is not under the listing route.
+The current structured-data rule requires positive event intent through an explicit event/programme/activity type or a relationship to an official event-oriented listing/detail route. An untyped dated object outside that context is not automatically accepted.
 
-However, live structured payloads also contain objects that are not events. Structured form is evidence about data shape, not proof of event meaning. Every structured candidate still requires event intent and normal quality checks before it becomes a runtime event.
+`tests/test_official_feeds.py` preserves the known distinction between:
 
-## SAFRA Carpark showed why title blacklists are the wrong model
+- the SAFRA facility record outside the event route;
+- another dated membership record;
+- an untyped record inside an event route;
+- an explicitly typed Event outside that route.
 
-A real Local Events result displayed a SAFRA record with the title `Carpark`, a long range from 2024 to 2029, and the description `Carpark Rates`. The source page exposed enough structured fields for the earlier collector to convert it into an event-shaped record even though it was a facility information page.
+These tests preserve the logic derived from the observed false positive. They do not prove SAFRA's current live page structure or accessibility.
 
-The important finding was not that the word `Carpark` should be banned. It was that a title and date range do not establish event meaning.
+## Listing extraction and selective detail enrichment
 
-A blacklist of names such as `carpark`, `gym`, `membership`, or every future facility type cannot be complete and can also reject a genuine event whose description happens to mention one of those words.
+Some official listing cards contain enough information to produce an event directly. Others omit a complete date, venue, or description and require a detail-page read.
 
-The current rule therefore uses positive event intent. An untyped structured record must be connected to the official event listing/detail route, or the structured type must explicitly describe an event, programme, or activity. A dated object outside that event context is not automatically accepted.
+The collector therefore supports rendered listing extraction and a selectively detail-enriched adapter path. It does not recursively crawl an entire site, because unrestricted crawling increases runtime, duplicates, unrelated content, and blocking risk.
 
-`tests/test_official_feeds.py` preserves this distinction with cases for:
+A stored fixture can prove that a known detail response is parsed correctly. It cannot prove that the live detail page is still reachable or still exposes that response.
 
-- the SAFRA `Carpark` record outside the event route being rejected;
-- another untyped membership record with dates being rejected;
-- an untyped record inside the official event route being accepted;
-- an explicitly typed Event outside that route being accepted.
+## Per-source debug evidence
 
-These tests preserve the logic derived from the observed false positive. They do not prove that SAFRA's current live page still has the same structure or that the source can currently be collected.
+A total result count cannot explain why coverage changed. Failure can occur during page access, structured extraction, rendered-card discovery, pagination, detail enrichment, date parsing, event-intent validation, normalization, or the total crawl budget.
 
-## Why listing extraction and detail-page enrichment both exist
+The runtime therefore includes `debug_by_source`, with optional evidence under `surface/.env/local_event_debug_cards/`. This evidence connects a bad displayed card or missing organisation to a specific source and collection stage.
 
-Some official listing cards expose enough information to create an event directly. Others omit a complete date, venue, or description and require a detail-page read.
+The evidence is also required to decide whether an existing targeted rule still matches the real page.
 
-The collector therefore supports both rendered listing-card extraction and a detail-enriched adapter path. Detail pages are opened selectively rather than recursively crawling the entire site, because unrestricted crawling increases runtime, duplicate results, unrelated content, and blocking risk.
+## Partial Local Events result protection
 
-The detail-enrichment path should be retained only for sources that need it and must be revalidated against the real source when its page structure changes. A parser test can prove that a stored detail response is interpreted correctly; it cannot prove that the live detail page is still reachable or still contains that response.
+External sources fail independently. A crawl can finish with fewer organisations and fewer events because pages timed out, blocked automation, changed structure, or exceeded the job budget.
 
-## Why per-source debug evidence is part of the product
+When a new run is partial and contains fewer results than the previous complete run, the primary file remains the previous complete result. The incomplete run is written to:
 
-A result count alone cannot explain why Local Events coverage changed. A source can fail at page access, structured extraction, rendered-card discovery, pagination, detail enrichment, date parsing, event-intent validation, normalization, or the total crawl budget.
+```text
+surface/.env/local_event_search_results.partial.json
+```
 
-The runtime payload therefore includes `debug_by_source`, and optional evidence is written under `surface/.env/local_event_debug_cards/`.
+with:
 
-This evidence exists so a maintainer can answer:
+```text
+write_policy: kept_previous_complete_result
+```
 
-- which configured source was reached;
-- which listing pages were attempted;
-- how many cards or structured candidates were found;
-- how many records were accepted;
-- why individual candidates were rejected;
-- whether the job stopped because of a source timeout or total budget;
-- whether a source-specific rule is still matching the live page.
+This protects the always-on display from an immediate transient loss of coverage while retaining the incomplete run and its debug evidence for repair.
 
-When the project owner reports a bad card or missing organisation, this evidence is the bridge between the visible real-world result and an offline regression fixture.
+## Automated and live validation boundaries
 
-## Why a partial run does not replace a better complete result
+Repository tests can prove deterministic behaviour for supplied local inputs, including date parsing, structured-versus-DOM preference, known event-intent cases, text normalization, partial-result retention, payload contracts, and captured regressions.
 
-External sources fail independently. A single run can finish with fewer sources and fewer events because one or more pages timed out, blocked automation, changed layout, or exceeded the crawl budget.
+Repository tests cannot prove current source reachability, current DOM or JSON structure, anti-bot behaviour, pagination, complete organisation coverage, semantic correctness on the live page, real Surface timing limits, or acceptance of the final visible card.
 
-Replacing a larger complete runtime result with that smaller partial result would make the always-on display degrade immediately even though the previous data may still be more useful.
-
-`surface/jobs/local_event_search.py` therefore keeps the previous complete primary result when a new run is partial and contains fewer events. The incomplete run is written to `local_event_search_results.partial.json` with `write_policy: kept_previous_complete_result` and its debug evidence.
-
-`tests/test_local_event_output.py` verifies the write policy and text normalization using local data. The test proves the retention algorithm; only a real collection run can show why a particular source became partial.
-
-## Why text normalization happens before runtime delivery
-
-Official pages can return HTML fragments, repeatedly escaped markup, hidden spans, scripts, list elements, and different aliases such as `description`, `summary`, `venue`, and `where`.
-
-The runtime output is normalized before it reaches the API and frontend so every consumer sees the same plain-text event fields. This avoids requiring the browser to interpret source HTML or to implement source-specific cleanup.
-
-`tests/test_local_event_output.py` preserves known normalization cases, including HTML removal, repeated entity decoding, description-to-summary promotion, venue-to-where promotion, and normalization of a retained previous result.
-
-Again, these tests prove the local transformation of a supplied payload. They do not prove that a live official page will supply the expected field.
-
-## Current targeted rules are evidence of observed source differences
-
-The current collector contains targeted behaviour such as Gardens by the Bay date/venue handling and rejection of synthetic Mandai location cards.
-
-These rules should be understood as records of source behaviour encountered during development, not as a claim that those sites will remain unchanged. Before deleting, generalising, or replacing one of these rules, a maintainer must inspect the corresponding live official page and the current `debug_by_source` evidence.
-
-A rule that looks redundant in an isolated unit test may still be required by the real rendered page. Conversely, a rule that once matched may become obsolete when the organisation redesigns its site. Only real-site verification can distinguish those cases.
-
-## What automated tests can prove
-
-Repository tests can prove deterministic behaviour for supplied local inputs, including:
-
-- date-range parsing and formatting;
-- structured-versus-DOM preference;
-- positive event-intent classification for known URL/type cases;
-- text and field normalization;
-- partial-result retention policy;
-- payload shape and frontend/backend contracts;
-- regression cases captured from previously observed failures.
-
-These tests are essential because they prevent a later change from reintroducing a known parsing or policy failure.
-
-## What automated tests cannot prove
-
-Repository tests cannot prove:
-
-- that an official source is reachable today;
-- that Playwright is not blocked on the deployment network;
-- that the source still renders the same DOM or structured payload;
-- that pagination or load-more controls still work;
-- that every configured organisation is covered in the latest run;
-- that extracted dates and venues are semantically correct on the live page;
-- that the collection finishes within the real Surface resource and timing limits;
-- that the final visible card is acceptable to the project owner.
-
-A mocked browser, stored fixture, or successful `pytest` run must never be reported as live-source verification.
-
-## Required validation when changing a Local Events source
-
-A source or adapter change is complete only when the evidence states separately:
-
-1. what real page or displayed result triggered the change;
-2. what the project owner observed in the real environment;
-3. which source configuration or collector path was changed;
-4. what offline regression test was added or updated;
-5. which local tests were actually run;
-6. whether the real source was rerun after the change;
-7. whether the Surface UI was inspected after new runtime data was written;
-8. what could not be verified because of network, browser, region, session, or anti-bot limitations.
-
-When real-source or Surface validation has not happened, the correct conclusion is that the implementation is only partially verified. Passing repository tests must not be presented as proof that Local Events works end to end.
+A mocked browser, stored fixture, or successful `pytest` run must not be reported as live-source verification. When real-source or Surface validation has not happened, the implementation remains partially verified.
