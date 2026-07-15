@@ -1,8 +1,90 @@
 # InfoScreen
 
+## What this is
+
 InfoScreen is a local-first personal information screen for an always-on Surface or Ubuntu display. It combines the current day, personal schedule, weather, market movement, multilingual news, nearby official events, local photos, and runtime freshness in one stable kiosk page.
 
 The project is designed for glanceable use rather than constant interaction. It favours readable typography, compact information density, predictable layout, local ownership of personal data, and visible failure states.
+
+## What this is not
+
+InfoScreen is not a cloud dashboard, a general web-search scraper, a second Calendar account, or real Surface system monitoring. Local Events come from a curated inventory of official organisation pages. Calendar authority remains on a Mac running macOS Calendar/EventKit. The current CPU/MEM/DSK/NET bars are simulated browser values, and POWER/DISPLAY/NETWORK labels are static text.
+
+Runtime JSON, machine-local configuration, logs, debug captures, and personal photos are device state under `surface/.env/`; they are not repository source files or sample data to commit.
+
+## Who this is for
+
+The primary operator maintains one always-on Surface or Ubuntu display and may use a Mac to supply Calendar data. A maintainer should be comfortable with Python commands, browser inspection, systemd user services on the Surface, and LaunchAgent/SSH diagnostics on the Mac when Calendar sync is enabled.
+
+## First 10 minutes
+
+The smallest useful path starts the local HTTP server and opens the committed dashboard without requiring external providers, systemd, a Mac, or personal runtime data.
+
+```bash
+git clone https://github.com/renchili/infoScreen.git ~/infoscreen
+cd ~/infoscreen
+mkdir -p surface/.env
+python3 surface/serve_infoscreen.py
+```
+
+In another terminal:
+
+```bash
+curl -fsS http://127.0.0.1:8765/ | grep -E "assets/js/dashboard.js|assets/js/local_event_card.js"
+curl -fsS http://127.0.0.1:8765/openapi.json | python3 -m json.tool | head -n 20
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8765/
+```
+
+This quick path proves that the committed frontend, local HTTP server, and OpenAPI generation are available. It does not prove that external Market, Weather, News, or Local Events sources are currently reachable, that systemd timers are installed, or that Mac Calendar sync is configured.
+
+## Prerequisites
+
+For the smallest local path:
+
+- Python 3;
+- a browser or `curl`;
+- a checkout at `~/infoscreen` when following the supported deployment scripts.
+
+For the full Surface deployment:
+
+- a Linux user session with `systemd --user`;
+- Chromium and the Python Playwright package for Local Events;
+- outbound network access for Market, Weather, News, and official Local Events sources;
+- `ffmpeg` for HEIC/HEIF conversion and ImageMagick `magick` for optional photo normalization;
+- a Mac with an EventKit-capable Python runtime only when Calendar sync is required.
+
+## Configuration and safe local state
+
+No private configuration is required to serve the static dashboard. Runtime files and local preferences are created under:
+
+```text
+~/infoscreen/surface/.env/
+```
+
+Committed configuration includes:
+
+```text
+surface/conf/market_config.default.json
+surface/conf/event_sources.json
+```
+
+Machine-specific Calendar sync configuration is written to uncommitted `mac/local.env`. Do not commit runtime JSON, logs, debug captures, personal photos, SSH details, or machine-local environment files.
+
+## Startup success signals
+
+The smallest local startup is successful when all of these are true:
+
+1. the server prints a startup line for `0.0.0.0:8765`;
+2. `GET /` returns the dashboard HTML and references `assets/js/dashboard.js` and `assets/js/local_event_card.js`;
+3. `GET /openapi.json` returns a JSON document whose title is `InfoScreen Local API`;
+4. the browser opens the page even when runtime files are missing, with missing or unavailable states shown instead of invented data.
+
+A full deployment has additional success signals: `bash scripts/infoscreen_status.sh` reports the HTTP service and relevant timers, runtime files have current modification times, and the visible panels agree with their served JSON.
 
 ## 1. What the project provides
 
@@ -235,7 +317,7 @@ surface/fetch_live_data.py              Market and Weather producer
 surface/fetch_event_stream.py           multilingual News producer
 surface/search_local_events.py          Local Events command wrapper
 surface/jobs/local_event_search.py      Local Events job entrypoint
-surface/local_events_runtime/           source-specific collection and extraction library
+surface/local_events_runtime/           canonical source-specific collection and extraction library
 surface/build_photos_json.py            Photo manifest builder
 surface/conf/                            committed defaults and source inventory
 surface/web/                             kiosk frontend
@@ -243,9 +325,11 @@ surface/.env/                            local runtime and personal data
 mac/                                     EventKit export and schedule push
 deploy/systemd/user/                     committed Surface user units
 scripts/                                 status, validation, and repository scripts
-docs/                                    architecture, API, and supplementary product explanations
+docs/                                    architecture, API, and requirement clarifications
 tests/                                   unit and contract tests
 ```
+
+Start with `surface/serve_infoscreen.py` for the HTTP process, `surface/jobs/` for one-shot orchestration, `surface/local_events_runtime/` for Local Events collection logic, `surface/web/` for the kiosk UI, `surface/conf/` for committed configuration, `deploy/systemd/user/` for Surface scheduling, `mac/` for Calendar export and push, and `tests/` for offline regression contracts.
 
 ## 8. Deployment and update
 
@@ -445,13 +529,15 @@ python3 surface/search_local_events.py "Punggol Singapore"
 python3 surface/build_photos_json.py
 ```
 
+Before changing code or documentation, read `AGENTS.md`, `AGENT.md`, and `skills/SKILL.md`, then open the relevant source, tests, deployment files, and one of `docs/design.md`, `docs/api-spec.md`, or `docs/questions.md` according to the task.
+
 ## 11. Documentation
 
 ```text
-README.md          project overview, capabilities, data sources, interaction, refresh, deployment, and troubleshooting
+README.md          newcomer onboarding, capabilities, data sources, interaction, refresh, deployment, and troubleshooting
 docs/design.md     architecture, source ownership, data flow, and source-specific implementation
 docs/api-spec.md   HTTP methods, callers, payloads, side effects, and runtime mapping
-docs/questions.md  project-specific clarifications, constraints, and supplementary explanations
+docs/questions.md  requirement clarifications with implementation and acceptance evidence
 AGENT.md            repository-specific contribution rules
 AGENTS.md           required agent read order
 ```
