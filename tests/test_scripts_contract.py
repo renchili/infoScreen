@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import subprocess
 
 import pytest
@@ -94,8 +95,8 @@ def test_schedule_sync_operator_documentation_is_discoverable() -> None:
     assert "Mac Calendar/EventKit" in design
     assert "mac/sync_schedule.sh" in design
     assert "surface/.env/schedule.json" in design
-    assert "日程的权威来源是 Mac 上的 macOS Calendar/EventKit" in questions
-    assert "Surface 只保存、提供 HTTP 访问并渲染日程" in questions
+    assert "The authoritative schedule source is macOS Calendar/EventKit on the Mac" in questions
+    assert "The Surface only stores, serves, and renders schedule data" in questions
 
 
 def test_page_ui_job_and_source_mapping_is_documented() -> None:
@@ -140,31 +141,32 @@ def test_page_ui_job_and_source_mapping_is_documented() -> None:
         assert value in design
 
 
-def test_questions_only_records_durable_product_decisions() -> None:
+def test_questions_only_records_durable_product_decisions_in_english() -> None:
     questions = read_text("docs/questions.md")
 
     required = [
-        "InfoScreen 的运行边界是什么",
-        "运行时数据和个人数据放在哪里",
-        "日程数据从哪里来",
-        "本地活动允许使用哪些来源",
-        "什么内容才算本地活动",
-        "本地活动的数据质量由哪一层负责",
-        "本地活动按什么顺序展示",
+        "What are InfoScreen's runtime boundaries",
+        "Where do runtime and personal data live",
+        "Where does schedule data come from",
+        "Which sources are allowed for local events",
+        "What counts as a local event",
+        "Which layer owns local-event data quality",
+        "How are local events ordered",
     ]
     for value in required:
         assert value in questions
 
     forbidden = [
-        "GitHub Actions 关闭时怎么验收",
-        "为什么默认不上传测试 artifact",
-        "仓库卫生为什么不做成一堆产品单元测试",
-        "同步状态异常时怎么处理",
-        "Market 为什么只能有一个渲染 owner",
-        "左侧同步状态分别对应什么任务、产物和界面",
+        "How should sync status failures be handled",
+        "Why must Market have a single renderer owner",
+        "Which jobs, outputs, and UI correspond to the sync states",
+        "Why does the repository hygiene checker",
+        "Why are test artifacts not uploaded",
     ]
     for value in forbidden:
         assert value not in questions
+
+    assert re.search(r"[\u3400-\u9fff]", questions) is None
 
 
 def test_documented_systemd_job_cadence_matches_units() -> None:
