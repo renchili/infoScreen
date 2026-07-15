@@ -102,7 +102,7 @@ The same screen position would refer to unrelated stories, so the rows would be 
 
 ### Correct requirement interpretation
 
-The English, French, and Chinese rows synchronously display corresponding versions of the same content, advance in the same direction and at the same speed, and keep the same position aligned across EN, FR, and 中文. English and Chinese prioritise Singapore news. Translation fills a missing language instead of substituting an unrelated story.
+The English, French, and Chinese rows synchronously display corresponding versions of the same content, advance in the same direction and at the same speed, and keep the same position aligned across all three languages. English and Chinese prioritise Singapore news. Translation fills a missing language instead of substituting an unrelated story.
 
 ### Required implementation
 
@@ -230,19 +230,19 @@ Every line written to stdout by a short-lived producer can be classified as ad-h
 
 ### Why it fails
 
-InfoScreen has two different outputs: operational service messages captured by systemd and deliberate command results such as Local Events JSON written for callers. Treating machine-readable result output as logging breaks the CLI/API contract, while leaving a long-running service with uncontrolled diagnostic output makes operations difficult.
+InfoScreen has two different outputs: operational status captured by systemd and deliberate command results such as Local Events JSON written for callers. Treating machine-readable result output as logging breaks the CLI/API contract. Introducing a second logging stack without an operational requirement would add configuration and maintenance that the local kiosk does not use.
 
 ### Correct requirement interpretation
 
-The long-running HTTP server uses Python logging with level and destination controlled by the runtime environment. Short-lived producer jobs may emit concise completion or failure lines to stdout/stderr because systemd captures those streams. Deliberate machine-readable stdout remains a command result, not the primary logging system.
+For this repository, systemd-captured stdout and stderr are the accepted operational output for the standard-library HTTP service and short-lived producer jobs. Concise startup, request, completion, skip, and failure messages are allowed. Deliberate machine-readable stdout remains a command result, not a log record. Structured JSON logs, request IDs, trace IDs, and an additional logging framework are not current product requirements.
 
 ### Required implementation
 
-Keep service messages concise and free of credentials, full request bodies, file contents, and personal data. Use stable component and operation names. Document the project-specific stdout/stderr boundary in `AGENT.md`. Do not replace command JSON with log records.
+Keep operational output concise and free of credentials, tokens, full request bodies, private file contents, and unnecessary personal-data values. Preserve `SimpleHTTPRequestHandler` request diagnostics, the HTTP startup line, producer status lines, and Local Events command JSON as distinct output contracts. Document this project-specific boundary in `AGENT.md` and update implementation, tests, and design together if the logging model changes.
 
 ### Acceptance evidence
 
-Static checks must distinguish service logging from command-result output, verify configurable HTTP log level and destination, reject accidental sensitive payload logging, and preserve Local Events command JSON. Operational acceptance must show useful startup, request, job completion, and failure records in the configured systemd journal or selected stream.
+Static checks must distinguish operational status from command-result output, preserve Local Events command JSON, and confirm that repository rules explicitly narrow the generic logging contract. Operational acceptance must show useful startup, request, producer completion, skip, and failure records in the systemd journal without sensitive payloads.
 
 ## Validation boundaries
 
