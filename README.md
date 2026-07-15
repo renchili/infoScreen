@@ -243,7 +243,7 @@ surface/.env/                            local runtime and personal data
 mac/                                     EventKit export and schedule push
 deploy/systemd/user/                     committed Surface user units
 scripts/                                 status, validation, and repository scripts
-docs/                                    architecture, API, and decision records
+docs/                                    architecture, API, and supplementary product explanations
 tests/                                   unit and contract tests
 ```
 
@@ -451,7 +451,7 @@ python3 surface/build_photos_json.py
 README.md          project overview, capabilities, data sources, interaction, refresh, deployment, and troubleshooting
 docs/design.md     architecture, source ownership, data flow, and source-specific implementation
 docs/api-spec.md   HTTP methods, callers, payloads, side effects, and runtime mapping
-docs/questions.md  discussion-derived decisions and the reasons behind the current design
+docs/questions.md  project-specific clarifications, constraints, and supplementary explanations
 AGENT.md            repository-specific contribution rules
 AGENTS.md           required agent read order
 ```
