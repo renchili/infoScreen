@@ -90,7 +90,7 @@ def test_document_roles_are_distinct() -> None:
     assert readme.startswith("# InfoScreen\n")
     assert design.startswith("# InfoScreen system architecture")
     assert api.startswith("# InfoScreen HTTP interaction contract")
-    assert explanations.startswith("# InfoScreen implementation rationale and validation limits")
+    assert explanations.startswith("# InfoScreen supplementary context")
 
     assert "## 1. What the project provides" in readme
     assert "## 3. Data sources, producers, and page consumers" in readme
@@ -99,8 +99,9 @@ def test_document_roles_are_distinct() -> None:
     assert "## 10. Development and validation" in readme
     assert "## 8. Source-specific Local Events architecture" in design
     assert "## 5. Market configuration interaction" in api
-    assert "## TTY style is an information language, not dot-matrix decoration" in explanations
-    assert "## Local Events cannot be validated end to end by repository tests" in explanations
+    assert "## TTY visual language without a dot-matrix background" in explanations
+    assert "## Schedule export through macOS EventKit" in explanations
+    assert "## Market redundancy after public data-source instability" in explanations
 
     assert "operator runbook" not in readme
     assert "Browser renderer ownership" not in readme
@@ -203,51 +204,71 @@ def test_api_spec_documents_callers_payloads_and_side_effects() -> None:
         assert value in api
 
 
-def test_questions_records_real_world_rationale_and_validation_limits() -> None:
+def test_questions_records_whole_project_supplementary_context() -> None:
     explanations = read_text("docs/questions.md")
 
     required_sections = [
-        "## TTY style is an information language, not dot-matrix decoration",
-        "## Local Events cannot be validated end to end by repository tests",
-        "## Human verification is part of the Local Events development loop",
-        "## Why the collector is source-specific",
-        "## Why structured data is preferred but not trusted blindly",
-        "## SAFRA Carpark showed why title blacklists are the wrong model",
-        "## Why listing extraction and detail-page enrichment both exist",
-        "## Why per-source debug evidence is part of the product",
-        "## Why a partial run does not replace a better complete result",
-        "## Why text normalization happens before runtime delivery",
-        "## Current targeted rules are evidence of observed source differences",
-        "## What automated tests can prove",
-        "## What automated tests cannot prove",
-        "## Required validation when changing a Local Events source",
+        "## TTY visual language without a dot-matrix background",
+        "## Schedule export through macOS EventKit",
+        "## EventKit-capable Python and LaunchAgent execution",
+        "## Canonical Schedule runtime destination",
+        "## Schedule production, freshness, and board rotation",
+        "## Market redundancy after public data-source instability",
+        "## Explicit stale and failed Market rows",
+        "## Market movement and provider-state presentation",
+        "## Runtime Market symbol configuration",
+        "## Shared Market and Weather producer",
+        "## Per-file Sync freshness",
+        "## Aligned multilingual News stories",
+        "## Local Photo inputs and browser-safe outputs",
+        "## Local Events validation in the real deployment environment",
+        "## Human verification in the Local Events development loop",
+        "## Source-specific Local Events collection",
+        "## Positive event intent from the SAFRA Carpark result",
+        "## Listing extraction and selective detail enrichment",
+        "## Per-source debug evidence",
+        "## Partial Local Events result protection",
+        "## Automated and live validation boundaries",
     ]
     for value in required_sections:
         assert value in explanations
 
     required_phrases = [
         "dot-matrix background",
-        "project owner on the real network and real display",
-        "A passing fixture or parser test",
-        "offline regression test",
+        "macOS Calendar/EventKit",
+        "import EventKit",
+        "~/infoscreen/surface/.env/schedule.json",
+        "every 120 seconds",
+        "every seven seconds",
+        "Nasdaq stock endpoint",
+        "CNBC quote service",
+        "Stooq daily CSV",
+        "Yahoo chart data",
+        "provider: stale-cache",
+        "session: ERR",
+        "surface/.env/market_config.json",
+        "OK",
+        "STALE",
+        "MISS",
+        "ERR",
+        "LATEST",
+        "AGE",
+        "same selected stories",
+        "HEIC/HEIF",
+        "project owner on the real Surface",
         "SAFRA",
         "Carpark Rates",
         "positive event intent",
-        "title blacklist",
-        "tests/test_official_feeds.py",
-        "tests/test_local_event_output.py",
         "debug_by_source",
         "local_event_search_results.partial.json",
         "kept_previous_complete_result",
-        "Gardens by the Bay",
-        "Mandai",
-        "A mocked browser, stored fixture, or successful `pytest` run",
         "partially verified",
     ]
     for value in required_phrases:
         assert value in explanations
 
     assert re.search(r"[\u3400-\u9fff]", explanations) is None
+    assert re.search(r"^##\s+(Why|What|How|Which|Where)\b", explanations, re.MULTILINE) is None
     assert "## Decision record" not in explanations
     assert "**Discussion context**" not in explanations
     assert "**Resulting implementation**" not in explanations
@@ -256,11 +277,6 @@ def test_questions_records_real_world_rationale_and_validation_limits() -> None:
         "A component optimisation must stay inside that component",
         "Fixing the Local Event card must not redesign",
         "Visible content must be real product data, not invented filler",
-        "Market data and Market presentation are separate concerns",
-        "Sync status represents data freshness",
-        "Calendar authority remains on the Mac",
-        "Photos remain local and explicit",
-        "Decorative metrics are not system monitoring",
         "the assistant made",
         "previous response",
         "we fixed the mistake",
