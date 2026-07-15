@@ -1,69 +1,267 @@
-# InfoScreen supplementary context
+# InfoScreen requirement clarifications
 
-This document preserves project background that is difficult to infer from source code alone. It complements the project overview and architecture by explaining the real requirements, deployment observations, and external-system limitations that shaped the current implementation.
-
-The document follows the same reading order as the product: visual language, Schedule, live information, Photos, Local Events, and validation. Each section stays within one subject so that related context can be read continuously instead of being reconstructed from many small headings.
+This document records requirement areas that are easy to misread and the evidence needed to accept their implementation. It is organised by product requirement rather than by conversation history or implementation attempt.
 
 ## Visual language
 
-InfoScreen uses a TTY-inspired information style. The intended character comes from monospaced typography, aligned values, concise labels, restrained status colours, compact spacing, and clear panel boundaries.
+### Easy-to-make interpretation
 
-A dot-matrix wallpaper, pixel grid, noisy CRT texture, or decorative background pattern was explicitly not required. Those effects compete with the information and reduce readability on an always-on display. The background should remain visually quiet; the terminal character should come from typography, hierarchy, alignment, borders, and state presentation.
+A TTY-inspired display can be interpreted as requiring a dot-matrix wallpaper, pixel grid, noisy CRT texture, or other decorative terminal effect.
 
-## Schedule
+### Why it fails
 
-**Calendar authority.** Schedule data is exported on the Mac because macOS Calendar already owns the Calendar accounts, permissions, timezone context, and authoritative event view. The Surface does not maintain a second Calendar account or attempt to recreate EventKit access. The active path is macOS Calendar/EventKit → `mac/export.py` → `mac/schedule.json` → `mac/sync_schedule.sh` → SSH/SCP → `surface/.env/schedule.json` → `/schedule.json` → `calendar_board.js`.
+Those effects compete with the information, reduce readability on an always-on display, and confuse visual decoration with the actual requirement for a stable information hierarchy.
 
-**EventKit-capable Python.** A normal `python3` executable is not automatically suitable for the exporter. The actual requirement is a Python runtime that can import the macOS `EventKit` bridge. The setup script checks candidate executables with `import EventKit`, stores the selected path in the uncommitted `mac/local.env`, and installs a LaunchAgent that uses that explicit executable rather than depending on an interactive shell environment.
+### Correct requirement interpretation
 
-**LaunchAgent environment.** launchd does not inherit the same PATH or working directory as a terminal session. The sync script therefore defines an explicit PATH, resolves its own directory, loads `mac/local.env`, and writes logs under `~/Library/Logs/infoscreen-sync/`. These details are required for unattended execution and are not optional shell convenience.
+The TTY character comes from monospaced typography, aligned values, concise labels, restrained status colours, compact spacing, clear panel boundaries, and a visually quiet background.
 
-**Canonical runtime destination.** The Mac push and the dashboard must reference the same file. The canonical Surface destination is `~/infoscreen/surface/.env/schedule.json`. The setup script, sync script, HTTP server, Calendar board, Sync ticker, documentation, and tests all use this path. The sync script creates the remote runtime directory before copying the file. A successful `scp` to another path does not update the page even though the file transfer itself succeeded.
+### Required implementation
 
-**Independent timing behaviours.** Schedule production, freshness observation, and board rotation are separate. The Mac LaunchAgent normally exports and pushes a new file every 120 seconds. The Sync ticker checks the served file age every 60 seconds. The Calendar board rotates already-loaded groups every seven seconds. The board reads `schedule.json` at page startup, so a newly pushed file can appear fresh in the Sync ticker while the board continues rotating the previous in-memory list until the page reloads. The split-flap animation is presentation only and does not refresh Calendar data.
+Keep the dashboard background restrained. Use typography, hierarchy, alignment, borders, and state presentation to create the terminal style. Do not add a dot-matrix wallpaper or decorative CRT noise as a substitute for information design.
 
-## Live information
+### Acceptance evidence
 
-**Market resilience.** The Market implementation does not rely on one unauthenticated public quote endpoint. Real use showed that public sources can reject requests, rate-limit, return HTML, omit expected fields, or behave differently for stocks and ETFs. Each configured symbol therefore uses an independent fallback chain: Nasdaq stock, Nasdaq ETF, CNBC, Stooq daily CSV, Yahoo chart data, and finally the previous usable row from `market.json`. One provider failure or unsupported symbol does not erase quotes that succeeded through another path. The file records the aggregate source as `nasdaq+cnbc+stooq+yahoo`, while each row records the provider that supplied that value.
+A browser acceptance check must show readable content at the target display size, stable panel boundaries, no decorative pattern obscuring text, and consistent TTY-inspired information style across the page.
 
-**Stale and failed quotes.** When all live providers fail for a symbol, the previous usable quote may be retained with `session: STALE` and `provider: stale-cache`. Provider errors remain attached to the row. When no live value and no previous value exist, the row is written as `N/A` with `session: ERR` and `provider: none`. This keeps useful last-known information during temporary outages without presenting it as current or inventing a plausible price.
+## Calendar authority and unattended sync
 
-**Movement and provider state.** Percentage movement controls the up/down/flat arrow and colour. Session and provider labels describe the quote source or state. File-level source and timestamp describe the generated runtime payload. These meanings must remain separate: a negative percentage stays visually negative even when a session label such as `NSDQ`, `CNBC`, `DLY`, `STALE`, or a Yahoo market state is present. The Market card and global tape read the same `market.json` rows so they present the same value and direction.
+### Easy-to-make interpretation
 
-**Runtime symbol configuration.** The committed defaults live in `surface/conf/market_config.default.json`, while active symbols live in `surface/.env/market_config.json`. The UI uppercases entries, removes duplicates, and keeps at most 12 symbols. `SAVE` writes the active configuration and then refreshes data; `REFRESH` runs the producer without changing the list. Browser local storage only helps repopulate the control when the API cannot be read. The producer treats the runtime JSON file as authoritative.
+The Surface can be treated as a second Calendar client, a normal `python3` executable can be assumed to support EventKit, and a successful file copy to any convenient path can be treated as a successful Calendar update.
 
-**Shared Market and Weather production.** Market and Weather are produced by the same one-shot job, `surface/fetch_live_data.py`, and the same five-minute systemd timer. A manual Market refresh therefore also refreshes Weather. They remain separate products with different runtime files, schemas, panels, and freshness thresholds. When Weather retrieval fails, available previous fields are preserved, but the status changes to `ERR` and the current error is recorded instead of presenting the old reading as a successful refresh.
+### Why it fails
 
-**Per-file freshness.** A real display can remain online while its runtime data is old, so a generic display-online message is insufficient. The Sync ticker observes `/schedule.json`, `/weather.json`, `/market.json`, and `/event_stream.json` separately. It reports `OK`, `STALE`, `MISS`, or `ERR` together with `LATEST` and `AGE`, calculated from the HTTP `Last-Modified` header. This verifies the final producer-to-runtime-to-HTTP path. It does not identify which internal provider failed, and a large `AGE` can also expose clock skew between the browser, Surface, and Mac.
+macOS Calendar already owns the accounts, permissions, timezone context, and authoritative event view. A Python runtime without `import EventKit` cannot export Calendar data. launchd does not inherit an interactive shell environment. The dashboard only reads `~/infoscreen/surface/.env/schedule.json`, so copying elsewhere does not update the page.
 
-**Synchronized multilingual News.** The product requirement is that the English, French, and Chinese rows synchronously display corresponding versions of the same content. The three rows must advance together, in the same direction and at the same speed, so the same position across EN, FR, and 中文 always refers to the same story. English and Chinese should prioritise Singapore news. When one language does not provide the corresponding item, translation fills that language instead of substituting an unrelated story. The current producer implements this by generating an EN/FR/ZH representation for one real selected item; the shared item is an implementation mechanism, not the requirement itself. If any language cannot be produced after retries, the whole three-language item is skipped so the rows do not become misaligned. Ticker motion is only visual movement and does not prove that `event_stream.json` is fresh.
+### Correct requirement interpretation
 
-## Photos
+Calendar data is authoritative on the Mac and follows macOS Calendar/EventKit -> `mac/export.py` -> local `mac/schedule.json` -> `mac/sync_schedule.sh` -> SSH/SCP -> `~/infoscreen/surface/.env/schedule.json` -> `/schedule.json` -> `calendar_board.js`.
 
-The Photo wall is designed around local personal files, including iPhone HEIC images. Original files remain under `surface/.env/photos/`. The builder creates browser-facing outputs under `surface/.env/public_photos/` and writes `photos.json`.
+### Required implementation
 
-JPEG, PNG, and WebP inputs are normalized to web JPEG files. GIF files are copied without flattening their animation. HEIC and HEIF inputs are converted to JPEG with `ffmpeg` when available. A native image with the same stem takes priority over a HEIC duplicate, and generated URLs include the output modification time for cache invalidation.
+The setup script must probe candidate Python executables with `import EventKit`, store the selected executable and Surface target in uncommitted `mac/local.env`, install a LaunchAgent with explicit paths, create the remote runtime directory, and copy to the canonical runtime destination. The Mac LaunchAgent normally runs every 120 seconds; the Sync ticker observes freshness every 60 seconds; the Calendar board rotates already-loaded groups every seven seconds.
 
-The browser reads only `photos.json` and `/public_photos/*`; it does not enumerate arbitrary local filesystem paths. This keeps personal originals outside the directly served tree while still supporting browser-compatible output.
+### Acceptance evidence
 
-## Local Events
+Evidence must show that the configured Python imports EventKit, the LaunchAgent runs without an interactive shell, `schedule.json` changes at the canonical Surface path, `/schedule.json` serves the new modification time and payload, and a page reload displays the updated Calendar data.
 
-**Real-environment validation.** Local Events depends on live official pages, JavaScript rendering, the deployment network, region, cookies, timing, anti-bot controls, and source-site changes. Repository tests cannot prove that a source is reachable today or that it still produces the stored DOM or structured payload. The development loop therefore includes the project owner on the real Surface or an equivalent real browser/network environment: run the collector, inspect the visible card and runtime JSON, identify the affected organisation and page, inspect `debug_by_source` and captured evidence, make the smallest appropriate change, add an offline regression case, then rerun the real collector and inspect the final UI. An offline test preserves a known parsing or policy case; it does not replace live-source verification.
+## Market resilience and runtime symbol authority
 
-**Source-specific collection.** The official sites do not expose one stable event contract. Observed patterns include structured JSON returned through XHR or embedded state, cards that appear only after JavaScript rendering, incomplete listing dates, fields available only on detail pages, non-event records mixed with event data, source-specific date and venue layouts, and pages that time out or block automation. `surface/conf/event_sources.json` therefore stores official entrypoints, allowed domains, default venues, source order, and adapter choice. The shared collector provides common stages, while targeted handling remains where real pages require it. A targeted rule that appears unnecessary in an isolated test may still be required by the live page; a rule may also become obsolete after a redesign. Live evidence is required before removing or generalising it.
+### Easy-to-make interpretation
 
-**Positive event intent.** A real SAFRA result displayed `Carpark` with a 2024–2029 range and `Carpark Rates`. The record contained enough structured fields to look event-shaped even though it was facility information. This showed that a title and date range do not prove event meaning, and that a blacklist of words such as `carpark`, `gym`, or `membership` cannot be complete. The current rule requires positive event intent through an explicit event/programme/activity type or a relationship to an official event-oriented listing or detail route. `tests/test_official_feeds.py` preserves the distinction between the SAFRA facility record, another dated membership record, an untyped record inside an event route, and an explicitly typed Event outside that route. These cases preserve the observed logic but do not prove SAFRA's current live structure or accessibility.
+Market data can be implemented with one unauthenticated quote endpoint, provider failure can be treated as an empty Market panel, and browser local storage can be treated as the authoritative symbol list.
 
-**Listing and detail-page extraction.** Some listing cards contain enough information to create an event directly; others omit a complete date, venue, or description and require a detail-page read. The collector therefore supports rendered listing extraction and selective detail enrichment. It does not recursively crawl an entire site because unrestricted crawling increases runtime, duplicates, unrelated content, and blocking risk. A stored fixture can prove that a known detail response is parsed correctly, but it cannot prove that the current live page is reachable or unchanged.
+### Why it fails
 
-**Per-source evidence.** A total result count cannot explain why coverage changed. Failure can occur during page access, structured extraction, rendered-card discovery, pagination, detail enrichment, date parsing, event-intent validation, normalization, or the total crawl budget. The runtime therefore includes `debug_by_source`, with optional files under `surface/.env/local_event_debug_cards/`. This evidence connects a bad displayed card or missing organisation to a specific source and collection stage, and it is required to determine whether a targeted rule still matches the live page.
+Public quote sources can reject requests, rate-limit, return HTML, omit fields, or behave differently for stocks and ETFs. A single failure must not erase values that another provider or a previous usable runtime row can supply. Browser state is not a reliable shared runtime configuration source.
 
-**Partial-result protection.** External sources fail independently. A crawl can finish with fewer organisations and events because pages timed out, blocked automation, changed structure, or exceeded the job budget. When a new run is partial and contains fewer results than the previous complete run, the primary file remains the previous complete result. The incomplete run is written to `surface/.env/local_event_search_results.partial.json` with `write_policy: kept_previous_complete_result`. This prevents an immediate transient loss of coverage while retaining the incomplete run and its evidence for repair.
+### Correct requirement interpretation
+
+Each configured symbol uses an independent fallback chain: Nasdaq stock, Nasdaq ETF, CNBC, Stooq daily CSV, Yahoo chart data, then the previous usable row from `market.json`. Active symbols are authoritative in `surface/.env/market_config.json`, while committed defaults remain in `surface/conf/market_config.default.json`.
+
+### Required implementation
+
+Normalize, deduplicate, and limit active symbols to 12. Preserve a previous usable quote as `session: STALE` and `provider: stale-cache` when live providers fail. Emit `session: ERR`, `provider: none`, and `price: N/A` when no live or cached value exists. Keep percentage movement separate from provider and session labels.
+
+### Acceptance evidence
+
+Tests and runtime inspection must prove provider fallback order, per-symbol failure isolation, stale-cache marking, visible ERR output when no value exists, persistence of the runtime symbol list, and consistent values and movement direction in the Market card and tape.
+
+## Runtime freshness and refresh layers
+
+### Easy-to-make interpretation
+
+A single display-online indicator or one generic refresh interval can be treated as proof that all page data is current.
+
+### Why it fails
+
+The HTTP server can remain online while individual runtime files are old, missing, or unreachable. Producer refresh, browser data reload, and visual rotation are independent behaviours and can show different timing states.
+
+### Correct requirement interpretation
+
+The Sync ticker observes `/schedule.json`, `/weather.json`, `/market.json`, and `/event_stream.json` separately through HTTP `Last-Modified`. It reports `OK`, `STALE`, `MISS`, or `ERR` with `LATEST` and `AGE`. Producer jobs write files, browser code reloads them on its own cadence, and rotation changes only the already-loaded visible item.
+
+### Required implementation
+
+Keep per-file thresholds and HEAD checks. Do not treat visual rotation as data refresh. Document and preserve separate schedules for producer jobs, browser reloads, and display rotation. Keep clock-skew diagnosis distinct from provider failure diagnosis.
+
+### Acceptance evidence
+
+Acceptance must demonstrate each status state, correct age calculation from the served file, independent failure of one runtime file, and the expected difference between a newly written file and a browser panel that has not yet reloaded it.
+
+## Synchronized multilingual News
+
+### Easy-to-make interpretation
+
+Three independent news feeds that happen to scroll at the same speed can be presented as synchronized English, French, and Chinese content.
+
+### Why it fails
+
+The same screen position would refer to unrelated stories, so the rows would be visually aligned but semantically wrong. Substituting a different story when one language is unavailable breaks the product requirement.
+
+### Correct requirement interpretation
+
+The English, French, and Chinese rows synchronously display corresponding versions of the same content, advance in the same direction and at the same speed, and keep the same position aligned across EN, FR, and 中文. English and Chinese prioritise Singapore news. Translation fills a missing language instead of substituting an unrelated story.
+
+### Required implementation
+
+Select one real base item, generate a complete EN/FR/ZH representation, validate each language, and skip the whole triple when any language cannot be produced after retries. Keep ticker animation separate from runtime freshness.
+
+### Acceptance evidence
+
+Tests must verify equal row lengths, matching base-item identity at each index, valid text for every language, whole-triple rejection on translation failure, and synchronized browser movement. Runtime evidence must separately show a fresh `event_stream.json`.
+
+## Local Photo processing
+
+### Easy-to-make interpretation
+
+The browser can enumerate personal files directly, HEIC files can be linked as-is, and all formats can be flattened to one static image type.
+
+### Why it fails
+
+Browsers do not reliably display HEIC/HEIF, direct filesystem enumeration exposes local paths, and flattening GIF files destroys animation. Duplicate native and HEIC versions can also create repeated photos.
+
+### Correct requirement interpretation
+
+Original files remain under `surface/.env/photos/`. The builder creates browser-safe outputs under `surface/.env/public_photos/` and writes `photos.json`. JPEG, PNG, and WebP are normalized to web JPEG; GIF is copied without flattening; HEIC and HEIF are converted with `ffmpeg` when available; a native image with the same stem takes priority.
+
+### Required implementation
+
+Keep personal originals outside the served tree, generate cache-busted browser URLs, avoid exposing arbitrary filesystem paths, preserve GIF animation, and report or skip unsupported conversions without inventing output.
+
+### Acceptance evidence
+
+Fixture tests must cover native normalization, GIF copying, HEIC/HEIF conversion or explicit skip behaviour, duplicate-stem precedence, manifest generation, cache invalidation, and browser retrieval only through `/photos.json` and `/public_photos/*`.
+
+## Local Events source-specific collection
+
+### Easy-to-make interpretation
+
+All official sites can be handled by one selector, a recursive crawler, or a generic search-engine scraper, and a stored fixture can prove that live source coverage is currently correct.
+
+### Why it fails
+
+Official sites differ in structured JSON, JavaScript rendering, listing completeness, detail-page requirements, non-event records, date and venue layouts, pagination, anti-bot behaviour, and timing. Unrestricted crawling increases duplicates, unrelated content, runtime, and blocking risk. Offline fixtures do not prove current reachability or page structure.
+
+### Correct requirement interpretation
+
+`surface/conf/event_sources.json` defines curated official entrypoints, allowed domains, default venues, source order, and adapter choice. The shared collector handles common stages while targeted source behaviour remains where real page evidence requires it. Live-source verification and offline regression have different roles.
+
+### Required implementation
+
+Use structured XHR or embedded state before rendered DOM fallback, selectively enrich eligible detail pages, avoid recursive site crawling, preserve official URLs and configured source order, and retain source-specific rules only when supported by current page evidence and regression cases.
+
+### Acceptance evidence
+
+For an affected organisation, evidence must include the real collector run, `debug_by_source`, captured page or card evidence when enabled, final runtime JSON, visible card output, and an offline regression case for the observed structure. A fixture or successful pytest run alone is not live-source verification.
+
+## Local Events positive event intent
+
+### Easy-to-make interpretation
+
+A title plus `startDate` and `endDate`, or the absence of a small blacklist of words, can be treated as proof that a structured record is an event.
+
+### Why it fails
+
+A real SAFRA result displayed `Carpark` with a 2024-2029 range and `Carpark Rates`. Facility, membership, operating-information, and promotion records can be event-shaped without being activities a user can attend.
+
+### Correct requirement interpretation
+
+A structured record requires positive event intent through an explicit event, programme, or activity type, or a verified relationship to an official event-oriented listing or detail route. A blacklist is only supplementary and cannot be the primary semantic rule.
+
+### Required implementation
+
+Keep positive-intent validation in the collector before output. Preserve distinctions between explicitly typed events, untyped records inside event routes, and dated non-event records. Data-quality rejection belongs in the backend rather than frontend title hiding.
+
+### Acceptance evidence
+
+Regression tests must preserve the SAFRA facility record, another dated membership record, an untyped event-route record, and an explicitly typed Event outside that route. Live validation must confirm the rule against the current official source before claiming current coverage.
+
+## Local Events evidence and partial-result protection
+
+### Easy-to-make interpretation
+
+A total result count is enough to diagnose coverage, and every completed crawl should replace the current primary file even when several sources failed.
+
+### Why it fails
+
+Failure can occur during page access, structured extraction, rendered-card discovery, pagination, detail enrichment, date parsing, event-intent validation, normalization, or the total crawl budget. Replacing a larger complete result with a smaller partial run causes transient source failures to remove valid events from the display.
+
+### Correct requirement interpretation
+
+The runtime includes `debug_by_source` and optional evidence under `surface/.env/local_event_debug_cards/`. When a new run is partial and contains fewer results than the previous complete run, the primary file remains the previous complete result and the incomplete run is written to `surface/.env/local_event_search_results.partial.json` with `write_policy: kept_previous_complete_result`.
+
+### Required implementation
+
+Record per-source stage and rejection evidence, calculate whether source coverage is partial, preserve the previous complete primary file when the protection condition applies, and keep the partial payload for diagnosis.
+
+### Acceptance evidence
+
+Tests must cover complete-to-partial state transitions, result-count comparison, preservation of the primary file, creation of the partial file, `write_policy: kept_previous_complete_result`, and retained `debug_by_source`. A real failed-source run must show the same behaviour before deployment acceptance.
+
+## Local Events package boundary
+
+### Easy-to-make interpretation
+
+The repository rule can describe `surface/jobs/local_events/` as the required package while the actual collector remains under `surface/local_events_runtime/`, leaving future changes unsure which path is canonical.
+
+### Why it fails
+
+A documented target that does not match imports, tests, wrappers, and deployment entrypoints creates a permanent architecture contradiction and encourages duplicate implementations or unsafe moves.
+
+### Correct requirement interpretation
+
+`surface/jobs/local_event_search.py` is the one-shot orchestration entrypoint. `surface/local_events_runtime/` is the canonical source-specific collection and extraction library. `surface/search_local_events.py` remains a compatibility command wrapper while systemd and HTTP callers use that path.
+
+### Required implementation
+
+Keep new collector modules and source-specific extraction logic under `surface/local_events_runtime/`, keep job orchestration under `surface/jobs/local_event_search.py`, and update repository rules, README, design, imports, and tests together if a future explicit migration changes this boundary.
+
+### Acceptance evidence
+
+Static checks must show one canonical collector package, no duplicate `surface/jobs/local_events/` implementation, imports resolving through the documented paths, systemd and HTTP callers retaining their command contract, and tests passing after any boundary change.
+
+## Logging and command output
+
+### Easy-to-make interpretation
+
+Every line written to stdout by a short-lived producer can be classified as ad-hoc service logging, or the generic structured-logging contract can be applied without considering InfoScreen's systemd user-service deployment and command-output interfaces.
+
+### Why it fails
+
+InfoScreen has two different outputs: operational service messages captured by systemd and deliberate command results such as Local Events JSON written for callers. Treating machine-readable result output as logging breaks the CLI/API contract, while leaving a long-running service with uncontrolled diagnostic output makes operations difficult.
+
+### Correct requirement interpretation
+
+The long-running HTTP server uses Python logging with level and destination controlled by the runtime environment. Short-lived producer jobs may emit concise completion or failure lines to stdout/stderr because systemd captures those streams. Deliberate machine-readable stdout remains a command result, not the primary logging system.
+
+### Required implementation
+
+Keep service messages concise and free of credentials, full request bodies, file contents, and personal data. Use stable component and operation names. Document the project-specific stdout/stderr boundary in `AGENT.md`. Do not replace command JSON with log records.
+
+### Acceptance evidence
+
+Static checks must distinguish service logging from command-result output, verify configurable HTTP log level and destination, reject accidental sensitive payload logging, and preserve Local Events command JSON. Operational acceptance must show useful startup, request, job completion, and failure records in the configured systemd journal or selected stream.
 
 ## Validation boundaries
 
-Repository tests can prove deterministic behaviour for supplied local inputs, including Schedule path contracts, Market fallback and rendering contracts, multilingual payload alignment, photo manifest behaviour, Local Events date parsing, structured-versus-DOM preference, known event-intent cases, text normalization, partial-result retention, payload schemas, and captured regressions.
+### Easy-to-make interpretation
 
-Repository tests cannot prove current external-source reachability, current DOM or JSON structure, anti-bot behaviour, pagination, complete organisation coverage, semantic correctness on a live page, actual provider availability, real Surface timing limits, or acceptance of the final visible result.
+A mocked browser, stored fixture, successful `pytest`, static source review, or reviewer-written report can be presented as proof that current external sources, systemd services, LaunchAgent execution, and the final Surface UI all work.
 
-A mocked browser, stored fixture, or successful `pytest` run must not be reported as live-source verification. When the relevant real source or Surface UI has not been checked, the implementation remains partially verified.
+### Why it fails
+
+Repository tests only prove deterministic behaviour for supplied local inputs. They cannot prove current external reachability, DOM or JSON structure, anti-bot behaviour, provider availability, timing budgets, device clocks, deployment state, or semantic correctness of the final visible result.
+
+### Correct requirement interpretation
+
+Static inspection, offline tests, HTTP/browser fixture checks, CI, live producer runs, service execution, and real-device UI acceptance are separate evidence levels. Missing levels remain explicitly pending. The implementation is only partially verified when the relevant real source or Surface UI has not been checked.
+
+### Required implementation
+
+Tie each claim to the exact branch or commit and to the actual command, test, CI run, log, runtime file, screenshot, or real interaction that supports it. Do not reuse stale evidence or upgrade static evidence to runtime PASS.
+
+### Acceptance evidence
+
+A final acceptance record must state the exact revision, checks run, checks not run, current runtime and browser evidence, source reachability evidence, service and scheduler evidence, remaining gaps, and a verdict that does not exceed the strongest available proof.
