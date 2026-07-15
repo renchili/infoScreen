@@ -87,16 +87,21 @@ def test_document_roles_are_distinct() -> None:
     api = read_text("docs/api-spec.md")
     decisions = read_text("docs/questions.md")
 
-    assert readme.startswith("# InfoScreen operator runbook")
+    assert readme.startswith("# InfoScreen\n")
     assert design.startswith("# InfoScreen system architecture")
     assert api.startswith("# InfoScreen HTTP interaction contract")
     assert decisions.startswith("# InfoScreen project discussion and decision record")
 
-    assert "## 11. Troubleshooting by symptom" in readme
+    assert "## 1. What the project provides" in readme
+    assert "## 3. Data sources, producers, and page consumers" in readme
+    assert "## 8. Deployment and update" in readme
+    assert "## 9. Operation and troubleshooting" in readme
+    assert "## 10. Development and validation" in readme
     assert "## 8. Source-specific Local Events architecture" in design
     assert "## 5. Market configuration interaction" in api
     assert "## Decision record 018" in decisions
 
+    assert "operator runbook" not in readme
     assert "Browser renderer ownership" not in readme
     assert "Repository root policy" not in readme
     assert "sudo apt" not in design
@@ -105,29 +110,33 @@ def test_document_roles_are_distinct() -> None:
     assert "python3 -m pytest" not in decisions
 
 
-def test_operator_runbook_covers_deployment_refresh_interaction_and_recovery() -> None:
+def test_readme_covers_project_data_interaction_refresh_deployment_and_recovery() -> None:
     readme = read_text("README.md")
 
     required = [
-        "## 2. First-time deployment on the Surface",
-        "## 3. Verify the deployment",
-        "## 4. Update an existing deployment",
-        "## 5. Producer refresh and configuration map",
-        "## 6. Browser reload and visual rotation",
-        "## 7. User interactions and persistent configuration",
-        "## 8. Local Events operation and source-specific collection",
-        "## 9. Mac Calendar setup and recovery",
-        "## 10. Runtime files and HTTP paths",
-        "## 11. Troubleshooting by symptom",
+        "## 1. What the project provides",
+        "## 2. Product and runtime model",
+        "## 3. Data sources, producers, and page consumers",
+        "## 4. User interaction and configuration",
+        "## 5. Refresh behaviour",
+        "## 6. Local Events is source-specific by design",
+        "## 7. Project structure",
+        "## 8. Deployment and update",
+        "## 9. Operation and troubleshooting",
+        "## 10. Development and validation",
+        "## 11. Documentation",
         "infoscreen-live-data.timer",
         "infoscreen-event-stream.timer",
         "infoscreen-local-events.timer",
-        "LOCAL_EVENTS_MAX_SECONDS",
         "local_event_search_results.partial.json",
         "debug_by_source",
         "market_config.default.json",
         "mac/local.env",
         "Last-Modified",
+        "rendered_dom_card",
+        "positive event intent",
+        "Gardens by the Bay",
+        "Mandai",
     ]
     for value in required:
         assert value in readme
@@ -205,7 +214,8 @@ def test_questions_is_an_english_discussion_decision_record() -> None:
     assert "Decision record 010 — Build Local Events from curated official sources" in decisions
     assert "Decision record 011 — Develop Local Events with shared stages plus source-specific adapters" in decisions
     assert "Decision record 012 — Require positive evidence that a record is an event" in decisions
-    assert "Decision record 018 — Give each project document one non-overlapping responsibility" in decisions
+    assert "Decision record 018 — Keep README as the project entrypoint and separate specialist documents" in decisions
+    assert "The project overview and entrypoint belong in `README.md`" in decisions
 
     assert re.search(r"[\u3400-\u9fff]", decisions) is None
     assert re.search(r"^##\s+(What|Where|Which|How|Why)\b", decisions, re.MULTILINE) is None
@@ -221,7 +231,7 @@ def test_questions_is_an_english_discussion_decision_record() -> None:
         assert value not in decisions
 
 
-def test_schedule_sync_is_documented_across_operator_architecture_and_decisions() -> None:
+def test_schedule_sync_is_documented_across_project_architecture_and_decisions() -> None:
     readme = read_text("README.md")
     design = read_text("docs/design.md")
     decisions = read_text("docs/questions.md")
