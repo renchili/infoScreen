@@ -85,12 +85,12 @@ def test_document_roles_are_distinct() -> None:
     readme = read_text("README.md")
     design = read_text("docs/design.md")
     api = read_text("docs/api-spec.md")
-    decisions = read_text("docs/questions.md")
+    explanations = read_text("docs/questions.md")
 
     assert readme.startswith("# InfoScreen\n")
     assert design.startswith("# InfoScreen system architecture")
     assert api.startswith("# InfoScreen HTTP interaction contract")
-    assert decisions.startswith("# InfoScreen project discussion and decision record")
+    assert explanations.startswith("# InfoScreen supplementary product explanations")
 
     assert "## 1. What the project provides" in readme
     assert "## 3. Data sources, producers, and page consumers" in readme
@@ -99,15 +99,15 @@ def test_document_roles_are_distinct() -> None:
     assert "## 10. Development and validation" in readme
     assert "## 8. Source-specific Local Events architecture" in design
     assert "## 5. Market configuration interaction" in api
-    assert "## Decision record 017" in decisions
+    assert "## TTY visual language does not mean a dot-matrix background" in explanations
 
     assert "operator runbook" not in readme
     assert "Browser renderer ownership" not in readme
     assert "Repository root policy" not in readme
     assert "sudo apt" not in design
     assert "systemctl --user restart" not in design
-    assert "systemctl" not in decisions
-    assert "python3 -m pytest" not in decisions
+    assert "systemctl" not in explanations
+    assert "python3 -m pytest" not in explanations
 
 
 def test_readme_covers_project_data_interaction_refresh_deployment_and_recovery() -> None:
@@ -202,22 +202,60 @@ def test_api_spec_documents_callers_payloads_and_side_effects() -> None:
         assert value in api
 
 
-def test_questions_contains_only_project_decisions() -> None:
-    decisions = read_text("docs/questions.md")
+def test_questions_contains_project_supplementary_explanations() -> None:
+    explanations = read_text("docs/questions.md")
 
-    assert decisions.count("## Decision record ") >= 17
-    assert decisions.count("**Discussion context**") >= 17
-    assert decisions.count("**Decision**") >= 17
-    assert decisions.count("**Why this direction was chosen**") >= 17
-    assert decisions.count("**Resulting implementation**") >= 17
+    required_sections = [
+        "## TTY visual language does not mean a dot-matrix background",
+        "## Compact presentation must preserve the important information",
+        "## A component optimisation must stay inside that component",
+        "## Visible content must be real product data, not invented filler",
+        "## Sync status represents data freshness, not generic display health",
+        "## Refresh has three different meanings",
+        "## Market data and Market presentation are separate concerns",
+        "## The multilingual News rows must describe the same stories",
+        "## A Local Event must answer the useful event questions",
+        "## Local Events uses a single readable card with navigation",
+        "## Local Events is deliberately source-specific",
+        "## Event classification uses positive evidence, not an endless blacklist",
+        "## Local Event quality belongs in the collector",
+        "## Partial Local Event crawls must not erase a better complete result",
+        "## Calendar authority remains on the Mac",
+        "## Photos remain local and explicit",
+        "## Decorative metrics are not system monitoring",
+        "## Failure states should explain the responsible boundary",
+    ]
+    for value in required_sections:
+        assert value in explanations
 
-    assert "Decision record 010 — Build Local Events from curated official sources" in decisions
-    assert "Decision record 011 — Develop Local Events with shared stages plus source-specific adapters" in decisions
-    assert "Decision record 012 — Require positive evidence that a record is an event" in decisions
-    assert "Decision record 017 — Do not describe decorative status values as system monitoring" in decisions
+    required_phrases = [
+        "dot-matrix wallpaper",
+        "fake logs",
+        "What",
+        "When",
+        "Where",
+        "Who",
+        "15 seconds",
+        "positive event evidence",
+        "Gardens by the Bay",
+        "Mandai",
+        "debug_by_source",
+        "local_event_search_results.partial.json",
+        "OK",
+        "STALE",
+        "MISS",
+        "ERR",
+        "LATEST",
+        "AGE",
+    ]
+    for value in required_phrases:
+        assert value in explanations
 
-    assert re.search(r"[\u3400-\u9fff]", decisions) is None
-    assert re.search(r"^##\s+(What|Where|Which|How|Why)\b", decisions, re.MULTILINE) is None
+    assert re.search(r"[\u3400-\u9fff]", explanations) is None
+    assert "## Decision record" not in explanations
+    assert "**Discussion context**" not in explanations
+    assert "**Resulting implementation**" not in explanations
+    assert re.search(r"^##\s+(What|Where|Which|How|Why)\b", explanations, re.MULTILINE) is None
 
     forbidden_non_project_content = [
         "README.md",
@@ -234,20 +272,20 @@ def test_questions_contains_only_project_decisions() -> None:
         "pytest was not executed",
     ]
     for value in forbidden_non_project_content:
-        assert value not in decisions
+        assert value not in explanations
 
 
-def test_schedule_sync_is_documented_across_project_architecture_and_decisions() -> None:
+def test_schedule_sync_is_documented_across_project_architecture_and_explanations() -> None:
     readme = read_text("README.md")
     design = read_text("docs/design.md")
-    decisions = read_text("docs/questions.md")
+    explanations = read_text("docs/questions.md")
 
     assert "bash mac/scripts/setup-schedule-sync.sh" in readme
     assert "--host <surface-ip-or-hostname>" in readme
     assert "~/infoscreen/surface/.env/schedule.json" in readme
     assert "## 9. Calendar pipeline" in design
     assert "mac/sync_schedule.sh" in design
-    assert "Decision record 002 — Separate the Surface runtime from the Mac Calendar authority" in decisions
+    assert "## Calendar authority remains on the Mac" in explanations
 
 
 def test_documented_systemd_job_cadence_matches_units() -> None:
