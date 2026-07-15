@@ -81,92 +81,157 @@ def test_mac_schedule_sync_uses_local_config_and_runtime_target() -> None:
     assert "/home/rody/infoscreen/schedule.json" not in setup_script
 
 
-def test_schedule_sync_operator_documentation_is_discoverable() -> None:
+def test_document_roles_are_distinct() -> None:
     readme = read_text("README.md")
     design = read_text("docs/design.md")
-    questions = read_text("docs/questions.md")
+    api = read_text("docs/api-spec.md")
+    decisions = read_text("docs/questions.md")
 
-    assert "Schedule sync — run on the Mac" in readme
-    assert "macOS Calendar/EventKit is the data source" in readme
-    assert "bash mac/scripts/setup-schedule-sync.sh" in readme
-    assert "--host <surface-ip-or-hostname>" in readme
-    assert "mac/local.env" in readme
-    assert "~/infoscreen/surface/.env/schedule.json" in readme
-    assert "Mac Calendar/EventKit" in design
-    assert "mac/sync_schedule.sh" in design
-    assert "surface/.env/schedule.json" in design
-    assert "The authoritative schedule source is macOS Calendar/EventKit on the Mac" in questions
-    assert "The Surface only stores, serves, and renders schedule data" in questions
+    assert readme.startswith("# InfoScreen operator runbook")
+    assert design.startswith("# InfoScreen system architecture")
+    assert api.startswith("# InfoScreen HTTP interaction contract")
+    assert decisions.startswith("# InfoScreen project discussion and decision record")
+
+    assert "## 11. Troubleshooting by symptom" in readme
+    assert "## 8. Source-specific Local Events architecture" in design
+    assert "## 5. Market configuration interaction" in api
+    assert "## Decision record 018" in decisions
+
+    assert "Browser renderer ownership" not in readme
+    assert "Repository root policy" not in readme
+    assert "sudo apt" not in design
+    assert "systemctl --user restart" not in design
+    assert "systemctl" not in decisions
+    assert "python3 -m pytest" not in decisions
 
 
-def test_page_ui_job_and_source_mapping_is_documented() -> None:
+def test_operator_runbook_covers_deployment_refresh_interaction_and_recovery() -> None:
     readme = read_text("README.md")
-    design = read_text("docs/design.md")
 
-    required_readme = [
-        "Page data map",
-        "Market card",
-        "Global market tape",
-        "Local event card",
-        "Sync ticker",
-        "EN/FR/中文 news ticker",
-        "Photo wall",
-        "Weather card",
-        "CPU/MEM/DSK/NET bars",
-        "Calendar board",
-        "POWER/DISPLAY/NETWORK labels",
-        "OpenAPI pages",
-        "infoscreen-local-events.timer",
-        "surface/conf/event_sources.json",
-        "Open-Meteo",
-        "Nasdaq, CNBC, Stooq",
-        "`Math.random()` demo values",
-    ]
-    for value in required_readme:
-        assert value in readme
-
-    required_design = [
-        "Page UI ownership and data sources",
-        "Browser renderer ownership",
-        "infoscreen-http.service",
+    required = [
+        "## 2. First-time deployment on the Surface",
+        "## 3. Verify the deployment",
+        "## 4. Update an existing deployment",
+        "## 5. Producer refresh and configuration map",
+        "## 6. Browser reload and visual rotation",
+        "## 7. User interactions and persistent configuration",
+        "## 8. Local Events operation and source-specific collection",
+        "## 9. Mac Calendar setup and recovery",
+        "## 10. Runtime files and HTTP paths",
+        "## 11. Troubleshooting by symptom",
         "infoscreen-live-data.timer",
         "infoscreen-event-stream.timer",
         "infoscreen-local-events.timer",
-        "Mac LaunchAgent",
-        "Simulated and static UI contract",
-        "local_event_card.js photo renderer",
-        "dashboard.js + sync ticker",
+        "LOCAL_EVENTS_MAX_SECONDS",
+        "local_event_search_results.partial.json",
+        "debug_by_source",
+        "market_config.default.json",
+        "mac/local.env",
+        "Last-Modified",
     ]
-    for value in required_design:
+    for value in required:
+        assert value in readme
+
+
+def test_design_documents_sources_refresh_layers_and_targeted_local_events() -> None:
+    design = read_text("docs/design.md")
+
+    required = [
+        "## 4. Three refresh layers",
+        "### 4.1 Producer refresh",
+        "### 4.2 Browser data reload",
+        "### 4.3 Visual rotation",
+        "## 5. UI ownership, interaction, and data source map",
+        "## 8. Source-specific Local Events architecture",
+        "### 8.2 Source inventory and adapter choices",
+        "### 8.3 Collection pipeline",
+        "### 8.4 Positive event intent",
+        "### 8.5 Targeted source behavior",
+        "### 8.6 Crawl budgets and configuration",
+        "### 8.7 Output, partial-run protection, and evidence",
+        "Children's Museum Singapore",
+        "National Gallery Singapore",
+        "SAFRA",
+        "One Punggol",
+        "Waterway Point",
+        "Mandai Wildlife Group",
+        "Sentosa",
+        "Gardens by the Bay",
+        "rendered_dom_card",
+        "`nhb`",
+        "Nasdaq",
+        "Open-Meteo",
+        "Google News",
+        "macOS Calendar/EventKit",
+        "local_event_search_results.partial.json",
+    ]
+    for value in required:
         assert value in design
 
 
-def test_questions_only_records_durable_product_decisions_in_english() -> None:
-    questions = read_text("docs/questions.md")
+def test_api_spec_documents_callers_payloads_and_side_effects() -> None:
+    api = read_text("docs/api-spec.md")
 
     required = [
-        "What are InfoScreen's runtime boundaries",
-        "Where do runtime and personal data live",
-        "Where does schedule data come from",
-        "Which sources are allowed for local events",
-        "What counts as a local event",
-        "Which layer owns local-event data quality",
-        "How are local events ordered",
+        "## 3. Runtime JSON reads",
+        "### HEAD freshness contract",
+        "## 5. Market configuration interaction",
+        "POST /api/market-config",
+        "## 6. Market and Weather manual refresh",
+        "POST /api/market-refresh",
+        "## 7. Local Events read interaction",
+        "GET /api/local-events/search",
+        "## 8. Local Events search interaction",
+        "POST /api/local-events/search",
+        '"location": "Punggol Singapore"',
+        "source-specific official collector",
+        "local_event_search_results.partial.json",
+        "## 9. Browser interaction summary",
+        "0.0.0.0:8765",
     ]
     for value in required:
-        assert value in questions
+        assert value in api
 
-    forbidden = [
-        "How should sync status failures be handled",
-        "Why must Market have a single renderer owner",
-        "Which jobs, outputs, and UI correspond to the sync states",
-        "Why does the repository hygiene checker",
-        "Why are test artifacts not uploaded",
+
+def test_questions_is_an_english_discussion_decision_record() -> None:
+    decisions = read_text("docs/questions.md")
+
+    assert decisions.count("## Decision record ") >= 18
+    assert decisions.count("**Discussion context**") >= 18
+    assert decisions.count("**Decision**") >= 18
+    assert decisions.count("**Why this direction was chosen**") >= 18
+    assert decisions.count("**Resulting implementation**") >= 18
+
+    assert "Decision record 010 — Build Local Events from curated official sources" in decisions
+    assert "Decision record 011 — Develop Local Events with shared stages plus source-specific adapters" in decisions
+    assert "Decision record 012 — Require positive evidence that a record is an event" in decisions
+    assert "Decision record 018 — Give each project document one non-overlapping responsibility" in decisions
+
+    assert re.search(r"[\u3400-\u9fff]", decisions) is None
+    assert re.search(r"^##\s+(What|Where|Which|How|Why)\b", decisions, re.MULTILINE) is None
+
+    forbidden_incident_phrases = [
+        "the assistant made",
+        "previous response",
+        "we fixed the mistake",
+        "GitHub Actions did not run",
+        "pytest was not executed",
     ]
-    for value in forbidden:
-        assert value not in questions
+    for value in forbidden_incident_phrases:
+        assert value not in decisions
 
-    assert re.search(r"[\u3400-\u9fff]", questions) is None
+
+def test_schedule_sync_is_documented_across_operator_architecture_and_decisions() -> None:
+    readme = read_text("README.md")
+    design = read_text("docs/design.md")
+    decisions = read_text("docs/questions.md")
+
+    assert "bash mac/scripts/setup-schedule-sync.sh" in readme
+    assert "--host <surface-ip-or-hostname>" in readme
+    assert "~/infoscreen/surface/.env/schedule.json" in readme
+    assert "## 9. Calendar pipeline" in design
+    assert "mac/sync_schedule.sh" in design
+    assert "Decision record 002 — Separate the Surface runtime from the Mac Calendar authority" in decisions
 
 
 def test_documented_systemd_job_cadence_matches_units() -> None:
