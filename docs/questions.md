@@ -2,7 +2,7 @@
 
 This file is a distilled record of the product and engineering decisions that emerged from the project discussions. It is not a FAQ, an operator manual, a defect diary, or a transcript. Each record preserves the problem being discussed, the direction that was chosen, why that direction matters, and what the current implementation does as a result.
 
-Operational commands belong in `README.md`. Component and data-flow details belong in `docs/design.md`. HTTP contracts belong in `docs/api-spec.md`.
+The project overview and entrypoint belong in `README.md`. Component and data-flow details belong in `docs/design.md`. HTTP contracts belong in `docs/api-spec.md`.
 
 ## Decision record 001 — Build a local-first, always-on information screen
 
@@ -92,7 +92,7 @@ A producer may be healthy while the browser still holds an older in-memory list.
 
 **Resulting implementation**
 
-Systemd/LaunchAgent schedules own production. Browser scripts own periodic GET/HEAD behaviour. Local Events, Calendar, Photos, and ticker animations have independent rotation intervals documented in the architecture and operator runbook.
+Systemd/LaunchAgent schedules own production. Browser scripts own periodic GET/HEAD behaviour. Local Events, Calendar, Photos, and ticker animations have independent rotation intervals documented in the architecture and project README.
 
 ## Decision record 006 — Monitor final runtime freshness inside the product
 
@@ -310,25 +310,25 @@ A monitoring label without a producer, schema, endpoint, freshness model, and fa
 
 The demo bars are named accordingly in code and documentation. A future real-monitoring implementation must replace the complete producer-to-renderer chain rather than relabel the existing random values.
 
-## Decision record 018 — Give each project document one non-overlapping responsibility
+## Decision record 018 — Keep README as the project entrypoint and separate specialist documents
 
 **Discussion context**
 
-Deployment commands, architecture tables, implementation details, defect explanations, and discussion rationale had been mixed across multiple files. That made documents repetitive while still failing to answer the operator’s immediate questions.
+The project needs one obvious starting point that explains what InfoScreen is, what it provides, where its data comes from, how users interact with it, how refresh works, how it is deployed, and where deeper technical records live. Treating README as only an operations manual makes the project difficult to understand before deployment begins.
 
 **Decision**
 
-Maintain four distinct documentation surfaces:
+Maintain four complementary documentation surfaces:
 
-- `README.md` is the operator runbook;
-- `docs/design.md` is the system architecture and source-specific implementation description;
+- `README.md` is the main project entrypoint and includes overview, capabilities, data sources, interaction, refresh behaviour, project structure, deployment, operation, troubleshooting, and validation;
+- `docs/design.md` is the detailed system architecture and source-specific implementation description;
 - `docs/api-spec.md` is the HTTP interaction contract;
 - `docs/questions.md` is this discussion-derived decision record.
 
 **Why this direction was chosen**
 
-A document is useful only when its audience and purpose are predictable. Operators should not search architecture prose for a recovery command, and design rationale should not be buried inside a troubleshooting checklist.
+A README must introduce the project as a whole. Deployment and troubleshooting are necessary sections, but they are not the project’s identity. Detailed architecture, API contracts, and discussion history remain separate so the README stays useful without duplicating every implementation detail.
 
 **Resulting implementation**
 
-The operator workflow, architecture, API, and decision history are maintained separately and cross-reference one another instead of copying the same tables and commands.
+The README is the navigable project overview. Specialist documents deepen one subject each and are linked from the README instead of replacing it.
