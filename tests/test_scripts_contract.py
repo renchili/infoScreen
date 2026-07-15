@@ -21,6 +21,15 @@ SHELL_SCRIPTS = [
 ]
 
 
+QUESTIONS_SECTIONS = [
+    "Easy-to-make interpretation",
+    "Why it fails",
+    "Correct requirement interpretation",
+    "Required implementation",
+    "Acceptance evidence",
+]
+
+
 def test_shell_scripts_parse_with_bash_noexec() -> None:
     for relative in SHELL_SCRIPTS:
         path = ROOT / relative
@@ -64,6 +73,39 @@ def test_readme_uses_canonical_surface_operator_entrypoints() -> None:
     assert "scripts/setup_surface_go.sh" not in readme
 
 
+def test_readme_has_newcomer_onboarding_and_success_signals() -> None:
+    readme = read_text("README.md")
+
+    ordered = [
+        "## What this is",
+        "## What this is not",
+        "## Who this is for",
+        "## First 10 minutes",
+        "## Prerequisites",
+        "## Configuration and safe local state",
+        "## Startup success signals",
+    ]
+    positions = [readme.index(heading) for heading in ordered]
+    assert positions == sorted(positions)
+
+    assert "python3 surface/serve_infoscreen.py" in readme
+    assert "http://127.0.0.1:8765/" in readme
+    assert "InfoScreen Local API" in readme
+    assert "does not prove that external Market, Weather, News, or Local Events sources are currently reachable" in readme
+    assert "surface/local_events_runtime/           canonical" in readme
+
+
+def test_agent_declares_canonical_local_event_package_and_output_boundary() -> None:
+    rules = read_text("AGENT.md")
+
+    assert "surface/local_events_runtime/        canonical Local Events collection and extraction library" in rules
+    assert "Do not create a duplicate `surface/jobs/local_events/` implementation" in rules
+    assert "surface/jobs/local_event_search.py" in rules
+    assert "## Logging and command-output model" in rules
+    assert "final JSON payload to stdout" in rules
+    assert "structured JSON logs, request IDs, trace IDs" in rules
+
+
 def test_mac_schedule_sync_uses_local_config_and_runtime_target() -> None:
     sync_script = read_text("mac/sync_schedule.sh")
     setup_script = read_text("mac/scripts/setup-schedule-sync.sh")
@@ -90,8 +132,10 @@ def test_document_roles_are_distinct() -> None:
     assert readme.startswith("# InfoScreen\n")
     assert design.startswith("# InfoScreen system architecture")
     assert api.startswith("# InfoScreen HTTP interaction contract")
-    assert explanations.startswith("# InfoScreen supplementary context")
+    assert explanations.startswith("# InfoScreen requirement clarifications")
 
+    assert "## What this is" in readme
+    assert "## First 10 minutes" in readme
     assert "## 1. What the project provides" in readme
     assert "## 3. Data sources, producers, and page consumers" in readme
     assert "## 8. Deployment and update" in readme
@@ -100,8 +144,8 @@ def test_document_roles_are_distinct() -> None:
     assert "## 8. Source-specific Local Events architecture" in design
     assert "## 5. Market configuration interaction" in api
     assert "## Visual language" in explanations
-    assert "## Schedule" in explanations
-    assert "## Live information" in explanations
+    assert "## Calendar authority and unattended sync" in explanations
+    assert "## Local Events package boundary" in explanations
 
     assert "operator runbook" not in readme
     assert "Browser renderer ownership" not in readme
@@ -204,20 +248,33 @@ def test_api_spec_documents_callers_payloads_and_side_effects() -> None:
         assert value in api
 
 
-def test_questions_has_readable_whole_project_structure() -> None:
+def test_questions_follow_mandatory_clarification_structure() -> None:
     explanations = read_text("docs/questions.md")
+    topic_blocks = re.split(r"(?m)^## ", explanations)[1:]
 
-    headings = re.findall(r"^## (.+)$", explanations, re.MULTILINE)
-    assert headings == [
+    assert len(topic_blocks) >= 10
+    topic_names = [block.splitlines()[0].strip() for block in topic_blocks]
+    assert topic_names == [
         "Visual language",
-        "Schedule",
-        "Live information",
-        "Photos",
-        "Local Events",
+        "Calendar authority and unattended sync",
+        "Market resilience and runtime symbol authority",
+        "Runtime freshness and refresh layers",
+        "Synchronized multilingual News",
+        "Local Photo processing",
+        "Local Events source-specific collection",
+        "Local Events positive event intent",
+        "Local Events evidence and partial-result protection",
+        "Local Events package boundary",
+        "Logging and command output",
         "Validation boundaries",
     ]
-    assert "### " not in explanations
-    assert re.search(r"^##\s+(Why|What|How|Which|Where)\b", explanations, re.MULTILINE) is None
+
+    for block in topic_blocks:
+        subheadings = re.findall(r"(?m)^### (.+)$", block)
+        assert subheadings == QUESTIONS_SECTIONS
+        for heading in QUESTIONS_SECTIONS:
+            section = block.split(f"### {heading}\n", 1)[1]
+            assert section.strip()
 
     required_phrases = [
         "TTY-inspired information style",
@@ -243,35 +300,28 @@ def test_questions_has_readable_whole_project_structure() -> None:
         "AGE",
         "synchronously display corresponding versions of the same content",
         "same direction and at the same speed",
-        "translation fills that language",
+        "Translation fills",
         "HEIC and HEIF",
-        "project owner on the real Surface",
+        "real collector run",
         "SAFRA",
         "Carpark Rates",
         "positive event intent",
         "debug_by_source",
         "local_event_search_results.partial.json",
         "kept_previous_complete_result",
+        "surface/local_events_runtime/",
         "partially verified",
     ]
     for value in required_phrases:
         assert value in explanations
 
     assert re.search(r"[\u3400-\u9fff]", explanations) is None
+    assert re.search(r"(?m)^##\s+(Question|Answer|Q\d+)\b", explanations) is None
     assert "## Decision record" not in explanations
     assert "**Discussion context**" not in explanations
     assert "**Resulting implementation**" not in explanations
-
-    forbidden_error_recap = [
-        "A component optimisation must stay inside that component",
-        "Fixing the Local Event card must not redesign",
-        "Visible content must be real product data, not invented filler",
-        "the assistant made",
-        "previous response",
-        "we fixed the mistake",
-    ]
-    for value in forbidden_error_recap:
-        assert value not in explanations
+    assert "the assistant made" not in explanations
+    assert "previous response" not in explanations
 
 
 def test_schedule_sync_is_documented_in_project_and_architecture_docs() -> None:
