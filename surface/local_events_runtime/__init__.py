@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import date
+from urllib.parse import urlparse
 
 from . import browser as _browser
 from . import extract as _extract
@@ -33,8 +34,8 @@ GARDENS_CARD_NOISE_RE = re.compile(
     r"^(?:view details?|learn more|read more|find out more|book now|buy tickets?|admission\b.*|tickets?\b.*|free\b.*)$",
     re.I,
 )
-NON_EVENT_CARPARK_TITLE_RE = re.compile(
-    r"^(?:car\s*parks?|carparks?)(?:\s+(?:rates?|charges?|information|details))?$",
+STRUCTURED_EVENT_ROUTE_RE = re.compile(
+    r"^(?:events?|whats?-on|calendar|programmes?|programs?|activities?|workshops?|exhibitions?|festivals?|performances?|concerts?|talks?|tours?|classes?|courses?|screenings?|shows?|fairs?|markets?)$",
     re.I,
 )
 
@@ -45,6 +46,7 @@ _original_pick_venue = _extract.pick_venue
 _original_event_looks_wrong = _extract.event_looks_wrong
 _original_event_from_card = _extract.event_from_card
 _original_collect_events = _extract.collect_events
+_original_structured_event_from_object = _official_feeds.structured_event_from_object
 
 
 def _strip_weekdays(value: object) -> str:
@@ -185,9 +187,6 @@ def _pick_venue(source: dict, card: dict, when: str, when_line: str) -> str:
 
 
 def _event_looks_wrong(source: dict, card: dict, title: str, when: str) -> str:
-    if NON_EVENT_CARPARK_TITLE_RE.fullmatch(_extract.clean(title)):
-        return "non_event_carpark_facility"
-
     reason = _original_event_looks_wrong(source, card, title, when)
     if reason:
         return reason
@@ -196,6 +195,40 @@ def _event_looks_wrong(source: dict, card: dict, title: str, when: str) -> str:
     if source_id == "mandai" and "#nhb" in url:
         return "synthetic_mandai_location_card"
     return ""
+
+
+def _route_section(url: object) -> str:
+    path = urlparse(_extract.clean(url)).path.strip("/")
+    return path.split("/", 1)[0].lower() if path else ""
+
+
+def _same_listing_route(listing_url: str, event_url: str) -> bool:
+    listing_path = urlparse(listing_url).path.rstrip("/")
+    event_path = urlparse(event_url).path.rstrip("/")
+    if not listing_path:
+        return False
+    return event_path == listing_path or event_path.startswith(listing_path + "/")
+
+
+def _structured_record_has_event_intent(obj: dict, listing_url: str, event: dict) -> bool:
+    fields = _official_feeds.object_fields(obj)
+    if _official_feeds.explicit_event_type(fields):
+        return True
+
+    event_url = _extract.clean(event.get("url") or "")
+    if _same_listing_route(listing_url, event_url):
+        return True
+
+    return bool(STRUCTURED_EVENT_ROUTE_RE.fullmatch(_route_section(event_url)))
+
+
+def _structured_event_from_object(obj: dict, listing_url: str, default_venue: str):
+    event = _original_structured_event_from_object(obj, listing_url, default_venue)
+    if not event:
+        return None
+    if not _structured_record_has_event_intent(obj, listing_url, event):
+        return None
+    return event
 
 
 def _iso_date(value: object) -> date | None:
@@ -411,6 +444,7 @@ def _preserve_source_order(payload: dict) -> dict:
 
 
 _browser.DETAIL_DATE_RE = COMPLETE_DETAIL_DATE_RE
+_official_feeds.structured_event_from_object = _structured_event_from_object
 _extract.label_dates = _label_dates
 _extract.current_date_label = _current_date_label
 _extract.date_fragments = _date_fragments
