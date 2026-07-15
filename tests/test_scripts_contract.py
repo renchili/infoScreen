@@ -99,7 +99,7 @@ def test_document_roles_are_distinct() -> None:
     assert "## 10. Development and validation" in readme
     assert "## 8. Source-specific Local Events architecture" in design
     assert "## 5. Market configuration interaction" in api
-    assert "## Decision record 018" in decisions
+    assert "## Decision record 017" in decisions
 
     assert "operator runbook" not in readme
     assert "Browser renderer ownership" not in readme
@@ -202,32 +202,38 @@ def test_api_spec_documents_callers_payloads_and_side_effects() -> None:
         assert value in api
 
 
-def test_questions_is_an_english_discussion_decision_record() -> None:
+def test_questions_contains_only_project_decisions() -> None:
     decisions = read_text("docs/questions.md")
 
-    assert decisions.count("## Decision record ") >= 18
-    assert decisions.count("**Discussion context**") >= 18
-    assert decisions.count("**Decision**") >= 18
-    assert decisions.count("**Why this direction was chosen**") >= 18
-    assert decisions.count("**Resulting implementation**") >= 18
+    assert decisions.count("## Decision record ") >= 17
+    assert decisions.count("**Discussion context**") >= 17
+    assert decisions.count("**Decision**") >= 17
+    assert decisions.count("**Why this direction was chosen**") >= 17
+    assert decisions.count("**Resulting implementation**") >= 17
 
     assert "Decision record 010 — Build Local Events from curated official sources" in decisions
     assert "Decision record 011 — Develop Local Events with shared stages plus source-specific adapters" in decisions
     assert "Decision record 012 — Require positive evidence that a record is an event" in decisions
-    assert "Decision record 018 — Keep README as the project entrypoint and separate specialist documents" in decisions
-    assert "The project overview and entrypoint belong in `README.md`" in decisions
+    assert "Decision record 017 — Do not describe decorative status values as system monitoring" in decisions
 
     assert re.search(r"[\u3400-\u9fff]", decisions) is None
     assert re.search(r"^##\s+(What|Where|Which|How|Why)\b", decisions, re.MULTILINE) is None
 
-    forbidden_incident_phrases = [
+    forbidden_non_project_content = [
+        "README.md",
+        "docs/design.md",
+        "docs/api-spec.md",
+        "project entrypoint",
+        "documentation surfaces",
+        "operator manual",
+        "defect diary",
         "the assistant made",
         "previous response",
         "we fixed the mistake",
         "GitHub Actions did not run",
         "pytest was not executed",
     ]
-    for value in forbidden_incident_phrases:
+    for value in forbidden_non_project_content:
         assert value not in decisions
 
 
