@@ -86,13 +86,13 @@ def test_schedule_sync_operator_documentation_is_discoverable() -> None:
     assert "Mac Calendar/EventKit" in design
     assert "mac/sync_schedule.sh" in design
     assert "surface/.env/schedule.json" in design
-    assert "该任务不在 Surface 上运行" in questions
+    assert "日程的权威来源是 Mac 上的 macOS Calendar/EventKit" in questions
+    assert "Surface 只保存、提供 HTTP 访问并渲染日程" in questions
 
 
 def test_page_ui_job_and_source_mapping_is_documented() -> None:
     readme = read_text("README.md")
     design = read_text("docs/design.md")
-    questions = read_text("docs/questions.md")
 
     required_readme = [
         "Page UI, jobs, and data sources",
@@ -131,9 +131,32 @@ def test_page_ui_job_and_source_mapping_is_documented() -> None:
     for value in required_design:
         assert value in design
 
-    assert "页面区域为什么必须有唯一 renderer owner" in questions
-    assert "哪些页面状态不是真实系统监控" in questions
-    assert "本地活动和照片为什么不属于四个 sync stat" in questions
+
+def test_questions_only_records_durable_product_decisions() -> None:
+    questions = read_text("docs/questions.md")
+
+    required = [
+        "InfoScreen 的运行边界是什么",
+        "运行时数据和个人数据放在哪里",
+        "日程数据从哪里来",
+        "本地活动允许使用哪些来源",
+        "什么内容才算本地活动",
+        "本地活动的数据质量由哪一层负责",
+        "本地活动按什么顺序展示",
+    ]
+    for value in required:
+        assert value in questions
+
+    forbidden = [
+        "GitHub Actions 关闭时怎么验收",
+        "为什么默认不上传测试 artifact",
+        "仓库卫生为什么不做成一堆产品单元测试",
+        "同步状态异常时怎么处理",
+        "Market 为什么只能有一个渲染 owner",
+        "左侧同步状态分别对应什么任务、产物和界面",
+    ]
+    for value in forbidden:
+        assert value not in questions
 
 
 def test_documented_systemd_job_cadence_matches_units() -> None:
