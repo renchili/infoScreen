@@ -99,9 +99,9 @@ def test_document_roles_are_distinct() -> None:
     assert "## 10. Development and validation" in readme
     assert "## 8. Source-specific Local Events architecture" in design
     assert "## 5. Market configuration interaction" in api
-    assert "## TTY visual language without a dot-matrix background" in explanations
-    assert "## Schedule export through macOS EventKit" in explanations
-    assert "## Market redundancy after public data-source instability" in explanations
+    assert "## Visual language" in explanations
+    assert "## Schedule" in explanations
+    assert "## Live information" in explanations
 
     assert "operator runbook" not in readme
     assert "Browser renderer ownership" not in readme
@@ -204,45 +204,34 @@ def test_api_spec_documents_callers_payloads_and_side_effects() -> None:
         assert value in api
 
 
-def test_questions_records_whole_project_supplementary_context() -> None:
+def test_questions_has_readable_whole_project_structure() -> None:
     explanations = read_text("docs/questions.md")
 
-    required_sections = [
-        "## TTY visual language without a dot-matrix background",
-        "## Schedule export through macOS EventKit",
-        "## EventKit-capable Python and LaunchAgent execution",
-        "## Canonical Schedule runtime destination",
-        "## Schedule production, freshness, and board rotation",
-        "## Market redundancy after public data-source instability",
-        "## Explicit stale and failed Market rows",
-        "## Market movement and provider-state presentation",
-        "## Runtime Market symbol configuration",
-        "## Shared Market and Weather producer",
-        "## Per-file Sync freshness",
-        "## Synchronized multilingual News display",
-        "## Local Photo inputs and browser-safe outputs",
-        "## Local Events validation in the real deployment environment",
-        "## Source-specific Local Events collection",
-        "## Positive event intent from the SAFRA Carpark result",
-        "## Listing extraction and selective detail enrichment",
-        "## Per-source debug evidence",
-        "## Partial Local Events result protection",
-        "## Automated and live validation boundaries",
+    headings = re.findall(r"^## (.+)$", explanations, re.MULTILINE)
+    assert headings == [
+        "Visual language",
+        "Schedule",
+        "Live information",
+        "Photos",
+        "Local Events",
+        "Validation boundaries",
     ]
-    for value in required_sections:
-        assert value in explanations
+    assert "### " not in explanations
+    assert re.search(r"^##\s+(Why|What|How|Which|Where)\b", explanations, re.MULTILINE) is None
 
     required_phrases = [
-        "dot-matrix background",
+        "TTY-inspired information style",
+        "dot-matrix wallpaper",
         "macOS Calendar/EventKit",
         "import EventKit",
         "~/infoscreen/surface/.env/schedule.json",
         "every 120 seconds",
         "every seven seconds",
-        "Nasdaq stock endpoint",
-        "CNBC quote service",
+        "Nasdaq stock",
+        "CNBC",
         "Stooq daily CSV",
         "Yahoo chart data",
+        "session: STALE",
         "provider: stale-cache",
         "session: ERR",
         "surface/.env/market_config.json",
@@ -255,7 +244,7 @@ def test_questions_records_whole_project_supplementary_context() -> None:
         "synchronously display corresponding versions of the same content",
         "same direction and at the same speed",
         "translation fills that language",
-        "HEIC/HEIF",
+        "HEIC and HEIF",
         "project owner on the real Surface",
         "SAFRA",
         "Carpark Rates",
@@ -269,7 +258,6 @@ def test_questions_records_whole_project_supplementary_context() -> None:
         assert value in explanations
 
     assert re.search(r"[\u3400-\u9fff]", explanations) is None
-    assert re.search(r"^##\s+(Why|What|How|Which|Where)\b", explanations, re.MULTILINE) is None
     assert "## Decision record" not in explanations
     assert "**Discussion context**" not in explanations
     assert "**Resulting implementation**" not in explanations
