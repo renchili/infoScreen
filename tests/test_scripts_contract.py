@@ -90,7 +90,7 @@ def test_document_roles_are_distinct() -> None:
     assert readme.startswith("# InfoScreen\n")
     assert design.startswith("# InfoScreen system architecture")
     assert api.startswith("# InfoScreen HTTP interaction contract")
-    assert explanations.startswith("# InfoScreen supplementary product explanations")
+    assert explanations.startswith("# InfoScreen implementation rationale and validation limits")
 
     assert "## 1. What the project provides" in readme
     assert "## 3. Data sources, producers, and page consumers" in readme
@@ -99,7 +99,8 @@ def test_document_roles_are_distinct() -> None:
     assert "## 10. Development and validation" in readme
     assert "## 8. Source-specific Local Events architecture" in design
     assert "## 5. Market configuration interaction" in api
-    assert "## TTY visual language does not mean a dot-matrix background" in explanations
+    assert "## TTY style is an information language, not dot-matrix decoration" in explanations
+    assert "## Local Events cannot be validated end to end by repository tests" in explanations
 
     assert "operator runbook" not in readme
     assert "Browser renderer ownership" not in readme
@@ -202,51 +203,46 @@ def test_api_spec_documents_callers_payloads_and_side_effects() -> None:
         assert value in api
 
 
-def test_questions_contains_project_supplementary_explanations() -> None:
+def test_questions_records_real_world_rationale_and_validation_limits() -> None:
     explanations = read_text("docs/questions.md")
 
     required_sections = [
-        "## TTY visual language does not mean a dot-matrix background",
-        "## Compact presentation must preserve the important information",
-        "## A component optimisation must stay inside that component",
-        "## Visible content must be real product data, not invented filler",
-        "## Sync status represents data freshness, not generic display health",
-        "## Refresh has three different meanings",
-        "## Market data and Market presentation are separate concerns",
-        "## The multilingual News rows must describe the same stories",
-        "## A Local Event must answer the useful event questions",
-        "## Local Events uses a single readable card with navigation",
-        "## Local Events is deliberately source-specific",
-        "## Event classification uses positive evidence, not an endless blacklist",
-        "## Local Event quality belongs in the collector",
-        "## Partial Local Event crawls must not erase a better complete result",
-        "## Calendar authority remains on the Mac",
-        "## Photos remain local and explicit",
-        "## Decorative metrics are not system monitoring",
-        "## Failure states should explain the responsible boundary",
+        "## TTY style is an information language, not dot-matrix decoration",
+        "## Local Events cannot be validated end to end by repository tests",
+        "## Human verification is part of the Local Events development loop",
+        "## Why the collector is source-specific",
+        "## Why structured data is preferred but not trusted blindly",
+        "## SAFRA Carpark showed why title blacklists are the wrong model",
+        "## Why listing extraction and detail-page enrichment both exist",
+        "## Why per-source debug evidence is part of the product",
+        "## Why a partial run does not replace a better complete result",
+        "## Why text normalization happens before runtime delivery",
+        "## Current targeted rules are evidence of observed source differences",
+        "## What automated tests can prove",
+        "## What automated tests cannot prove",
+        "## Required validation when changing a Local Events source",
     ]
     for value in required_sections:
         assert value in explanations
 
     required_phrases = [
-        "dot-matrix wallpaper",
-        "fake logs",
-        "What",
-        "When",
-        "Where",
-        "Who",
-        "15 seconds",
-        "positive event evidence",
-        "Gardens by the Bay",
-        "Mandai",
+        "dot-matrix background",
+        "project owner on the real network and real display",
+        "A passing fixture or parser test",
+        "offline regression test",
+        "SAFRA",
+        "Carpark Rates",
+        "positive event intent",
+        "title blacklist",
+        "tests/test_official_feeds.py",
+        "tests/test_local_event_output.py",
         "debug_by_source",
         "local_event_search_results.partial.json",
-        "OK",
-        "STALE",
-        "MISS",
-        "ERR",
-        "LATEST",
-        "AGE",
+        "kept_previous_complete_result",
+        "Gardens by the Bay",
+        "Mandai",
+        "A mocked browser, stored fixture, or successful `pytest` run",
+        "partially verified",
     ]
     for value in required_phrases:
         assert value in explanations
@@ -257,35 +253,32 @@ def test_questions_contains_project_supplementary_explanations() -> None:
     assert "**Resulting implementation**" not in explanations
     assert re.search(r"^##\s+(What|Where|Which|How|Why)\b", explanations, re.MULTILINE) is None
 
-    forbidden_non_project_content = [
-        "README.md",
-        "docs/design.md",
-        "docs/api-spec.md",
-        "project entrypoint",
-        "documentation surfaces",
-        "operator manual",
-        "defect diary",
+    forbidden_error_recap = [
+        "A component optimisation must stay inside that component",
+        "Fixing the Local Event card must not redesign",
+        "Visible content must be real product data, not invented filler",
+        "Market data and Market presentation are separate concerns",
+        "Sync status represents data freshness",
+        "Calendar authority remains on the Mac",
+        "Photos remain local and explicit",
+        "Decorative metrics are not system monitoring",
         "the assistant made",
         "previous response",
         "we fixed the mistake",
-        "GitHub Actions did not run",
-        "pytest was not executed",
     ]
-    for value in forbidden_non_project_content:
+    for value in forbidden_error_recap:
         assert value not in explanations
 
 
-def test_schedule_sync_is_documented_across_project_architecture_and_explanations() -> None:
+def test_schedule_sync_is_documented_in_project_and_architecture_docs() -> None:
     readme = read_text("README.md")
     design = read_text("docs/design.md")
-    explanations = read_text("docs/questions.md")
 
     assert "bash mac/scripts/setup-schedule-sync.sh" in readme
     assert "--host <surface-ip-or-hostname>" in readme
     assert "~/infoscreen/surface/.env/schedule.json" in readme
     assert "## 9. Calendar pipeline" in design
     assert "mac/sync_schedule.sh" in design
-    assert "## Calendar authority remains on the Mac" in explanations
 
 
 def test_documented_systemd_job_cadence_matches_units() -> None:
