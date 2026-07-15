@@ -136,67 +136,93 @@ def test_structured_card_bypasses_dom_date_guessing_for_any_source() -> None:
     assert event["source_type"] == "official_structured_data"
 
 
-def test_safra_structured_carpark_facility_is_rejected() -> None:
-    card = {
-        "url": "https://www.safra.sg/amenities-offerings/carpark",
-        "text": (
-            "Carpark\n"
-            "18 Mar 2024 - 31 Dec 2029\n"
-            "SAFRA Mount Faber, SAFRA Punggol, SAFRA Toa Payoh, "
-            "SAFRA Choa Chu Kang, SAFRA Tampines\n"
-            "Carpark Rates"
-        ),
-        "structured_event": {
-            "title": "Carpark",
-            "when": "18 Mar 2024 - 31 Dec 2029",
-            "where": (
-                "SAFRA Mount Faber, SAFRA Punggol, SAFRA Toa Payoh, "
-                "SAFRA Choa Chu Kang, SAFRA Tampines"
-            ),
-            "url": "https://www.safra.sg/amenities-offerings/carpark",
-            "summary": "Carpark Rates",
-            "start_date": "2024-03-18",
-            "end_date": "2029-12-31",
-        },
-    }
-    safra = {
-        "id": "safra",
-        "name": "SAFRA",
-        "default_venue": "SAFRA Clubs",
+def test_untyped_structured_record_outside_event_route_is_rejected() -> None:
+    payload = {
+        "items": [
+            {
+                "title": "Carpark",
+                "startDate": "2024-03-18",
+                "endDate": "2029-12-31",
+                "location": "SAFRA Clubs",
+                "url": "/amenities-offerings/carpark",
+                "description": "Carpark Rates",
+            }
+        ]
     }
 
-    event, reason = event_from_card(safra, card)
+    events = extract_structured_events(
+        [payload],
+        "https://www.safra.sg/whats-on",
+        "SAFRA Clubs",
+    )
 
-    assert event is None
-    assert reason == "non_event_carpark_facility"
+    assert events == []
 
 
-def test_real_safra_event_can_mention_carpark_in_summary() -> None:
+def test_untyped_structured_record_with_dates_is_not_automatically_an_event() -> None:
+    payload = {
+        "items": [
+            {
+                "title": "Membership Access",
+                "startDate": "2026-01-01",
+                "endDate": "2026-12-31",
+                "url": "/memberships/access",
+            }
+        ]
+    }
+
+    events = extract_structured_events(
+        [payload],
+        "https://example.org/events",
+        "Official Venue",
+    )
+
+    assert events == []
+
+
+def test_untyped_structured_record_inside_event_route_is_accepted() -> None:
     year = future_year()
-    card = {
-        "url": "https://www.safra.sg/whats-on/family-sports-day",
-        "text": (
-            f"Family Sports Day\n10 Aug {year}\nSAFRA Punggol\n"
-            "Carpark access remains available during the event."
-        ),
-        "structured_event": {
-            "title": "Family Sports Day",
-            "when": f"10 Aug {year}",
-            "where": "SAFRA Punggol",
-            "url": "https://www.safra.sg/whats-on/family-sports-day",
-            "summary": "Carpark access remains available during the event.",
-            "start_date": f"{year}-08-10",
-            "end_date": f"{year}-08-10",
-        },
-    }
-    safra = {
-        "id": "safra",
-        "name": "SAFRA",
-        "default_venue": "SAFRA Clubs",
+    payload = {
+        "items": [
+            {
+                "title": "Family Sports Day",
+                "startDate": f"{year}-08-10",
+                "endDate": f"{year}-08-10",
+                "location": "SAFRA Punggol",
+                "url": "/whats-on/family-sports-day",
+            }
+        ]
     }
 
-    event, reason = event_from_card(safra, card)
+    events = extract_structured_events(
+        [payload],
+        "https://www.safra.sg/whats-on",
+        "SAFRA Clubs",
+    )
 
-    assert reason == "accepted"
-    assert event is not None
-    assert event["title"] == "Family Sports Day"
+    assert len(events) == 1
+    assert events[0]["title"] == "Family Sports Day"
+
+
+def test_explicit_event_type_is_accepted_outside_event_route() -> None:
+    year = future_year()
+    payload = {
+        "items": [
+            {
+                "@type": "Event",
+                "name": "Orchid Night",
+                "startDate": f"{year}-08-10",
+                "endDate": f"{year}-08-10",
+                "url": "/content/orchid-night",
+            }
+        ]
+    }
+
+    events = extract_structured_events(
+        [payload],
+        "https://example.org/events",
+        "Official Venue",
+    )
+
+    assert len(events) == 1
+    assert events[0]["title"] == "Orchid Night"
