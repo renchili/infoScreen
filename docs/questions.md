@@ -1,309 +1,200 @@
-# InfoScreen project discussion and decision record
+# InfoScreen supplementary product explanations
 
-This file distils the product and engineering decisions that emerged from the project discussions. Each record preserves the problem being discussed, the chosen direction, why that direction matters, and what the current implementation does as a result.
+This file collects project-specific clarifications that were established across the development discussions. It explains intended behaviour, visual constraints, data semantics, and implementation expectations that are easy to miss when reading only the source code or architecture tables.
 
-## Decision record 001 — Build a local-first, always-on information screen
+## TTY visual language does not mean a dot-matrix background
 
-**Discussion context**
+The requested TTY style is primarily an information language: monospaced typography, compact spacing, clear panel boundaries, short labels, tabular values, restrained status colours, and a layout that resembles an operational terminal display.
 
-The product was repeatedly described as a screen that should stay open for long periods and be understood at a glance rather than as a conventional application that requires constant navigation. The display needs to combine the current day, personal schedule, public information, market movement, nearby activities, photos, and data freshness without becoming a collection of unrelated widgets.
+It does not require a dot-matrix wallpaper, pixel grid, noisy CRT texture, or decorative background pattern. Those effects do not make the screen more terminal-like when they reduce contrast or compete with the data. The background should remain visually quiet. Any scanline or display effect must be subtle, optional, and subordinate to readability.
 
-**Decision**
+The visual identity should come from typography, alignment, hierarchy, borders, labels, and state presentation rather than from filling unused space with texture.
 
-InfoScreen is a local-first kiosk dashboard for a Surface or Ubuntu display. It prioritises distance readability, compact information density, stable layout, and predictable long-running behaviour over decorative effects or a general-purpose desktop interface.
+## Compact presentation must preserve the important information
 
-**Why this direction was chosen**
+InfoScreen is viewed as an always-on screen, often from a distance. Compact does not mean shrinking every element or filling every empty area. It means using the available space efficiently while keeping the most important values immediately readable.
 
-An always-on screen fails as a product when important information moves unpredictably, controls hide primary values, or the user must repeatedly interact with it. Local-first operation also keeps the screen useful when cloud accounts, remote dashboards, or third-party application sessions are unavailable.
+Primary values such as time, Market movement, Weather, Local Event title/date/place, Schedule, and freshness state must not be hidden behind controls or decorative elements. Configuration controls should remain secondary and should not move or restyle the product data they configure.
 
-**Resulting implementation**
+A layout change in one panel must not cause unrelated panels to lose information, change established colour semantics, or become visually inconsistent.
 
-The product uses a fixed multi-panel kiosk layout, plain HTML/CSS/JavaScript, a local Python HTTP server, local runtime JSON, and background jobs that operate independently from the browser session.
+## A component optimisation must stay inside that component
 
-## Decision record 002 — Separate the Surface runtime from the Mac Calendar authority
+Requests to improve Local Events, Calendar, Photos, or another panel are scoped to that product area unless a shared contract genuinely has to change. Fixing the Local Event card must not redesign the Market card, remove News, hide Photos, alter Calendar behaviour, or replace the real Sync ticker.
 
-**Discussion context**
+Each visible mount therefore has one renderer owner:
 
-The schedule is personal Calendar data, while the always-on display runs on a Surface or Ubuntu device. The Mac already owns the Calendar accounts, EventKit permissions, and the authoritative event view.
+- `dashboard.js` renders Market and Weather;
+- `calendar_board.js` renders Calendar;
+- `local_event_card.js` renders Local Events, Sync status, News, and Photos;
+- `market_custom.js` owns Market controls and triggers the Market renderer instead of replacing it.
 
-**Decision**
+This boundary prevents one asynchronously loaded script from briefly showing correct data and then overwriting it with a second markup implementation.
 
-The Mac remains the schedule authority. It exports events through EventKit and pushes `schedule.json` to the Surface. The Surface stores, serves, monitors, and renders that file but does not create a second Calendar integration.
+## Visible content must be real product data, not invented filler
 
-**Why this direction was chosen**
+The dashboard must not fill empty areas with fake logs, invented development messages, `RESERVED` entries, fabricated incidents, or synthetic event/news content. A placeholder is acceptable only when it clearly represents a temporary product state such as loading, missing runtime data, or an explicit error.
 
-Duplicating Calendar account access on the Surface would introduce another authentication model, another source of truth, and more private-account configuration. The push model preserves the existing Mac permissions and keeps the Surface runtime account-free.
+When a producer has no valid data, the page should show the absence or failure and point to the responsible runtime file or job. It must not simulate normal content merely to keep the screen visually busy.
 
-**Resulting implementation**
+This requirement applies especially to News and Local Events, where invented text can be mistaken for externally sourced information.
 
-`mac/export.py` and `mac/sync_schedule.sh` run under `com.renchili.infoscreen.schedule-sync`. Machine-specific SSH and Python settings live in uncommitted `mac/local.env`. The runtime target is `surface/.env/schedule.json`.
+## Sync status represents data freshness, not generic display health
 
-## Decision record 003 — Keep source code and device state physically separate
+`DISPLAY ONLINE` only says that the page is rendering. It does not answer whether Schedule, Weather, Market, or News is current.
 
-**Discussion context**
+The Sync ticker therefore reports each runtime artifact separately using:
 
-The project produces frequently changing JSON, logs, debug pages, photo indexes, copied photos, and machine-specific configuration. Mixing those files with source made it difficult to know what should be committed, deployed, regenerated, or preserved.
+- `OK`: the file exists and is within its freshness threshold;
+- `STALE`: the file exists but is older than its threshold;
+- `MISS`: the runtime path or `Last-Modified` header is absent;
+- `ERR`: the browser could not complete the `HEAD` request;
+- `LATEST`: the server file modification time visible to the browser;
+- `AGE`: the difference between the browser clock and that modification time.
 
-**Decision**
+The ticker observes the final HTTP-served file. It does not replace the producer, and it does not prove which internal provider failed. A very large `AGE` may indicate a stopped producer, a failed Mac push, a wrong runtime path, or clock skew between the browser, Surface, and Mac.
 
-All device runtime and personal data lives under `surface/.env/`. User photo inputs live under `surface/.env/photos/`. Generated runtime data is never treated as source code.
+## Refresh has three different meanings
 
-**Why this direction was chosen**
+The project separates three behaviours that were repeatedly confused during development.
 
-A clean boundary allows repository updates without overwriting personal state, prevents accidental commits of private content, and makes producer failures diagnosable by inspecting one runtime directory.
+**Producer refresh** fetches or generates new external data and writes runtime JSON. It is controlled by systemd timers, the Mac LaunchAgent, a manual command, or a POST refresh/search action.
 
-**Resulting implementation**
+**Browser reload** reads an existing runtime file again. A browser reload does not necessarily run the producer.
 
-Weather, Market, News, Local Events, Schedule, photo manifests, copied public photos, partial Local Events results, debug evidence, and logs all use the `surface/.env/` boundary.
+**Visual rotation** changes which already-loaded item is visible. Rotating every few seconds does not make the underlying data newer.
 
-## Decision record 004 — Use short-lived producers and a simple local HTTP server
+This distinction explains several otherwise confusing behaviours:
 
-**Discussion context**
+- Local Events may be regenerated by the six-hour timer while the page still holds the previous in-memory list until reload;
+- Calendar may receive a new `schedule.json` from the Mac while the board continues rotating the old list until page reload;
+- Market may reload every minute even though its background producer normally runs every five minutes;
+- News ticker animation may continue smoothly while `event_stream.json` is stale.
 
-The screen needs periodic external data refresh, but the HTTP server should remain stable and should not block normal page requests while scraping or translating remote content.
+## Market data and Market presentation are separate concerns
 
-**Decision**
+The Market panel has two responsibilities that should not be mixed.
 
-External data collection is implemented as short-lived Python jobs that write runtime JSON and exit. `surface/serve_infoscreen.py` is a separate long-running server that serves the current state and exposes a small set of local interaction endpoints.
+The producer resolves configured symbols through a provider fallback chain and writes quote data. The UI renders symbol, price, movement, session metadata, source, and update time using stable visual semantics.
 
-**Why this direction was chosen**
+Positive and negative movement must remain visually distinct. Provider or session metadata must not overwrite the colour and class used for price movement. A configuration control may change symbols or request a refresh, but it must not introduce a second quote renderer.
 
-This separates serving from production, gives each job independent logs and retry behaviour, and allows systemd timers to schedule work without coupling every page request to external providers.
+When live providers fail, the project may retain the previous usable quote as `stale-cache`, but that state must remain visible. A missing value must remain `N/A`/error rather than being replaced with a plausible-looking number.
 
-**Resulting implementation**
+## Weather and Market share a producer but remain separate products
 
-Weather/Market, News, Local Events, Photos, and Calendar each have a distinct producer path. The HTTP server reads the resulting files and only invokes producers for explicit POST refresh/search interactions.
+Weather and Market are both written by `surface/fetch_live_data.py`. The normal Surface timer and the Market refresh endpoint run that shared producer, so manually refreshing Market also refreshes Weather.
 
-## Decision record 005 — Treat producer refresh, browser reload, and visual rotation as separate behaviours
+This shared execution path should not be confused with shared UI ownership. Market and Weather still have separate runtime files, separate display regions, and separate field mappings.
 
-**Discussion context**
+## The multilingual News rows must describe the same stories
 
-During development, the word “refresh” referred to several different operations: fetching new external data, reading an already-written runtime file, and rotating through items already loaded into the page. Conflating them made stale-data behaviour difficult to understand.
+The English, French, and Chinese rows are intended as three language views of the same selected stories. They are not three unrelated random feeds placed on aligned rows.
 
-**Decision**
+The producer therefore selects a base set of real RSS items and creates a complete EN/FR/ZH triple for each one. When one language cannot be produced or validated, that story is skipped rather than shifting the rows out of semantic alignment.
 
-The design explicitly separates producer refresh frequency, browser data reload frequency, and visual rotation frequency.
+The News area must not fall back to fake logs, development status text, or unrelated filler. Errors belong in the runtime `errors` evidence and in a clear unavailable state.
 
-**Why this direction was chosen**
+## A Local Event must answer the useful event questions
 
-A producer may be healthy while the browser still holds an older in-memory list. Conversely, a frequently animated panel may still be rotating stale data. Operators and future code changes need to know which layer is responsible.
+A Local Event card is useful only when it provides enough information to decide whether to open the official page. The accepted data model should provide, when the source exposes it:
 
-**Resulting implementation**
+- **What**: event title;
+- **When**: current or future date/time;
+- **Where**: concise venue or location;
+- **Who**: publishing organisation or host;
+- a short description or reason to attend;
+- an official link that can be opened for verification.
 
-Systemd and the Mac LaunchAgent own production. Browser scripts own periodic GET/HEAD behaviour. Local Events, Calendar, Photos, and ticker animations use independent rotation intervals.
+A title and a long validity range are not sufficient. A card that cannot establish a real event date or event identity should not be promoted merely because it occupies an event-shaped object on the source page.
 
-## Decision record 006 — Monitor final runtime freshness inside the product
+## Local Events uses a single readable card with navigation
 
-**Discussion context**
+The panel uses one event card at a time because the available physical area cannot show several complete What/When/Where/Who records at a readable size.
 
-The screen needs to show whether the information it displays is current. The producers use different JSON schemas and run on different machines, including the Mac Calendar push.
+The current interaction model therefore includes:
 
-**Decision**
+- automatic advance every 15 seconds;
+- previous and next controls;
+- a position counter;
+- location search;
+- a direct official-link action.
 
-Freshness is measured from the final runtime artifact using HTTP `Last-Modified`. The page reports `OK`, `STALE`, `MISS`, or `ERR` for Schedule, Weather, Market, and News.
+The carousel rotates accepted records already loaded in the browser. It does not perform a new source crawl on every transition.
 
-**Why this direction was chosen**
+## Local Events is deliberately source-specific
 
-Monitoring the final file verifies that the complete producer-to-runtime-to-HTTP path succeeded. It also provides one freshness model for both Surface timers and the Mac push without requiring every payload to share an `updated_at` schema.
+Local Events is not a general search-engine scraper and not a single universal selector. It is a maintained set of official organisation sources with explicit listing URLs, allowed domains, default venues, source order, and adapter choices.
 
-**Resulting implementation**
+The official sites expose materially different structures. Some publish structured JSON, some render cards only after JavaScript, some omit dates from listing cards, and some require detail-page reads. The collector therefore combines shared stages with targeted source behaviour.
 
-`local_event_card.js` performs `HEAD` requests every 60 seconds and computes `AGE` using the browser clock. The ticker is an observer only; it never generates or repairs data.
+Examples of targeted handling currently include:
 
-## Decision record 007 — Give every visible mount one renderer owner
+- structured XHR/embedded-state extraction before DOM fallback;
+- detail-page date enrichment for sources whose listing cards are incomplete;
+- Gardens by the Bay date-range and venue repair;
+- rejection of synthetic Mandai location cards;
+- configured source ordering and per-source debug evidence;
+- preserving the previous complete result when a new crawl is partial.
 
-**Discussion context**
+Source-specific development is part of the feature, not an accidental exception around a generic crawler.
 
-The dashboard contains independently loaded scripts and asynchronous data. When multiple scripts write the same DOM mount, correct content can appear briefly and then be replaced by older markup, different classes, or incompatible field mapping.
+## Event classification uses positive evidence, not an endless blacklist
 
-**Decision**
+Official structured data contains facilities, memberships, operating information, promotions, navigation objects, and other dated records beside real events. It is not possible to enumerate every non-event title such as `carpark`, `gym`, `membership`, or future variants.
 
-Every visible DOM mount has exactly one data renderer. Other scripts may trigger that renderer or observe the same runtime file, but they do not rewrite the mount.
+The collector therefore requires positive event evidence. A structured record must establish event/programme/activity semantics through its type or its relationship to an official event-oriented listing/detail route. Title and `startDate`/`endDate` fields alone are not enough.
 
-**Why this direction was chosen**
+Negative quality checks remain useful as secondary safeguards, but they must not become the primary classifier. A real event is accepted because there is evidence that it is an event, not because its title avoided a growing list of banned words.
 
-Single ownership makes final UI state deterministic and makes a visible problem traceable to one consumer. It also prevents refresh-order races from becoming styling or data bugs.
+## Local Event quality belongs in the collector
 
-**Resulting implementation**
+A bad record should not be hidden only in the browser. The same accepted dataset is consumed by the UI, API, runtime inspection, and debug tools.
 
-`dashboard.js` owns Market and Weather; `calendar_board.js` owns Calendar; `local_event_card.js` owns Local Events, Sync, News, and Photos; `market_custom.js` owns only Market controls and calls `window.loadMarket()` after refresh.
+Title, date, venue, URL, duplication, structured event intent, and source-specific repairs therefore belong in the collector/extractor before runtime JSON is written. The frontend owns layout fitting and ellipsis only.
 
-## Decision record 008 — Keep Market values configurable while preserving visible failures
+Rejections should leave evidence in `debug_by_source`, so an affected organisation can be traced to page access, pagination, structured extraction, rendered-card extraction, detail enrichment, date parsing, event-intent validation, or crawl budget.
 
-**Discussion context**
+## Partial Local Event crawls must not erase a better complete result
 
-The Market panel needs user-selected symbols, but public quote providers can fail, rate-limit, return incomplete data, or behave differently across sessions. Important price and movement values must remain visible rather than hidden behind configuration controls.
+Official sources can fail independently or exceed their time budget. A new run may cover fewer sources and return fewer events than the previous complete run.
 
-**Decision**
+When that happens, the screen should keep the previous complete primary result instead of replacing it with an obviously degraded partial set. The incomplete run is retained separately in `local_event_search_results.partial.json` with its debug evidence.
 
-Market symbols are locally configurable, quotes use a provider fallback chain, and failures remain explicit in runtime metadata and the UI.
+This is availability protection, not permission to hide permanent failures. The partial output remains available so the source coverage problem can be repaired.
 
-**Why this direction was chosen**
+## Calendar authority remains on the Mac
 
-No single unauthenticated provider is sufficiently reliable for an always-on display. Retaining a previous usable item is preferable to replacing it with an empty row, but stale data must be labelled rather than presented as live.
+The Surface displays Calendar information but does not own Calendar accounts or permissions. macOS Calendar/EventKit is the authoritative source.
 
-**Resulting implementation**
+The Mac exports and pushes `schedule.json`; the Surface stores, serves, monitors, and renders it. This avoids maintaining a second Calendar authentication system on the Surface and keeps private account configuration on the device that already owns it.
 
-The producer tries Nasdaq, CNBC, Stooq, Yahoo, then previous `market.json`. Active symbols are stored in `surface/.env/market_config.json`; the gear panel saves configuration and invokes a refresh. Stale-cache and hard-error states remain visible per symbol.
+Calendar rotation and Calendar freshness are separate. The board rotates its loaded events, while the Sync ticker independently observes the served file age.
 
-## Decision record 009 — Keep the three News rows aligned to the same base stories
+## Photos remain local and explicit
 
-**Discussion context**
+The Photo wall is personal content. User files remain under `surface/.env/photos/`, and the builder creates `photos.json` plus safe served copies under `public_photos/`.
 
-The screen presents English, French, and Chinese news simultaneously. Independent per-language feeds would produce unrelated rows and make the three-line display visually aligned but semantically inconsistent.
+The browser does not scan arbitrary filesystem paths and the project does not require a cloud photo account. Photo changes are explicit: update the local files, run the builder, and let the page reload the generated manifest.
 
-**Decision**
+## Decorative metrics are not system monitoring
 
-Select a base set of stories and generate a complete EN/FR/ZH version of each selected story. Skip a story when a complete validated translation triple cannot be produced.
+The current CPU/MEM/DSK/NET bars are simulated browser values. POWER/DISPLAY/NETWORK labels are static text, and page uptime measures the current browser session.
 
-**Why this direction was chosen**
+These elements must not be described as Surface OS monitoring. Real monitoring would require an actual producer, runtime schema, endpoint, freshness model, failure state, renderer, and tests. A status-like appearance alone is not evidence of a monitored system.
 
-The three rows should be alternate language views of the same information, not three unrelated random feeds. Skipping an incomplete triple is more coherent than shifting the rows out of alignment.
+## Failure states should explain the responsible boundary
 
-**Resulting implementation**
+The screen should fail visibly and specifically rather than silently substituting plausible content.
 
-`fetch_event_stream.py` gathers official/RSS sources, deduplicates titles, selects up to eight base items, translates missing languages, validates output, and writes aligned arrays under `items_by_lang`.
+A useful failure state points toward the responsible boundary:
 
-## Decision record 010 — Build Local Events from curated official sources, not generic web search
+- page or asset failure → HTTP service/frontend;
+- stale Market or Weather → shared live-data producer and runtime files;
+- stale News → News producer and `event_stream.json`;
+- bad or partial Local Events → source-specific collector and `debug_by_source`;
+- stale Schedule → Mac LaunchAgent, SSH/SCP path, and `schedule.json`;
+- missing Photos → local photo input, builder, and manifest;
+- large Sync `AGE` → producer/push path, runtime mtime, HTTP header, or device clocks.
 
-**Discussion context**
-
-The Local Event panel needs trustworthy title, date, venue, description, source, and official link. Search engines and aggregators return reposts, stale pages, SEO pages, facilities, promotions, and content with unclear ownership.
-
-**Decision**
-
-Local Events uses a curated inventory of official organisation listing and detail pages stored in `surface/conf/event_sources.json`. Third-party aggregators, recursive crawling, and sitemap-first collection are not the primary flow.
-
-**Why this direction was chosen**
-
-The user must be able to open the publishing organisation’s page and verify the event. Curated sources also make it possible to identify exactly which official site changed when coverage or extraction quality drops.
-
-**Resulting implementation**
-
-The configured inventory currently covers 18 official museum, library, community, attraction, shopping-centre, venue, and institution sources, each with allowed domains, listing entrypoints, default venue, source order, and adapter choice.
-
-## Decision record 011 — Develop Local Events with shared stages plus source-specific adapters
-
-**Discussion context**
-
-Real official sites do not expose events in one consistent shape. Some have structured JSON, some require JavaScript rendering, some omit dates from listing cards, some require detail pages, and some mix event and non-event records in the same page state.
-
-**Decision**
-
-Use a common collection and normalization pipeline, but allow source configuration, adapter choice, and targeted source handling where the official site requires it.
-
-**Why this direction was chosen**
-
-A universal CSS selector or a single “smart” regex cannot reliably cover all official sites. Source-specific behavior is not an exception to the product; it is the implementation strategy that makes official-source coverage maintainable and testable.
-
-**Resulting implementation**
-
-The current adapters are `rendered_dom_card` and the historically named `nhb` detail-enriched mode. The collector reads network/embedded JSON, rendered cards, and eligible detail pages. Gardens by the Bay and Mandai have targeted handling based on observed source behaviour. Per-source debug evidence records coverage and rejection reasons.
-
-## Decision record 012 — Require positive evidence that a record is an event
-
-**Discussion context**
-
-Official JSON and page state contain objects with titles and dates that represent facilities, memberships, operating information, promotions, or long validity periods. Rejecting only known bad words would require an endless list and would still miss new categories.
-
-**Decision**
-
-A structured record must establish why it is an event: explicit event/programme/activity type, relationship to the official event listing route, or an event-oriented detail route. Title and date fields alone are insufficient.
-
-**Why this direction was chosen**
-
-Positive intent blocks whole categories of false positives at the structured-data boundary. It is more general and safer than adding a new negative keyword after each bad record appears.
-
-**Resulting implementation**
-
-Structured extraction now validates event intent before a candidate enters the normal event conversion path. Generic title/date/venue quality rules still apply afterward, but no dedicated facility-name blacklist is the primary classifier.
-
-## Decision record 013 — Make the collector, not the frontend, own Local Event quality
-
-**Discussion context**
-
-A bad Local Event record is visible in the page, the API, runtime JSON, and debugging tools. Hiding it only in the browser would leave every other consumer with inconsistent data and would conceal the real extraction problem.
-
-**Decision**
-
-Invalid links, bad titles, wrong dates, wrong venues, non-event structured objects, and duplicates are rejected or repaired before runtime JSON is written. The frontend only fits and renders accepted fields.
-
-**Why this direction was chosen**
-
-One accepted dataset must be shared by every consumer. Collector-level rejection also preserves a reason in `debug_by_source`, making source regressions diagnosable instead of silently hidden.
-
-**Resulting implementation**
-
-Local Event tests target extraction and acceptance behaviour. The browser does not contain title-specific hiding rules. Description truncation is a visual fitting concern only and does not mutate backend content.
-
-## Decision record 014 — Preserve the previous complete Local Event result during partial crawls
-
-**Discussion context**
-
-Official sites can time out or fail independently. A run that reaches only some configured sources may return fewer events than the previous successful run even though the previous data is still more useful for the always-on screen.
-
-**Decision**
-
-When a new run is partial and would replace a larger previous complete result, retain the previous primary runtime file and write the incomplete run separately for diagnosis.
-
-**Why this direction was chosen**
-
-Transient source failure should not empty or sharply reduce the kiosk display. At the same time, the failed run must not be discarded because it contains the evidence needed to repair coverage.
-
-**Resulting implementation**
-
-The job writes incomplete evidence to `local_event_search_results.partial.json`, marks `partial` and `write_policy`, and keeps the previous complete `local_event_search_results.json` when the protection condition applies.
-
-## Decision record 015 — Present Local Events as one source-verifiable card at a time
-
-**Discussion context**
-
-The Local Event panel has limited physical space but each result needs enough context to be useful: organisation, title, time, place, description, and official link. A dense multi-card list made each event too small and reduced source visibility.
-
-**Decision**
-
-Show one event card at a time, group results by configured organisation order, auto-advance, and provide previous, next, location search, position count, and official-link controls.
-
-**Why this direction was chosen**
-
-One-card presentation preserves readable type and makes the source and official action clear. Source grouping provides a stable browsing context and prevents unstable cross-source date sorting from making the sequence unpredictable.
-
-**Resulting implementation**
-
-The panel advances every 15 seconds, retains manual navigation, stores the last location in browser local storage, and requests a new source-specific collection through the local API when the user searches another location.
-
-## Decision record 016 — Keep the Photo wall entirely local
-
-**Discussion context**
-
-The Photo wall is personal content and should not depend on a cloud gallery, remote account, or browser filesystem access.
-
-**Decision**
-
-User photos remain under `surface/.env/photos/`. A local builder creates a safe manifest and copied public files. The browser only reads the generated manifest and served copies.
-
-**Why this direction was chosen**
-
-This preserves privacy, avoids cloud authentication, and creates a stable HTTP contract without exposing arbitrary local filesystem paths to the browser.
-
-**Resulting implementation**
-
-`build_photos_json.py` writes `photos.json` and `public_photos/`. The supported deployment keeps this refresh manual so changes to private photos are explicit.
-
-## Decision record 017 — Do not describe decorative status values as system monitoring
-
-**Discussion context**
-
-The page includes CPU/MEM/DSK/NET bars and POWER/DISPLAY/NETWORK labels, but the current implementation has no OS metrics producer or health API behind those elements.
-
-**Decision**
-
-Treat the bars as simulated display values and the labels as static text. Do not use them to claim Surface health or monitoring coverage.
-
-**Why this direction was chosen**
-
-A monitoring label without a producer, schema, endpoint, freshness model, and failure state creates false confidence. The product already has real runtime freshness monitoring and must keep that distinction clear.
-
-**Resulting implementation**
-
-The demo bars are named accordingly in code and documentation. A future real-monitoring implementation must replace the complete producer-to-renderer chain rather than relabel the existing random values.
+The product should preserve enough status and debug evidence to follow the visible panel back to its producer and source without inventing a successful-looking state.
