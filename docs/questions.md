@@ -1,200 +1,186 @@
-# InfoScreen supplementary product explanations
+# InfoScreen implementation rationale and validation limits
 
-This file collects project-specific clarifications that were established across the development discussions. It explains intended behaviour, visual constraints, data semantics, and implementation expectations that are easy to miss when reading only the source code or architecture tables.
+This document preserves project context that cannot be understood from code structure alone. It records why selected behaviours exist, what real-world observations led to them, and where automated validation stops.
 
-## TTY visual language does not mean a dot-matrix background
+It is not a conversation transcript, a changelog, or a list of implementation mistakes. The most important purpose of this file is to prevent a future maintainer from simplifying the Local Events collector based only on passing repository tests while ignoring the conditions observed on the real sites and the real display environment.
 
-The requested TTY style is primarily an information language: monospaced typography, compact spacing, clear panel boundaries, short labels, tabular values, restrained status colours, and a layout that resembles an operational terminal display.
+## TTY style is an information language, not dot-matrix decoration
 
-It does not require a dot-matrix wallpaper, pixel grid, noisy CRT texture, or decorative background pattern. Those effects do not make the screen more terminal-like when they reduce contrast or compete with the data. The background should remain visually quiet. Any scanline or display effect must be subtle, optional, and subordinate to readability.
+The requested TTY style refers to monospaced typography, compact spacing, aligned values, concise labels, restrained status colours, and clear panel boundaries.
 
-The visual identity should come from typography, alignment, hierarchy, borders, labels, and state presentation rather than from filling unused space with texture.
+It does not require a dot-matrix background, pixel grid, noisy CRT texture, or decorative pattern. Those effects were explicitly not required because they compete with the information and reduce readability on an always-on display.
 
-## Compact presentation must preserve the important information
+The terminal character of the interface should come from typography, hierarchy, alignment, borders, and state presentation. The background should remain visually quiet.
 
-InfoScreen is viewed as an always-on screen, often from a distance. Compact does not mean shrinking every element or filling every empty area. It means using the available space efficiently while keeping the most important values immediately readable.
+## Local Events cannot be validated end to end by repository tests
 
-Primary values such as time, Market movement, Weather, Local Event title/date/place, Schedule, and freshness state must not be hidden behind controls or decorative elements. Configuration controls should remain secondary and should not move or restyle the product data they configure.
+The Local Events feature reads external official websites whose behaviour depends on the live page, network path, JavaScript execution, region, cookies, timing, anti-bot controls, and changes made by the publishing organisation.
 
-A layout change in one panel must not cause unrelated panels to lose information, change established colour semantics, or become visually inconsistent.
+The repository test suite does not prove that an official website is currently reachable, that its JavaScript still renders the same content, that its anti-bot behaviour permits collection, or that the current page still exposes the fields expected by the collector.
 
-## A component optimisation must stay inside that component
+The development environment used for code changes cannot reproduce every real Surface and live-site condition. For this feature, validation by the project owner on the real network and real display is part of the development process, not an optional final check.
 
-Requests to improve Local Events, Calendar, Photos, or another panel are scoped to that product area unless a shared contract genuinely has to change. Fixing the Local Event card must not redesign the Market card, remove News, hide Photos, alter Calendar behaviour, or replace the real Sync ticker.
+A passing fixture or parser test means only that a known input is handled as expected. It does not mean that a live source currently produces that input.
 
-Each visible mount therefore has one renderer owner:
+## Human verification is part of the Local Events development loop
 
-- `dashboard.js` renders Market and Weather;
-- `calendar_board.js` renders Calendar;
-- `local_event_card.js` renders Local Events, Sync status, News, and Photos;
-- `market_custom.js` owns Market controls and triggers the Market renderer instead of replacing it.
+The effective development loop is:
 
-This boundary prevents one asynchronously loaded script from briefly showing correct data and then overwriting it with a second markup implementation.
+1. run the collector on the real Surface or equivalent real browser/network environment;
+2. inspect what is actually displayed and what was written to the runtime JSON;
+3. identify the affected official source and exact listing/detail page;
+4. inspect `debug_by_source`, captured structured payloads, rendered cards, detail-page evidence, and rejection reasons;
+5. describe the real failure precisely, such as a false event, missing date, wrong venue, missing source, partial coverage, or blocked page;
+6. change the smallest appropriate source configuration, adapter, extraction rule, or output policy;
+7. add an offline regression test or fixture that preserves the observed case;
+8. rerun the real collector to confirm that the live behaviour is actually corrected.
 
-## Visible content must be real product data, not invented filler
+The offline regression test is the final protection against reintroducing a known problem. It is not a replacement for step 1 or step 8.
 
-The dashboard must not fill empty areas with fake logs, invented development messages, `RESERVED` entries, fabricated incidents, or synthetic event/news content. A placeholder is acceptable only when it clearly represents a temporary product state such as loading, missing runtime data, or an explicit error.
+## Why the collector is source-specific
 
-When a producer has no valid data, the page should show the absence or failure and point to the responsible runtime file or job. It must not simulate normal content merely to keep the screen visually busy.
+The current collector is not a universal web scraper. The official sources do not expose events through one stable contract.
 
-This requirement applies especially to News and Local Events, where invented text can be mistaken for externally sourced information.
+Observed and implemented source patterns include:
 
-## Sync status represents data freshness, not generic display health
+- structured JSON returned through XHR or embedded page state;
+- cards that appear only after JavaScript rendering;
+- listing cards with incomplete or ambiguous dates;
+- useful fields available only on detail pages;
+- facilities, memberships, promotions, navigation objects, or operating information mixed with event data;
+- source-specific date and venue layouts;
+- pages that time out, block automation, or return only partial coverage.
 
-`DISPLAY ONLINE` only says that the page is rendering. It does not answer whether Schedule, Weather, Market, or News is current.
+For that reason, `surface/conf/event_sources.json` records the official entrypoints, allowed domains, default venues, source order, and adapter choice for each organisation. The shared collector provides common stages, while source-specific handling exists where real pages require it.
 
-The Sync ticker therefore reports each runtime artifact separately using:
+Removing an adapter or targeted rule because a synthetic test still passes can remove live coverage that the test never exercised.
 
-- `OK`: the file exists and is within its freshness threshold;
-- `STALE`: the file exists but is older than its threshold;
-- `MISS`: the runtime path or `Last-Modified` header is absent;
-- `ERR`: the browser could not complete the `HEAD` request;
-- `LATEST`: the server file modification time visible to the browser;
-- `AGE`: the difference between the browser clock and that modification time.
+## Why structured data is preferred but not trusted blindly
 
-The ticker observes the final HTTP-served file. It does not replace the producer, and it does not prove which internal provider failed. A very large `AGE` may indicate a stopped producer, a failed Mac push, a wrong runtime path, or clock skew between the browser, Surface, and Mac.
+Structured JSON is preferred because it can contain explicit start/end dates, venue fields, canonical URLs, and descriptions that are more reliable than guessing from rendered text.
 
-## Refresh has three different meanings
+Repository tests preserve several useful structured-data behaviours:
 
-The project separates three behaviours that were repeatedly confused during development.
+- separate `startDate` and `endDate` values become one closed display range;
+- a structured record can replace a poorer same-title DOM date guess;
+- a structured event bypasses DOM date guessing once it has already supplied canonical dates;
+- explicit `@type: Event` is accepted even when the URL is not under the listing route.
 
-**Producer refresh** fetches or generates new external data and writes runtime JSON. It is controlled by systemd timers, the Mac LaunchAgent, a manual command, or a POST refresh/search action.
+However, live structured payloads also contain objects that are not events. Structured form is evidence about data shape, not proof of event meaning. Every structured candidate still requires event intent and normal quality checks before it becomes a runtime event.
 
-**Browser reload** reads an existing runtime file again. A browser reload does not necessarily run the producer.
+## SAFRA Carpark showed why title blacklists are the wrong model
 
-**Visual rotation** changes which already-loaded item is visible. Rotating every few seconds does not make the underlying data newer.
+A real Local Events result displayed a SAFRA record with the title `Carpark`, a long range from 2024 to 2029, and the description `Carpark Rates`. The source page exposed enough structured fields for the earlier collector to convert it into an event-shaped record even though it was a facility information page.
 
-This distinction explains several otherwise confusing behaviours:
+The important finding was not that the word `Carpark` should be banned. It was that a title and date range do not establish event meaning.
 
-- Local Events may be regenerated by the six-hour timer while the page still holds the previous in-memory list until reload;
-- Calendar may receive a new `schedule.json` from the Mac while the board continues rotating the old list until page reload;
-- Market may reload every minute even though its background producer normally runs every five minutes;
-- News ticker animation may continue smoothly while `event_stream.json` is stale.
+A blacklist of names such as `carpark`, `gym`, `membership`, or every future facility type cannot be complete and can also reject a genuine event whose description happens to mention one of those words.
 
-## Market data and Market presentation are separate concerns
+The current rule therefore uses positive event intent. An untyped structured record must be connected to the official event listing/detail route, or the structured type must explicitly describe an event, programme, or activity. A dated object outside that event context is not automatically accepted.
 
-The Market panel has two responsibilities that should not be mixed.
+`tests/test_official_feeds.py` preserves this distinction with cases for:
 
-The producer resolves configured symbols through a provider fallback chain and writes quote data. The UI renders symbol, price, movement, session metadata, source, and update time using stable visual semantics.
+- the SAFRA `Carpark` record outside the event route being rejected;
+- another untyped membership record with dates being rejected;
+- an untyped record inside the official event route being accepted;
+- an explicitly typed Event outside that route being accepted.
 
-Positive and negative movement must remain visually distinct. Provider or session metadata must not overwrite the colour and class used for price movement. A configuration control may change symbols or request a refresh, but it must not introduce a second quote renderer.
+These tests preserve the logic derived from the observed false positive. They do not prove that SAFRA's current live page still has the same structure or that the source can currently be collected.
 
-When live providers fail, the project may retain the previous usable quote as `stale-cache`, but that state must remain visible. A missing value must remain `N/A`/error rather than being replaced with a plausible-looking number.
+## Why listing extraction and detail-page enrichment both exist
 
-## Weather and Market share a producer but remain separate products
+Some official listing cards expose enough information to create an event directly. Others omit a complete date, venue, or description and require a detail-page read.
 
-Weather and Market are both written by `surface/fetch_live_data.py`. The normal Surface timer and the Market refresh endpoint run that shared producer, so manually refreshing Market also refreshes Weather.
+The collector therefore supports both rendered listing-card extraction and a detail-enriched adapter path. Detail pages are opened selectively rather than recursively crawling the entire site, because unrestricted crawling increases runtime, duplicate results, unrelated content, and blocking risk.
 
-This shared execution path should not be confused with shared UI ownership. Market and Weather still have separate runtime files, separate display regions, and separate field mappings.
+The detail-enrichment path should be retained only for sources that need it and must be revalidated against the real source when its page structure changes. A parser test can prove that a stored detail response is interpreted correctly; it cannot prove that the live detail page is still reachable or still contains that response.
 
-## The multilingual News rows must describe the same stories
+## Why per-source debug evidence is part of the product
 
-The English, French, and Chinese rows are intended as three language views of the same selected stories. They are not three unrelated random feeds placed on aligned rows.
+A result count alone cannot explain why Local Events coverage changed. A source can fail at page access, structured extraction, rendered-card discovery, pagination, detail enrichment, date parsing, event-intent validation, normalization, or the total crawl budget.
 
-The producer therefore selects a base set of real RSS items and creates a complete EN/FR/ZH triple for each one. When one language cannot be produced or validated, that story is skipped rather than shifting the rows out of semantic alignment.
+The runtime payload therefore includes `debug_by_source`, and optional evidence is written under `surface/.env/local_event_debug_cards/`.
 
-The News area must not fall back to fake logs, development status text, or unrelated filler. Errors belong in the runtime `errors` evidence and in a clear unavailable state.
+This evidence exists so a maintainer can answer:
 
-## A Local Event must answer the useful event questions
+- which configured source was reached;
+- which listing pages were attempted;
+- how many cards or structured candidates were found;
+- how many records were accepted;
+- why individual candidates were rejected;
+- whether the job stopped because of a source timeout or total budget;
+- whether a source-specific rule is still matching the live page.
 
-A Local Event card is useful only when it provides enough information to decide whether to open the official page. The accepted data model should provide, when the source exposes it:
+When the project owner reports a bad card or missing organisation, this evidence is the bridge between the visible real-world result and an offline regression fixture.
 
-- **What**: event title;
-- **When**: current or future date/time;
-- **Where**: concise venue or location;
-- **Who**: publishing organisation or host;
-- a short description or reason to attend;
-- an official link that can be opened for verification.
+## Why a partial run does not replace a better complete result
 
-A title and a long validity range are not sufficient. A card that cannot establish a real event date or event identity should not be promoted merely because it occupies an event-shaped object on the source page.
+External sources fail independently. A single run can finish with fewer sources and fewer events because one or more pages timed out, blocked automation, changed layout, or exceeded the crawl budget.
 
-## Local Events uses a single readable card with navigation
+Replacing a larger complete runtime result with that smaller partial result would make the always-on display degrade immediately even though the previous data may still be more useful.
 
-The panel uses one event card at a time because the available physical area cannot show several complete What/When/Where/Who records at a readable size.
+`surface/jobs/local_event_search.py` therefore keeps the previous complete primary result when a new run is partial and contains fewer events. The incomplete run is written to `local_event_search_results.partial.json` with `write_policy: kept_previous_complete_result` and its debug evidence.
 
-The current interaction model therefore includes:
+`tests/test_local_event_output.py` verifies the write policy and text normalization using local data. The test proves the retention algorithm; only a real collection run can show why a particular source became partial.
 
-- automatic advance every 15 seconds;
-- previous and next controls;
-- a position counter;
-- location search;
-- a direct official-link action.
+## Why text normalization happens before runtime delivery
 
-The carousel rotates accepted records already loaded in the browser. It does not perform a new source crawl on every transition.
+Official pages can return HTML fragments, repeatedly escaped markup, hidden spans, scripts, list elements, and different aliases such as `description`, `summary`, `venue`, and `where`.
 
-## Local Events is deliberately source-specific
+The runtime output is normalized before it reaches the API and frontend so every consumer sees the same plain-text event fields. This avoids requiring the browser to interpret source HTML or to implement source-specific cleanup.
 
-Local Events is not a general search-engine scraper and not a single universal selector. It is a maintained set of official organisation sources with explicit listing URLs, allowed domains, default venues, source order, and adapter choices.
+`tests/test_local_event_output.py` preserves known normalization cases, including HTML removal, repeated entity decoding, description-to-summary promotion, venue-to-where promotion, and normalization of a retained previous result.
 
-The official sites expose materially different structures. Some publish structured JSON, some render cards only after JavaScript, some omit dates from listing cards, and some require detail-page reads. The collector therefore combines shared stages with targeted source behaviour.
+Again, these tests prove the local transformation of a supplied payload. They do not prove that a live official page will supply the expected field.
 
-Examples of targeted handling currently include:
+## Current targeted rules are evidence of observed source differences
 
-- structured XHR/embedded-state extraction before DOM fallback;
-- detail-page date enrichment for sources whose listing cards are incomplete;
-- Gardens by the Bay date-range and venue repair;
-- rejection of synthetic Mandai location cards;
-- configured source ordering and per-source debug evidence;
-- preserving the previous complete result when a new crawl is partial.
+The current collector contains targeted behaviour such as Gardens by the Bay date/venue handling and rejection of synthetic Mandai location cards.
 
-Source-specific development is part of the feature, not an accidental exception around a generic crawler.
+These rules should be understood as records of source behaviour encountered during development, not as a claim that those sites will remain unchanged. Before deleting, generalising, or replacing one of these rules, a maintainer must inspect the corresponding live official page and the current `debug_by_source` evidence.
 
-## Event classification uses positive evidence, not an endless blacklist
+A rule that looks redundant in an isolated unit test may still be required by the real rendered page. Conversely, a rule that once matched may become obsolete when the organisation redesigns its site. Only real-site verification can distinguish those cases.
 
-Official structured data contains facilities, memberships, operating information, promotions, navigation objects, and other dated records beside real events. It is not possible to enumerate every non-event title such as `carpark`, `gym`, `membership`, or future variants.
+## What automated tests can prove
 
-The collector therefore requires positive event evidence. A structured record must establish event/programme/activity semantics through its type or its relationship to an official event-oriented listing/detail route. Title and `startDate`/`endDate` fields alone are not enough.
+Repository tests can prove deterministic behaviour for supplied local inputs, including:
 
-Negative quality checks remain useful as secondary safeguards, but they must not become the primary classifier. A real event is accepted because there is evidence that it is an event, not because its title avoided a growing list of banned words.
+- date-range parsing and formatting;
+- structured-versus-DOM preference;
+- positive event-intent classification for known URL/type cases;
+- text and field normalization;
+- partial-result retention policy;
+- payload shape and frontend/backend contracts;
+- regression cases captured from previously observed failures.
 
-## Local Event quality belongs in the collector
+These tests are essential because they prevent a later change from reintroducing a known parsing or policy failure.
 
-A bad record should not be hidden only in the browser. The same accepted dataset is consumed by the UI, API, runtime inspection, and debug tools.
+## What automated tests cannot prove
 
-Title, date, venue, URL, duplication, structured event intent, and source-specific repairs therefore belong in the collector/extractor before runtime JSON is written. The frontend owns layout fitting and ellipsis only.
+Repository tests cannot prove:
 
-Rejections should leave evidence in `debug_by_source`, so an affected organisation can be traced to page access, pagination, structured extraction, rendered-card extraction, detail enrichment, date parsing, event-intent validation, or crawl budget.
+- that an official source is reachable today;
+- that Playwright is not blocked on the deployment network;
+- that the source still renders the same DOM or structured payload;
+- that pagination or load-more controls still work;
+- that every configured organisation is covered in the latest run;
+- that extracted dates and venues are semantically correct on the live page;
+- that the collection finishes within the real Surface resource and timing limits;
+- that the final visible card is acceptable to the project owner.
 
-## Partial Local Event crawls must not erase a better complete result
+A mocked browser, stored fixture, or successful `pytest` run must never be reported as live-source verification.
 
-Official sources can fail independently or exceed their time budget. A new run may cover fewer sources and return fewer events than the previous complete run.
+## Required validation when changing a Local Events source
 
-When that happens, the screen should keep the previous complete primary result instead of replacing it with an obviously degraded partial set. The incomplete run is retained separately in `local_event_search_results.partial.json` with its debug evidence.
+A source or adapter change is complete only when the evidence states separately:
 
-This is availability protection, not permission to hide permanent failures. The partial output remains available so the source coverage problem can be repaired.
+1. what real page or displayed result triggered the change;
+2. what the project owner observed in the real environment;
+3. which source configuration or collector path was changed;
+4. what offline regression test was added or updated;
+5. which local tests were actually run;
+6. whether the real source was rerun after the change;
+7. whether the Surface UI was inspected after new runtime data was written;
+8. what could not be verified because of network, browser, region, session, or anti-bot limitations.
 
-## Calendar authority remains on the Mac
-
-The Surface displays Calendar information but does not own Calendar accounts or permissions. macOS Calendar/EventKit is the authoritative source.
-
-The Mac exports and pushes `schedule.json`; the Surface stores, serves, monitors, and renders it. This avoids maintaining a second Calendar authentication system on the Surface and keeps private account configuration on the device that already owns it.
-
-Calendar rotation and Calendar freshness are separate. The board rotates its loaded events, while the Sync ticker independently observes the served file age.
-
-## Photos remain local and explicit
-
-The Photo wall is personal content. User files remain under `surface/.env/photos/`, and the builder creates `photos.json` plus safe served copies under `public_photos/`.
-
-The browser does not scan arbitrary filesystem paths and the project does not require a cloud photo account. Photo changes are explicit: update the local files, run the builder, and let the page reload the generated manifest.
-
-## Decorative metrics are not system monitoring
-
-The current CPU/MEM/DSK/NET bars are simulated browser values. POWER/DISPLAY/NETWORK labels are static text, and page uptime measures the current browser session.
-
-These elements must not be described as Surface OS monitoring. Real monitoring would require an actual producer, runtime schema, endpoint, freshness model, failure state, renderer, and tests. A status-like appearance alone is not evidence of a monitored system.
-
-## Failure states should explain the responsible boundary
-
-The screen should fail visibly and specifically rather than silently substituting plausible content.
-
-A useful failure state points toward the responsible boundary:
-
-- page or asset failure → HTTP service/frontend;
-- stale Market or Weather → shared live-data producer and runtime files;
-- stale News → News producer and `event_stream.json`;
-- bad or partial Local Events → source-specific collector and `debug_by_source`;
-- stale Schedule → Mac LaunchAgent, SSH/SCP path, and `schedule.json`;
-- missing Photos → local photo input, builder, and manifest;
-- large Sync `AGE` → producer/push path, runtime mtime, HTTP header, or device clocks.
-
-The product should preserve enough status and debug evidence to follow the visible panel back to its producer and source without inventing a successful-looking state.
+When real-source or Surface validation has not happened, the correct conclusion is that the implementation is only partially verified. Passing repository tests must not be presented as proof that Local Events works end to end.
