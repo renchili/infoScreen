@@ -1,110 +1,115 @@
 ---
 name: full-project-acceptance-hard-gates
-description: Generic hard-gated methodology for accepting a complete software project by deriving requirements from a spec, mapping implementation, collecting test/CI/artifact evidence, classifying gaps, and issuing a pass/conditional/fail decision.
+description: Generic hard-gated methodology for accepting a complete software project by validating requirements, implementation, repository quality, documentation accuracy, real interactions, tests, CI, artifacts, and deployment evidence.
 ---
 
 # Full Project Acceptance Hard Gates
 
-Use this skill when the user asks for a reusable capability to accept a complete software project.
+Use this skill to accept or reject a complete repository, generated project, ZIP package, branch, commit, or pull request output.
 
-This skill must stay project-agnostic. Do not encode project names, repository names, PR numbers, or domain-specific implementation facts into the skill. Apply the gates to the target project at runtime by reading that project's current requirements, code, tests, workflows, artifacts, and docs.
+The skill is project-agnostic. Apply it to the target project at runtime. Do not encode project names, repository names, PR numbers, conversation history, or project-specific conclusions into this file.
 
 ## Core rule
 
-Do not accept a project because one test is green, one report exists, or one PR was merged.
+A project does not pass because a test is green, a report exists, a route exists, a screenshot exists, or a PR was merged.
 
 A project passes only when:
 
-1. the original requirement is converted into a requirement matrix;
-2. every major requirement is mapped to current implementation;
-3. critical security and access-control behavior is verified separately;
-4. test and CI evidence is tied to the target commit;
-5. generated artifacts are inspected rather than assumed;
-6. probe runs are not confused with full-suite runs;
-7. no blocking gate fails.
+1. the original requirement is reconstructed into an atomic requirement matrix;
+2. every material requirement is mapped to current implementation and evidence paths;
+3. repository structure, file formats, naming, comments, and packaging are checked;
+4. documentation and comments agree with actual implementation;
+5. security, access control, workflow, and negative paths are verified separately;
+6. real interaction flows are exercised when the project has a user/operator interaction surface;
+7. local tests, full regression, CI, artifacts, and deployment evidence are not confused;
+8. all required report tables are produced and validated;
+9. no blocking gate fails.
 
 ## Evidence hierarchy
 
 Prefer evidence in this order:
 
-1. Executed test logs and generated artifacts for the target commit.
-2. CI workflow runs, job status, and uploaded artifacts.
-3. Generated summaries committed by automation.
-4. Source code, migrations, configuration, and scripts.
-5. Static or contract guard scripts.
-6. Product, API, and operations documentation.
-7. Manual smoke UI or manual validation surface.
-8. User-provided claim.
-9. Assistant-written summary.
+1. Executed end-to-end interaction logs, traces, recordings, screenshots tied to flows, and resulting state evidence.
+2. Executed test logs and generated artifacts tied to the target commit or package hash.
+3. CI workflow runs, job conclusions, and downloadable artifacts.
+4. Generated summaries produced by the executed commands.
+5. Current source code, migrations, configuration, manifests, scripts, and comments.
+6. Static or contract guards.
+7. Current documentation.
+8. User claims.
+9. Reviewer or assistant summaries.
 
-Assistant-written reports are review summaries only. They are not test artifacts.
-
-## Required report outputs
-
-Any acceptance report using this skill must include:
-
-```text
-scope
-target commit or branch
-original requirement source
-requirement matrix
-hard gate table
-evidence table
-artifact table
-gap table
-final verdict
-caveats
-```
+Reviewer-written reports are review summaries only. They are never test artifacts.
 
 ## Status vocabulary
 
 Use only:
 
 ```text
-PASS          Requirement is implemented and evidence supports it.
-CONDITIONAL   Mostly acceptable, but evidence is incomplete, indirect, or probe-only.
-FAIL          Required behavior is missing or contradicted.
-NOT VERIFIED  Evidence was unavailable or not checked.
+PASS          Implemented and directly supported by current evidence.
+CONDITIONAL   Mostly acceptable, but evidence is incomplete, indirect, local-only, probe-only, or environment-limited.
+FAIL          Required behavior is missing, contradicted, misleading, malformed, non-portable, or not reproducible.
+NOT VERIFIED  Required evidence was not available or was not actually checked.
+N/A           Not required by the original specification; reason is mandatory.
 ```
 
 ## Gap severity
 
 ```text
-P0 blocker      Cannot accept.
-P1 conditional  Accept only with explicit caveat or follow-up.
-P2 quality      Non-blocking improvement.
-Evidence gap    Implementation may exist, but proof is missing.
-Spec gap        Requirement wording needs clarification.
+P0 blocker       Cannot accept.
+P1 conditional   Acceptance requires an explicit caveat and follow-up evidence.
+P2 quality       Non-blocking maintainability or presentation issue.
+Evidence gap     Implementation may exist, but proof is missing.
+Spec gap         Original requirement is ambiguous.
+Packaging gap    Path, file, permission, format, or archive issue affects reproducibility.
+Doc-code gap     Documentation or comments contradict implementation or evidence.
+Interaction gap  Real user/operator behavior is missing or only simulated.
+Code-quality gap Naming, structure, language idiom, or comments harm maintainability.
 ```
 
-Any P0 blocker prevents a final PASS.
+Final `PASS` is allowed only when every required gate is `PASS` or justified `N/A`. Any required `CONDITIONAL`, `FAIL`, or `NOT VERIFIED` prevents final `PASS`.
+
+# Mandatory preflight inventory
+
+Before judging implementation, record:
+
+```text
+repository or package path
+branch, commit, tag, PR head, or ZIP SHA256
+file count and root layout
+source directories
+test directories
+documentation files
+scripts and executable modes
+workflow files
+deployment files
+migrations and configuration
+artifact directories
+binary, large, generated, cache, secret, and runtime files
+```
+
+For ZIP packages, compare original archive entries and modes with extracted files and modes.
+
+No inventory means no final `PASS`.
 
 # Hard gates
 
 ## Gate 0: Evidence provenance
 
-Must check:
+Check:
 
-- target repository or source package;
-- target branch, tag, or commit;
+- exact repository/source package;
+- exact branch, commit, PR head, tag, or package hash;
 - latest relevant changes;
-- whether evidence belongs to the target code revision;
-- whether a report was generated by tests/CI or by a reviewer.
+- evidence revision matches inspected source revision;
+- test/CI generated reports are distinguished from reviewer reports;
+- every cited path exists in the inspected revision.
 
-PASS requires every material evidence item to be tied to a commit, run, artifact, log, or file path.
-
-FAIL if old conclusions are reused without rechecking current code, or if a reviewer-written report is presented as a test artifact.
+FAIL if conclusions are reused without rechecking current code, evidence belongs to another revision, or material paths are invented/stale.
 
 ## Gate 1: Requirement coverage
 
-Must check:
-
-- original prompt/spec exists;
-- every major product requirement is converted into an atomic checklist item;
-- requirements are grouped by category;
-- no major requirement is silently skipped.
-
-Required categories:
+Reconstruct the original prompt/spec into atomic requirements grouped by:
 
 ```text
 architecture
@@ -112,284 +117,401 @@ runtime and deployment
 data model and persistence
 storage
 API contract
-workflow or state machine
+workflow/state machine
 access control and security
-authentication and session behavior
-protected data and response masking
+authentication and sessions
+protected data and masking
 domain features
 audit and observability
-notifications or asynchronous side effects, if required
+notifications and side effects
 backup, restore, and operations
-UI or manual validation, if required
+UI/manual/operator interaction
 documentation
-tests, CI, and artifacts
+tests, CI, artifacts
+repository/package hygiene
+code quality and maintainability
 ```
 
-PASS requires a requirement matrix with evidence for each major item.
+Required table:
 
-FAIL if a final verdict is issued without a requirement matrix.
+```text
+ID | Requirement | Category | Implementation path | Test/evidence path | Status | Gap
+```
 
-## Gate 2: Architecture and deployment
+FAIL if a major requirement is omitted or a verdict is issued without this matrix.
 
-Must check:
+## Gate 2: Architecture and deployment model
 
-- required language, framework, and runtime;
-- required persistence technology;
-- required file/object storage model;
-- packaging or deployment files;
-- runtime assets copied into the deployable artifact;
-- external dependency posture;
-- startup/build evidence.
+Check required language, framework, runtime, persistence, storage model, dependency posture, build/package files, startup behavior, copied runtime assets, and deployment model.
 
-Evidence sources may include build files, dependency manifests, bootstrap code, migrations, Docker/deployment files, and runtime acceptance logs.
-
-FAIL if the required architecture is absent or the system cannot build/start in the required runtime model.
+FAIL if required architecture is absent or the project cannot build/start in the required model.
 
 ## Gate 3: Data model and persistence
 
-Must check:
+Check required entities, schema constraints, source-of-truth fields, versions/history/audit, migrations, read/write alignment, and restart persistence.
 
-- required entities exist;
-- schema constraints enforce core rules;
-- source-of-truth fields are clear;
-- version/history/audit tables exist when required;
-- write paths align with schema;
-- compatibility fields are not mistaken for source-of-truth fields.
+FAIL if required state cannot be persisted or core constraints are absent.
 
-FAIL if required data cannot be persisted or core constraints are missing.
+## Gate 4: Authentication, session, freshness, and replay
 
-## Gate 4: Authentication, session, and replay controls
+When applicable, verify:
 
-Must check, when applicable:
+```text
+credential storage and comparison
+failed-auth lockout
+session/token creation
+expiration
+revocation/logout
+request freshness
+request-id or nonce replay protection
+positive tests
+negative tests
+```
 
-- password or credential handling;
-- failed-auth lockout;
-- session/token creation;
-- session expiration;
-- token revocation;
-- request freshness;
-- replay protection;
-- positive and negative tests or contract checks.
+FAIL if only the happy path is tested.
 
-FAIL if only the happy path is verified for authentication/session behavior.
+## Gate 5: Protected data and sensitive fields
 
-## Gate 5: Protected data and sensitive-field handling
-
-Must check every sensitive field named or implied by the spec.
-
-For each field, verify:
+For every sensitive field named or implied by the spec, verify:
 
 ```text
 classification
-schema/storage location
-write path
-read/decode/decrypt path
-API exposure and masking
-test or static contract
+schema location
+write protection path
+read/decrypt path
+key source
+protected format
+API exposure/masking
+test/static guard
 ```
 
-For encryption or protected-storage claims, verify:
+FAIL if sensitive plaintext remains the source of truth when protected storage is required.
+
+## Gate 6: RBAC, object access, and field visibility
+
+Verify every role/principal, allowed and forbidden operations, object-level access, state-dependent access, visible/hidden fields, and serialization boundaries.
+
+Required table:
 
 ```text
-algorithm or helper exists
-key source or derivation exists
-protected format or prefix exists, if applicable
-write path stores protected value
-read path opens it only where allowed
-plain compatibility field is not source of truth
-test or static check guards the behavior
+Role | Allowed | Forbidden | Object scope | Visible fields | Hidden fields | Positive evidence | Negative evidence
 ```
 
-FAIL if the spec requires protected storage but the current write path stores sensitive plaintext as source of truth.
+FAIL if forbidden paths are not tested.
 
-## Gate 6: RBAC and field visibility
+## Gate 7: Workflow and terminal immutability
 
-Must check:
+Check states, allowed transitions, rejected transitions, terminal-state immutability across every mutating operation, history, audit, notifications, and valid/invalid tests.
 
-- all roles or principals required by the spec;
-- allowed actions by role;
-- forbidden actions by role;
-- object-level access;
-- sensitive fields visible/hidden by role;
-- internal/ciphertext/helper fields not serialized;
-- positive and negative tests.
-
-Required matrix:
-
-```text
-Role | Allowed actions | Forbidden actions | Visible fields | Hidden fields | Evidence
-```
-
-FAIL if only positive access paths are tested.
-
-## Gate 7: Workflow and immutability
-
-Must check, when applicable:
-
-- required states exist;
-- valid transitions are enforced;
-- invalid transitions are rejected;
-- terminal states are immutable;
-- history records are written;
-- audit records are written;
-- tests cover valid and invalid paths.
-
-FAIL if terminal immutability or invalid transition rejection is required but unenforced.
+FAIL if terminal objects remain mutable or invalid transitions are accepted.
 
 ## Gate 8: Domain feature completeness
 
-For every domain feature in the spec, verify:
+For every domain feature, verify:
 
 ```text
-API endpoint or command
-service or domain logic
+endpoint/command/interaction
+service/domain logic
 storage mutation
 side effects
 error handling
-positive tests
-negative tests
-artifact or log evidence
+positive test
+negative test
+realistic artifact/log
+implementation path
 ```
 
-FAIL if a core domain feature is only documented but not implemented.
+FAIL if a core feature is only documented, represented by a route name, or covered by a direct function stub.
 
-## Gate 9: Audit, notification, and configuration side effects
+## Gate 9: Audit, notifications, and configuration side effects
 
-Must check, when applicable:
+Check that all required mutating actions create correct audit records and notifications, sensitive metadata is protected, acknowledgement/read behavior exists, configuration/templates are editable where required, and management paths are authorized.
 
-- mutating actions write audit events;
-- audit metadata is protected when sensitive;
-- notifications or side effects are created for required events;
-- acknowledgement/read behavior exists when required;
-- templates/configuration/workflow dictionaries are editable when required;
-- management paths are protected by appropriate authorization.
-
-FAIL if required audit or side effects exist only for some mutating flows without documented exception.
+FAIL if side effects are missing from material mutation flows without a documented specification exception.
 
 ## Gate 10: API contract, errors, and pagination
 
-Must check:
+Check generated OpenAPI/equivalent contract, route coverage, request/response schemas, authentication annotations, status codes, uniform error envelopes, pagination defaults/hard maximums, and contract tests.
 
-- OpenAPI or equivalent API contract generation;
-- route coverage;
-- status code coverage;
-- request and response schemas;
-- authentication annotations;
-- uniform error envelope;
-- pagination defaults and hard maximums;
-- contract tests or static checks.
-
-FAIL if generated API docs are missing for required routes or error contract is inconsistent.
+FAIL if docs/routes/status/error behavior disagree or required schemas are absent.
 
 ## Gate 11: Backup, restore, and operations
 
-Must check, when required:
+Check scheduled backup behavior, actual backup artifacts, restore mechanism, point-in-time/disaster-recovery procedure, configured paths/schedules, and executed tests.
 
-- scheduled backup behavior;
-- backup artifact creation;
-- restore endpoint or documented restore procedure;
-- disaster recovery or point-in-time recovery documentation;
-- configuration for schedule and paths;
-- tests or contracts for backup behavior.
-
-FAIL if backup/restore is a requirement but only mentioned in docs with no runnable mechanism or procedure.
+FAIL if backup/restore is required but only mentioned in documentation.
 
 ## Gate 12: Local test entrypoints
 
-For every local test script, record:
+For each script record:
 
 ```text
 normal command
-probe or contract command
+probe command
 required services
+stage list
 output directory
 summary files
-HTML or report files
+HTML/report files
 logs
 exit behavior
-stage list
+script mode
+nested script invocation
 ```
 
-Hard distinction:
+A probe proves only entrypoint/report generation. It is not full-suite evidence.
 
-```text
-full local run     = complete local acceptance evidence
-probe/contract run = entrypoint or report-generation evidence only
-```
-
-FAIL if probe evidence is reported as full-suite evidence.
+FAIL if probe evidence is presented as full acceptance.
 
 ## Gate 13: Full regression
 
-Must check full regression separately from local tests.
+Check a separate full-regression entrypoint, known stages, generated summary, runtime/build acceptance, artifacts, CI/manual invocation, and portable nested scripts.
 
-Required checks:
+PASS requires an executed generated summary with overall pass.
 
-- full regression script exists;
-- stage list is known;
-- summary JSON or Markdown is generated;
-- CI, merge queue, post-merge, or manual workflow runs it;
-- runtime/build acceptance is included when required;
-- artifacts or committed summaries are available.
+FAIL if the regression entrypoint is broken by repository/package-relative paths, missing scripts, or required executable-bit assumptions.
 
-PASS requires a generated summary showing overall pass or equivalent.
+## Gate 14: CI workflows and artifacts
 
-## Gate 14: CI workflow and artifact handling
+Check triggers, path filters, skipped jobs, conclusions, referenced paths, artifact upload paths, failure uploads, retention, downloadability, and whether downloaded artifacts match the claimed command/revision.
 
-Must check:
+FAIL if a skipped/unexecuted job is reported as passing or workflow paths do not exist.
 
-- workflow triggers;
-- path filters;
-- skipped jobs;
-- job conclusions;
-- artifact upload paths;
-- retention;
-- failure artifact behavior;
-- whether artifacts are downloadable;
-- whether the downloaded artifact matches the claimed command.
+## Gate 15: Manual UI and smoke surfaces
 
-FAIL if the relevant job was skipped but the report calls that area passed.
+When required, check that the surface exists, is served, is included in the deployable artifact, exercises critical flows, and is correctly described as production UI or manual test aid.
 
-## Gate 15: Manual UI or smoke surface
+A static screenshot is not proof of interaction.
 
-If a manual validation surface is required, check:
+## Gate 16: Documentation and implementation consistency
 
-- UI/smoke file exists;
-- app serves it;
-- deployable/runtime artifact includes it;
-- it exercises critical flows;
-- scope is clear: manual aid vs production UI.
+Documentation must describe the current implementation exactly.
 
-FAIL if a user-facing or manual validation surface is required but neither implemented nor explicitly out of scope.
+Compare setup, commands, paths, env vars, dependencies, routes, DTOs, status codes, security behavior, storage, workflow, backup/restore, deployment, test commands, evidence status, and limitations against code and executed evidence.
 
-## Gate 16: Documentation
-
-Must check:
-
-- setup/run docs;
-- configuration docs;
-- API docs;
-- backup/restore/operation docs;
-- security model docs;
-- test/acceptance docs;
-- known limitations.
-
-FAIL if docs contradict current code on critical behavior.
-
-## Gate 17: Final verdict
-
-Before final verdict, produce:
+Required table:
 
 ```text
-hard gate table
-requirement coverage table
-test evidence table
-artifact provenance table
-gap severity table
-final pass, conditional, or fail statement
+Doc claim | Document path | Implementation path | Test/artifact path | Match? | Severity | Required correction
 ```
 
-Final PASS is allowed only if all P0 gates pass.
+FAIL if documentation overstates features, claims unexecuted tests/CI/deployment, references nonexistent paths, or contradicts critical behavior.
+
+## Gate 17: Repository and package layout
+
+Check expected root files, stable source/test/docs/scripts/migrations/deploy paths, unambiguous package root, duplicate/conflicting files, misplaced implementation, and implementation hidden inside artifact/cache/temp directories.
+
+FAIL if required files are missing, ambiguously duplicated, or placed only in generated output.
+
+## Gate 18: File format, encoding, and content hygiene
+
+Check UTF-8/declared encoding, JSON/YAML/TOML parsing, Markdown structure, SQL/shell syntax, shebangs, line endings, extension/content agreement, empty placeholders, and binary/runtime files bundled as source.
+
+FAIL if malformed or misleading files affect execution, build, evidence, or report rendering.
+
+## Gate 19: Source and evidence path validation
+
+Every report claim must cite existing paths.
+
+Required table:
+
+```text
+Claim | Implementation path | Test path | Artifact/log path | Exists? | Current revision? | Notes
+```
+
+FAIL if material evidence uses nonexistent, stale, unresolved, or reviewer-invented paths.
+
+## Gate 20: Idiomatic naming and readable code
+
+Check language/framework conventions for file, module, package, type, function, variable, config, env-var, route, DTO, and test names.
+
+Names must express domain intent, especially in security, workflow, persistence, and destructive operations. Complex logic must be decomposed into understandable units. Public names must agree with docs and API contracts.
+
+Required table:
+
+```text
+Area | Source path | Finding | Language convention | Status | Required correction
+```
+
+FAIL if misleading/non-idiomatic names make critical behavior difficult to verify or contradict public contracts.
+
+## Gate 21: Comment quality and comment-doc-code consistency
+
+Check that comments explain non-obvious intent rather than restating code; comments agree with implementation and documentation; TODO/FIXME/HACK/XXX items are enumerated and classified; generated code is marked; stale comments are not used as evidence.
+
+Required table:
+
+```text
+Comment/topic | Source path | Related doc | Related implementation | Consistent? | Severity | Required correction
+```
+
+FAIL if comments/documentation claim behavior the code does not implement or critical security/workflow/storage logic is opaque and untested.
+
+## Gate 22: Script permissions and portable execution
+
+Check repository/ZIP mode, extracted mode, shebang, direct versus interpreter invocation, nested scripts, working-directory assumptions, normal clone/unzip behavior, shell syntax, and dependency detection.
+
+FAIL if required scripts fail due to packaging permissions, non-portable paths, missing interpreters, or missing nested files.
+
+## Gate 23: Source-package contamination
+
+Scan for:
+
+```text
+__pycache__
+.pytest_cache
+node_modules unless intentionally vendored
+*.pyc
+*.class
+*.o
+*.db
+*.sqlite
+coverage output
+logs
+temp files
+local secrets
+real .env files
+editor/system files
+stale generated reports
+```
+
+FAIL if bundled runtime state, cache, secrets, or stale artifacts can alter tests or conceal missing implementation.
+
+## Gate 24: Report schema and rendering
+
+Validate the acceptance report itself:
+
+- every required section/table exists;
+- Markdown tables are valid;
+- HTML uses actual HTML tables rather than raw Markdown;
+- code fences and links are valid;
+- statuses use the approved vocabulary;
+- every `FAIL`, `CONDITIONAL`, or `NOT VERIFIED` row contains a gap and required evidence/fix;
+- verdict matches gate severities.
+
+FAIL if the report is malformed, unrendered, internally inconsistent, or links to missing evidence.
+
+## Gate 25: Documentation pollution and invented obligations
+
+Especially scan README, DESIGN, ARCHITECTURE, QUESTION/QUESTIONS, FAQ, PROMPT, planning, requirement-ledger, evidence-map, and docs files.
+
+Documentation must contain only project-relevant requirements, current behavior, current evidence, and explicitly requested/tracked roadmap material.
+
+Red flags include process residue and generic assistant language such as:
+
+```text
+next step / next steps
+接下来 / 下一步
+follow-up
+future work
+we can also / could also
+还可以 / 还能
+recommendation / suggested improvement
+建议 / 可以考虑
+nice to have
+assistant/model notes
+previous mistake / correction
+```
+
+Each occurrence must map to the original specification, current implementation/test, an actual tracked issue/task, or an explicit out-of-scope statement. Otherwise it is pollution.
+
+Check README/design/question documents against each other for project purpose, features, exclusions, security, API, storage, deployment, commands, acceptance status, and limitations.
+
+Required tables:
+
+```text
+Doc path | Pollution pattern | Excerpt | Source/justification | Classification | Required action
+Doc path | Claimed obligation | Original-spec/issue source | Implementation/test path | Valid? | Gap
+Topic | README claim | Design claim | Question/FAQ claim | Implementation | Consistent?
+Roadmap item | Requested/tracked? | Implemented? | Acceptance relevance | Status
+```
+
+Unresolved unrelated process text is at least P1. A document claim contradicting implementation/evidence is P0. Final `PASS` is prohibited with unresolved P1/P0 documentation pollution.
+
+## Gate 26: Real interaction and reliable guidance
+
+Apply whenever the project has user-facing, operator-facing, reviewer/admin-facing, CLI, API-client, prompt-driven, workflow-driven, or manual validation interactions.
+
+Unit tests, mocks, route-existence checks, toy payloads, direct service calls, and static screenshots are not sufficient real-interaction evidence.
+
+At least one realistic end-to-end path per critical role/flow must be executed with reproducible evidence, realistic input, expected interaction, and verified resulting state.
+
+Acceptable evidence includes browser traces, CLI transcripts, HTTP client collections with realistic payloads, screen recordings, screenshot sequences tied to a script, accessibility snapshots, operator runbook dry runs, or prompt transcripts with expected/actual outputs.
+
+Check modern interaction quality:
+
+```text
+clear primary action
+clear success continuation
+clear failure recovery
+loading/progress state
+empty state
+validation before destructive action
+confirmation/cancellation for irreversible action
+consistent terminology
+accessible keyboard/focus behavior
+specific user-facing errors
+no internal/agent-like wording
+```
+
+Check negative/recovery flows where applicable:
+
+```text
+missing/invalid input
+permission denied
+expired/revoked session
+duplicate/replay request
+unsupported/large file
+dependency/network failure
+destructive cancellation
+terminal/finalized state
+empty results
+retry/recovery
+```
+
+Verify resulting state, not only status/text: database change, file/artifact change, audit/notification/event, workflow transition, or subsequent read confirming the write.
+
+Required tables:
+
+```text
+Flow | Role | Realistic input | Expected interaction | Actual result | State verification | Evidence artifact | Status | Gap
+Prompt/copy path | Intended user | Required input | Expected output | Failure/retry guidance | Actual evidence | Status
+Negative flow | Trigger | Expected message/recovery | Actual result | Evidence | Status
+Evidence item | Real or mock | What it proves | What it does not prove
+```
+
+FAIL if mocked/synthetic evidence is reported as real interaction evidence, interaction leaves users stuck, errors are vague/unrecoverable, or critical flows lack state verification.
+
+N/A is permitted only when the original scope truly has no human/operator interaction surface, with a written reason.
+
+## Gate 27: Final verdict
+
+Before the verdict, produce:
+
+```text
+scope and target revision/package hash
+repository/package inventory
+requirement matrix
+hard gate table
+source/evidence path table
+documentation-code consistency table
+naming/readability table
+comment consistency table
+documentation pollution tables
+real interaction tables
+test and artifact provenance table
+repo/package hygiene table
+gap severity table
+final decision and caveats
+```
+
+Verdict rules:
+
+```text
+PASS          Every required gate is PASS or justified N/A.
+CONDITIONAL   No P0, but at least one required gate is CONDITIONAL or NOT VERIFIED.
+FAIL          Any P0 exists or a required core behavior is missing/contradicted.
+```
 
 # Required report template
 
@@ -397,38 +519,24 @@ Final PASS is allowed only if all P0 gates pass.
 # Full Project Acceptance Report
 
 ## Scope
-- Repository/source:
-- Branch/commit:
-- Original requirement source:
-- Runtime target:
-- Timestamp:
-
 ## Executive verdict
-- Verdict: PASS / CONDITIONAL / FAIL
-- Reason:
-- Blocking gaps:
-- Caveats:
-
+## Repository/package inventory
 ## Requirement matrix
-| ID | Requirement | Category | Implementation | Evidence | Status | Gap |
-|---|---|---|---|---|---|---|
-
 ## Hard gate results
-| Gate | Name | Status | Evidence | Gap |
-|---|---|---|---|---|
-
-## Test and artifact evidence
-| Source | Command/workflow | Full/probe | Result | Artifact/log |
-|---|---|---|---|---|
-
-## Security and access-control evidence
-
-## API, docs, deployment, and UI evidence
-
+## Source and evidence path validation
+## Documentation-code consistency
+## Code readability and naming
+## Comment consistency
+## Documentation pollution scan
+## README/design/question consistency
+## Invented obligations and roadmap validation
+## Real interaction flows
+## Prompt/copy reliability
+## Error and recovery interactions
+## State verification and mock-vs-real classification
+## Test and artifact provenance
+## Repository/package hygiene
 ## Gaps
-| Severity | Gap | Required fix/evidence |
-|---|---|---|
-
 ## Final decision
 ```
 
@@ -436,16 +544,26 @@ Final PASS is allowed only if all P0 gates pass.
 
 ```text
 [ ] Original requirements reconstructed
-[ ] Current code checked
+[ ] Current source revision/package hash confirmed
+[ ] Repository/package inventory produced
 [ ] Requirement matrix complete
-[ ] Hard gates evaluated
-[ ] Security checked separately
-[ ] RBAC denied paths checked
-[ ] CI skipped jobs inspected
-[ ] Artifacts downloaded or parsed when available
-[ ] Probe vs full-suite distinguished
-[ ] Assistant report not used as test evidence
-[ ] Caveats stated clearly
+[ ] Security and RBAC negative paths checked
+[ ] Workflow invalid paths and terminal immutability checked
+[ ] Documentation checked against code/tests/evidence
+[ ] README/design/question pollution and contradictions checked
+[ ] Idiomatic naming/readability checked
+[ ] Comments checked against docs and implementation
+[ ] File formats and evidence paths validated
+[ ] Script permissions and nested invocations checked
+[ ] Source-package contamination checked
+[ ] Probe, local suite, full regression, CI, and deployment distinguished
+[ ] Real interaction flows executed where applicable
+[ ] Errors, recovery, prompts, and user guidance tested
+[ ] Interaction state changes verified
+[ ] Mock/synthetic evidence not presented as real evidence
+[ ] Report rendering and links validated
+[ ] Reviewer report not used as test evidence
+[ ] Every caveat includes required fix/evidence
 ```
 
-If any unchecked item affects a P0 gate, do not issue PASS.
+If any required item is unchecked, final `PASS` is prohibited.
