@@ -55,6 +55,14 @@ def test_full_ci_script_runs_repository_hygiene_checker() -> None:
     assert "--scope repository" in script
 
 
+def test_readme_uses_canonical_surface_operator_entrypoints() -> None:
+    readme = read_text("README.md")
+
+    assert "bash deploy/scripts/install-user-systemd.sh" in readme
+    assert "bash scripts/infoscreen_status.sh" in readme
+    assert "scripts/setup_surface_go.sh" not in readme
+
+
 def test_mac_schedule_sync_uses_local_config_and_runtime_target() -> None:
     sync_script = read_text("mac/sync_schedule.sh")
     setup_script = read_text("mac/scripts/setup-schedule-sync.sh")
@@ -95,7 +103,7 @@ def test_page_ui_job_and_source_mapping_is_documented() -> None:
     design = read_text("docs/design.md")
 
     required_readme = [
-        "Page UI, jobs, and data sources",
+        "Page data map",
         "Market card",
         "Global market tape",
         "Local event card",
