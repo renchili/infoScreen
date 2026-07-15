@@ -135,15 +135,15 @@ It reports `OK`, `STALE`, `MISS`, or `ERR` together with `LATEST` and `AGE`, cal
 
 This verifies the final producer-to-runtime-to-HTTP path. It does not identify the failing internal provider, and a large `AGE` can also expose clock skew between the browser, Surface, and Mac.
 
-## Aligned multilingual News stories
+## Synchronized multilingual News display
 
-The English, French, and Chinese ticker rows represent three language versions of the same selected stories, not three unrelated feeds.
+The product requirement is that the English, French, and Chinese rows synchronously display corresponding versions of the same content. The three rows must advance together, in the same direction and at the same speed, so the same position across EN, FR, and 中文 always refers to the same story.
 
-The producer collects real RSS items, removes exact duplicate titles, selects a base set, and creates a complete EN/FR/ZH triple for each selected story. Chinese output must contain CJK text, and English/French output must contain sufficient Latin text.
+English and Chinese should prioritise Singapore news. When one language does not provide the corresponding item, translation fills that language instead of substituting an unrelated story.
 
-A story is skipped when one language cannot be produced after retries. Skipping the whole triple preserves semantic alignment across the three rows.
+The current producer implements this requirement by selecting one real news item and creating an EN/FR/ZH representation for the same item. That shared item is an implementation mechanism, not the requirement itself. When any language cannot be produced after retries, the complete three-language item is skipped so the rows do not become misaligned.
 
-Ticker motion is only visual rotation. It does not prove that `event_stream.json` is fresh.
+Ticker motion is visual movement only. It does not prove that `event_stream.json` is fresh.
 
 ## Local Photo inputs and browser-safe outputs
 
