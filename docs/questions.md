@@ -1,49 +1,49 @@
 # InfoScreen questions
 
-这个文件只记录跨实现长期有效的产品与架构选择。
+This file records only durable product and architecture decisions that remain valid across implementations.
 
-安装命令、任务周期、状态排障、测试和 CI 规则、仓库目录规范、某次缺陷的修复过程，不写在这里；它们分别属于 `README.md`、`docs/design.md`、`AGENT.md`、测试或代码。
+Installation commands, job schedules, status troubleshooting, test and CI rules, repository layout rules, and one-off defect histories do not belong here. They belong in `README.md`, `docs/design.md`, `AGENT.md`, tests, or code.
 
-## InfoScreen 的运行边界是什么？
+## What are InfoScreen's runtime boundaries?
 
-决定：Surface 或 Ubuntu 设备负责运行 HTTP 服务、后台数据任务、runtime 数据和 kiosk 页面。浏览器只消费页面和 API，不承担数据生产。
+Decision: A Surface or Ubuntu device runs the HTTP service, background data jobs, runtime data, and kiosk page. The browser only consumes the page and APIs; it does not produce data.
 
-原因：页面刷新、浏览器重启或前端脚本异常不应该改变后台数据的生成方式；运行状态必须可以在浏览器之外独立检查。
+Reason: Reloading or restarting the browser, or a frontend failure, must not change how background data is produced. Runtime state must remain inspectable without the browser.
 
-## 运行时数据和个人数据放在哪里？
+## Where do runtime and personal data live?
 
-决定：天气、市场、新闻、本地活动、日程、照片索引和日志等运行时内容放在 `surface/.env/`；用户照片输入放在 `surface/.env/photos/`。这些内容不提交到源码仓库。
+Decision: Weather, market, news, local events, schedule data, photo indexes, logs, and other runtime content live under `surface/.env/`. User photo inputs live under `surface/.env/photos/`. None of this content is committed to the source repository.
 
-原因：它们属于设备状态或个人数据，不是可复用的项目源码。
+Reason: These files are device state or personal data, not reusable project source.
 
-## 日程数据从哪里来？
+## Where does schedule data come from?
 
-决定：日程的权威来源是 Mac 上的 macOS Calendar/EventKit。Mac 负责导出并把 `schedule.json` 推送到 Surface；Surface 只保存、提供 HTTP 访问并渲染日程，不自行生成日历事件。
+Decision: The authoritative schedule source is macOS Calendar/EventKit on the Mac. The Mac exports events and pushes `schedule.json` to the Surface. The Surface only stores, serves, and renders schedule data; it does not generate calendar events.
 
-原因：日历账户和 EventKit 权限位于 Mac，Surface 不应复制或伪造另一套日程来源。
+Reason: Calendar accounts and EventKit permissions exist on the Mac. The Surface must not duplicate or invent another schedule source.
 
-## 本地活动允许使用哪些来源？
+## Which sources are allowed for local events?
 
-决定：本地活动以 `surface/conf/event_sources.json` 中配置的机构官方活动页和官方详情页为数据来源。搜索引擎结果、非官方转载页和聚合站不能作为活动事实的权威来源。
+Decision: Local events use the official organisation listing and detail pages configured in `surface/conf/event_sources.json`. Search-engine results, unofficial reposts, and aggregator sites are not authoritative event sources.
 
-原因：活动标题、日期、地点和链接需要能够回到发布机构核对，并在来源页面变化时明确定位责任边界。
+Reason: Event titles, dates, venues, and links must be verifiable against the publishing organisation, with a clear ownership boundary when a source page changes.
 
-## 什么内容才算本地活动？
+## What counts as a local event?
 
-决定：记录必须具备正向的活动语义证据，例如官方 structured data 明确声明为 `Event`，或记录处于官方活动列表及其详情路由中。只有标题、起止日期、地点或长期有效期，不足以证明它是活动。
+Decision: A record must have positive event-intent evidence, such as official structured data explicitly declaring an `Event`, or a record located within an official event listing and its detail route. A title, date range, venue, or long validity period alone does not prove that a record is an event.
 
-不得依靠不断枚举设施、会员、停车、营业信息等名称来判断非活动；日期字段也可能表示有效期、发布日期或配置期限。
+Do not classify non-events by continuously enumerating facility, membership, parking, or operating-information names. Date fields may represent validity periods, publication dates, or configuration ranges.
 
-原因：官方页面和 JSON 经常同时包含活动、设施、会员方案、导航数据和长期内容。入口必须识别“为什么它是活动”，而不是在误判后不断补负面关键词。
+Reason: Official pages and JSON commonly mix events with facilities, membership products, navigation data, and long-lived content. The collector must establish why a record is an event instead of adding a new negative keyword after every false positive.
 
-## 本地活动的数据质量由哪一层负责？
+## Which layer owns local-event data quality?
 
-决定：无效链接、错误标题、错误日期、错误地点、非活动 structured record 和重复记录必须在采集与提取层处理。前端只展示后端已经接受的结果，不通过隐藏标题或临时规则修正脏数据。
+Decision: Invalid links, incorrect titles, incorrect dates, incorrect venues, non-event structured records, and duplicates must be handled in the collection and extraction layer. The frontend only displays accepted backend results and must not hide bad records with title-specific rules.
 
-原因：同一份结果还会被 API、调试工具和其他客户端消费。只有在 runtime JSON 生成前清洗，所有消费方才能得到一致的数据。
+Reason: The same runtime result is consumed by the API, debugging tools, and other clients. Cleaning before runtime JSON is written keeps all consumers consistent.
 
-## 本地活动按什么顺序展示？
+## How are local events ordered?
 
-决定：先按照 `surface/conf/event_sources.json` 中的机构顺序分组；同一机构内保持 extractor 返回的顺序。
+Decision: Group events by the organisation order in `surface/conf/event_sources.json`; preserve extractor order within each organisation.
 
-原因：机构是用户浏览活动时最稳定的上下文，也能保证后台结果、API 和页面使用同一排序规则。
+Reason: Organisation is the most stable browsing context and keeps backend output, API responses, and page rendering in the same order.
