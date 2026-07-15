@@ -428,4 +428,4 @@ These are not Surface OS monitoring. Replacing them with real monitoring require
 - `README.md`: the main project entrypoint covering overview, capabilities, data sources, interaction, refresh behaviour, project structure, deployment, operation, troubleshooting, and validation.
 - `docs/design.md`: this architecture, source ownership, refresh layers, and implementation boundaries.
 - `docs/api-spec.md`: HTTP interaction contract and side effects.
-- `docs/questions.md`: discussion-derived decision records explaining why the current project direction was chosen.
+- `docs/questions.md`: project-specific clarifications, constraints, and supplementary explanations established during development.
