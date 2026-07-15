@@ -1,8 +1,6 @@
 # InfoScreen project discussion and decision record
 
-This file is a distilled record of the product and engineering decisions that emerged from the project discussions. It is not a FAQ, an operator manual, a defect diary, or a transcript. Each record preserves the problem being discussed, the direction that was chosen, why that direction matters, and what the current implementation does as a result.
-
-The project overview and entrypoint belong in `README.md`. Component and data-flow details belong in `docs/design.md`. HTTP contracts belong in `docs/api-spec.md`.
+This file distils the product and engineering decisions that emerged from the project discussions. Each record preserves the problem being discussed, the chosen direction, why that direction matters, and what the current implementation does as a result.
 
 ## Decision record 001 — Build a local-first, always-on information screen
 
@@ -92,7 +90,7 @@ A producer may be healthy while the browser still holds an older in-memory list.
 
 **Resulting implementation**
 
-Systemd/LaunchAgent schedules own production. Browser scripts own periodic GET/HEAD behaviour. Local Events, Calendar, Photos, and ticker animations have independent rotation intervals documented in the architecture and project README.
+Systemd and the Mac LaunchAgent own production. Browser scripts own periodic GET/HEAD behaviour. Local Events, Calendar, Photos, and ticker animations use independent rotation intervals.
 
 ## Decision record 006 — Monitor final runtime freshness inside the product
 
@@ -309,26 +307,3 @@ A monitoring label without a producer, schema, endpoint, freshness model, and fa
 **Resulting implementation**
 
 The demo bars are named accordingly in code and documentation. A future real-monitoring implementation must replace the complete producer-to-renderer chain rather than relabel the existing random values.
-
-## Decision record 018 — Keep README as the project entrypoint and separate specialist documents
-
-**Discussion context**
-
-The project needs one obvious starting point that explains what InfoScreen is, what it provides, where its data comes from, how users interact with it, how refresh works, how it is deployed, and where deeper technical records live. Treating README as only an operations manual makes the project difficult to understand before deployment begins.
-
-**Decision**
-
-Maintain four complementary documentation surfaces:
-
-- `README.md` is the main project entrypoint and includes overview, capabilities, data sources, interaction, refresh behaviour, project structure, deployment, operation, troubleshooting, and validation;
-- `docs/design.md` is the detailed system architecture and source-specific implementation description;
-- `docs/api-spec.md` is the HTTP interaction contract;
-- `docs/questions.md` is this discussion-derived decision record.
-
-**Why this direction was chosen**
-
-A README must introduce the project as a whole. Deployment and troubleshooting are necessary sections, but they are not the project’s identity. Detailed architecture, API contracts, and discussion history remain separate so the README stays useful without duplicating every implementation detail.
-
-**Resulting implementation**
-
-The README is the navigable project overview. Specialist documents deepen one subject each and are linked from the README instead of replacing it.
