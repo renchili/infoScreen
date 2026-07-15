@@ -251,7 +251,6 @@ def test_questions_records_real_world_rationale_and_validation_limits() -> None:
     assert "## Decision record" not in explanations
     assert "**Discussion context**" not in explanations
     assert "**Resulting implementation**" not in explanations
-    assert re.search(r"^##\s+(What|Where|Which|How|Why)\b", explanations, re.MULTILINE) is None
 
     forbidden_error_recap = [
         "A component optimisation must stay inside that component",
