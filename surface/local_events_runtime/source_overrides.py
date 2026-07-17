@@ -11,11 +11,6 @@ from . import browser as _browser
 from . import extract as _extract
 from . import official_feeds as _official_feeds
 
-GENERIC_LEAF_RE = re.compile(
-    r"^(?:whats?-on|whatson|events?|overview|view-all|calendar|programmes?|programs?|"
-    r"activities?|exhibitions?|workshops?|tours?|shows?|performances?)$",
-    re.I,
-)
 MEDIA_RE = re.compile(r"\.(?:jpg|jpeg|png|gif|webp|svg|pdf)$", re.I)
 SYNTHETIC_FRAGMENT_RE = re.compile(r"^(?:nhb|nhb-json|structured)-", re.I)
 NARRATIVE_VENUE_RE = re.compile(
@@ -23,6 +18,7 @@ NARRATIVE_VENUE_RE = re.compile(
     r"exhibition|performance|co-curated|newly revamped|find out|learn more)\b",
     re.I,
 )
+LISTING_EVIDENCE = "official_activity_listing_card"
 DETAIL_LIMIT = max(1, int(os.environ.get("LOCAL_EVENTS_DETAIL_LIMIT", "24")))
 DETAIL_TIMEOUT_MS = int(os.environ.get("LOCAL_EVENTS_DETAIL_TIMEOUT_MS", "16000"))
 
@@ -110,7 +106,6 @@ AUTHORITATIVE_DETAIL_JS = r"""
 
 _applied = False
 _base_render = None
-_base_event = None
 _base_collect = None
 
 
@@ -119,6 +114,7 @@ def _host(value: str) -> str:
 
 
 def canonical_detail_url(source: dict[str, Any], value: object) -> bool:
+    """Return true for a real official detail URL, independent of title semantics."""
     url = _extract.clean(value)
     if not url.startswith(("http://", "https://")):
         return False
@@ -131,16 +127,35 @@ def canonical_detail_url(source: dict[str, Any], value: object) -> bool:
         return False
     path = unquote(parsed.path).rstrip("/").lower()
     listing_paths = {urlparse(str(item)).path.rstrip("/").lower() for item in source.get("listing_urls") or []}
-    if not path or path in listing_paths or MEDIA_RE.search(path):
-        return False
-    leaf = path.rsplit("/", 1)[-1].removesuffix(".html")
-    return bool(leaf and not GENERIC_LEAF_RE.fullmatch(leaf))
+    return bool(path and path not in listing_paths and not MEDIA_RE.search(path))
 
 
 def _patch_browser() -> None:
-    old = 'for (const a of Array.from(el.querySelectorAll("a[href]"))) {'
-    new = 'for (const a of [...(el.matches && el.matches("a[href]") ? [el] : []), ...Array.from(el.querySelectorAll("a[href]"))]) {'
-    _browser.CARD_JS = _browser.CARD_JS.replace(old, new)
+    """Restrict discovery to isolated dated cards on the configured listing page."""
+    old_loop = 'for (const a of Array.from(el.querySelectorAll("a[href]"))) {'
+    new_loop = 'for (const a of [...(el.matches && el.matches("a[href]") ? [el] : []), ...Array.from(el.querySelectorAll("a[href]"))]) {'
+    _browser.CARD_JS = _browser.CARD_JS.replace(old_loop, new_loop)
+
+    old_anchor = '''    const card = bestCard(a);
+    const linkText = oneLine(a.innerText || a.textContent || a.getAttribute("aria-label") || "");
+    push(out, seen, card, abs, linkText, "detail_link");'''
+    new_anchor = '''    const card = bestCard(a);
+    const listingDetailUrls = detailUrls(card);
+    if (listingDetailUrls.length !== 1 || listingDetailUrls[0] !== abs) continue;
+    if (!hasDateText(textLines(card).join(" "))) continue;
+    const linkText = oneLine(a.innerText || a.textContent || a.getAttribute("aria-label") || "");
+    push(out, seen, card, abs, linkText, "detail_link");'''
+    _browser.CARD_JS = _browser.CARD_JS.replace(old_anchor, new_anchor)
+
+    old_nhb = '''      const text = textLines(el).join("\n");
+      const base = officialHome || document.location.origin;
+      const url = detailUrls(el)[0] || sameDomainNonListingUrls(el)[0] || (base.replace(/\/$/, '') + '#nhb-' + textHash(text.slice(0, 600)));
+      push(out, seen, el, url, "", "nhb_dom_card");'''
+    new_nhb = '''      const listingDetailUrls = detailUrls(el);
+      if (listingDetailUrls.length !== 1) continue;
+      const url = listingDetailUrls[0];
+      push(out, seen, el, url, "", "nhb_dom_card");'''
+    _browser.CARD_JS = _browser.CARD_JS.replace(old_nhb, new_nhb)
     _browser.PREPARE_PAGE_JS = DEEP_SCROLL_JS
 
 
@@ -151,13 +166,92 @@ def _candidate_url(source: dict[str, Any], card: dict[str, Any]) -> str:
     return ""
 
 
+def _listing_card(source: dict[str, Any], card: dict[str, Any], listing_url: str) -> dict[str, Any] | None:
+    """Admit only a real, isolated activity card rendered by the official list."""
+    mode = _extract.clean(card.get("extraction_mode"))
+    if mode not in {"detail_link", "nhb_dom_card"}:
+        return None
+    if int(card.get("detail_url_count") or 0) != 1:
+        return None
+    if not _browser.card_has_date(card) or not _official_feeds.card_title(card):
+        return None
+    canonical = _candidate_url(source, card)
+    if not canonical:
+        return None
+    admitted = dict(card)
+    admitted.update(
+        url=canonical,
+        page_url=canonical,
+        listing_evidence=LISTING_EVIDENCE,
+        listing_url=listing_url,
+        listing_card_id=_extract.clean(card.get("id")),
+        listing_extraction_mode=mode,
+    )
+    return admitted
+
+
+def _merge_structured_with_listing(structured: dict[str, Any], listing: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(structured)
+    canonical = _extract.clean(listing.get("url"))
+    merged.update(
+        url=canonical,
+        page_url=canonical,
+        detail_urls=[canonical],
+        detail_url_count=1,
+        listing_evidence=LISTING_EVIDENCE,
+        listing_url=listing.get("listing_url") or "",
+        listing_card_id=listing.get("listing_card_id") or "",
+        listing_extraction_mode=listing.get("listing_extraction_mode") or "",
+        screenshot=listing.get("screenshot") or "",
+    )
+    if isinstance(merged.get("structured_event"), dict):
+        event = dict(merged["structured_event"])
+        event["url"] = canonical
+        merged["structured_event"] = event
+    return merged
+
+
+def _same_candidate(structured: dict[str, Any], listing: dict[str, Any]) -> bool:
+    structured_url = _extract.clean(structured.get("url"))
+    listing_url = _extract.clean(listing.get("url"))
+    if structured_url == listing_url and structured_url.startswith(("http://", "https://")):
+        return True
+    structured_title = _official_feeds.card_title(structured)
+    listing_title = _official_feeds.card_title(listing)
+    return bool(structured_title and structured_title == listing_title)
+
+
+def _prefer_structured(structured: list[dict[str, Any]], dom: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+    """Use structured data only when a rendered official-list card proves membership."""
+    source = getattr(_prefer_structured, "source", {})
+    listing_url = str(getattr(_prefer_structured, "listing_url", ""))
+    listing_cards = [item for card in dom if (item := _listing_card(source, card, listing_url))]
+    unused = set(range(len(structured)))
+    output: list[dict[str, Any]] = []
+    for listing in listing_cards:
+        matched_index = next(
+            (index for index in sorted(unused) if _same_candidate(structured[index], listing)),
+            None,
+        )
+        if matched_index is None:
+            output.append(listing)
+        else:
+            unused.remove(matched_index)
+            output.append(_merge_structured_with_listing(structured[matched_index], listing))
+        if len(output) >= limit:
+            break
+    return output[:limit]
+
+
 def _merge_detail(source: dict[str, Any], card: dict[str, Any], payload: dict[str, Any], index: int) -> dict[str, Any]:
     canonical = _extract.clean(payload.get("canonical"))
     if not canonical_detail_url(source, canonical):
         canonical = _candidate_url(source, card)
     events = _official_feeds.extract_structured_events(
-        payload.get("eventObjects") or [], canonical,
-        str(source.get("default_venue") or source.get("name") or ""), limit=1,
+        payload.get("eventObjects") or [],
+        canonical,
+        str(source.get("default_venue") or source.get("name") or ""),
+        limit=1,
     )
     evidence = {
         "canonical_url": canonical,
@@ -166,21 +260,32 @@ def _merge_detail(source: dict[str, Any], card: dict[str, Any], payload: dict[st
         "venue_candidates": [_extract.clean(item) for item in payload.get("venues") or [] if _extract.clean(item)],
     }
     if events:
-        event = dict(events[0]); event["url"] = canonical
+        event = dict(events[0])
+        event["url"] = canonical
         merged = _official_feeds.event_card(event, str(source.get("id") or "source"), index)
     else:
         title = evidence["title"] or _extract.clean(card.get("link_text"))
         lines = [title, *evidence["date_candidates"], *evidence["venue_candidates"]]
         summary = _extract.clean(payload.get("summary"))
-        if summary: lines.append(summary)
+        if summary:
+            lines.append(summary)
         lines.extend(_extract.clean(item) for item in (payload.get("lines") or [])[:80])
-        deduped = []
+        deduped: list[str] = []
         for item in lines:
-            if item and item not in deduped: deduped.append(item)
+            if item and item not in deduped:
+                deduped.append(item)
         merged = dict(card)
-        merged.update(url=canonical, detail_urls=[canonical], detail_url_count=1, link_text=title,
-                      headings=[title] if title else list(card.get("headings") or []),
-                      text_lines=deduped, text="\n".join(deduped))
+        merged.update(
+            url=canonical,
+            detail_urls=[canonical],
+            detail_url_count=1,
+            link_text=title,
+            headings=[title] if title else list(card.get("headings") or []),
+            text_lines=deduped,
+            text="\n".join(deduped),
+        )
+    for key in ("listing_evidence", "listing_url", "listing_card_id", "listing_extraction_mode"):
+        merged[key] = card.get(key) or ""
     merged["detail_enriched"] = True
     merged["detail_evidence"] = evidence
     merged["screenshot"] = card.get("screenshot") or ""
@@ -188,79 +293,81 @@ def _merge_detail(source: dict[str, Any], card: dict[str, Any], payload: dict[st
 
 
 def _enrich(source: dict[str, Any], cards: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, int]]:
-    candidates = [(card, _candidate_url(source, card)) for card in cards]
-    candidates = [(card, url) for card, url in candidates if url]
-    debug = {"candidates": len(candidates), "enriched": 0, "errors": 0, "dropped_by_limit": max(0, len(candidates) - DETAIL_LIMIT)}
-    if not candidates:
+    """Supplement admitted list cards; detail failure never creates or removes membership."""
+    debug = {"candidates": len(cards), "enriched": 0, "errors": 0, "skipped_by_limit": max(0, len(cards) - DETAIL_LIMIT)}
+    if not cards:
         return [], debug
     try:
         from playwright.sync_api import sync_playwright
     except Exception:
-        return [], {**debug, "errors": len(candidates)}
+        return cards, {**debug, "errors": min(len(cards), DETAIL_LIMIT)}
 
-    output = []
+    output: list[dict[str, Any]] = []
     with sync_playwright() as playwright:
         browser = _browser.launch_chromium(playwright)
         try:
-            for index, (card, url) in enumerate(candidates[:DETAIL_LIMIT]):
+            for index, card in enumerate(cards):
+                url = _candidate_url(source, card)
+                if index >= DETAIL_LIMIT or not url:
+                    output.append(card)
+                    continue
                 page = None
                 try:
                     page = browser.new_page(viewport={"width": 1440, "height": 1800}, device_scale_factor=1)
-                    try: page.goto(url, wait_until="networkidle", timeout=DETAIL_TIMEOUT_MS)
-                    except Exception: page.goto(url, wait_until="domcontentloaded", timeout=DETAIL_TIMEOUT_MS)
+                    try:
+                        page.goto(url, wait_until="networkidle", timeout=DETAIL_TIMEOUT_MS)
+                    except Exception:
+                        page.goto(url, wait_until="domcontentloaded", timeout=DETAIL_TIMEOUT_MS)
                     page.wait_for_timeout(650)
                     output.append(_merge_detail(source, card, page.evaluate(AUTHORITATIVE_DETAIL_JS) or {}, index))
                     debug["enriched"] += 1
-                except Exception:
+                except Exception as exc:
+                    failed = dict(card)
+                    failed["detail_enrich_error"] = f"{type(exc).__name__}:{exc}"
+                    output.append(failed)
                     debug["errors"] += 1
                 finally:
                     if page is not None:
-                        try: page.close()
-                        except Exception: pass
+                        try:
+                            page.close()
+                        except Exception:
+                            pass
         finally:
             browser.close()
     return output, debug
 
 
-def _repair_structured_url(source: dict[str, Any], card: dict[str, Any], dom: dict[str, Any]) -> dict[str, Any]:
-    canonical = _candidate_url(source, dom)
-    if not canonical: return card
-    repaired = dict(card); repaired.update(url=canonical, page_url=canonical)
-    if isinstance(repaired.get("structured_event"), dict):
-        structured = dict(repaired["structured_event"]); structured["url"] = canonical; repaired["structured_event"] = structured
-    return repaired
-
-
-def _prefer_structured(structured: list[dict[str, Any]], dom: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
-    source = getattr(_prefer_structured, "source", {})
-    dom_by_title = {_official_feeds.card_title(card): card for card in dom if _official_feeds.card_title(card)}
-    merged, titles = [], set()
-    for card in structured:
-        title = _official_feeds.card_title(card)
-        if title:
-            titles.add(title)
-            if title in dom_by_title: card = _repair_structured_url(source, card, dom_by_title[title])
-        merged.append(card)
-    merged.extend(card for card in dom if not _official_feeds.card_title(card) or _official_feeds.card_title(card) not in titles)
-    return merged[:limit]
-
-
 def _render(source: dict[str, Any], url: str, debug_dir, max_cards: int = 60):
     _prefer_structured.source = source
-    rendered = dict(_base_render(source, url, debug_dir, max_cards=max(max_cards, 120)))
+    _prefer_structured.listing_url = url
+    rendered = dict(_base_render(source, url, debug_dir, max_cards=max(max_cards, int(source.get("max_cards", max_cards)))))
     cards, debug = _enrich(source, [card for card in rendered.get("cards") or [] if isinstance(card, dict)])
     rendered["cards"] = cards
-    rendered["canonical_detail_evidence"] = debug
+    rendered["listing_authority"] = {
+        "policy": LISTING_EVIDENCE,
+        "admitted": len(cards),
+        "unmatched_structured_records_are_dropped": True,
+        "detail_enrichment": debug,
+    }
     return rendered
 
 
 def _event_end(event: dict[str, Any]) -> date | None:
     for value in (event.get("end_date"), event.get("start_date")):
         try:
-            if value: return date.fromisoformat(_extract.clean(value)[:10])
-        except ValueError: pass
+            if value:
+                return date.fromisoformat(_extract.clean(value)[:10])
+        except ValueError:
+            pass
     dates = _extract.label_dates(_extract.clean(event.get("when")))
     return max(dates) if dates else None
+
+
+def _valid_title(value: object) -> str:
+    title = _extract.normalise_title(value)
+    if not title or _extract.GENERIC_TITLE_RE.match(title) or _extract.DATE_LINE_RE.search(title):
+        return ""
+    return _extract.short(title, 140)
 
 
 def _venue(source: dict[str, Any], event: dict[str, Any], evidence: dict[str, Any]) -> str:
@@ -271,48 +378,123 @@ def _venue(source: dict[str, Any], event: dict[str, Any], evidence: dict[str, An
     return str(source.get("default_venue") or source.get("name") or "")
 
 
+def _structured_event(source: dict[str, Any], card: dict[str, Any]) -> dict[str, Any] | None:
+    structured = card.get("structured_event")
+    if not isinstance(structured, dict):
+        return None
+    title = _valid_title(structured.get("title"))
+    when = _extract.clean(structured.get("when"))
+    if not title or not when:
+        return None
+    where = _extract.clean(structured.get("where")) or str(source.get("default_venue") or source.get("name") or "")
+    summary = _extract.clean(structured.get("summary")) or "Open the official page for details."
+    return {
+        "title": title,
+        "when": when,
+        "where": where,
+        "host": source.get("name") or "Official source",
+        "source_name": source.get("name") or "Official source",
+        "url": _extract.clean(card.get("url")),
+        "summary": summary,
+        "start_date": _extract.clean(structured.get("start_date")) or _extract.best_start_date(when),
+        "end_date": _extract.clean(structured.get("end_date")),
+        "kind": "event",
+        "source_type": "official_structured_data_matched_to_listing",
+        "debug_screenshot": card.get("screenshot") or "",
+        "debug_detail_url_count": card.get("detail_url_count", 0),
+    }
+
+
+def _dom_event(source: dict[str, Any], card: dict[str, Any]) -> dict[str, Any] | None:
+    title = _extract.pick_title(card)
+    when, when_line = _extract.pick_when(card)
+    if not title or not when:
+        return None
+    where = _extract.pick_venue(source, card, when, when_line)
+    summary = _extract.pick_summary(card, title, when, where)
+    dates = _extract.label_dates(when)
+    return {
+        "title": title,
+        "when": when,
+        "where": where,
+        "host": source.get("name") or "Official source",
+        "source_name": source.get("name") or "Official source",
+        "url": _extract.clean(card.get("url")),
+        "summary": summary,
+        "start_date": _extract.best_start_date(when),
+        "end_date": max(dates).isoformat() if len(dates) >= 2 else "",
+        "kind": "event",
+        "source_type": "official_listing_card",
+        "debug_screenshot": card.get("screenshot") or "",
+        "debug_detail_url_count": card.get("detail_url_count", 0),
+    }
+
+
 def _event(source: dict[str, Any], card: dict[str, Any]):
-    evidence = card.get("detail_evidence") if isinstance(card.get("detail_evidence"), dict) else {}
-    if not card.get("detail_enriched") or not evidence:
-        return None, "detail_evidence_missing"
-    if not card.get("structured_event") and not evidence.get("date_candidates"):
-        return None, "detail_date_evidence_missing"
-    event, reason = _base_event(source, card)
-    if not event: return event, reason
-    url = _extract.clean(event.get("url") or card.get("url"))
-    if not canonical_detail_url(source, url):
-        return None, "noncanonical_detail_url"
+    if card.get("listing_evidence") != LISTING_EVIDENCE:
+        return None, "missing_official_listing_evidence"
+    url = _candidate_url(source, card)
+    if not url:
+        return None, "official_detail_url_not_found"
+
+    event = _structured_event(source, card) or _dom_event(source, card)
+    if not event:
+        return None, "listing_card_fields_incomplete"
+    event["url"] = url
     end = _event_end(event)
     if end and end < _extract.TODAY:
         return None, "past_date"
-    event = dict(event)
-    detail_title = _extract.clean(evidence.get("title"))
-    if detail_title and not _extract.GENERIC_TITLE_RE.match(detail_title): event["title"] = _extract.short(detail_title, 140)
-    event.update(url=url, where=_venue(source, event, evidence), candidate_policy="canonical-detail-evidence-v1")
-    return event, reason
+    if not end and not _extract.current_date_label(_extract.clean(event.get("when"))):
+        return None, "past_date"
+
+    evidence = card.get("detail_evidence") if isinstance(card.get("detail_evidence"), dict) else {}
+    detail_title = _valid_title(evidence.get("title"))
+    if detail_title:
+        event["title"] = detail_title
+    event["where"] = _venue(source, event, evidence)
+    event["candidate_policy"] = "official-listing-authority-v1"
+    event["listing_url"] = card.get("listing_url") or ""
+    event["listing_card_id"] = card.get("listing_card_id") or ""
+
+    package = sys.modules.get(__package__)
+    repair = getattr(package, "_apply_gardens_card_fields", None)
+    if callable(repair):
+        event = repair(source, card, event)
+    return event, "accepted"
 
 
 def apply() -> None:
-    global _applied, _base_render, _base_event, _base_collect
-    if _applied: return
+    global _applied, _base_render, _base_collect
+    if _applied:
+        return
     package = sys.modules.get(__package__)
     _patch_browser()
-    _base_render, _base_event = _extract.render_listing_cards, _extract.event_from_card
+    _base_render = _extract.render_listing_cards
     _base_collect = getattr(package, "collect_events", None)
     _extract.PAST_GRACE_DAYS = 0
     _extract.MAX_EVENTS_PER_SOURCE = max(_extract.MAX_EVENTS_PER_SOURCE, 40)
     _extract.SOURCE_TIMEOUT_SECONDS = max(_extract.SOURCE_TIMEOUT_SECONDS, 160)
     _official_feeds.prefer_structured_cards = _prefer_structured
-    _extract.render_listing_cards, _extract.event_from_card = _render, _event
+    _extract.render_listing_cards = _render
+    _extract.event_from_card = _event
     if package is not None:
         package.event_from_card = _extract.event_from_card
         if callable(_base_collect):
             def collect_events(*args, **kwargs):
                 payload = dict(_base_collect(*args, **kwargs))
-                payload.update(version=51, extractor="structured-first-v51-canonical-detail-evidence")
+                payload.update(version=52, extractor="listing-authoritative-v52")
                 return payload
+
             package.collect_events = collect_events
     _applied = True
 
 
-__all__ = ["apply", "canonical_detail_url", "DEEP_SCROLL_JS", "_merge_detail"]
+__all__ = [
+    "apply",
+    "canonical_detail_url",
+    "DEEP_SCROLL_JS",
+    "LISTING_EVIDENCE",
+    "_listing_card",
+    "_merge_detail",
+    "_prefer_structured",
+]
