@@ -1,5 +1,5 @@
 {
-  "version": 4,
+  "version": 5,
   "purpose": "Verified official event listing entrypoints. Sources that need detail-page date extraction use the detail-enriched adapter.",
   "policy": {
     "no_recursive_site_crawl": true,
@@ -27,6 +27,7 @@
       "official_home": "https://www.nationalgallery.sg/",
       "allowed_domains": ["nationalgallery.sg"],
       "default_venue": "National Gallery Singapore",
+      "load_more_rounds": 20,
       "listing_urls": [
         "https://www.nationalgallery.sg/sg/en/whats-on.html",
         "https://www.nationalgallery.sg/sg/en/whats-on.html?activity=Exhibition&category=today&date="
@@ -39,6 +40,7 @@
       "official_home": "https://www.nationalmuseum.nhb.gov.sg/",
       "allowed_domains": ["nationalmuseum.nhb.gov.sg"],
       "default_venue": "National Museum Singapore",
+      "load_more_rounds": 6,
       "listing_urls": [
         "https://www.nationalmuseum.nhb.gov.sg/whats-on/overview?time=Today%2CUpcoming",
         "https://www.nationalmuseum.nhb.gov.sg/whats-on/exhibition",
@@ -87,8 +89,12 @@
       "official_home": "https://www.science.edu.sg/",
       "allowed_domains": ["science.edu.sg"],
       "default_venue": "Science Centre Singapore",
+      "load_more_rounds": 10,
       "listing_urls": [
-        "https://www.science.edu.sg/whats-on"
+        "https://www.science.edu.sg/whats-on",
+        "https://www.science.edu.sg/whats-on/workshops-activities",
+        "https://www.science.edu.sg/whats-on/exhibitions",
+        "https://www.science.edu.sg/whats-on/shows-demonstrations"
       ]
     },
     {
@@ -172,6 +178,7 @@
       "official_home": "https://www.sentosa.com.sg/",
       "allowed_domains": ["sentosa.com.sg"],
       "default_venue": "Sentosa",
+      "load_more_rounds": 8,
       "listing_urls": [
         "https://www.sentosa.com.sg/en/things-to-do/events/"
       ]
@@ -194,6 +201,7 @@
       "official_home": "https://www.gardensbythebay.com.sg/",
       "allowed_domains": ["gardensbythebay.com.sg"],
       "default_venue": "Gardens by the Bay",
+      "load_more_rounds": 10,
       "listing_urls": [
         "https://www.gardensbythebay.com.sg/en/things-to-do/calendar-of-events.html"
       ]
