@@ -1,6 +1,6 @@
 {
   "version": 5,
-  "purpose": "Verified official event listing entrypoints. Sources that need detail-page date extraction use the detail-enriched adapter.",
+  "purpose": "Verified official event listing entrypoints. Dynamic sources may use deep scrolling, authoritative detail-page fields, and source-specific exclusions.",
   "policy": {
     "no_recursive_site_crawl": true,
     "no_sitemap_primary_flow": true,
@@ -28,6 +28,10 @@
       "allowed_domains": ["nationalgallery.sg"],
       "default_venue": "National Gallery Singapore",
       "load_more_rounds": 20,
+      "max_cards": 120,
+      "detail_enrichment": true,
+      "detail_authoritative": true,
+      "detail_limit": 24,
       "listing_urls": [
         "https://www.nationalgallery.sg/sg/en/whats-on.html",
         "https://www.nationalgallery.sg/sg/en/whats-on.html?activity=Exhibition&category=today&date="
@@ -41,6 +45,16 @@
       "allowed_domains": ["nationalmuseum.nhb.gov.sg"],
       "default_venue": "National Museum Singapore",
       "load_more_rounds": 6,
+      "max_cards": 100,
+      "detail_enrichment": true,
+      "detail_authoritative": true,
+      "detail_limit": 24,
+      "exclude_url_patterns": [
+        "/whats-on/plan-your-itinerary",
+        "/plan-your-visit/",
+        "/contact-us/",
+        "/venue-rental"
+      ],
       "listing_urls": [
         "https://www.nationalmuseum.nhb.gov.sg/whats-on/overview?time=Today%2CUpcoming",
         "https://www.nationalmuseum.nhb.gov.sg/whats-on/exhibition",
@@ -90,11 +104,15 @@
       "allowed_domains": ["science.edu.sg"],
       "default_venue": "Science Centre Singapore",
       "load_more_rounds": 10,
+      "max_cards": 120,
+      "detail_enrichment": true,
+      "detail_authoritative": true,
+      "detail_limit": 24,
       "listing_urls": [
-        "https://www.science.edu.sg/whats-on",
         "https://www.science.edu.sg/whats-on/workshops-activities",
         "https://www.science.edu.sg/whats-on/exhibitions",
-        "https://www.science.edu.sg/whats-on/shows-demonstrations"
+        "https://www.science.edu.sg/whats-on/shows-demonstrations",
+        "https://www.science.edu.sg/whats-on"
       ]
     },
     {
@@ -178,7 +196,11 @@
       "official_home": "https://www.sentosa.com.sg/",
       "allowed_domains": ["sentosa.com.sg"],
       "default_venue": "Sentosa",
-      "load_more_rounds": 8,
+      "load_more_rounds": 10,
+      "max_cards": 120,
+      "detail_enrichment": true,
+      "detail_authoritative": true,
+      "detail_limit": 24,
       "listing_urls": [
         "https://www.sentosa.com.sg/en/things-to-do/events/"
       ]
@@ -201,7 +223,11 @@
       "official_home": "https://www.gardensbythebay.com.sg/",
       "allowed_domains": ["gardensbythebay.com.sg"],
       "default_venue": "Gardens by the Bay",
-      "load_more_rounds": 10,
+      "load_more_rounds": 12,
+      "max_cards": 120,
+      "detail_enrichment": true,
+      "detail_authoritative": true,
+      "detail_limit": 24,
       "listing_urls": [
         "https://www.gardensbythebay.com.sg/en/things-to-do/calendar-of-events.html"
       ]
