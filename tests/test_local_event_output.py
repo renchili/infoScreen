@@ -109,7 +109,7 @@ def test_local_event_payload_promotes_venue_alias_to_where() -> None:
     assert normalized["results"][0]["where"] == "NLB Building, Level 1"
 
 
-def test_partial_refresh_cleans_the_complete_result_it_keeps(tmp_path, monkeypatch) -> None:
+def test_partial_refresh_cleans_the_verified_result_it_keeps(tmp_path, monkeypatch) -> None:
     out = tmp_path / "local_event_search_results.json"
     partial_out = tmp_path / "local_event_search_results.partial.json"
     out.write_text(
@@ -122,6 +122,7 @@ def test_partial_refresh_cleans_the_complete_result_it_keeps(tmp_path, monkeypat
                         "title": "What Happens After Someone Dies: A Practical Guide for Families",
                         "when": "14 Jul 2026",
                         "where": "Central Public Library",
+                        "candidate_policy": "official-listing-authority-v1",
                         "description": (
                             '<p><strong>About the Event</strong></p>'
                             '<p>This talk is a compassionate and practical guide to navigating loss.</p>'
@@ -152,7 +153,43 @@ def test_partial_refresh_cleans_the_complete_result_it_keeps(tmp_path, monkeypat
     assert retained_event["description"] == expected
     assert "<" not in retained_event["summary"]
     assert retained["text_normalizer"] == "plain-text-v1"
-    assert partial["write_policy"] == "kept_previous_complete_result"
+    assert partial["write_policy"] == "kept_previous_verified_result"
+
+
+def test_unverified_legacy_rows_are_not_preserved_during_partial_refresh(tmp_path, monkeypatch) -> None:
+    out = tmp_path / "local_event_search_results.json"
+    partial_out = tmp_path / "local_event_search_results.partial.json"
+    out.write_text(
+        json.dumps(
+            {
+                "source_count": 1,
+                "debug_by_source": [{"source": "SAFRA"}],
+                "results": [
+                    {
+                        "title": "Carpark",
+                        "when": "18 Mar 2024 - 31 Dec 2029",
+                        "where": "SAFRA Clubs",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(job, "OUT", out)
+    monkeypatch.setattr(job, "PARTIAL_OUT", partial_out)
+
+    job.write_payload(
+        {
+            "source_count": 2,
+            "debug_by_source": [{"source": "SAFRA"}],
+            "results": [],
+        }
+    )
+
+    written = json.loads(out.read_text(encoding="utf-8"))
+    assert written["results"] == []
+    assert written["partial"] is True
+    assert not partial_out.exists()
 
 
 def test_expired_event_is_removed_from_runtime_output() -> None:
