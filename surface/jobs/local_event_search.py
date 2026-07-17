@@ -10,12 +10,14 @@ os.environ.setdefault("LOCAL_EVENTS_MAX_SECONDS", "520")
 os.environ.setdefault("LOCAL_EVENTS_SOURCE_CONCURRENCY", "3")
 os.environ.setdefault("LOCAL_EVENTS_SOURCE_TIMEOUT_SECONDS", "160")
 os.environ.setdefault("LOCAL_EVENTS_MAX_LISTING_PAGES", "2")
-os.environ.setdefault("LOCAL_EVENTS_LOAD_MORE_ROUNDS", "2")
+os.environ.setdefault("LOCAL_EVENTS_LOAD_MORE_ROUNDS", "24")
 os.environ.setdefault("LOCAL_EVENTS_MAX_TOTAL_EVENTS", "180")
 os.environ.setdefault("LOCAL_EVENTS_NAV_TIMEOUT_MS", "25000")
 os.environ.setdefault("LOCAL_EVENTS_DOM_TIMEOUT_MS", "25000")
 os.environ.setdefault("LOCAL_EVENTS_NHB_DETAIL_LIMIT", "18")
 os.environ.setdefault("LOCAL_EVENTS_NHB_DETAIL_TIMEOUT_MS", "16000")
+os.environ.setdefault("LOCAL_EVENTS_DETAIL_LIMIT", "24")
+os.environ.setdefault("LOCAL_EVENTS_DETAIL_TIMEOUT_MS", "16000")
 os.environ.setdefault("LOCAL_EVENTS_PAGE_SCREENSHOTS", "0")
 os.environ.setdefault("LOCAL_EVENTS_CARD_SCREENSHOTS", "0")
 
@@ -34,6 +36,7 @@ OUT = ENV_DIR / "local_event_search_results.json"
 PARTIAL_OUT = ENV_DIR / "local_event_search_results.partial.json"
 DEBUG_DIR = ENV_DIR / "local_event_debug_cards"
 DEFAULT_LOCATION = "Punggol Singapore"
+VERIFIED_POLICY = "canonical-detail-evidence-v1"
 
 
 def read_json(path: Path) -> dict:
@@ -58,9 +61,24 @@ def is_partial(payload: dict) -> bool:
     return bool(source_count and debug_count(payload) < source_count)
 
 
+def verified_previous_payload(payload: dict) -> dict:
+    verified = dict(payload)
+    results = payload.get("results")
+    if not isinstance(results, list):
+        return verified
+    verified_results = [
+        item for item in results
+        if isinstance(item, dict) and item.get("candidate_policy") == VERIFIED_POLICY
+    ]
+    verified["results"] = verified_results
+    verified["count"] = len(verified_results)
+    verified["legacy_unverified_removed"] = len(results) - len(verified_results)
+    return verified
+
+
 def write_payload(payload: dict) -> None:
     payload = normalize_payload(payload)
-    old = normalize_payload(read_json(OUT))
+    old = verified_previous_payload(normalize_payload(read_json(OUT)))
     new_count = result_count(payload)
     old_count = result_count(old)
 
@@ -70,7 +88,7 @@ def write_payload(payload: dict) -> None:
             **payload,
             "ok": False,
             "partial": True,
-            "write_policy": "kept_previous_complete_result",
+            "write_policy": "kept_previous_verified_result",
             "previous_count": old_count,
         }
         PARTIAL_OUT.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -82,12 +100,12 @@ def write_payload(payload: dict) -> None:
 
 def self_test() -> int:
     payload = normalize_payload(collect_events(CONFIG, DEFAULT_LOCATION, DEBUG_DIR))
-    assert payload["extractor"] == "structured-first-v50-source-overrides"
-    assert payload["version"] == 50
+    assert payload["extractor"] == "structured-first-v51-canonical-detail-evidence"
+    assert payload["version"] == 51
     assert payload["text_normalizer"] == "plain-text-v1"
     assert isinstance(payload.get("results"), list)
     assert isinstance(payload.get("debug_by_source"), list)
-    print("local-event structured-first self-test passed")
+    print("local-event canonical-detail-evidence self-test passed")
     return 0
 
 
