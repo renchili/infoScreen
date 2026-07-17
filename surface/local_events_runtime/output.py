@@ -5,9 +5,7 @@ import re
 from datetime import date
 from html.parser import HTMLParser
 from typing import Any
-from urllib.parse import urlparse
-
-from . import extract as _extract
+from urllib.parse import unquote, urlparse
 
 HTML_TAG_RE = re.compile(r"</?[A-Za-z][^>]*>|<!--.*?-->", re.S)
 SUMMARY_HEADING_RE = re.compile(
@@ -15,32 +13,9 @@ SUMMARY_HEADING_RE = re.compile(
     re.I,
 )
 BLOCK_TAGS = {
-    "address",
-    "article",
-    "aside",
-    "blockquote",
-    "br",
-    "div",
-    "footer",
-    "h1",
-    "h2",
-    "h3",
-    "h4",
-    "h5",
-    "h6",
-    "header",
-    "hr",
-    "li",
-    "main",
-    "nav",
-    "ol",
-    "p",
-    "section",
-    "table",
-    "td",
-    "th",
-    "tr",
-    "ul",
+    "address", "article", "aside", "blockquote", "br", "div", "footer",
+    "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "li",
+    "main", "nav", "ol", "p", "section", "table", "td", "th", "tr", "ul",
 }
 IGNORED_TAGS = {"script", "style", "noscript", "template"}
 TEXT_FIELDS = ("title", "when", "where", "host", "source_name", "summary")
@@ -48,13 +23,14 @@ WHERE_ALIASES = ("venue", "place", "where_text", "location", "address")
 SUMMARY_ALIASES = ("why_text", "description", "desc")
 MAX_ENTITY_DECODE_ROUNDS = 3
 OPEN_ENDED_RE = re.compile(r"\b(?:ongoing|permanent|from|since)\b", re.I)
-NON_EVENT_PATH_SEGMENT_RE = re.compile(
-    r"^(?:plan-your-itinerary|visitor-information|museum-map|accessibility|group-visits|getting-here|"
-    r"shop-dine-relax|venue-rental|filming-photography|contact-us|image-requests|book-a-venue|"
-    r"amenities-services|opening-hours-closures|itinerary-planner|gardens-map|information-guides|"
-    r"visiting-guidelines|mobile-apps-travel-guide)$",
+SYNTHETIC_FRAGMENT_RE = re.compile(r"^(?:nhb|nhb-json|structured)-", re.I)
+MEDIA_RE = re.compile(r"\.(?:jpg|jpeg|png|gif|webp|svg|pdf)$", re.I)
+GENERIC_LEAF_RE = re.compile(
+    r"^(?:whats?-on|whatson|events?|overview|view-all|calendar|programmes?|programs?|"
+    r"activities?|exhibitions?|workshops?|tours?|shows?|performances?)$",
     re.I,
 )
+VERIFIED_POLICY = "canonical-detail-evidence-v1"
 
 
 class _PlainTextParser(HTMLParser):
@@ -138,9 +114,21 @@ def _iso_date(value: object) -> date | None:
         return None
 
 
-def _non_event_url(value: object) -> bool:
-    path = urlparse(_collapse(value)).path
-    return any(NON_EVENT_PATH_SEGMENT_RE.fullmatch(segment) for segment in path.split("/") if segment)
+def _invalid_event(event: dict[str, Any]) -> bool:
+    url = _collapse(event.get("url"))
+    if not url.startswith(("http://", "https://")):
+        return True
+    parsed = urlparse(url)
+    if parsed.fragment and SYNTHETIC_FRAGMENT_RE.match(parsed.fragment):
+        return True
+    path = unquote(parsed.path).rstrip("/").lower()
+    if not path or MEDIA_RE.search(path):
+        return True
+    leaf = path.rsplit("/", 1)[-1].removesuffix(".html")
+    if not leaf or GENERIC_LEAF_RE.fullmatch(leaf):
+        return True
+    policy = _collapse(event.get("candidate_policy"))
+    return bool(policy and policy != VERIFIED_POLICY)
 
 
 def _expired_event(event: dict[str, Any]) -> bool:
@@ -149,8 +137,7 @@ def _expired_event(event: dict[str, Any]) -> bool:
         return False
     end = _iso_date(event.get("end_date"))
     start = _iso_date(event.get("start_date"))
-    when_dates = _extract.label_dates(when)
-    effective_end = end or (max(when_dates) if when_dates else start)
+    effective_end = end or start
     return bool(effective_end and effective_end < date.today())
 
 
@@ -203,7 +190,7 @@ def normalize_payload(payload: dict[str, Any]) -> dict[str, Any]:
     for item in results:
         if isinstance(item, dict):
             clean_item, item_changed = normalize_event(item)
-            if _non_event_url(clean_item.get("url")):
+            if _invalid_event(clean_item):
                 invalid_removed += 1
                 continue
             if _expired_event(clean_item):
