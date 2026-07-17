@@ -11,6 +11,13 @@ sys.path.insert(0, str(SURFACE))
 from jobs import local_event_search as job  # noqa: E402
 from local_events_runtime.output import normalize_payload, plain_text  # noqa: E402
 
+VERIFIED_POLICY = "official-listing-authority-v1"
+
+
+def future_label(days: int = 30) -> str:
+    value = date.today() + timedelta(days=days)
+    return f"{value.day} {value.strftime('%b')} {value.year}"
+
 
 def test_plain_text_removes_html_markup_and_hidden_content() -> None:
     raw = (
@@ -45,13 +52,14 @@ def test_local_event_payload_is_normalized_before_runtime_delivery() -> None:
         "results": [
             {
                 "title": "What Happens After Someone Dies: A Practical Guide for Families",
-                "when": "July 14, 2026",
+                "when": future_label(),
                 "where": "<span>Central Public Library</span>",
                 "summary": (
                     '<p><strong>About the Event</strong></p>'
                     '<p>This talk is a compassionate and practical guide to navigating loss.</p>'
                 ),
-                "url": "https://example.test/event?a=1&b=2",
+                "url": "https://example.test/events/practical-guide",
+                "candidate_policy": VERIFIED_POLICY,
             }
         ]
     }
@@ -62,7 +70,7 @@ def test_local_event_payload_is_normalized_before_runtime_delivery() -> None:
     assert event["where"] == "Central Public Library"
     assert event["summary"] == "This talk is a compassionate and practical guide to navigating loss."
     assert "<" not in event["summary"]
-    assert event["url"] == "https://example.test/event?a=1&b=2"
+    assert event["url"] == "https://example.test/events/practical-guide"
     assert normalized["text_normalizer"] == "plain-text-v1"
     assert normalized["normalized_text_fields"] == 2
 
@@ -72,12 +80,14 @@ def test_description_alias_is_cleaned_and_promoted_to_summary() -> None:
         "results": [
             {
                 "title": "What Happens After Someone Dies: A Practical Guide for Families",
-                "when": "July 14, 2026",
+                "when": future_label(),
                 "where": "Central Public Library",
                 "description": (
                     '<p><strong>About the Event</strong><span style="background-color:#00ffff;"></span></p>'
                     '<p>This talk is a compassionate and practical guide to navigating loss.</p>'
                 ),
+                "url": "https://example.test/events/practical-guide",
+                "candidate_policy": VERIFIED_POLICY,
             }
         ]
     }
@@ -97,10 +107,12 @@ def test_local_event_payload_promotes_venue_alias_to_where() -> None:
             "results": [
                 {
                     "title": "Example Event",
-                    "when": "1 Aug 2026",
+                    "when": future_label(),
                     "where": "",
                     "venue": "NLB Building, Level 1",
                     "summary": "Details",
+                    "url": "https://example.test/events/example-event",
+                    "candidate_policy": VERIFIED_POLICY,
                 }
             ]
         }
@@ -120,9 +132,10 @@ def test_partial_refresh_cleans_the_verified_result_it_keeps(tmp_path, monkeypat
                 "results": [
                     {
                         "title": "What Happens After Someone Dies: A Practical Guide for Families",
-                        "when": "14 Jul 2026",
+                        "when": future_label(),
                         "where": "Central Public Library",
-                        "candidate_policy": "official-listing-authority-v1",
+                        "url": "https://example.test/events/practical-guide",
+                        "candidate_policy": VERIFIED_POLICY,
                         "description": (
                             '<p><strong>About the Event</strong></p>'
                             '<p>This talk is a compassionate and practical guide to navigating loss.</p>'
@@ -167,8 +180,9 @@ def test_unverified_legacy_rows_are_not_preserved_during_partial_refresh(tmp_pat
                 "results": [
                     {
                         "title": "Carpark",
-                        "when": "18 Mar 2024 - 31 Dec 2029",
+                        "when": future_label(),
                         "where": "SAFRA Clubs",
+                        "url": "https://example.test/amenities/carpark",
                     }
                 ],
             }
@@ -203,6 +217,7 @@ def test_expired_event_is_removed_from_runtime_output() -> None:
                     "start_date": yesterday.isoformat(),
                     "end_date": yesterday.isoformat(),
                     "url": "https://example.test/events/expired",
+                    "candidate_policy": VERIFIED_POLICY,
                 }
             ]
         }
@@ -225,6 +240,7 @@ def test_active_range_uses_when_end_when_end_date_field_is_missing() -> None:
                     "start_date": start.isoformat(),
                     "end_date": "",
                     "url": "https://example.test/events/active-exhibition",
+                    "candidate_policy": VERIFIED_POLICY,
                 }
             ]
         }
