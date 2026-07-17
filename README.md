@@ -1,287 +1,543 @@
 # InfoScreen
 
-Local kiosk dashboard for a Surface or Ubuntu display.
+## What this is
 
-## Run
+InfoScreen is a local-first personal information screen for an always-on Surface or Ubuntu display. It combines the current day, personal schedule, weather, market movement, multilingual news, nearby official events, local photos, and runtime freshness in one stable kiosk page.
+
+The project is designed for glanceable use rather than constant interaction. It favours readable typography, compact information density, predictable layout, local ownership of personal data, and visible failure states.
+
+## What this is not
+
+InfoScreen is not a cloud dashboard, a general web-search scraper, a second Calendar account, or real Surface system monitoring. Local Events come from a curated inventory of official organisation pages. Calendar authority remains on a Mac running macOS Calendar/EventKit. The current CPU/MEM/DSK/NET bars are simulated browser values, and POWER/DISPLAY/NETWORK labels are static text.
+
+Runtime JSON, machine-local configuration, logs, debug captures, and personal photos are device state under `surface/.env/`; they are not repository source files or sample data to commit.
+
+## Who this is for
+
+The primary operator maintains one always-on Surface or Ubuntu display and may use a Mac to supply Calendar data. A maintainer should be comfortable with Python commands, browser inspection, systemd user services on the Surface, and LaunchAgent/SSH diagnostics on the Mac when Calendar sync is enabled.
+
+## First 10 minutes
+
+The smallest useful path starts the local HTTP server and opens the committed dashboard without requiring external providers, systemd, a Mac, or personal runtime data.
 
 ```bash
+git clone https://github.com/renchili/infoScreen.git ~/infoscreen
 cd ~/infoscreen
-systemctl --user restart infoscreen-http.service
-```
-
-Open `http://127.0.0.1:8765/`.
-
-Manual run:
-
-```bash
-cd ~/infoscreen
+mkdir -p surface/.env
 python3 surface/serve_infoscreen.py
 ```
 
-## Documentation map
-
-```text
-README.md          run, verify, and source overview
-AGENTS.md          agent bootstrap and required read order
-AGENT.md           project-specific repository rules
-metadata.json      compact product metadata and product prompt
-pyproject.toml     pytest configuration
-.github/workflows/ CI workflow definitions, when GitHub Actions is enabled
-docs/design.md     runtime architecture and data flow
-docs/api-spec.md   HTTP endpoints and Python owners
-docs/questions.md  current project decisions
-skills/            agent workflow and hard-gate skills
-tests/             local closed-loop unit, contract, and runtime tests
-```
-
-## Repository root policy
-
-The repository root is for repository control, documentation, project metadata, CI/test configuration, and operator/deployment entrypoints only. Dashboard runtime JSON, local environment files, browser CSS, browser JavaScript, local photos, generated output, caches, and compiled files do not belong in the repository root.
-
-Allowed root-level project paths:
-
-```text
-README.md
-AGENTS.md
-AGENT.md
-metadata.json
-pyproject.toml
-.gitignore
-.githooks/
-.github/
-docs/
-skills/
-surface/
-deploy/
-mac/
-scripts/
-tests/
-```
-
-Runtime JSON belongs under `surface/.env/`. Browser CSS and JavaScript belong under `surface/web/assets/`. Local photos belong under `surface/.env/photos/`. Test fixtures belong under `tests/fixtures/`; generated test reports, logs, JUnit XML, OpenAPI snapshots, and other test artifacts belong under `${ACCEPTANCE_ARTIFACT_DIR:-/tmp/infoscreen-acceptance}` or another ignored local artifact path.
-
-Enable the local pre-commit guard once per clone:
+In another terminal:
 
 ```bash
-git config core.hooksPath .githooks
-chmod +x .githooks/pre-commit
+curl -fsS http://127.0.0.1:8765/ | grep -E "assets/js/dashboard.js|assets/js/local_event_card.js"
+curl -fsS http://127.0.0.1:8765/openapi.json | python3 -m json.tool | head -n 20
 ```
 
-The hook blocks staged root project code outside the allowlist, runtime files, local env files, generated test output, `photo/`, `photos/`, `public_photos/`, and legacy `surface/web/*.js` or `surface/web/*.css` files.
-
-## Active source overview
-
-Server and API support:
+Then open:
 
 ```text
-surface/serve_infoscreen.py       HTTP server and local API
-surface/openapi_spec.py           support module for /openapi.json
-surface/api_models.py             schema support module for openapi_spec.py
+http://127.0.0.1:8765/
 ```
 
-Jobs and wrappers:
+This quick path proves that the committed frontend, local HTTP server, and OpenAPI generation are available. It does not prove that external Market, Weather, News, or Local Events sources are currently reachable, that systemd timers are installed, or that Mac Calendar sync is configured.
+
+## Prerequisites
+
+For the smallest local path:
+
+- Python 3;
+- a browser or `curl`;
+- a checkout at `~/infoscreen` when following the supported deployment scripts.
+
+For the full Surface deployment:
+
+- a Linux user session with `systemd --user`;
+- Chromium and the Python Playwright package for Local Events;
+- outbound network access for Market, Weather, News, and official Local Events sources;
+- `ffmpeg` for HEIC/HEIF conversion and ImageMagick `magick` for optional photo normalization;
+- a Mac with an EventKit-capable Python runtime only when Calendar sync is required.
+
+## Configuration and safe local state
+
+No private configuration is required to serve the static dashboard. Runtime files and local preferences are created under:
 
 ```text
-surface/fetch_live_data.py         weather and market refresh
-surface/fetch_event_stream.py      event/news stream refresh
-surface/build_photos_json.py       photo wall JSON builder
-surface/search_local_events.py     wrapper for local event refresh
-surface/jobs/local_event_search.py local event refresh job
+~/infoscreen/surface/.env/
 ```
 
-Local event extraction support:
+Committed configuration includes:
 
 ```text
-surface/local_events_runtime/__init__.py
-surface/local_events_runtime/browser.py
-surface/local_events_runtime/extract.py
+surface/conf/market_config.default.json
+surface/conf/event_sources.json
 ```
 
-Browser dashboard files live under:
+Machine-specific Calendar sync configuration is written to uncommitted `mac/local.env`. Do not commit runtime JSON, logs, debug captures, personal photos, SSH details, or machine-local environment files.
+
+## Startup success signals
+
+The smallest local startup is successful when all of these are true:
+
+1. the server prints a startup line for `0.0.0.0:8765`;
+2. `GET /` returns the dashboard HTML and references `assets/js/dashboard.js` and `assets/js/local_event_card.js`;
+3. `GET /openapi.json` returns a JSON document whose title is `InfoScreen Local API`;
+4. the browser opens the page even when runtime files are missing, with missing or unavailable states shown instead of invented data.
+
+A full deployment has additional success signals: `bash scripts/infoscreen_status.sh` reports the HTTP service and relevant timers, runtime files have current modification times, and the visible panels agree with their served JSON.
+
+## 1. What the project provides
+
+The dashboard currently includes:
+
+- current time, date, page refresh time, and page-session uptime;
+- a Market card and global Market tape with configurable symbols;
+- current Singapore weather;
+- aligned English, French, and Chinese news rows;
+- a Local Events card built from curated official organisation sources;
+- a Calendar board supplied by macOS Calendar/EventKit;
+- a local Photo wall;
+- a Sync ticker showing whether Schedule, Weather, Market, and News runtime files are fresh, stale, missing, or unreachable;
+- local OpenAPI documentation for the HTTP endpoints.
+
+The CPU/MEM/DSK/NET bars are currently simulated browser values, not Surface system monitoring. POWER/DISPLAY/NETWORK labels are static text.
+
+## 2. Product and runtime model
 
 ```text
-surface/web/index.html
-surface/web/assets/css/
-surface/web/assets/js/
+Mac, required only for Calendar
+  macOS Calendar/EventKit
+  -> LaunchAgent
+  -> schedule.json over SSH/SCP
+
+Surface or Ubuntu device
+  systemd --user services and timers
+  -> producer jobs
+  -> runtime JSON under surface/.env/
+  -> surface/serve_infoscreen.py
+  -> browser kiosk page
 ```
 
-## Page UI, jobs, and data sources
-
-`infoscreen-http.service` runs `surface/serve_infoscreen.py` and serves the dashboard, runtime JSON, public photos, and local APIs. Each visible mount point has one data/render owner.
-
-| Page area | DOM / frontend owner | Scheduler or trigger | Producer and runtime/API | Data source | Notes |
-| --- | --- | --- | --- | --- | --- |
-| Header clock and date | `#time`, `#date`; `dashboard.js:updateClock()` | Browser every second | No backend job or runtime JSON | Browser device clock | Local browser time only |
-| Bottom `REFRESH` and `UPTIME` | `#refresh`, `#uptime`; `dashboard.js:updateClock()` | Browser every second | No backend job | Browser clock and page load time | `UPTIME` is page-session uptime, not OS uptime |
-| Market card | `#marketList`; `dashboard.js:loadMarket()` | `infoscreen-live-data.timer` every 5 minutes; manual `/api/market-refresh` | `surface/fetch_live_data.py` → `surface/.env/market.json` → `/market.json` | Nasdaq, CNBC, Stooq, then Yahoo fallback/cache | `dashboard.js` is the only quote renderer |
-| Global market tape | `#globalMarketTapeTrack`; `dashboard.js:loadMarket()` | Same Market job | Same `market.json` | Same market providers | Must not be rewritten by `local_event_card.js` |
-| Market config overlay | `market_custom.js` | User save/refresh | `/api/market-config`, `/api/market-refresh`, `surface/.env/market_config.json` | User-selected symbols | Calls `window.loadMarket()` after refresh; does not render quotes itself |
-| Local event card | `#localEventList`; `local_event_card.js` | `infoscreen-local-events.timer` every 6 hours; POST search on demand | `surface/search_local_events.py` → `surface/jobs/local_event_search.py` → `surface/.env/local_event_search_results.json` → `/api/local-events/search` | Official event listing pages configured in `surface/conf/event_sources.json` | Search location comes from the UI or service default |
-| Sync ticker | `#leftSyncTapeTrack`; `local_event_card.js:loadSyncStatus()` | Browser every 60 seconds | `HEAD /schedule.json`, `/weather.json`, `/market.json`, `/event_stream.json` | HTTP `Last-Modified` from runtime files | Monitors producers; it does not generate data |
-| EN/FR/中文 news ticker | `#newsTickerTrackEN/FR/ZH`; `local_event_card.js:repairNews()` | `infoscreen-event-stream.timer` every 5 minutes | `surface/fetch_event_stream.py` → `surface/.env/event_stream.json` → `/event_stream.json` | Google News RSS, CNA, France24, RFI, BBC Chinese; Google Translate for aligned EN/FR/ZH rows | `local_event_card.js` is the only news renderer |
-| Photo wall | `#photoFlipWall`; `local_event_card.js:repairPhotoWall()` | Manual `python3 surface/build_photos_json.py` after photo changes | `surface/.env/photos/` → `surface/build_photos_json.py` → `surface/.env/photos.json` and `surface/.env/public_photos/` → `/photos.json`, `/public_photos/*` | User-owned local image files | No systemd timer currently generates the photo index |
-| Weather card | `#weatherTemp`, `#weatherDesc`; `dashboard.js:loadWeather()` | `infoscreen-live-data.timer` every 5 minutes | `surface/fetch_live_data.py` → `surface/.env/weather.json` → `/weather.json` | Open-Meteo for Singapore | Weather and Market share one Surface job |
-| CPU/MEM/DSK/NET bars | `#cpuBar/#memBar/#diskBar/#netBar`; `dashboard.js:updateDemoMetrics()` | Browser every 6 seconds | No backend job or runtime JSON | `Math.random()` demo values | These are simulated UI values, not system monitoring |
-| Calendar board | `#agendaList`; `calendar_board.js` | Mac LaunchAgent `com.renchili.infoscreen.schedule-sync`, default 120 seconds | `mac/export.py` → `mac/sync_schedule.sh` → `surface/.env/schedule.json` → `/schedule.json` | macOS Calendar/EventKit on the Mac | Schedule producer runs on the Mac, not the Surface |
-| POWER/DISPLAY/NETWORK labels | Static HTML in `index.html` | None | No job, API, or runtime JSON | Static text | These labels are not health checks |
-| OpenAPI pages | `/openapi.json`, `/docs`; server route | HTTP request | `surface/openapi_spec.py` + `surface/api_models.py` | Committed API definitions | Not part of the kiosk panels |
-
-Detailed ownership and failure routing are in `docs/design.md`. Long-term decisions are recorded in `docs/questions.md`.
-
-## Frontend behavior notes
-
-Local event card:
+Repository root:
 
 ```text
-surface/web/assets/js/local_event_card.js
-surface/web/assets/css/local_events.css
+~/infoscreen
 ```
 
-The card must keep the compact TTY style: no dotted background in the local-event panel, compact `‹` / `›` / `⌕` controls with the counter on the top-right, source/organization at the card top-left, no separate `EVENT` label, compact `WHEN` and `WHERE` rows, and the official link pinned to the bottom of the card.
-
-The local-event backend owns data collection and should provide full available fields without presentation truncation. The frontend owns display fitting: it decides wrapping, clipping, scrolling, and any visual ellipsis based on the current card size.
-
-Sync ticker:
+Runtime and personal-data root:
 
 ```text
-surface/web/assets/js/local_event_card.js
+~/infoscreen/surface/.env
 ```
 
-The left sync ticker checks `Last-Modified` through `HEAD` requests and displays `OK` / `STALE` / `MISS` / `ERR`, `LATEST`, and `AGE` for schedule, weather, market, and news runtime JSON.
+Runtime JSON, logs, local configuration, debug output, and user photos are device state and are not committed.
 
-| Stat | Producer | Runtime JSON | Product UI | Stale threshold |
+## 3. Data sources, producers, and page consumers
+
+| Product area | Data source | Producer or trigger | Runtime/API | Browser owner |
 | --- | --- | --- | --- | --- |
-| `SCHEDULE` | Mac LaunchAgent → `mac/export.py` + `mac/sync_schedule.sh` | `schedule.json` | Calendar board | 600 seconds |
-| `WEATHER` | `infoscreen-live-data.timer` → `surface/fetch_live_data.py` | `weather.json` | Weather card | 900 seconds |
-| `MARKET` | `infoscreen-live-data.timer` → `surface/fetch_live_data.py` | `market.json` | Market card and tape | 600 seconds |
-| `NEWS` | `infoscreen-event-stream.timer` → `surface/fetch_event_stream.py` | `event_stream.json` | Three-language news ticker | 600 seconds |
+| Market card and tape | Nasdaq, CNBC, Stooq, Yahoo, previous cache | `infoscreen-live-data.timer` or Market refresh action | `market.json`, `/market.json` | `dashboard.js` |
+| Weather | Open-Meteo using Singapore coordinates | `infoscreen-live-data.timer` or Market refresh action | `weather.json`, `/weather.json` | `dashboard.js` |
+| Multilingual News | Google News RSS, CNA, France24, RFI, BBC Chinese, Google Translate | `infoscreen-event-stream.timer` | `event_stream.json`, `/event_stream.json` | `local_event_card.js` |
+| Local Events | Curated official organisation listing and detail pages | `infoscreen-local-events.timer` or location search | `local_event_search_results.json`, `/api/local-events/search` | `local_event_card.js` |
+| Calendar | macOS Calendar/EventKit on the Mac | Mac LaunchAgent | `schedule.json`, `/schedule.json` | `calendar_board.js` |
+| Photos | User files under `surface/.env/photos/` | Manual photo builder | `photos.json`, `/photos.json`, `/public_photos/*` | `local_event_card.js` |
+| Sync status | Runtime-file HTTP `Last-Modified` | Browser `HEAD` checks | Schedule, Weather, Market, and News endpoints | `local_event_card.js` |
+| Market configuration | User-selected symbols | Market config UI | `/api/market-config`, `market_config.json` | `market_custom.js` |
+| Clock and page uptime | Browser clock | Browser timers | No runtime file | `dashboard.js` |
 
-`OK` means the file age is within the threshold. `STALE` means the file exists but is too old. `MISS` means the HTTP path or `Last-Modified` is missing. `ERR` means the browser's `HEAD` request failed; check HTTP/network before assuming the producer failed.
+Each visible DOM mount has one renderer owner. Producers write runtime data; browser scripts render that data; the HTTP server serves files and local APIs.
 
-Market panel:
+## 4. User interaction and configuration
+
+### Market symbols
+
+The Market gear opens a local configuration panel.
+
+- `SAVE` sends `POST /api/market-config`, writes `surface/.env/market_config.json`, and then refreshes Market data.
+- `REFRESH` sends `POST /api/market-refresh`.
+- A Market refresh runs `surface/fetch_live_data.py`, so it refreshes both Market and Weather.
+- At most 12 unique symbols are stored.
+
+Default symbols:
 
 ```text
-surface/web/assets/js/dashboard.js
-surface/web/assets/js/market_custom.js
-surface/web/assets/css/market_custom.css
+surface/conf/market_config.default.json
 ```
 
-`dashboard.js` is the only renderer for `marketList` and `globalMarketTapeTrack`. `market_custom.js` owns only the config control and calls `/api/market-config` or `/api/market-refresh`.
+Active runtime configuration:
 
-Photo wall:
+```text
+surface/.env/market_config.json
+```
+
+### Local-event location
+
+The Local Event search control opens a location input.
+
+- The last location is stored in browser `localStorage` as `local_events_location`.
+- Search sends `POST /api/local-events/search`.
+- The server runs the source-specific Local Events collector and returns the resulting runtime payload.
+- The configured official source inventory remains the same; the entered location is an input to the collection job.
+- Previous and next controls change the current card immediately.
+
+### Calendar
+
+Calendar accounts and permissions remain on the Mac. The Surface has no Calendar account configuration. Only the Mac-to-Surface target and sync interval are configured.
+
+### Photos
+
+Place files under:
 
 ```text
 surface/.env/photos/
-surface/build_photos_json.py
-surface/.env/photos.json
-surface/.env/public_photos/
 ```
 
-Put user photos in `surface/.env/photos/`. After adding photos, run the photo builder so `photos.json` and `public_photos/` are regenerated.
+Then rebuild the manifest:
 
-## Runtime files
+```bash
+cd ~/infoscreen
+python3 surface/build_photos_json.py
+```
 
-Runtime files live under `~/infoscreen/surface/.env/` and are not source files.
+The browser does not scan the filesystem directly.
+
+## 5. Refresh behaviour
+
+The project has three separate refresh layers.
+
+### Producer refresh
+
+A producer fetches or generates data and writes runtime JSON.
+
+| Data | Scheduler | Default frequency |
+| --- | --- | --- |
+| Market and Weather | `infoscreen-live-data.timer` | 5 minutes |
+| News | `infoscreen-event-stream.timer` | 5 minutes |
+| Local Events | `infoscreen-local-events.timer` | 6 hours |
+| Calendar | Mac LaunchAgent | 120 seconds by default |
+| Photos | Manual builder | No supported timer |
+
+Surface timer configuration lives under:
 
 ```text
-surface/.env/schedule.json
-surface/.env/weather.json
-surface/.env/market.json
-surface/.env/market_config.json
-surface/.env/event_stream.json
-surface/.env/local_event_search_results.json
-surface/.env/photos.json
-surface/.env/sync_status.json
-surface/.env/logs/http.log
-surface/.env/logs/http.err.log
+deploy/systemd/user/
 ```
 
-### Schedule sync — run on the Mac
+After changing a committed timer, rerun:
 
-`schedule.json` is not generated on the Surface. macOS Calendar/EventKit is the data source, so the scheduled export and sync run on the Mac and push the file to the Surface runtime directory.
+```bash
+bash deploy/scripts/install-user-systemd.sh
+```
 
-Run this on the Mac to configure or update the Surface SSH address and install or refresh the LaunchAgent:
+The Mac Calendar interval is configured with `mac/scripts/setup-schedule-sync.sh --interval`.
+
+### Browser data reload
+
+| UI area | Browser reload behaviour |
+| --- | --- |
+| Market | Page load, every 60 seconds, and after a Market refresh |
+| Weather | Page load and every 5 minutes |
+| News | Page load and every 5 minutes |
+| Sync status | Page load and every 60 seconds using `HEAD` |
+| Local Events | Page load and after an on-demand location search |
+| Calendar | Page load only |
+| Photos | Page load and every 5 minutes |
+
+### Visual rotation
+
+| UI area | Rotation |
+| --- | --- |
+| Local Event card | Every 15 seconds |
+| Calendar board | Every 7 seconds |
+| Photo wall | Every 9 seconds |
+| News and Market tapes | Continuous animation |
+
+A producer can update a runtime file while the page still shows an older in-memory Local Event or Calendar list. Reload the page to consume those updated files.
+
+## 6. Local Events is source-specific by design
+
+Local Events is not a generic search-engine scraper. The project uses a maintained inventory of official source entrypoints and adapter choices:
+
+```text
+surface/conf/event_sources.json
+```
+
+The current inventory covers official museum, library, community, attraction, shopping-centre, venue, and institution sites. Each source defines:
+
+- source ID and display name;
+- official home page;
+- allowed domains;
+- official listing URLs;
+- default venue;
+- adapter type;
+- configured display order.
+
+The active adapter modes are:
+
+- `rendered_dom_card`: structured-data and rendered-listing extraction;
+- `nhb`: the same structured-first flow plus eligible detail-page enrichment when listing cards do not contain a complete date. The name is historical and is also used for non-NHB sources that require this behaviour.
+
+The collector was developed against real official-site differences. Current targeted behaviour includes:
+
+- reading XHR/fetch JSON and embedded structured state before DOM fallback;
+- requiring positive event intent so a dated facility, membership, operating-information, or promotion record is not accepted merely because it has a title and date range;
+- opening detail pages for sources whose listing cards omit full dates;
+- Gardens by the Bay date-range and venue repair;
+- rejection of synthetic Mandai location cards;
+- configured source ordering;
+- per-source acceptance and rejection evidence;
+- preserving the previous complete runtime result when a new run is partial and would replace it with fewer events.
+
+The main output is:
+
+```text
+surface/.env/local_event_search_results.json
+```
+
+Incomplete diagnostic output may be written to:
+
+```text
+surface/.env/local_event_search_results.partial.json
+```
+
+Per-source debug evidence is available through `debug_by_source` and under:
+
+```text
+surface/.env/local_event_debug_cards/
+```
+
+The detailed source inventory, collection pipeline, crawl budgets, and targeted source behaviour are documented in `docs/design.md`.
+
+## 7. Project structure
+
+```text
+surface/serve_infoscreen.py            local HTTP server and APIs
+surface/fetch_live_data.py              Market and Weather producer
+surface/fetch_event_stream.py           multilingual News producer
+surface/search_local_events.py          Local Events command wrapper
+surface/jobs/local_event_search.py      Local Events job entrypoint
+surface/local_events_runtime/           canonical source-specific collection and extraction library
+surface/build_photos_json.py            Photo manifest builder
+surface/conf/                            committed defaults and source inventory
+surface/web/                             kiosk frontend
+surface/.env/                            local runtime and personal data
+mac/                                     EventKit export and schedule push
+deploy/systemd/user/                     committed Surface user units
+scripts/                                 status, validation, and repository scripts
+docs/                                    architecture, API, and requirement clarifications
+tests/                                   unit and contract tests
+```
+
+Start with `surface/serve_infoscreen.py` for the HTTP process, `surface/jobs/` for one-shot orchestration, `surface/local_events_runtime/` for Local Events collection logic, `surface/web/` for the kiosk UI, `surface/conf/` for committed configuration, `deploy/systemd/user/` for Surface scheduling, `mac/` for Calendar export and push, and `tests/` for offline regression contracts.
+
+## 8. Deployment and update
+
+### Surface dependencies
+
+```bash
+sudo apt update
+sudo apt install -y python3 python3-pip curl ca-certificates chromium
+python3 -m pip install --user playwright
+```
+
+`surface/local_events_runtime/browser.py` uses an installed Chromium-compatible browser. Set `INFOSCREEN_CHROMIUM_PATH` only when auto-detection does not find the correct executable.
+
+### Install Surface services and timers
+
+```bash
+cd ~/infoscreen
+bash deploy/scripts/install-user-systemd.sh
+```
+
+This is the supported Surface installation entrypoint. It creates `surface/.env/`, installs the committed user units, starts the HTTP service, enables timers, and triggers initial producer runs.
+
+Open locally:
+
+```text
+http://127.0.0.1:8765/
+```
+
+The server binds `0.0.0.0:8765`; network exposure should be controlled by the host or local network.
+
+### Update an existing deployment
+
+```bash
+cd ~/infoscreen
+git pull --ff-only
+bash deploy/scripts/install-user-systemd.sh
+```
+
+Rerun the installer after unit-file changes because active user units are copied to `~/.config/systemd/user/`.
+
+### Configure Mac Calendar sync
+
+Run on the Mac:
 
 ```bash
 cd ~/infoscreen
 bash mac/scripts/setup-schedule-sync.sh \
   --host <surface-ip-or-hostname> \
-  --user rody \
+  --user <surface-ssh-user> \
   --remote-path '~/infoscreen/surface/.env/schedule.json' \
   --interval 120
 ```
 
-This writes the local-only `mac/local.env` and installs `~/Library/LaunchAgents/com.renchili.infoscreen.schedule-sync.plist`. Trigger one sync immediately with:
+The setup script writes machine-local configuration to `mac/local.env` and installs:
+
+```text
+~/Library/LaunchAgents/com.renchili.infoscreen.schedule-sync.plist
+```
+
+Trigger immediately:
 
 ```bash
 launchctl kickstart -k gui/$(id -u)/com.renchili.infoscreen.schedule-sync
 ```
 
-The remote target must remain `~/infoscreen/surface/.env/schedule.json`; `~/infoscreen/schedule.json` is not a valid runtime path.
+The Surface does not generate Calendar data.
 
-When `SCHEDULE` is stale or missing, check the Mac LaunchAgent, `mac/local.env`, and `~/Library/Logs/infoscreen-sync/`. When `WEATHER` or `MARKET` is stale, check `infoscreen-live-data.timer` and `.service` on the Surface. When `NEWS` is stale, check `infoscreen-event-stream.timer` and `.service`. If a file was just written but `AGE` is still large, compare the browser, Surface, and for schedule the Mac system clocks.
+## 9. Operation and troubleshooting
 
-## Refresh commands
+### Check the whole deployment
 
 ```bash
 cd ~/infoscreen
-python3 surface/fetch_live_data.py
-python3 surface/fetch_event_stream.py
+bash scripts/infoscreen_status.sh
+```
+
+The status script reports services, timers, logs, runtime-file ages, HTTP checks, and runtime previews.
+
+### Common service controls
+
+```bash
+systemctl --user restart infoscreen-http.service
+systemctl --user start infoscreen-live-data.service
+systemctl --user start infoscreen-event-stream.service
+systemctl --user start infoscreen-local-events.service
+```
+
+### Page does not open
+
+```bash
+systemctl --user status infoscreen-http.service --no-pager -l
+journalctl --user -u infoscreen-http.service -n 200 --no-pager
+curl -v http://127.0.0.1:8765/
+```
+
+### Market or Weather is stale or missing
+
+Both are written by the same producer:
+
+```bash
+systemctl --user status infoscreen-live-data.timer infoscreen-live-data.service --no-pager -l
+journalctl --user -u infoscreen-live-data.service -n 200 --no-pager
+systemctl --user start infoscreen-live-data.service
+python3 -m json.tool surface/.env/market.json | head -n 80
+python3 -m json.tool surface/.env/weather.json | head -n 80
+```
+
+`provider: stale-cache` means all live providers failed for that symbol and the previous usable item was retained. `session: ERR` with `price: N/A` means no live provider and no usable previous value succeeded.
+
+### News is stale or empty
+
+```bash
+systemctl --user status infoscreen-event-stream.timer infoscreen-event-stream.service --no-pager -l
+journalctl --user -u infoscreen-event-stream.service -n 200 --no-pager
+systemctl --user start infoscreen-event-stream.service
+python3 -m json.tool surface/.env/event_stream.json | less
+```
+
+Inspect the runtime `errors` array for feed or translation failures.
+
+### Local Events is empty, partial, stale, or contains a bad record
+
+```bash
+systemctl --user status infoscreen-local-events.timer infoscreen-local-events.service --no-pager -l
+journalctl --user -u infoscreen-local-events.service -n 300 --no-pager
+python3 -m json.tool surface/.env/local_event_search_results.json | less
+python3 -m json.tool surface/.env/local_event_search_results.partial.json | less
+```
+
+Inspect `debug_by_source` for the affected organisation before changing extraction logic. Determine whether the failure is page access, pagination/load-more, structured-data extraction, rendered-card extraction, detail-page enrichment, date parsing, event-intent validation, or the total crawl budget.
+
+Data-quality fixes belong in the collector/extractor, not in frontend title hiding.
+
+When Playwright or Chromium is missing, logs contain `missing_playwright_python_package` or `missing_system_chromium`.
+
+### Schedule is stale or missing
+
+The producer runs on the Mac. Check the Mac LaunchAgent, `mac/local.env`, SSH reachability, and:
+
+```bash
+launchctl print gui/$(id -u)/com.renchili.infoscreen.schedule-sync
+tail -n 100 ~/Library/Logs/infoscreen-sync/launchd.out.log
+tail -n 100 ~/Library/Logs/infoscreen-sync/launchd.err.log
+```
+
+On the Surface:
+
+```bash
+ls -l surface/.env/schedule.json
+curl -fsSI http://127.0.0.1:8765/schedule.json
+```
+
+The Calendar board reads the file at page load, so reload the page after confirming the file changed.
+
+### Photos are empty
+
+```bash
+find surface/.env/photos -maxdepth 1 -type f -print
 python3 surface/build_photos_json.py
-python3 surface/search_local_events.py "Punggol Singapore"
+python3 -m json.tool surface/.env/photos.json | less
 ```
 
-## Test model
+### Sync `AGE` is unexpectedly large
 
-The test suite is a local closed-loop pytest suite. It uses committed fixture JSON and an isolated runtime directory, so tests do not require external network access and do not write into the real `surface/.env/`.
+The Sync ticker compares the browser clock with HTTP `Last-Modified`. Check the producer, runtime file modification time, HTTP header, and device clocks. For Schedule also check the Mac clock. `ERR` means the browser `HEAD` request failed and does not by itself prove the producer failed.
 
-Test groups:
+## 10. Development and validation
 
-```text
-tests/test_backend_api.py          backend helpers, OpenAPI coverage, and Pydantic model contracts
-tests/test_frontend_content.py     dashboard HTML, mount points, asset paths, and frontend content contracts
-tests/test_style_contract.py       CSS/layout contracts for local events, market controls, and photo wall structure
-tests/test_runtime_data_contract.py fixture JSON shape and renderability contracts
-tests/test_http_closed_loop.py     in-process HTTP server checks using fixture runtime data
-tests/test_scripts_contract.py     shell syntax and workflow configuration checks
-tests/fixtures/runtime_data/       closed-loop weather, market, event stream, local events, photo, and schedule data
+Install test dependencies:
+
+```bash
+python3 -m pip install --user pytest pydantic
 ```
 
-These tests are product and contract tests. They do not replace manual/browser validation, and they should remain focused on stable product behavior, API contracts, UI contracts, fixture data contracts, and script contracts.
-
-## Test and acceptance commands
-
-The local closed-loop runner seeds fixture data and writes logs, JUnit XML, generated OpenAPI, and summary output under `/tmp/infoscreen-acceptance` by default.
+Run the repository suite:
 
 ```bash
 cd ~/infoscreen
-python3 -m pip install pytest pydantic
-bash scripts/run_full_ci_tests.sh
-```
-
-The compatibility entrypoint delegates to the same runner:
-
-```bash
-bash scripts/run_acceptance.sh
-```
-
-When GitHub Actions is enabled, `.github/workflows/acceptance.yml` runs the same local closed-loop test script. It does not upload test artifacts; the job log remains the CI evidence surface.
-
-Project-direction decisions belong in `docs/questions.md`. If repository policy, test scope, CI behavior, runtime boundaries, or active source paths change, update `docs/questions.md` in the same change set.
-
-## Verify
-
-```bash
-cd ~/infoscreen
-python3 -m py_compile surface/*.py surface/jobs/*.py surface/local_events_runtime/*.py
 python3 -m pytest
 bash scripts/run_full_ci_tests.sh
-curl -s http://127.0.0.1:8765/ | grep -E "assets/js/dashboard.js|assets/js/local_event_card.js"
-curl -s http://127.0.0.1:8765/assets/js/local_event_card.js | grep -n "local-event-source-top"
-curl -s http://127.0.0.1:8765/assets/css/local_events.css | grep -n "local-event-desc"
-curl -s http://127.0.0.1:8765/assets/js/market_custom.js | grep -n "marketConfigButton"
-curl -s http://127.0.0.1:8765/photos.json | grep -n "items"
-find . -maxdepth 1 -type f \( ! -name "README.md" ! -name "AGENTS.md" ! -name "AGENT.md" ! -name "metadata.json" ! -name "pyproject.toml" ! -name ".gitignore" \) -print
-find surface/web -maxdepth 1 -type f \( -name "*.js" -o -name "*.css" \) -print
-find surface -maxdepth 3 -type f -name "*.py" | sort
+```
+
+The full runner uses fixture runtime data and writes logs, JUnit XML, generated OpenAPI, and a summary under:
+
+```text
+${ACCEPTANCE_ARTIFACT_DIR:-/tmp/infoscreen-acceptance}
+```
+
+It does not write fixture data into the real `surface/.env/`.
+
+Manual producer commands:
+
+```bash
+python3 surface/fetch_live_data.py
+python3 surface/fetch_event_stream.py
+python3 surface/search_local_events.py "Punggol Singapore"
+python3 surface/build_photos_json.py
+```
+
+Before changing code or documentation, read `AGENTS.md`, `AGENT.md`, and `skills/SKILL.md`, then open the relevant source, tests, deployment files, and one of `docs/design.md`, `docs/api-spec.md`, or `docs/questions.md` according to the task.
+
+## 11. Documentation
+
+```text
+README.md          newcomer onboarding, capabilities, data sources, interaction, refresh, deployment, and troubleshooting
+docs/design.md     architecture, source ownership, data flow, and source-specific implementation
+docs/api-spec.md   HTTP methods, callers, payloads, side effects, and runtime mapping
+docs/questions.md  requirement clarifications with implementation and acceptance evidence
+AGENT.md            repository-specific contribution rules
+AGENTS.md           required agent read order
 ```

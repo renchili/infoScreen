@@ -140,6 +140,8 @@
   -webkit-line-clamp: 2 !important;
   -webkit-box-orient: vertical !important;
   max-height: none !important;
+  overflow-wrap: anywhere !important;
+  word-break: break-word !important;
 }
 
 .local-event-kv {
@@ -147,7 +149,7 @@
   grid-template-columns: 52px minmax(0, 1fr) !important;
   gap: 6px !important;
   align-items: start !important;
-  overflow: visible !important;
+  overflow: hidden !important;
 }
 
 .local-event-kv span {
@@ -169,18 +171,26 @@
   -webkit-line-clamp: 2 !important;
   -webkit-box-orient: vertical !important;
   max-height: none !important;
+  overflow-wrap: anywhere !important;
+  word-break: break-word !important;
 }
 
 .local-event-desc {
-  flex: 1 1 auto !important;
+  flex: 1 1 0 !important;
   min-height: 0 !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
   overflow: hidden !important;
+  overflow-wrap: anywhere !important;
+  word-break: break-word !important;
+  white-space: normal !important;
+  contain: paint !important;
   color: rgba(224, 247, 255, 0.76) !important;
   font-size: 11px !important;
   line-height: 1.22 !important;
   font-weight: 760 !important;
   display: block !important;
-  max-height: none !important;
 }
 
 .local-event-actions {

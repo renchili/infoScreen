@@ -1,163 +1,267 @@
-# InfoScreen questions
+# InfoScreen requirement clarifications
 
-这个文件用问答方式记录会影响项目推进的长期选择。记录的是“决定了什么”和“为什么这么决定”，不是执行流水、临时问题清单、清理记录或归因记录。
+This document records requirement areas that are easy to misread and the evidence needed to accept their implementation. It is organised by product requirement rather than by conversation history or implementation attempt.
 
-## 什么内容应该写进这里？
+## Visual language
 
-当实现走不通、测试暴露缺口、验收标准发生变化，并且这些反馈改变了项目方向时，应该把最终形成的项目决策写进来。
+### Easy-to-make interpretation
 
-写法应该是：先提出项目问题，再回答当前决定和原因。一次性的实现问题直接在代码、测试或配置里修掉，不在这里保留过程。
+A TTY-inspired display can be interpreted as requiring a dot-matrix wallpaper, pixel grid, noisy CRT texture, or other decorative terminal effect.
 
-## 根目录为什么要限制文件？
+### Why it fails
 
-决定：根目录只放仓库控制文件、文档、项目元数据、测试配置、CI 配置和部署/操作入口。
+Those effects compete with the information, reduce readability on an always-on display, and confuse visual decoration with the actual requirement for a stable information hierarchy.
 
-原因：InfoScreen 是本地长期运行的 kiosk 项目，源码、运行时数据、个人照片、生成物、缓存文件如果混在根目录，会让后续维护和验收很难判断哪些是项目代码、哪些是本机状态。
+### Correct requirement interpretation
 
-## 前端入口为什么只能是 `surface/web/index.html` 和 `surface/web/assets/`？
+The TTY character comes from monospaced typography, aligned values, concise labels, restrained status colours, compact spacing, clear panel boundaries, and a visually quiet background.
 
-决定：dashboard 的 HTML 入口是 `surface/web/index.html`，CSS 和 JavaScript 放在 `surface/web/assets/` 下。
+### Required implementation
 
-原因：这样可以避免根目录或 `surface/web/` 下出现重复、过期、不可判断是否仍然生效的前端文件。前端入口越少，后续修改和验收越稳定。
+Keep the dashboard background restrained. Use typography, hierarchy, alignment, borders, and state presentation to create the terminal style. Do not add a dot-matrix wallpaper or decorative CRT noise as a substitute for information design.
 
-## 运行时数据为什么放在 `surface/.env/`？
+### Acceptance evidence
 
-决定：天气、日程、市场、本地活动、照片索引、日志等运行时数据放在 `surface/.env/`，用户照片输入放在 `surface/.env/photos/`。
+A browser acceptance check must show readable content at the target display size, stable panel boundaries, no decorative pattern obscuring text, and consistent TTY-inspired information style across the page.
 
-原因：这些内容属于本机状态或个人数据，不是项目源码。源码仓库应该只保存程序、文档、测试 fixture 和部署入口。
+## Calendar authority and unattended sync
 
-## 页面区域为什么必须有唯一 renderer owner？
+### Easy-to-make interpretation
 
-决定：每个可见 DOM mount 只能有一个数据 renderer。producer job 可以同时产出多个 runtime 文件，也可以被多个 UI 读取；但多个浏览器脚本不能异步重写同一个 DOM。
+The Surface can be treated as a second Calendar client, a normal `python3` executable can be assumed to support EventKit, and a successful file copy to any convenient path can be treated as a successful Calendar update.
 
-当前 ownership：
+### Why it fails
 
-- `dashboard.js`：时钟、页面 uptime、Market card、Market tape、Weather、模拟 metrics。
-- `calendar_board.js`：Calendar board。
-- `local_event_card.js`：Local event card、sync ticker、EN/FR/ZH news ticker、photo wall。
-- `market_custom.js`：Market 配置控件，只调用 API 和 `window.loadMarket()`，不渲染报价。
+macOS Calendar already owns the accounts, permissions, timezone context, and authoritative event view. A Python runtime without `import EventKit` cannot export Calendar data. launchd does not inherit an interactive shell environment. The dashboard only reads `~/infoscreen/surface/.env/schedule.json`, so copying elsewhere does not update the page.
 
-原因：重复 renderer 会出现正确内容一闪而过，随后被另一套字段、DOM 或 CSS class 覆盖。Market、news 和 sync ticker 都必须通过测试锁定唯一 owner。
+### Correct requirement interpretation
 
-## 页面上的数据来源必须怎么记录？
+Calendar data is authoritative on the Mac and follows macOS Calendar/EventKit -> `mac/export.py` -> local `mac/schedule.json` -> `mac/sync_schedule.sh` -> SSH/SCP -> `~/infoscreen/surface/.env/schedule.json` -> `/schedule.json` -> `calendar_board.js`.
 
-决定：README 和 `docs/design.md` 必须为每个页面区域同时记录 DOM/前端 owner、scheduler/trigger、producer、runtime JSON 或 API、外部/本地数据源以及失败表现。没有后台 job 的 UI 也必须明确写成浏览器本地、模拟值或静态文案。
+### Required implementation
 
-原因：只有文件名或状态名不足以运维。需要能从页面问题直接追溯到“哪个任务运行、写了什么、从哪里取数、哪个 UI 消费”。同时也要避免把模拟值和静态标签误认为真实监控。
+The setup script must probe candidate Python executables with `import EventKit`, store the selected executable and Surface target in uncommitted `mac/local.env`, install a LaunchAgent with explicit paths, create the remote runtime directory, and copy to the canonical runtime destination. The Mac LaunchAgent normally runs every 120 seconds; the Sync ticker observes freshness every 60 seconds; the Calendar board rotates already-loaded groups every seven seconds.
 
-## 哪些页面状态不是真实系统监控？
+### Acceptance evidence
 
-决定：当前 CPU/MEM/DSK/NET 由 `dashboard.js:updateDemoMetrics()` 使用 `Math.random()` 生成；POWER、DISPLAY、NETWORK、`AC_ONLY`、`ONLINE`、`LAN_OK` 是静态 HTML；`UPTIME` 是浏览器页面会话时长。这些都不是 Surface OS 指标或健康检查。
+Evidence must show that the configured Python imports EventKit, the LaunchAgent runs without an interactive shell, `schedule.json` changes at the canonical Surface path, `/schedule.json` serves the new modification time and payload, and a page reload displays the updated Calendar data.
 
-原因：在没有 producer、runtime schema、HTTP endpoint 和真实 renderer 之前，不得把这些值描述成系统监控。未来实现真实监控时必须同时替换 producer、数据契约、UI 和文档。
+## Market resilience and runtime symbol authority
 
-## 左侧同步状态分别对应什么任务、产物和界面？
+### Easy-to-make interpretation
 
-决定：左侧 sync ticker 只监控四个 runtime JSON 的文件新鲜度。每个状态必须能追溯到唯一 producer、产物和 UI consumer。
+Market data can be implemented with one unauthenticated quote endpoint, provider failure can be treated as an empty Market panel, and browser local storage can be treated as the authoritative symbol list.
 
-| 状态 | 触发任务 | Producer | Runtime 产物 | HTTP 路径 | UI consumer |
-| --- | --- | --- | --- | --- | --- |
-| `SCHEDULE` | Mac LaunchAgent `com.renchili.infoscreen.schedule-sync`，默认每 120 秒 | `mac/export.py` + `mac/sync_schedule.sh` | `surface/.env/schedule.json` | `/schedule.json` | `calendar_board.js` 的 calendar 面板和 `local_event_card.js` 的 sync ticker |
-| `WEATHER` | Surface user timer `infoscreen-live-data.timer`，每 5 分钟 | `surface/fetch_live_data.py` | `surface/.env/weather.json` | `/weather.json` | `dashboard.js` 的 weather 面板和 sync ticker |
-| `MARKET` | Surface user timer `infoscreen-live-data.timer`，每 5 分钟 | `surface/fetch_live_data.py` | `surface/.env/market.json` | `/market.json` | `dashboard.js` 的 market card、market tape 和 sync ticker |
-| `NEWS` | Surface user timer `infoscreen-event-stream.timer`，每 5 分钟 | `surface/fetch_event_stream.py` | `surface/.env/event_stream.json` | `/event_stream.json` | `local_event_card.js` 的 news ticker 和 sync ticker |
+### Why it fails
 
-原因：状态名称本身不足以定位故障。必须从状态直接找到运行任务、写出的文件以及受影响的 UI，才能避免在错误机器或错误进程上排查。
+Public quote sources can reject requests, rate-limit, return HTML, omit fields, or behave differently for stocks and ETFs. A single failure must not erase values that another provider or a previous usable runtime row can supply. Browser state is not a reliable shared runtime configuration source.
 
-## `OK`、`STALE`、`MISS`、`ERR` 和 `AGE` 表示什么？
+### Correct requirement interpretation
 
-决定：sync ticker 对对应 HTTP 路径执行 `HEAD`，读取服务器返回的 `Last-Modified`，用浏览器当前时间计算 `AGE`。它监控的是 runtime 文件修改时间，不是日历事件时间，也不是 JSON 内部的 `updated_at`。
+Each configured symbol uses an independent fallback chain: Nasdaq stock, Nasdaq ETF, CNBC, Stooq daily CSV, Yahoo chart data, then the previous usable row from `market.json`. Active symbols are authoritative in `surface/.env/market_config.json`, while committed defaults remain in `surface/conf/market_config.default.json`.
 
-阈值固定为：`SCHEDULE` 600 秒、`WEATHER` 900 秒、`MARKET` 600 秒、`NEWS` 600 秒。`AGE` 在阈值内为 `OK`；文件存在但超过阈值为 `STALE`；文件不存在或没有 `Last-Modified` 为 `MISS`；请求失败为 `ERR`。
+### Required implementation
 
-原因：文件新鲜度能统一覆盖 Mac 推送任务和 Surface 本地 timer，同时不要求每种 JSON 使用相同 schema。
+Normalize, deduplicate, and limit active symbols to 12. Preserve a previous usable quote as `session: STALE` and `provider: stale-cache` when live providers fail. Emit `session: ERR`, `provider: none`, and `price: N/A` when no live or cached value exists. Keep percentage movement separate from provider and session labels.
 
-## 同步状态异常时怎么处理？
+### Acceptance evidence
 
-决定：先按状态映射找到 producer，不要先重启整个项目。
+Tests and runtime inspection must prove provider fallback order, per-symbol failure isolation, stale-cache marking, visible ERR output when no value exists, persistence of the runtime symbol list, and consistent values and movement direction in the Market card and tape.
 
-- `SCHEDULE STALE/MISS`：在 Mac 检查 LaunchAgent、`mac/local.env` 中的 Surface 地址和 `~/Library/Logs/infoscreen-sync/`；该任务不在 Surface 上运行。
-- `WEATHER STALE/MISS` 或 `MARKET STALE/MISS`：在 Surface 检查 `infoscreen-live-data.timer`、`infoscreen-live-data.service` 和 `surface/fetch_live_data.py`。二者由同一个 job 生成，可能一起异常，也可能只有某个 provider 失败。
-- `NEWS STALE/MISS`：在 Surface 检查 `infoscreen-event-stream.timer`、`infoscreen-event-stream.service` 和 `surface/fetch_event_stream.py`。
-- 任意状态为 `ERR`：先检查 `infoscreen-http.service` 和浏览器到 `/schedule.json`、`/weather.json`、`/market.json`、`/event_stream.json` 的访问，因为 `ERR` 表示监控请求失败，不等同于 producer 一定失败。
-- 文件刚更新但 `AGE` 仍明显异常：检查浏览器设备与 Surface 的系统时间；`SCHEDULE` 还要检查 Mac 系统时间。
+## Runtime freshness and refresh layers
 
-原因：`STALE/MISS` 通常属于 producer 或产物路径问题，`ERR` 首先属于 HTTP/网络监控链路问题，两类故障不能混在一起处理。
+### Easy-to-make interpretation
 
-## Market 为什么只能有一个渲染 owner？
+A single display-online indicator or one generic refresh interval can be treated as proof that all page data is current.
 
-决定：`surface/web/assets/js/dashboard.js` 是 `marketList` 和 `globalMarketTapeTrack` 的唯一数据渲染 owner；`market_custom.js` 只负责配置和触发 `window.loadMarket()`；`local_event_card.js` 不得 GET、解析或渲染 `market.json` 内容，也不得写入 Market DOM。它只能为 sync ticker 对 `/market.json` 执行 `HEAD` 以检查 freshness。
+### Why it fails
 
-原因：多个异步脚本写同一个 DOM 会出现先显示正确结果、随后被另一套旧字段映射和样式覆盖的闪烁问题，无法保证最终 UI 一致。
+The HTTP server can remain online while individual runtime files are old, missing, or unreachable. Producer refresh, browser data reload, and visual rotation are independent behaviours and can show different timing states.
 
-## 本地活动和照片为什么不属于四个 sync stat？
+### Correct requirement interpretation
 
-决定：本地活动由 `infoscreen-local-events.timer` 每 6 小时更新，也可以由 UI POST 搜索触发；照片由用户修改本地文件后手动运行 `surface/build_photos_json.py`。当前 sync ticker 只监控 schedule、weather、market、news，不监控 local events 和 photos。
+The Sync ticker observes `/schedule.json`, `/weather.json`, `/market.json`, and `/event_stream.json` separately through HTTP `Last-Modified`. It reports `OK`, `STALE`, `MISS`, or `ERR` with `LATEST` and `AGE`. Producer jobs write files, browser code reloads them on its own cadence, and rotation changes only the already-loaded visible item.
 
-原因：四个 sync stat 是现有 freshness contract，不代表页面全部 producer。完整页面映射必须在 README 和 design 中列出所有区域，避免把“未出现在 ticker”误解成“没有任务或没有数据来源”。
+### Required implementation
 
-## 为什么测试使用 pytest 和 fixture 做本地闭环？
+Keep per-file thresholds and HEAD checks. Do not treat visual rotation as data refresh. Document and preserve separate schedules for producer jobs, browser reloads, and display rotation. Keep clock-skew diagnosis distinct from provider failure diagnosis.
 
-决定：测试使用 pytest，覆盖 backend/API、frontend content、CSS layout contract、runtime fixture、HTTP closed-loop、script/workflow contract。
+### Acceptance evidence
 
-原因：这个项目需要能在本地、容器、CI runner、agent 环境里重复验证。使用 committed fixture 可以避免测试依赖外网、真实账户或真实 `surface/.env/` 数据。
+Acceptance must demonstrate each status state, correct age calculation from the served file, independent failure of one runtime file, and the expected difference between a newly written file and a browser panel that has not yet reloaded it.
 
-## 仓库卫生为什么不做成一堆产品单元测试？
+## Synchronized multilingual News
 
-决定：仓库卫生主要由目录规则、`.gitignore`、`.githooks/pre-commit` 和文档里的验证命令约束；产品测试聚焦产品行为和稳定 contract。
+### Easy-to-make interpretation
 
-原因：产品测试应该证明 dashboard、API、数据和脚本行为正确，不应该变成宽泛的文件树扫描器。源布局规则需要存在，但它属于仓库治理，不是业务功能。
+Three independent news feeds that happen to scroll at the same speed can be presented as synchronized English, French, and Chinese content.
 
-## GitHub Actions 关闭时怎么验收？
+### Why it fails
 
-决定：GitHub Actions 可以由操作者关闭；关闭时缺少 workflow run 不算项目代码失败。
+The same screen position would refer to unrelated stories, so the rows would be visually aligned but semantically wrong. Substituting a different story when one language is unavailable breaks the product requirement.
 
-原因：Hosted CI 是否运行是仓库设置问题，不等同于源码是否正确。验收报告需要区分代码问题、文档问题、测试覆盖缺口、运行证据缺口和 CI 未运行。
+### Correct requirement interpretation
 
-## 为什么默认不上传测试 artifact？
+The English, French, and Chinese rows synchronously display corresponding versions of the same content, advance in the same direction and at the same speed, and keep the same position aligned across all three languages. English and Chinese prioritise Singapore news. Translation fills a missing language instead of substituting an unrelated story.
 
-决定：默认不上传 GitHub Actions artifact，除非明确要求。CI/job log 和本地 runner 输出作为主要证据面。
+### Required implementation
 
-原因：当前项目更需要 runner、容器和 agent 能直接读到日志，而不是默认把测试结果打包上传。需要可下载产物时再单独开启。
+Select one real base item, generate a complete EN/FR/ZH representation, validate each language, and skip the whole triple when any language cannot be produced after retries. Keep ticker animation separate from runtime freshness.
 
-## 为什么本地活动抓取不能只看最终活动列表？
+### Acceptance evidence
 
-决定：本地活动抓取要按机构记录覆盖率、卡片数量、接受数量和丢弃原因；调试时优先看每个机构的 `debug_by_source`，不是只看最终 `results`。
+Tests must verify equal row lengths, matching base-item identity at each index, valid text for every language, whole-triple rejection on translation failure, and synchronized browser movement. Runtime evidence must separately show a fresh `event_stream.json`.
 
-原因：很多官方活动页是动态渲染、分页、load more 或详情页藏日期。只看最终列表无法区分“页面没打开”、“列表卡没抓到”、“卡片被日期规则过滤”、“被总量上限挤掉”这些不同问题。
+## Local Photo processing
 
-## 为什么部分活动源要走详情页增强而不是只抽列表卡片？
+### Easy-to-make interpretation
 
-决定：对列表卡片缺少日期的官方源，优先启用带详情页读取能力的 adapter，并提高默认抓取预算、分页数和导航超时时间。
+The browser can enumerate personal files directly, HEIC files can be linked as-is, and all formats can be flattened to one static image type.
 
-原因：多个机构的列表页能提供活动链接，但完整日期只存在于详情页。详情页增强可以保留官方来源，同时避免把缺少有效日期的列表占位内容直接输出。
+### Why it fails
 
-## 什么情况下可以跳过详情页读取？
+Browsers do not reliably display HEIC/HEIF, direct filesystem enumeration exposes local paths, and flattening GIF files destroys animation. Duplicate native and HEIC versions can also create repeated photos.
 
-决定：只有列表卡片已经包含完整日期时才跳过详情页读取；只有年份、月份或活动标题中的年份不算完整日期。
+### Correct requirement interpretation
 
-原因：很多官方列表卡片会出现“2026”或“May 2026”，但没有具体活动日。仅凭年份判断会让详情页增强提前停止，并把可用活动误判成没有日期。
+Original files remain under `surface/.env/photos/`. The builder creates browser-safe outputs under `surface/.env/public_photos/` and writes `photos.json`. JPEG, PNG, and WebP are normalized to web JPEG; GIF is copied without flattening; HEIC and HEIF are converted with `ffmpeg` when available; a native image with the same stem takes priority.
 
-## 为什么同一机构的 adapter 可以根据实测结果调整？
+### Required implementation
 
-决定：adapter 以真实覆盖率和结果质量为准，不按机构类型永久固定。一个 source 在通用详情页增强下降低覆盖率时，可以恢复使用原来的列表卡片提取方式。
+Keep personal originals outside the served tree, generate cache-busted browser URLs, avoid exposing arbitrary filesystem paths, preserve GIF animation, and report or skip unsupported conversions without inventing output.
 
-原因：不同官方网站即使都属于博物馆或公共机构，前端结构和数据来源也不相同。稳定抓到真实活动比统一使用某一种 adapter 更重要。
+### Acceptance evidence
 
-## 本地活动在屏幕上按什么顺序展示？
+Fixture tests must cover native normalization, GIF copying, HEIC/HEIF conversion or explicit skip behaviour, duplicate-stem precedence, manifest generation, cache invalidation, and browser retrieval only through `/photos.json` and `/public_photos/*`.
 
-决定：先按照 `event_sources.json` 中的机构顺序分组展示，同一机构的活动保持 extractor 返回的结果顺序。前端同时读取结果里的 `source_order` 和 `result_order`，不依赖浏览器排序稳定性。
+## Local Events source-specific collection
 
-原因：机构是用户浏览本地活动时最稳定的上下文。把同一机构的活动连续展示，比按所有机构混合日期排序更容易理解，也能保证后端、API 和前端看到相同顺序。
+### Easy-to-make interpretation
 
-## 本地活动的数据质量规则应该放在哪里？
+All official sites can be handled by one selector, a recursive crawler, or a generic search-engine scraper, and a stored fixture can prove that live source coverage is currently correct.
 
-决定：无效链接、图片资源、错误标题、错误日期和错误场地等数据质量规则只放在采集与提取层。前端只负责按后端结果展示和排序，不负责隐藏或修正脏数据。
+### Why it fails
 
-原因：同一份活动数据还会被 API、调试工具和其他客户端使用。只有在数据产生时清洗，才能保证所有消费方看到一致结果，也能让 `debug_by_source` 正确记录丢弃原因。
+Official sites differ in structured JSON, JavaScript rendering, listing completeness, detail-page requirements, non-event records, date and venue layouts, pagination, anti-bot behaviour, and timing. Unrestricted crawling increases duplicates, unrelated content, runtime, and blocking risk. Offline fixtures do not prove current reachability or page structure.
 
-## 爬虫抓不到或抓错信息时首先应该检查什么？
+### Correct requirement interpretation
 
-决定：首先确认采集器读取的是正确的页面、正确的列表项和正确的详情记录。必须保存并检查实际请求 URL、最终跳转 URL、原始响应、渲染后的页面、分页状态以及列表项到详情页的对应关系。只有确认输入内容正确之后，才进入标题、日期、地点等字段解析。
+`surface/conf/event_sources.json` defines curated official entrypoints, allowed domains, default venues, source order, and adapter choice. The shared collector handles common stages while targeted source behaviour remains where real page evidence requires it. Live-source verification and offline regression have different roles.
 
-原因：如果采集器打开了错误页面、抓到旧内容、没有完成渲染、漏了分页，或把某个列表项关联到错误详情页，后续任何正则、结构化数据读取、字段合并或兜底都会继续制造错误。爬虫问题应先在采集入口和页面证据上定位，不能用解析规则掩盖读取错误。
+### Required implementation
+
+Use structured XHR or embedded state before rendered DOM fallback, selectively enrich eligible detail pages, avoid recursive site crawling, preserve official URLs and configured source order, and retain source-specific rules only when supported by current page evidence and regression cases.
+
+### Acceptance evidence
+
+For an affected organisation, evidence must include the real collector run, `debug_by_source`, captured page or card evidence when enabled, final runtime JSON, visible card output, and an offline regression case for the observed structure. A fixture or successful pytest run alone is not live-source verification.
+
+## Local Events positive event intent
+
+### Easy-to-make interpretation
+
+A title plus `startDate` and `endDate`, or the absence of a small blacklist of words, can be treated as proof that a structured record is an event.
+
+### Why it fails
+
+A real SAFRA result displayed `Carpark` with a 2024-2029 range and `Carpark Rates`. Facility, membership, operating-information, and promotion records can be event-shaped without being activities a user can attend.
+
+### Correct requirement interpretation
+
+A structured record requires positive event intent through an explicit event, programme, or activity type, or a verified relationship to an official event-oriented listing or detail route. A blacklist is only supplementary and cannot be the primary semantic rule.
+
+### Required implementation
+
+Keep positive-intent validation in the collector before output. Preserve distinctions between explicitly typed events, untyped records inside event routes, and dated non-event records. Data-quality rejection belongs in the backend rather than frontend title hiding.
+
+### Acceptance evidence
+
+Regression tests must preserve the SAFRA facility record, another dated membership record, an untyped event-route record, and an explicitly typed Event outside that route. Live validation must confirm the rule against the current official source before claiming current coverage.
+
+## Local Events evidence and partial-result protection
+
+### Easy-to-make interpretation
+
+A total result count is enough to diagnose coverage, and every completed crawl should replace the current primary file even when several sources failed.
+
+### Why it fails
+
+Failure can occur during page access, structured extraction, rendered-card discovery, pagination, detail enrichment, date parsing, event-intent validation, normalization, or the total crawl budget. Replacing a larger complete result with a smaller partial run causes transient source failures to remove valid events from the display.
+
+### Correct requirement interpretation
+
+The runtime includes `debug_by_source` and optional evidence under `surface/.env/local_event_debug_cards/`. When a new run is partial and contains fewer results than the previous complete run, the primary file remains the previous complete result and the incomplete run is written to `surface/.env/local_event_search_results.partial.json` with `write_policy: kept_previous_complete_result`.
+
+### Required implementation
+
+Record per-source stage and rejection evidence, calculate whether source coverage is partial, preserve the previous complete primary file when the protection condition applies, and keep the partial payload for diagnosis.
+
+### Acceptance evidence
+
+Tests must cover complete-to-partial state transitions, result-count comparison, preservation of the primary file, creation of the partial file, `write_policy: kept_previous_complete_result`, and retained `debug_by_source`. A real failed-source run must show the same behaviour before deployment acceptance.
+
+## Local Events package boundary
+
+### Easy-to-make interpretation
+
+The repository rule can describe `surface/jobs/local_events/` as the required package while the actual collector remains under `surface/local_events_runtime/`, leaving future changes unsure which path is canonical.
+
+### Why it fails
+
+A documented target that does not match imports, tests, wrappers, and deployment entrypoints creates a permanent architecture contradiction and encourages duplicate implementations or unsafe moves.
+
+### Correct requirement interpretation
+
+`surface/jobs/local_event_search.py` is the one-shot orchestration entrypoint. `surface/local_events_runtime/` is the canonical source-specific collection and extraction library. `surface/search_local_events.py` remains a compatibility command wrapper while systemd and HTTP callers use that path.
+
+### Required implementation
+
+Keep new collector modules and source-specific extraction logic under `surface/local_events_runtime/`, keep job orchestration under `surface/jobs/local_event_search.py`, and update repository rules, README, design, imports, and tests together if a future explicit migration changes this boundary.
+
+### Acceptance evidence
+
+Static checks must show one canonical collector package, no duplicate `surface/jobs/local_events/` implementation, imports resolving through the documented paths, systemd and HTTP callers retaining their command contract, and tests passing after any boundary change.
+
+## Logging and command output
+
+### Easy-to-make interpretation
+
+Every line written to stdout by a short-lived producer can be classified as ad-hoc service logging, or the generic structured-logging contract can be applied without considering InfoScreen's systemd user-service deployment and command-output interfaces.
+
+### Why it fails
+
+InfoScreen has two different outputs: operational status captured by systemd and deliberate command results such as Local Events JSON written for callers. Treating machine-readable result output as logging breaks the CLI/API contract. Introducing a second logging stack without an operational requirement would add configuration and maintenance that the local kiosk does not use.
+
+### Correct requirement interpretation
+
+For this repository, systemd-captured stdout and stderr are the accepted operational output for the standard-library HTTP service and short-lived producer jobs. Concise startup, request, completion, skip, and failure messages are allowed. Deliberate machine-readable stdout remains a command result, not a log record. Structured JSON logs, request IDs, trace IDs, and an additional logging framework are not current product requirements.
+
+### Required implementation
+
+Keep operational output concise and free of credentials, tokens, full request bodies, private file contents, and unnecessary personal-data values. Preserve `SimpleHTTPRequestHandler` request diagnostics, the HTTP startup line, producer status lines, and Local Events command JSON as distinct output contracts. Document this project-specific boundary in `AGENT.md` and update implementation, tests, and design together if the logging model changes.
+
+### Acceptance evidence
+
+Static checks must distinguish operational status from command-result output, preserve Local Events command JSON, and confirm that repository rules explicitly narrow the generic logging contract. Operational acceptance must show useful startup, request, producer completion, skip, and failure records in the systemd journal without sensitive payloads.
+
+## Validation boundaries
+
+### Easy-to-make interpretation
+
+A mocked browser, stored fixture, successful `pytest`, static source review, or reviewer-written report can be presented as proof that current external sources, systemd services, LaunchAgent execution, and the final Surface UI all work.
+
+### Why it fails
+
+Repository tests only prove deterministic behaviour for supplied local inputs. They cannot prove current external reachability, DOM or JSON structure, anti-bot behaviour, provider availability, timing budgets, device clocks, deployment state, or semantic correctness of the final visible result.
+
+### Correct requirement interpretation
+
+Static inspection, offline tests, HTTP/browser fixture checks, CI, live producer runs, service execution, and real-device UI acceptance are separate evidence levels. Missing levels remain explicitly pending. The implementation is only partially verified when the relevant real source or Surface UI has not been checked.
+
+### Required implementation
+
+Tie each claim to the exact branch or commit and to the actual command, test, CI run, log, runtime file, screenshot, or real interaction that supports it. Do not reuse stale evidence or upgrade static evidence to runtime PASS.
+
+### Acceptance evidence
+
+A final acceptance record must state the exact revision, checks run, checks not run, current runtime and browser evidence, source reachability evidence, service and scheduler evidence, remaining gaps, and a verdict that does not exceed the strongest available proof.

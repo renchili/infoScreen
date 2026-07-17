@@ -110,17 +110,20 @@ Do not keep stale compatibility placeholders for removed frontend files.
 
 ## Python model
 
-Python code under `surface/` must be organized by role.
+Python code under `surface/` is organized by role.
 
-Target architecture:
+The current canonical architecture is:
 
 ```text
-surface/app/                 server, routes, runtime helpers, API schemas
-surface/jobs/                refresh jobs that write surface/.env/*.json
-surface/jobs/local_events/   local event search job implementation
-surface/conf/                configuration
-surface/web/                 static frontend
+surface/serve_infoscreen.py          local HTTP server and route handling
+surface/jobs/                        one-shot job orchestration
+surface/jobs/local_event_search.py   Local Events job entrypoint
+surface/local_events_runtime/        canonical Local Events collection and extraction library
+surface/conf/                        committed configuration
+surface/web/                         static frontend
 ```
+
+`surface/local_events_runtime/` is intentional and canonical. Do not create a duplicate `surface/jobs/local_events/` implementation. A future package move requires an explicit migration that updates imports, compatibility wrappers, systemd and HTTP callers, tests, README, design, and repository rules in one change set.
 
 Compatibility wrappers may remain at `surface/*.py` only when current systemd units, scripts, or HTTP subprocess calls depend on those paths.
 
@@ -153,7 +156,7 @@ build_photos_json.py
 search_local_events.py
 ```
 
-Local events are a job. If refactoring local events, place implementation under `surface/jobs/local_events/` and keep `surface/search_local_events.py` only as a compatibility wrapper while existing callers need it.
+Local Events orchestration belongs in `surface/jobs/local_event_search.py`. Source-specific collection, extraction, browser handling, normalization, and evidence logic belong in `surface/local_events_runtime/`. Keep `surface/search_local_events.py` as a compatibility wrapper while existing callers need it.
 
 ## API support
 
@@ -162,6 +165,21 @@ Local events are a job. If refactoring local events, place implementation under 
 They are not dashboard runtime files and not jobs.
 
 If `/openapi.json` and `/docs` are removed, remove these modules and their server routes together.
+
+## Logging and command-output model
+
+The generic logging contract in `skills/SKILL.md` is narrowed for this local, systemd-user-service project.
+
+- systemd captures stdout and stderr for the HTTP service and producer jobs;
+- short-lived producer jobs may emit concise human-readable start, completion, skip, and failure lines to stdout or stderr;
+- `surface/jobs/local_event_search.py` may emit the final JSON payload to stdout because that is a deliberate command result consumed by callers, not a log record;
+- the standard-library HTTP server may use `SimpleHTTPRequestHandler` request diagnostics and a concise startup line;
+- structured JSON logs, request IDs, trace IDs, and an additional logging framework are not current product requirements;
+- output must remain free of credentials, tokens, full request bodies, private file contents, and unnecessary personal-data values;
+- do not describe deliberate command results as ad-hoc logging, and do not replace machine-readable command output with log formatting;
+- a future logging redesign must update implementation, tests, `docs/design.md`, and this rule together.
+
+This repository-specific boundary intentionally accepts concise stdout/stderr operation output. Do not weaken or broaden it implicitly in individual files.
 
 ## Refactor rules
 
