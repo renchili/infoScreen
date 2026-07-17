@@ -81,6 +81,8 @@ def test_science_centre_uses_all_official_whats_on_categories() -> None:
     payload = json.loads((SURFACE / "conf" / "event_sources.json").read_text(encoding="utf-8"))
     science = next(item for item in payload["sources"] if item["id"] == "sciencecentre")
 
+    assert payload["policy"]["listing_card_is_authoritative"] is True
+    assert payload["policy"]["unmatched_structured_records_are_rejected"] is True
     assert {
         "https://www.science.edu.sg/whats-on/workshops-activities",
         "https://www.science.edu.sg/whats-on/exhibitions",
