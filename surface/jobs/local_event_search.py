@@ -21,6 +21,9 @@ os.environ.setdefault("LOCAL_EVENTS_CARD_SCREENSHOTS", "0")
 
 from local_events_runtime import collect_events  # noqa: E402
 from local_events_runtime.output import normalize_payload  # noqa: E402
+from local_events_runtime.source_overrides import apply as apply_source_overrides  # noqa: E402
+
+apply_source_overrides()
 
 SURFACE_DIR = Path(__file__).resolve().parents[1]
 ENV_DIR = SURFACE_DIR / ".env"
