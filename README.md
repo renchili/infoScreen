@@ -268,26 +268,24 @@ The current inventory covers official museum, library, community, attraction, sh
 - source ID and display name;
 - official home page;
 - allowed domains;
-- official listing URLs;
+- official activity-list URLs;
 - default venue;
 - adapter type;
 - configured display order.
 
-The active adapter modes are:
+The adapter names are historical extraction hints. Both `rendered_dom_card` and `nhb` must produce a rendered card from a configured official activity list before an item can enter the result set.
 
-- `rendered_dom_card`: structured-data and rendered-listing extraction;
-- `nhb`: the same structured-first flow plus eligible detail-page enrichment when listing cards do not contain a complete date. The name is historical and is also used for non-NHB sources that require this behaviour.
+The collector was developed against real official-site differences. Current behaviour includes:
 
-The collector was developed against real official-site differences. Current targeted behaviour includes:
-
-- reading XHR/fetch JSON and embedded structured state before DOM fallback;
-- requiring positive event intent so a dated facility, membership, operating-information, or promotion record is not accepted merely because it has a title and date range;
-- opening detail pages for sources whose listing cards omit full dates;
-- Gardens by the Bay date-range and venue repair;
-- rejection of synthetic Mandai location cards;
-- configured source ordering;
-- per-source acceptance and rejection evidence;
-- preserving the previous complete runtime result when a new run is partial and would replace it with fewer events.
+- fully rendering and expanding configured official activity lists;
+- admitting only isolated list cards with one canonical official detail URL, a usable date, and a usable title;
+- using XHR/fetch JSON, embedded structured state, and detail pages only to enrich an already admitted list card;
+- discarding unmatched structured records even when they are explicitly typed as `Event` or appear under an event-looking route;
+- avoiding per-record title and URL blacklists as the primary decision mechanism;
+- retaining a legitimate listed activity even when its title contains a word seen in a previous bad record;
+- Gardens by the Bay date-range and venue repair after list admission;
+- configured source ordering and per-source listing admission/rejection evidence;
+- preserving only previous rows carrying `candidate_policy: official-listing-authority-v1` when a partial run would replace a larger verified result.
 
 The main output is:
 
@@ -300,6 +298,8 @@ Incomplete diagnostic output may be written to:
 ```text
 surface/.env/local_event_search_results.partial.json
 ```
+
+When previous verified rows are retained, the partial payload records `write_policy: kept_previous_verified_result`. Legacy rows without current listing evidence are not kept simply because they appeared in an older complete file.
 
 Per-source debug evidence is available through `debug_by_source` and under:
 
@@ -459,9 +459,9 @@ python3 -m json.tool surface/.env/local_event_search_results.json | less
 python3 -m json.tool surface/.env/local_event_search_results.partial.json | less
 ```
 
-Inspect `debug_by_source` for the affected organisation before changing extraction logic. Determine whether the failure is page access, pagination/load-more, structured-data extraction, rendered-card extraction, detail-page enrichment, date parsing, event-intent validation, or the total crawl budget.
+Inspect `debug_by_source` for the affected organisation before changing extraction logic. Determine whether the failure is page access, list expansion, isolated-card discovery, official-detail URL extraction, structured-to-list matching, optional detail enrichment, date parsing, or the total crawl budget.
 
-Data-quality fixes belong in the collector/extractor, not in frontend title hiding.
+For a bad row, first ask which configured official list card admitted it. Structured JSON, an explicit `Event` type, or an event-looking route without a matching list card is not sufficient. Data-quality fixes belong in the collector/extractor, not in frontend title hiding or a growing list of blocked titles and paths.
 
 When Playwright or Chromium is missing, logs contain `missing_playwright_python_package` or `missing_system_chromium`.
 
