@@ -1,11 +1,13 @@
 {
   "version": 6,
-  "purpose": "Verified official event listing entrypoints. All sources use the same canonical-detail evidence, stable scrolling, expiry, title, date, venue, and URL validation policy.",
+  "purpose": "Verified official activity-list entrypoints. A rendered listing card is authoritative for membership; structured and detail data may only enrich an admitted card.",
   "policy": {
     "no_recursive_site_crawl": true,
     "no_sitemap_primary_flow": true,
     "no_third_party_aggregators": true,
     "listing_urls_are_allowed_here": true,
+    "listing_card_is_authoritative": true,
+    "unmatched_structured_records_are_rejected": true,
     "source_specific_exclusion_lists": false
   },
   "sources": [
