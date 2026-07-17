@@ -142,63 +142,63 @@ All official sites can be handled by one selector, a recursive crawler, or a gen
 
 ### Why it fails
 
-Official sites differ in structured JSON, JavaScript rendering, listing completeness, detail-page requirements, non-event records, date and venue layouts, pagination, anti-bot behaviour, and timing. Unrestricted crawling increases duplicates, unrelated content, runtime, and blocking risk. Offline fixtures do not prove current reachability or page structure.
+Official sites differ in JavaScript rendering, listing completeness, detail-page fields, date and venue layouts, pagination, anti-bot behaviour, and timing. Unrestricted crawling increases duplicates, unrelated content, runtime, and blocking risk. Offline fixtures do not prove current reachability or page structure.
 
 ### Correct requirement interpretation
 
-`surface/conf/event_sources.json` defines curated official entrypoints, allowed domains, default venues, source order, and adapter choice. The shared collector handles common stages while targeted source behaviour remains where real page evidence requires it. Live-source verification and offline regression have different roles.
+`surface/conf/event_sources.json` defines curated official activity-list entrypoints, allowed domains, default venues, source order, and adapter choice. A rendered card on one of those configured lists is the authority for whether an activity exists. Structured XHR, embedded state, and detail pages may improve fields only after list membership is established.
 
 ### Required implementation
 
-Use structured XHR or embedded state before rendered DOM fallback, selectively enrich eligible detail pages, avoid recursive site crawling, preserve official URLs and configured source order, and retain source-specific rules only when supported by current page evidence and regression cases.
+Render and fully expand each configured official list, isolate cards that contain one official detail URL plus a usable date and title, then optionally enrich those admitted cards. Do not recursively scan the site or turn arbitrary XHR and embedded JSON objects into independent candidates. Preserve official URLs and configured source order.
 
 ### Acceptance evidence
 
-For an affected organisation, evidence must include the real collector run, `debug_by_source`, captured page or card evidence when enabled, final runtime JSON, visible card output, and an offline regression case for the observed structure. A fixture or successful pytest run alone is not live-source verification.
+For an affected organisation, evidence must include the real collector run, `debug_by_source`, listing-card evidence when enabled, final runtime JSON, visible card output, and an offline regression case for the observed structure. A fixture or successful pytest run alone is not live-source verification.
 
 ## Local Events positive event intent
 
 ### Easy-to-make interpretation
 
-A title plus `startDate` and `endDate`, or the absence of a small blacklist of words, can be treated as proof that a structured record is an event.
+A title plus `startDate` and `endDate`, an explicit `Event` type, an event-looking URL route, or the absence of a small blacklist of words can be treated as proof that a structured record is an activity.
 
 ### Why it fails
 
-A real SAFRA result displayed `Carpark` with a 2024-2029 range and `Carpark Rates`. Facility, membership, operating-information, and promotion records can be event-shaped without being activities a user can attend.
+A real SAFRA result displayed `Carpark` with a 2024-2029 range and `Carpark Rates`. Facility, membership, operating-information, promotion, and navigation records can be event-shaped, typed, or placed under broad site routes without being activities shown in the correct official activity list. Adding one rejection for every observed bad row never becomes complete.
 
 ### Correct requirement interpretation
 
-A structured record requires positive event intent through an explicit event, programme, or activity type, or a verified relationship to an official event-oriented listing or detail route. A blacklist is only supplementary and cannot be the primary semantic rule.
+Positive event intent means membership in the correct official activity listing. The list card is the admission evidence. Structured JSON and detail pages are supplementary field sources and cannot independently create an output row, even when an object is explicitly typed as `Event`. A legitimate listed activity is not rejected merely because its title contains a word previously seen in a bad record.
 
 ### Required implementation
 
-Keep positive-intent validation in the collector before output. Preserve distinctions between explicitly typed events, untyped records inside event routes, and dated non-event records. Data-quality rejection belongs in the backend rather than frontend title hiding.
+Require a rendered, isolated card from a configured official listing with one canonical official detail URL, a usable date, and a usable title. Match structured data to that card by canonical URL or the same activity identity, discard every unmatched structured record, and keep rejection in the backend collector. Do not maintain per-record title, route, facility, membership, or navigation blacklists as the primary decision mechanism.
 
 ### Acceptance evidence
 
-Regression tests must preserve the SAFRA facility record, another dated membership record, an untyped event-route record, and an explicitly typed Event outside that route. Live validation must confirm the rule against the current official source before claiming current coverage.
+Regression tests must show that the SAFRA `Carpark Rates` object and another unmatched typed `Event` are rejected without naming new blacklist terms, that matched structured data enriches only its listed card, that a listed activity such as `Membership Workshop` remains accepted, and that a card without official listing evidence is rejected. Live validation against current sources is still required before claiming current coverage.
 
 ## Local Events evidence and partial-result protection
 
 ### Easy-to-make interpretation
 
-A total result count is enough to diagnose coverage, and every completed crawl should replace the current primary file even when several sources failed.
+A total result count is enough to diagnose coverage, and every completed crawl should replace the current primary file even when several sources failed or the previous file contains rows created under an obsolete candidate policy.
 
 ### Why it fails
 
-Failure can occur during page access, structured extraction, rendered-card discovery, pagination, detail enrichment, date parsing, event-intent validation, normalization, or the total crawl budget. Replacing a larger complete result with a smaller partial run causes transient source failures to remove valid events from the display.
+Failure can occur during page access, listing-card discovery, pagination, detail enrichment, date parsing, normalization, or the total crawl budget. Replacing a larger verified result with a smaller partial run removes valid events, while preserving legacy rows without listing evidence can keep known bad data alive indefinitely.
 
 ### Correct requirement interpretation
 
-The runtime includes `debug_by_source` and optional evidence under `surface/.env/local_event_debug_cards/`. When a new run is partial and contains fewer results than the previous complete run, the primary file remains the previous complete result and the incomplete run is written to `surface/.env/local_event_search_results.partial.json` with `write_policy: kept_previous_complete_result`.
+The runtime includes `debug_by_source` and optional evidence under `surface/.env/local_event_debug_cards/`. Before partial-result comparison, the previous payload is reduced to rows carrying `candidate_policy: official-listing-authority-v1`. When a new run is partial and contains fewer results than that previous verified set, the primary file remains the verified set and the incomplete run is written to `surface/.env/local_event_search_results.partial.json` with `write_policy: kept_previous_verified_result`. The older `kept_previous_complete_result` rule is insufficient when the previous file predates listing authority.
 
 ### Required implementation
 
-Record per-source stage and rejection evidence, calculate whether source coverage is partial, preserve the previous complete primary file when the protection condition applies, and keep the partial payload for diagnosis.
+Record per-source listing admission and rejection evidence, calculate whether source coverage is partial, remove legacy unverified rows from cache consideration, preserve the previous verified primary rows when the protection condition applies, and keep the partial payload for diagnosis.
 
 ### Acceptance evidence
 
-Tests must cover complete-to-partial state transitions, result-count comparison, preservation of the primary file, creation of the partial file, `write_policy: kept_previous_complete_result`, and retained `debug_by_source`. A real failed-source run must show the same behaviour before deployment acceptance.
+Tests must cover verified-complete to partial transitions, removal of legacy unverified rows, result-count comparison, preservation of the verified primary file, creation of the partial file, `write_policy: kept_previous_verified_result`, and retained `debug_by_source`. A real failed-source run must show the same behaviour before deployment acceptance.
 
 ## Local Events package boundary
 
