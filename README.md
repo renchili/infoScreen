@@ -275,6 +275,8 @@ The current inventory covers official museum, library, community, attraction, sh
 
 The adapter names are historical extraction hints. Both `rendered_dom_card` and `nhb` must produce a rendered card from a configured official activity list before an item can enter the result set.
 
+In this architecture, positive event intent means membership in that correct official activity list; an explicit type, date range, or route is not an alternative admission path.
+
 The collector was developed against real official-site differences. Current behaviour includes:
 
 - fully rendering and expanding configured official activity lists;
