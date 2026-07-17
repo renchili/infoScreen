@@ -30,7 +30,7 @@ GENERIC_LEAF_RE = re.compile(
     r"activities?|exhibitions?|workshops?|tours?|shows?|performances?)$",
     re.I,
 )
-VERIFIED_POLICY = "canonical-detail-evidence-v1"
+VERIFIED_POLICY = "official-listing-authority-v1"
 
 
 class _PlainTextParser(HTMLParser):
@@ -127,8 +127,7 @@ def _invalid_event(event: dict[str, Any]) -> bool:
     leaf = path.rsplit("/", 1)[-1].removesuffix(".html")
     if not leaf or GENERIC_LEAF_RE.fullmatch(leaf):
         return True
-    policy = _collapse(event.get("candidate_policy"))
-    return bool(policy and policy != VERIFIED_POLICY)
+    return _collapse(event.get("candidate_policy")) != VERIFIED_POLICY
 
 
 def _expired_event(event: dict[str, Any]) -> bool:
