@@ -1,13 +1,12 @@
 {
   "version": 6,
-  "purpose": "Verified official activity listing entrypoints. A rendered listing card is authoritative for membership; structured and detail data may only enrich an admitted card.",
+  "purpose": "Verified official event listing entrypoints. All sources use the same canonical-detail evidence, stable scrolling, expiry, title, date, venue, and URL validation policy.",
   "policy": {
     "no_recursive_site_crawl": true,
     "no_sitemap_primary_flow": true,
     "no_third_party_aggregators": true,
     "listing_urls_are_allowed_here": true,
-    "listing_card_is_authoritative": true,
-    "unmatched_structured_records_are_rejected": true
+    "source_specific_exclusion_lists": false
   },
   "sources": [
     {
@@ -29,11 +28,6 @@
       "official_home": "https://www.nationalgallery.sg/",
       "allowed_domains": ["nationalgallery.sg"],
       "default_venue": "National Gallery Singapore",
-      "load_more_rounds": 20,
-      "max_cards": 120,
-      "detail_enrichment": true,
-      "detail_authoritative": true,
-      "detail_limit": 24,
       "listing_urls": [
         "https://www.nationalgallery.sg/sg/en/whats-on.html",
         "https://www.nationalgallery.sg/sg/en/whats-on.html?activity=Exhibition&category=today&date="
@@ -46,11 +40,6 @@
       "official_home": "https://www.nationalmuseum.nhb.gov.sg/",
       "allowed_domains": ["nationalmuseum.nhb.gov.sg"],
       "default_venue": "National Museum Singapore",
-      "load_more_rounds": 6,
-      "max_cards": 100,
-      "detail_enrichment": true,
-      "detail_authoritative": true,
-      "detail_limit": 24,
       "listing_urls": [
         "https://www.nationalmuseum.nhb.gov.sg/whats-on/overview?time=Today%2CUpcoming",
         "https://www.nationalmuseum.nhb.gov.sg/whats-on/exhibition",
@@ -76,9 +65,7 @@
       "official_home": "https://www.peranakanmuseum.nhb.gov.sg/",
       "allowed_domains": ["peranakanmuseum.nhb.gov.sg", "peranakanmuseum.org.sg"],
       "default_venue": "Peranakan Museum",
-      "listing_urls": [
-        "https://www.peranakanmuseum.nhb.gov.sg/whatson/programmes"
-      ]
+      "listing_urls": ["https://www.peranakanmuseum.nhb.gov.sg/whatson/programmes"]
     },
     {
       "id": "artscience",
@@ -99,11 +86,6 @@
       "official_home": "https://www.science.edu.sg/",
       "allowed_domains": ["science.edu.sg"],
       "default_venue": "Science Centre Singapore",
-      "load_more_rounds": 10,
-      "max_cards": 120,
-      "detail_enrichment": true,
-      "detail_authoritative": true,
-      "detail_limit": 24,
       "listing_urls": [
         "https://www.science.edu.sg/whats-on/workshops-activities",
         "https://www.science.edu.sg/whats-on/exhibitions",
@@ -130,9 +112,7 @@
       "official_home": "https://www.onepa.gov.sg/",
       "allowed_domains": ["onepa.gov.sg"],
       "default_venue": "People's Association CCs",
-      "listing_urls": [
-        "https://www.onepa.gov.sg/events"
-      ]
+      "listing_urls": ["https://www.onepa.gov.sg/events"]
     },
     {
       "id": "safra",
@@ -141,9 +121,7 @@
       "official_home": "https://www.safra.sg/",
       "allowed_domains": ["safra.sg"],
       "default_venue": "SAFRA Clubs",
-      "listing_urls": [
-        "https://www.safra.sg/whats-on"
-      ]
+      "listing_urls": ["https://www.safra.sg/whats-on"]
     },
     {
       "id": "onepunggol",
@@ -192,14 +170,7 @@
       "official_home": "https://www.sentosa.com.sg/",
       "allowed_domains": ["sentosa.com.sg"],
       "default_venue": "Sentosa",
-      "load_more_rounds": 10,
-      "max_cards": 120,
-      "detail_enrichment": true,
-      "detail_authoritative": true,
-      "detail_limit": 24,
-      "listing_urls": [
-        "https://www.sentosa.com.sg/en/things-to-do/events/"
-      ]
+      "listing_urls": ["https://www.sentosa.com.sg/en/things-to-do/events/"]
     },
     {
       "id": "rws",
@@ -208,9 +179,7 @@
       "official_home": "https://www.rwsentosa.com/",
       "allowed_domains": ["rwsentosa.com"],
       "default_venue": "Resorts World Sentosa",
-      "listing_urls": [
-        "https://www.rwsentosa.com/en/events"
-      ]
+      "listing_urls": ["https://www.rwsentosa.com/en/events"]
     },
     {
       "id": "gardensbythebay",
@@ -219,14 +188,7 @@
       "official_home": "https://www.gardensbythebay.com.sg/",
       "allowed_domains": ["gardensbythebay.com.sg"],
       "default_venue": "Gardens by the Bay",
-      "load_more_rounds": 12,
-      "max_cards": 120,
-      "detail_enrichment": true,
-      "detail_authoritative": true,
-      "detail_limit": 24,
-      "listing_urls": [
-        "https://www.gardensbythebay.com.sg/en/things-to-do/calendar-of-events.html"
-      ]
+      "listing_urls": ["https://www.gardensbythebay.com.sg/en/things-to-do/calendar-of-events.html"]
     },
     {
       "id": "esplanade",
@@ -235,9 +197,7 @@
       "official_home": "https://www.esplanade.com/",
       "allowed_domains": ["esplanade.com"],
       "default_venue": "Esplanade",
-      "listing_urls": [
-        "https://www.esplanade.com/whats-on"
-      ]
+      "listing_urls": ["https://www.esplanade.com/whats-on"]
     },
     {
       "id": "thekallang",
@@ -246,9 +206,7 @@
       "official_home": "https://www.thekallang.com.sg/",
       "allowed_domains": ["thekallang.com.sg", "sportshub.com.sg"],
       "default_venue": "The Kallang",
-      "listing_urls": [
-        "https://www.thekallang.com.sg/en/things-to-do/events.html"
-      ]
+      "listing_urls": ["https://www.thekallang.com.sg/en/things-to-do/events.html"]
     }
   ]
 }
