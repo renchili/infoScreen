@@ -36,7 +36,7 @@ OUT = ENV_DIR / "local_event_search_results.json"
 PARTIAL_OUT = ENV_DIR / "local_event_search_results.partial.json"
 DEBUG_DIR = ENV_DIR / "local_event_debug_cards"
 DEFAULT_LOCATION = "Punggol Singapore"
-VERIFIED_POLICY = "canonical-detail-evidence-v1"
+VERIFIED_POLICY = "official-listing-authority-v1"
 
 
 def read_json(path: Path) -> dict:
@@ -100,12 +100,12 @@ def write_payload(payload: dict) -> None:
 
 def self_test() -> int:
     payload = normalize_payload(collect_events(CONFIG, DEFAULT_LOCATION, DEBUG_DIR))
-    assert payload["extractor"] == "structured-first-v51-canonical-detail-evidence"
-    assert payload["version"] == 51
+    assert payload["extractor"] == "listing-authoritative-v52"
+    assert payload["version"] == 52
     assert payload["text_normalizer"] == "plain-text-v1"
     assert isinstance(payload.get("results"), list)
     assert isinstance(payload.get("debug_by_source"), list)
-    print("local-event canonical-detail-evidence self-test passed")
+    print("local-event listing-authority self-test passed")
     return 0
 
 
