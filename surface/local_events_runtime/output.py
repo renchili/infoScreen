@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import html
 import re
+from datetime import date
 from html.parser import HTMLParser
 from typing import Any
+from urllib.parse import urlparse
 
 HTML_TAG_RE = re.compile(r"</?[A-Za-z][^>]*>|<!--.*?-->", re.S)
 SUMMARY_HEADING_RE = re.compile(
@@ -43,6 +45,14 @@ TEXT_FIELDS = ("title", "when", "where", "host", "source_name", "summary")
 WHERE_ALIASES = ("venue", "place", "where_text", "location", "address")
 SUMMARY_ALIASES = ("why_text", "description", "desc")
 MAX_ENTITY_DECODE_ROUNDS = 3
+OPEN_ENDED_RE = re.compile(r"\b(?:ongoing|permanent|from|since)\b", re.I)
+NON_EVENT_PATH_SEGMENT_RE = re.compile(
+    r"^(?:plan-your-itinerary|visitor-information|museum-map|accessibility|group-visits|getting-here|"
+    r"shop-dine-relax|venue-rental|filming-photography|contact-us|image-requests|book-a-venue|"
+    r"amenities-services|opening-hours-closures|itinerary-planner|gardens-map|information-guides|"
+    r"visiting-guidelines|mobile-apps-travel-guide)$",
+    re.I,
+)
 
 
 class _PlainTextParser(HTMLParser):
@@ -116,6 +126,31 @@ def _clean_summary(value: object) -> str:
     return SUMMARY_HEADING_RE.sub("", plain_text(value)).strip()
 
 
+def _iso_date(value: object) -> date | None:
+    text = _collapse(value)
+    if not text:
+        return None
+    try:
+        return date.fromisoformat(text[:10])
+    except ValueError:
+        return None
+
+
+def _non_event_url(value: object) -> bool:
+    path = urlparse(_collapse(value)).path
+    return any(NON_EVENT_PATH_SEGMENT_RE.fullmatch(segment) for segment in path.split("/") if segment)
+
+
+def _expired_event(event: dict[str, Any]) -> bool:
+    when = _collapse(event.get("when"))
+    if OPEN_ENDED_RE.search(when):
+        return False
+    end = _iso_date(event.get("end_date"))
+    start = _iso_date(event.get("start_date"))
+    effective_end = end or start
+    return bool(effective_end and effective_end < date.today())
+
+
 def normalize_event(event: dict[str, Any]) -> tuple[dict[str, Any], int]:
     normalized = dict(event)
     changed = 0
@@ -154,13 +189,23 @@ def normalize_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(results, list):
         normalized["text_normalizer"] = "plain-text-v1"
         normalized["normalized_text_fields"] = 0
+        normalized["expired_events_removed"] = 0
+        normalized["invalid_events_removed"] = 0
         return normalized
 
     output: list[Any] = []
     changed = 0
+    expired_removed = 0
+    invalid_removed = 0
     for item in results:
         if isinstance(item, dict):
             clean_item, item_changed = normalize_event(item)
+            if _non_event_url(clean_item.get("url")):
+                invalid_removed += 1
+                continue
+            if _expired_event(clean_item):
+                expired_removed += 1
+                continue
             output.append(clean_item)
             changed += item_changed
         else:
@@ -170,6 +215,8 @@ def normalize_payload(payload: dict[str, Any]) -> dict[str, Any]:
     normalized["count"] = len(output)
     normalized["text_normalizer"] = "plain-text-v1"
     normalized["normalized_text_fields"] = changed
+    normalized["expired_events_removed"] = expired_removed
+    normalized["invalid_events_removed"] = invalid_removed
     return normalized
 
 
