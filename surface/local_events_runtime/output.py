@@ -7,6 +7,8 @@ from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import urlparse
 
+from . import extract as _extract
+
 HTML_TAG_RE = re.compile(r"</?[A-Za-z][^>]*>|<!--.*?-->", re.S)
 SUMMARY_HEADING_RE = re.compile(
     r"^(?:about\s+the\s+event|event\s+details?|description)\s*[:\-–—]?\s*",
@@ -147,7 +149,8 @@ def _expired_event(event: dict[str, Any]) -> bool:
         return False
     end = _iso_date(event.get("end_date"))
     start = _iso_date(event.get("start_date"))
-    effective_end = end or start
+    when_dates = _extract.label_dates(when)
+    effective_end = end or (max(when_dates) if when_dates else start)
     return bool(effective_end and effective_end < date.today())
 
 
