@@ -52,8 +52,8 @@ The Surface is the runtime host for HTTP, Market, Weather, News, Local Events, P
 | `surface/fetch_live_data.py` | One-shot job | Fetch Weather and Market, apply provider fallback, write two runtime files | Render UI or own scheduling |
 | `surface/fetch_event_stream.py` | One-shot job | Fetch RSS sources, build aligned EN/FR/ZH rows, write `event_stream.json` | Render ticker rows |
 | `surface/search_local_events.py` | Compatibility wrapper | Preserve the command path used by systemd and HTTP | Contain the full collector implementation |
-| `surface/jobs/local_event_search.py` | One-shot job | Configure crawl budgets, run the source-specific collector, normalize output, protect complete results from partial replacement | Apply frontend truncation or hide records only in the browser |
-| `surface/local_events_runtime/*` | Library | Browser collection, structured extraction, detail enrichment, date/title/venue normalization, source ordering, rejection/debug reasons | Write UI markup |
+| `surface/jobs/local_event_search.py` | One-shot job | Configure crawl budgets, run the source-specific collector, normalize output, and protect verified results from partial replacement | Apply frontend truncation or preserve legacy rows without current candidate evidence |
+| `surface/local_events_runtime/*` | Library | Render official activity lists, establish listing-card membership, enrich admitted cards, normalize fields, preserve source order, and record rejection/debug reasons | Write UI markup or admit arbitrary page-wide structured objects |
 | `surface/build_photos_json.py` | One-shot manual job | Normalize/copy local photos and build the manifest | Scan photos from the browser |
 | `mac/export.py` and `mac/sync_schedule.sh` | Mac LaunchAgent job | Export EventKit data and push `schedule.json` | Run on the Surface |
 | Browser scripts | Long-running page session | Fetch runtime/API data, render owned mounts, handle local controls and visual rotation | Produce authoritative external data or repair backend data quality |
@@ -191,18 +191,18 @@ Local Events was developed to show verifiable nearby activity options with sourc
 
 The source set is intentionally curated because the official sites differ materially:
 
-- some expose usable structured JSON;
 - some render cards only after JavaScript;
-- some listing cards omit complete dates;
-- some require detail-page reads;
-- some include facilities, promotions, memberships, navigation state, or long-lived content beside real events;
+- some lists require deep scrolling or explicit load-more controls;
+- some expose structured JSON that can improve a listed card;
+- some require detail-page reads for better fields;
+- some place unrelated dated objects in page-wide JSON or adjacent navigation;
 - some need source-specific date or venue repair.
 
-A single generic selector cannot produce reliable results across these sites, so the collector uses a shared pipeline plus per-source configuration and targeted behavior.
+A single generic selector cannot produce reliable results across these sites, so the collector uses a shared listing-authority pipeline plus per-source configuration and targeted field repair.
 
 ### 8.2 Source inventory and adapter choices
 
-The authoritative inventory is `surface/conf/event_sources.json`. Version 4 currently contains 18 organisations.
+The authoritative inventory is `surface/conf/event_sources.json`. Version 6 currently contains 18 organisations.
 
 | Source | Adapter | Official listing coverage |
 | --- | --- | --- |
@@ -212,7 +212,7 @@ The authoritative inventory is `surface/conf/event_sources.json`. Version 4 curr
 | Asian Civilisations Museum | `nhb` | Exhibitions, lectures, programmes, guided tours |
 | Peranakan Museum | `nhb` | Programmes listing |
 | ArtScience Museum | `rendered_dom_card` | Museum What’s On pages |
-| Science Centre Singapore | `rendered_dom_card` | What’s On page |
+| Science Centre Singapore | `rendered_dom_card` | Workshops, exhibitions, shows, and What’s On listings |
 | National Library Board | `nhb` | NLB What’s On and LibCal calendar |
 | onePA / People’s Association | `nhb` | onePA events |
 | SAFRA | `rendered_dom_card` | SAFRA What’s On |
@@ -225,55 +225,51 @@ The authoritative inventory is `surface/conf/event_sources.json`. Version 4 curr
 | Esplanade | `rendered_dom_card` | What’s On |
 | The Kallang | `rendered_dom_card` | Things to do / events |
 
-The adapter name `nhb` is historical. In the active collector it means “structured-first plus detail enrichment for eligible cards that lack a complete date”; it is intentionally used for non-NHB sites where the same behavior is required.
-
-`rendered_dom_card` means “structured-first plus rendered listing-card extraction without the extra NHB-style detail-enrichment pass.”
+The adapter names are historical extraction hints. They may change how the official list is rendered or how card fields are discovered, but neither adapter may admit a row without a rendered official listing card.
 
 ### 8.3 Collection pipeline
 
 ```text
 source configuration
-  -> open each official listing URL with Playwright
-  -> capture JSON XHR/fetch responses
-  -> read embedded JSON/script state
-  -> convert structured objects into candidate events
-  -> evaluate rendered DOM cards
-  -> for `nhb`, enrich eligible cards from detail pages when full dates are missing
-  -> merge structured and DOM candidates without same-title duplication
-  -> extract title, date, venue, summary, official URL
-  -> validate current/future date and positive event intent
-  -> apply generic and source-specific quality rules
-  -> record accepted and rejected evidence by source
+  -> open each configured official activity-list URL with Playwright
+  -> deep-scroll and operate list expansion controls until stable
+  -> evaluate rendered DOM card boundaries
+  -> require one canonical official detail URL, a usable date, and a usable title
+  -> mark the card with official listing evidence
+  -> capture XHR/embedded structured data only as supplementary candidates
+  -> match supplementary data to an admitted list card by canonical URL or activity identity
+  -> discard every unmatched structured record
+  -> optionally enrich admitted cards from their own detail pages
+  -> normalize title, date, venue, summary, and official URL
+  -> validate current/future dates
+  -> record listing admission and rejection evidence by source
   -> preserve configured source order
   -> normalize text
   -> write runtime JSON
 ```
 
-The policy forbids recursive site crawling, sitemap-first collection, and third-party aggregators as the primary event source.
+The policy forbids recursive site crawling, sitemap-first collection, third-party aggregators as the primary source, and page-wide structured objects as independent output candidates.
 
 ### 8.4 Positive event intent
 
-Structured payloads often contain dated objects that are not events. The collector does not accept a record only because it has a title and `startDate`/`endDate`.
+Positive event intent is established by membership in the correct configured official activity list. A title, date range, explicit `Event` type, or event-looking route is not enough on its own.
 
-A structured record must have positive evidence:
+The rendered list card is the admission record. Structured XHR, embedded JSON, and detail-page JSON can improve the title, dates, venue, summary, or canonical URL only after they match that listed activity. Unmatched structured objects are discarded even when they are explicitly typed as events.
 
-- explicit structured type matching event/programme/activity semantics;
-- or a detail URL inside the official listing route;
-- or an event-oriented route section.
-
-This prevents entire classes of false positives such as facilities, membership access, operating information, promotions with validity periods, and navigation state without maintaining an endless blacklist of titles.
+This prevents classes of false positives such as facilities, membership access, operating information, promotions with validity periods, and navigation state without maintaining an endless blacklist of titles or routes. It also avoids rejecting a legitimate listed activity merely because its title contains a word that appeared in a previous bad record.
 
 ### 8.5 Targeted source behavior
 
-The current shared pipeline includes targeted code developed from observed official-site behavior:
+The current shared pipeline includes targeted behavior developed from observed official-site structure:
 
-- Gardens by the Bay: prefer a complete closed date range found in the card and derive a concise venue from the line following that range;
-- Mandai: reject synthetic location cards generated by the collector’s own fallback markers;
-- NHB-style/detail-enriched sources: open detail pages only when the listing card lacks a complete date and the URL is eligible;
-- all sources: normalize weekday prefixes, select the strongest current/future date fragment, reject implausibly verbose date labels, and fall back to configured default venues when extracted venue text is narrative or too long;
-- structured sources: require positive event intent before the record enters the normal event conversion path.
+- National Gallery and other dynamic lists: deep-scroll and operate load-more controls until the set of visible links stabilizes;
+- all sources: admit only isolated rendered list cards with one canonical official detail URL plus usable date and title evidence;
+- structured sources: use structured data only when it matches an already admitted list card;
+- detail-enriched sources: read only the admitted card’s own canonical detail page, and retain the list card when detail enrichment fails;
+- Gardens by the Bay: preserve its targeted date-range and concise-venue field repair after listing admission;
+- all sources: preserve configured default venues when extracted venue text is missing, narrative, or implausibly long.
 
-These are not frontend exceptions. They are collector behavior because the API, debug tools, and page must all see the same accepted dataset.
+These are collector rules rather than frontend exceptions because the API, debug evidence, runtime JSON, and page must all see the same accepted dataset.
 
 ### 8.6 Crawl budgets and configuration
 
@@ -283,18 +279,20 @@ These are not frontend exceptions. They are collector behavior because the API, 
 | --- | --- | --- |
 | `LOCAL_EVENTS_MAX_SECONDS` | 520 | Total job budget |
 | `LOCAL_EVENTS_SOURCE_CONCURRENCY` | 3 | Parallel source workers |
-| `LOCAL_EVENTS_SOURCE_TIMEOUT_SECONDS` | 95 | Per-source budget |
+| `LOCAL_EVENTS_SOURCE_TIMEOUT_SECONDS` | 160 | Per-source budget |
 | `LOCAL_EVENTS_MAX_LISTING_PAGES` | 2 | Listing pagination limit |
-| `LOCAL_EVENTS_LOAD_MORE_ROUNDS` | 2 | Load-more attempts |
+| `LOCAL_EVENTS_LOAD_MORE_ROUNDS` | 24 | Listing expansion attempts before stability stops the loop |
 | `LOCAL_EVENTS_MAX_TOTAL_EVENTS` | 180 | Final collection cap |
 | `LOCAL_EVENTS_NAV_TIMEOUT_MS` | 25000 | Navigation timeout |
-| `LOCAL_EVENTS_DOM_TIMEOUT_MS` | 25000 | DOM fallback timeout |
-| `LOCAL_EVENTS_NHB_DETAIL_LIMIT` | 18 | Detail-page reads for the detail-enriched adapter |
-| `LOCAL_EVENTS_NHB_DETAIL_TIMEOUT_MS` | 16000 | Detail-page timeout |
+| `LOCAL_EVENTS_DOM_TIMEOUT_MS` | 25000 | DOM timeout |
+| `LOCAL_EVENTS_DETAIL_LIMIT` | 24 | Maximum supplementary detail-page reads per list run |
+| `LOCAL_EVENTS_DETAIL_TIMEOUT_MS` | 16000 | Supplementary detail-page timeout |
+| `LOCAL_EVENTS_NHB_DETAIL_LIMIT` | 18 | Legacy adapter detail limit retained for compatibility |
+| `LOCAL_EVENTS_NHB_DETAIL_TIMEOUT_MS` | 16000 | Legacy adapter detail timeout retained for compatibility |
 | `LOCAL_EVENTS_PAGE_SCREENSHOTS` | 0 | Optional page screenshot evidence |
 | `LOCAL_EVENTS_CARD_SCREENSHOTS` | 0 | Optional card screenshot evidence |
 
-The source inventory and adapter choice are configuration. Source-specific parsing behavior is code and tests. Changing either requires evidence from the affected official page and a regression test or fixture that represents the observed structure.
+The source inventory and adapter choice are configuration. List-card admission and field extraction are code and tests. Changing either requires evidence from the affected official page and a regression test or fixture representing the observed structure.
 
 ### 8.7 Output, partial-run protection, and evidence
 
@@ -304,15 +302,15 @@ The primary runtime file is:
 surface/.env/local_event_search_results.json
 ```
 
-The payload includes accepted `results`, configured `sources`, and `debug_by_source`. Debug entries distinguish page-access failures, card discovery, accepted counts, and rejection reasons.
+The payload includes accepted `results`, configured `sources`, and `debug_by_source`. Accepted rows carry `candidate_policy: official-listing-authority-v1`; debug data records listing admission, enrichment, source failures, and rejection reasons.
 
-When a run covers fewer sources than configured and would replace a larger previous complete result with fewer events, the job keeps the previous complete primary file and writes the new incomplete evidence to:
+Before partial-result comparison, a previous payload is reduced to rows carrying the current verified candidate policy. When a run covers fewer sources than configured and would replace a larger verified result with fewer events, the job keeps the previous verified rows and writes the new incomplete evidence to:
 
 ```text
 surface/.env/local_event_search_results.partial.json
 ```
 
-This protects the always-on display from a transient partial crawl while preserving the failed run for diagnosis.
+The partial payload records `write_policy: kept_previous_verified_result`. Legacy rows without current listing evidence are not retained merely because they were present in an older complete file.
 
 Debug card/page evidence is written under:
 
@@ -412,7 +410,8 @@ The architecture separates failures by owner:
 - browser renderer failure affects only its owned mounts;
 - Mac schedule failure affects Calendar but not Surface producers;
 - a single Local Events source failure is recorded under that source and should not erase evidence from other sources;
-- a partial Local Events run should not replace a larger complete runtime result;
+- a partial Local Events run should not replace a larger verified runtime result;
+- legacy Local Events rows without current listing evidence are not eligible for preservation;
 - Market provider failure is isolated per symbol through the fallback chain.
 
 This is why operator diagnosis starts from the visible product area, then follows UI → endpoint → runtime file → producer → external source.
