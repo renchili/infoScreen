@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+from datetime import date, timedelta
 
 from .conftest import SURFACE
 
@@ -152,3 +153,45 @@ def test_partial_refresh_cleans_the_complete_result_it_keeps(tmp_path, monkeypat
     assert "<" not in retained_event["summary"]
     assert retained["text_normalizer"] == "plain-text-v1"
     assert partial["write_policy"] == "kept_previous_complete_result"
+
+
+def test_expired_event_is_removed_from_runtime_output() -> None:
+    yesterday = date.today() - timedelta(days=1)
+    payload = normalize_payload(
+        {
+            "results": [
+                {
+                    "title": "Expired Event",
+                    "when": yesterday.isoformat(),
+                    "start_date": yesterday.isoformat(),
+                    "end_date": yesterday.isoformat(),
+                    "url": "https://example.test/events/expired",
+                }
+            ]
+        }
+    )
+
+    assert payload["results"] == []
+    assert payload["expired_events_removed"] == 1
+
+
+def test_active_range_uses_when_end_when_end_date_field_is_missing() -> None:
+    start = date.today() - timedelta(days=10)
+    end = date.today() + timedelta(days=10)
+    when = f"{start.day} {start.strftime('%b')} - {end.day} {end.strftime('%b')} {end.year}"
+    payload = normalize_payload(
+        {
+            "results": [
+                {
+                    "title": "Active Exhibition",
+                    "when": when,
+                    "start_date": start.isoformat(),
+                    "end_date": "",
+                    "url": "https://example.test/events/active-exhibition",
+                }
+            ]
+        }
+    )
+
+    assert [item["title"] for item in payload["results"]] == ["Active Exhibition"]
+    assert payload["expired_events_removed"] == 0
