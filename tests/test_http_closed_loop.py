@@ -71,9 +71,13 @@ def test_http_local_event_details_are_plain_text_for_stale_runtime(
         "results": [
             {
                 "title": "What Happens After Someone Dies: A Practical Guide for Families",
-                "when": "14 Jul 2026",
+                "when": "14 Jul 2099",
+                "start_date": "2099-07-14",
+                "end_date": "2099-07-14",
                 "where": "Central Public Library",
                 "description": raw_details,
+                "url": "https://example.test/events/practical-guide",
+                "candidate_policy": "official-listing-authority-v1",
             }
         ]
     }
