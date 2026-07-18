@@ -19,6 +19,30 @@ def future_label(days: int = 30) -> str:
     return f"{value.day} {value.strftime('%b')} {value.year}"
 
 
+def complete_source(name: str) -> dict:
+    return {
+        "source": name,
+        "listing_urls": [f"https://example.test/{name.lower()}"],
+        "listing_fetched": 1,
+        "cards_found": 0,
+        "accepted": 0,
+        "reason_counts": {},
+        "not_output_preview": [],
+    }
+
+
+def failed_source(name: str, reason: str = "render_error:TimeoutError") -> dict:
+    return {
+        "source": name,
+        "listing_urls": [f"https://example.test/{name.lower()}"],
+        "listing_fetched": 0,
+        "cards_found": 0,
+        "accepted": 0,
+        "reason_counts": {reason: 1},
+        "not_output_preview": [{"reason": reason}],
+    }
+
+
 def test_plain_text_removes_html_markup_and_hidden_content() -> None:
     raw = (
         '<p><strong>About the Event</strong><span style="background-color:#00ffff;"></span></p>'
@@ -121,6 +145,41 @@ def test_local_event_payload_promotes_venue_alias_to_where() -> None:
     assert normalized["results"][0]["where"] == "NLB Building, Level 1"
 
 
+def test_partial_state_uses_source_completion_not_debug_row_count() -> None:
+    payload = job.annotate_source_completion(
+        {
+            "source_count": 2,
+            "debug_by_source": [
+                complete_source("NLB"),
+                failed_source("SAFRA"),
+            ],
+            "results": [],
+        }
+    )
+
+    assert len(payload["debug_by_source"]) == payload["source_count"] == 2
+    assert payload["partial"] is True
+    assert payload["completed_source_count"] == 1
+    assert payload["incomplete_source_count"] == 1
+    assert payload["debug_by_source"][0]["status"] == "complete"
+    assert payload["debug_by_source"][0]["complete"] is True
+    assert payload["debug_by_source"][1]["status"] == "timed_out"
+    assert payload["debug_by_source"][1]["complete"] is False
+
+
+def test_successful_empty_source_is_complete() -> None:
+    payload = job.annotate_source_completion(
+        {
+            "source_count": 1,
+            "debug_by_source": [complete_source("EmptyButHealthy")],
+            "results": [],
+        }
+    )
+
+    assert payload["partial"] is False
+    assert payload["completed_source_count"] == 1
+
+
 def test_partial_refresh_cleans_the_verified_result_it_keeps(tmp_path, monkeypatch) -> None:
     out = tmp_path / "local_event_search_results.json"
     partial_out = tmp_path / "local_event_search_results.partial.json"
@@ -128,7 +187,7 @@ def test_partial_refresh_cleans_the_verified_result_it_keeps(tmp_path, monkeypat
         json.dumps(
             {
                 "source_count": 1,
-                "debug_by_source": [{"source": "NLB"}],
+                "debug_by_source": [complete_source("NLB")],
                 "results": [
                     {
                         "title": "What Happens After Someone Dies: A Practical Guide for Families",
@@ -152,7 +211,10 @@ def test_partial_refresh_cleans_the_verified_result_it_keeps(tmp_path, monkeypat
     job.write_payload(
         {
             "source_count": 2,
-            "debug_by_source": [{"source": "NLB"}],
+            "debug_by_source": [
+                complete_source("NLB"),
+                failed_source("SAFRA"),
+            ],
             "results": [],
         }
     )
@@ -166,6 +228,8 @@ def test_partial_refresh_cleans_the_verified_result_it_keeps(tmp_path, monkeypat
     assert retained_event["description"] == expected
     assert "<" not in retained_event["summary"]
     assert retained["text_normalizer"] == "plain-text-v1"
+    assert partial["partial"] is True
+    assert partial["completed_source_count"] == 1
     assert partial["write_policy"] == "kept_previous_verified_result"
 
 
@@ -176,7 +240,7 @@ def test_unverified_legacy_rows_are_not_preserved_during_partial_refresh(tmp_pat
         json.dumps(
             {
                 "source_count": 1,
-                "debug_by_source": [{"source": "SAFRA"}],
+                "debug_by_source": [complete_source("SAFRA")],
                 "results": [
                     {
                         "title": "Carpark",
@@ -195,7 +259,10 @@ def test_unverified_legacy_rows_are_not_preserved_during_partial_refresh(tmp_pat
     job.write_payload(
         {
             "source_count": 2,
-            "debug_by_source": [{"source": "SAFRA"}],
+            "debug_by_source": [
+                complete_source("NLB"),
+                failed_source("SAFRA"),
+            ],
             "results": [],
         }
     )
@@ -203,6 +270,7 @@ def test_unverified_legacy_rows_are_not_preserved_during_partial_refresh(tmp_pat
     written = json.loads(out.read_text(encoding="utf-8"))
     assert written["results"] == []
     assert written["partial"] is True
+    assert written["completed_source_count"] == 1
     assert not partial_out.exists()
 
 
