@@ -1,76 +1,72 @@
 # Local Event Studio implementation plan
 
-Status: temporary working plan on `develop/surface-local-events-coverage`.
+Status: temporary working record on `develop/surface-local-events-coverage`.
 
-This file exists only to coordinate the staged implementation. It is not part of the final product documentation and must be deleted before delivery. Final project-relevant content must be merged into the established documentation homes:
+This file is not final product documentation. It must be deleted before delivery after its implemented content is merged into:
 
-- architecture, storage, data flow, and runtime boundaries -> `docs/design.md`;
-- requirement clarifications and acceptance conditions -> `docs/questions.md`;
-- HTTP routes, payloads, errors, and side effects -> `docs/api-spec.md`;
-- deployment, operation, and troubleshooting commands -> `README.md`.
+- architecture, storage, and runtime behavior -> `docs/design.md`;
+- requirement clarifications and acceptance evidence -> `docs/questions.md`;
+- HTTP routes and payloads -> `docs/api-spec.md`;
+- deployment and operation -> `README.md`.
 
 ## Fixed constraints
 
 - Work only on `develop/surface-local-events-coverage`.
-- Do not modify `main`.
-- Do not create a pull request or merge without explicit approval.
+- Do not modify `main`, create a PR, or merge without explicit approval.
 - Use the existing `surface/serve_infoscreen.py` process and port `8765`.
-- Do not add a second HTTP server, port, daemon, systemd service, or duplicate application.
-- The operator surface is served at `/local-events/studio` by the existing HTTP service.
-- Runtime and operator state belongs under `surface/.env/local_event_studio/` and is not committed.
-- Unpublished rules must not affect production collection.
-- Published rules are enabled per source/listing URL; one source failure must not clear unrelated sources.
-- Structured data may enrich a rendered, admitted list card but may not independently create an activity.
-- Screenshot coordinates are annotation aids only. Published extraction rules use DOM selectors and explicit field mappings.
-- Each implementation phase has its own reviewable commit and tests. Do not advance a phase while its deterministic checks fail.
-- Do not claim live-source, Surface deployment, browser, or semantic correctness without direct evidence for the exact commit.
+- Do not add another HTTP server, port, daemon, systemd service, or duplicate application.
+- Serve the operator UI at `/local-events/studio` through the existing HTTP service.
+- Store local state under `surface/.env/local_event_studio/`; never commit runtime rules, captures, logs, or screenshots.
+- Draft rules must not affect production collection.
+- Published rules are enabled per configured source/listing pair.
+- One source failure must not clear unrelated sources.
+- Structured data may enrich an admitted rendered card but may not independently create an activity.
+- Screenshot coordinates are UI aids only; published rules use DOM selectors and explicit field mappings.
+- Complete one phase and its deterministic checks before entering the next phase.
+- Do not claim live-source, Surface, browser, or semantic correctness without direct evidence for the exact commit.
 
 ## Product workflow
 
-The complete local workflow is:
-
 ```text
-choose source and listing URL
--> capture the official listing page
+choose configured source and listing
+-> capture official listing page
 -> inspect screenshot and DOM evidence
 -> identify repeated activity cards
--> map title, when, where, public detail URL, summary, and optional image
--> mark excluded content
--> save a draft rule
--> test the draft against a captured snapshot
--> inspect accepted and rejected rows with field evidence
--> publish a version
--> run that source with the published rule
--> inspect final runtime output
+-> map title, when, where, public detail URL, summary, optional image
+-> mark excluded elements
+-> save draft
+-> test draft against snapshot
+-> inspect accepted/rejected rows and field evidence
+-> publish version
+-> run that source
+-> inspect runtime output
 -> roll back when required
 ```
 
-The workflow must be usable entirely on the Surface through the existing InfoScreen HTTP service. It must not depend on sending screenshots to an external reviewer or editing JSON manually.
+The complete workflow must be usable locally on the Surface without sending screenshots elsewhere or editing JSON manually.
 
 ## Local storage model
 
 ```text
 surface/.env/local_event_studio/
-├── snapshots/
-│   └── <source-id>/<snapshot-id>/
-│       ├── page.png
-│       ├── page.html
-│       ├── dom.json
-│       └── metadata.json
-├── rules/
-│   └── <source-id>/<listing-key>/
-│       ├── draft.json
-│       ├── published.json
-│       └── history/
+├── snapshots/<source-id>/<snapshot-id>/
+│   ├── page.png
+│   ├── page.html
+│   ├── dom.json
+│   └── metadata.json
+├── rules/<source-id>/<listing-key>/
+│   ├── draft.json
+│   ├── published.json
+│   └── history/
 ├── test-runs/
 └── crawl-runs/
 ```
 
-Writes must be atomic. Source IDs and listing URLs must be validated against `surface/conf/event_sources.json`. File and directory names must be derived from validated identifiers rather than arbitrary request paths.
+Writes must be atomic. Source IDs and listing URLs must be validated against `surface/conf/event_sources.json`. Filesystem names must be derived from validated identifiers and hashes, not request paths.
 
 ## Published rule contract
 
-A published rule is versioned and bound to one configured source/listing URL pair.
+A published rule is versioned and bound to one configured source/listing pair.
 
 ```json
 {
@@ -93,9 +89,8 @@ A published rule is versioned and bound to one configured source/listing URL pai
   "detail_page": {
     "enabled": true,
     "fields": {
-      "title": "main h1",
-      "when": "[data-field='date']",
-      "where": "[data-field='venue']"
+      "when": {"selector": ".detail-date"},
+      "where": {"selector": ".detail-venue", "allow_source_default": false}
     }
   },
   "validation": {
@@ -105,83 +100,59 @@ A published rule is versioned and bound to one configured source/listing URL pai
 }
 ```
 
-The persisted schema must use typed validation. Invalid selectors, unsupported fields, unknown sources, unconfigured listing URLs, unsafe paths, and malformed versions must be rejected before writing.
-
-## Field and admission authority
+## Admission and field authority
 
 ### Public detail URL
 
-An accepted row must use the public activity detail URL from the admitted card or an explicitly configured source rewrite. The URL must:
-
-- belong to an allowed official domain;
-- differ from the listing URL;
-- not be an image, document, JSON/API endpoint, internal CMS endpoint, fragment-only URL, or synthetic placeholder;
-- retain the listing URL separately as evidence;
-- expose the DOM element and raw attribute used to obtain it.
+An accepted row must use the admitted card's public official detail URL or an explicitly configured source rewrite. It must belong to an allowed official domain, differ from the listing URL, and not be an image, document, JSON/API endpoint, internal CMS endpoint, fragment-only URL, or synthetic placeholder. The listing URL remains evidence rather than the output URL.
 
 ### When and where
 
-The fixed field precedence is:
+Field precedence is fixed:
 
 ```text
-explicitly mapped detail-page field
--> explicitly mapped list-card field
+mapped detail-page field
+-> mapped list-card field
 -> structured value matched to that admitted card
 -> empty
 ```
 
 The collector must not derive final `when` or `where` from arbitrary page-wide text. The source display name is not a venue fallback unless the published rule explicitly enables `allow_source_default`.
 
-Each tested field must retain evidence containing the page role, selector, raw text or attribute, normalized value, and chosen precedence.
-
 ### Positive activity intent
 
-A candidate is an activity only when it comes from the published card selector for the configured official listing and passes the required field and URL checks. Page-wide XHR, embedded state, JSON-LD, navigation, facilities, membership, parking, dining, advertising, and promotion records cannot independently create output rows.
+A candidate is an activity only when it comes from the published card selector for the configured official listing and passes mandatory field and URL checks. XHR, embedded state, JSON-LD, navigation, facilities, membership, parking, dining, advertising, and promotions cannot independently create output rows.
 
-## Staged implementation
+## Phases
 
 ### Phase 0 — Temporary plan and baseline
 
 Deliverables:
 
-- this temporary plan;
-- confirmed clean base `66a6567356ebf7b47817e40f896fc0cecaadb978`;
+- temporary plan file;
+- confirmed base `66a6567356ebf7b47817e40f896fc0cecaadb978`;
 - no runtime behavior change.
-
-Exit checks:
-
-- branch differs from the base only by this plan file;
-- no new service, port, source module, API, or frontend asset.
 
 ### Phase 1 — Rule storage and version management
 
-Implement the local data layer only. Do not expose HTTP routes and do not connect it to production collection.
+Implement only the local data layer:
 
-Capabilities:
-
-- typed rule schema and validation;
-- configured source/listing URL validation;
+- Pydantic rule schema;
+- configured source/listing validation;
+- safe path derivation;
 - draft save/load/delete;
 - publish with monotonic version;
-- immutable history copy;
-- rollback by creating a new published version from history;
+- immutable history;
+- rollback as a new published version;
 - atomic writes;
-- safe path derivation;
-- import/export of validated rules;
-- deterministic unit tests using temporary directories.
+- validated import/export;
+- deterministic temporary-directory tests.
 
-Exit checks:
+Do not expose HTTP routes or connect the module to production collection.
 
-- production Local Events output is unchanged;
-- invalid/unknown source and listing combinations are rejected;
-- interrupted writes cannot replace a valid published rule with a partial file;
-- history and rollback behavior are covered by tests.
+### Phase 2 — Existing `8765` API integration
 
-### Phase 2 — Existing 8765 API integration
-
-Add Local Event Studio routes to `surface/serve_infoscreen.py`, its Pydantic models, OpenAPI generation, and contract tests.
-
-Planned routes:
+Add the Studio routes to `surface/serve_infoscreen.py`, API models, OpenAPI, and contract tests. Production collection remains unchanged.
 
 ```text
 GET    /local-events/studio
@@ -195,21 +166,9 @@ POST   /api/local-events/studio/import
 GET    /api/local-events/studio/export
 ```
 
-The API remains local and unauthenticated under the repository's existing trusted-device boundary. Mutating routes must validate bodies and return specific errors. This phase still does not change production collection.
-
 ### Phase 3 — Snapshot capture
 
-Add a one-shot capture job invoked by the existing HTTP server. It saves a full-page screenshot, HTML, normalized DOM evidence, and metadata under the local Studio directory.
-
-Requirements:
-
-- configured source/listing URL only;
-- explicit timeout and subprocess result;
-- no unrestricted site crawling;
-- no page-wide network payload collection by default;
-- stable DOM evidence IDs for annotation;
-- capture status and failure details exposed through the existing API;
-- tests use fixture HTML and mocked browser boundaries, not external network access.
+Add a one-shot capture job invoked by the existing HTTP server. Save full-page screenshot, HTML, normalized DOM evidence, and metadata. Accept only configured source/listing pairs. Do not perform unrestricted crawling or page-wide network payload collection by default.
 
 ### Phase 4 — Local annotation UI
 
@@ -217,72 +176,40 @@ Add the Studio frontend under `surface/web/` and serve it through `8765`.
 
 Required interactions:
 
-- choose source, listing URL, and snapshot;
-- inspect screenshot and corresponding DOM outlines;
-- click or box-select an element, then resolve it to DOM evidence;
-- select at least two example cards to infer and preview a repeated card selector;
-- map title, when, where, URL, summary, and optional image selectors;
+- select source, listing, and snapshot;
+- inspect screenshot and DOM outlines;
+- click or box-select and resolve to DOM evidence;
+- infer repeated card selector from multiple examples;
+- map title, when, where, URL, summary, optional image;
 - add exclusion selectors;
-- edit selectors directly;
-- save a draft;
-- keyboard-accessible controls, loading, empty, error, success, and retry states.
+- edit selectors;
+- save draft;
+- provide loading, empty, error, success, retry, keyboard, and focus behavior.
 
-Coordinates remain snapshot UI state and are not part of the published rule.
+Coordinates must not enter the published rule.
 
 ### Phase 5 — Draft test and evidence preview
 
-Execute a draft rule against a stored snapshot without changing production runtime data.
-
-The preview must show:
-
-- matched card count;
-- accepted and rejected rows;
-- rejection reason per row;
-- final title, when, where, URL, summary;
-- selector, source page role, raw value, normalized value, and precedence per field;
-- warnings for duplicate cards, listing URLs, non-public URLs, missing dates, and source-default venues.
-
-Publishing is blocked when mandatory validation fails.
+Execute a draft against a stored snapshot without changing production runtime data. Show matched cards, accepted/rejected rows, rejection reasons, final fields, raw evidence, selectors, normalization, precedence, duplicates, invalid URLs, missing dates, and source-default venue warnings. Block publishing when mandatory validation fails.
 
 ### Phase 6 — Per-source production integration
 
-Production behavior becomes:
-
 ```text
-no published Studio rule -> existing legacy collector for that source/listing
-published Studio rule -> Studio selector-based collector for that source/listing
+no published Studio rule -> existing collector for that source/listing
+published Studio rule -> Studio selector collector for that source/listing
 ```
 
-Requirements:
-
-- activate one source/listing pair at a time;
-- structured records can enrich only a matched admitted card;
-- detail reads use only the admitted card's validated public URL;
-- detail failure keeps valid list evidence and records the failure;
-- one Studio source failure does not affect legacy or Studio results from other sources;
-- previous verified source rows may be retained only under an explicit per-source partial policy;
-- debug output identifies the rule version and evidence source.
+Structured records may enrich only matched cards. Detail reads use only validated admitted URLs. One Studio source failure must not affect other sources. Debug output must include rule version and evidence source.
 
 ### Phase 7 — Esplanade live migration and acceptance
 
-Use the local Studio workflow to migrate Esplanade first.
-
-Required evidence:
-
-- real snapshot from the configured Esplanade listing;
-- published rule version;
-- test preview showing real activity cards and rejection evidence;
-- live collector output for Esplanade;
-- each accepted URL opens the correct public detail page;
-- `when` and `where` agree with the mapped list/detail evidence;
-- zero non-activity output in the inspected sample;
-- all unconfigured sources retain their previous collection path.
+Migrate Esplanade first. Required evidence includes a real snapshot, published rule version, preview, live collector output, correct public URLs, correct `when` and `where`, zero inspected non-activity rows, and unchanged behavior for sources without published rules.
 
 Repository tests alone are not live-source acceptance.
 
 ### Phase 8 — Incremental source migration
 
-Migrate sources one at a time using capture, annotation, draft test, publication, live run, and visible verification. Do not apply a guessed selector or global filter to every source simultaneously.
+Migrate one source at a time through capture, annotation, test, publish, live run, and visible verification. Do not apply guessed selectors or one global filter to every source.
 
 ### Phase 9 — Deployment and operation
 
@@ -294,39 +221,39 @@ infoscreen-local-events.service
 infoscreen-local-events.timer
 ```
 
-Document code update, existing-unit reinstall, HTTP restart, immediate Local Events trigger, Studio access, rule version inspection, rollback, and per-source evidence inspection. Do not add a Studio service or port.
+Document code update, existing-unit reinstall, HTTP restart, immediate crawl, Studio access, rule inspection, rollback, and per-source evidence inspection.
 
-### Phase 10 — Final documentation consolidation and plan removal
+### Phase 10 — Documentation consolidation and plan deletion
 
-This phase is mandatory before delivery.
+Mandatory final cleanup:
 
 - merge implemented architecture and storage into `docs/design.md`;
-- merge requirement boundaries and acceptance evidence into `docs/questions.md` using its required clarification structure;
-- merge actual routes and payload contracts into `docs/api-spec.md`;
-- merge supported deployment and operation commands into `README.md`;
-- remove stale claims contradicted by the final implementation;
+- merge clarified boundaries and acceptance evidence into `docs/questions.md`;
+- merge actual route contracts into `docs/api-spec.md`;
+- merge supported operation commands into `README.md`;
+- remove stale contradictory claims;
 - delete `docs/plans/local-event-studio.md`;
-- verify no references to the temporary plan remain;
-- verify no second port, service, duplicate server, or temporary annotation implementation remains.
+- remove every reference to this temporary plan;
+- verify no second port, service, server, or temporary annotation implementation remains.
 
 ## Commit and evidence discipline
 
 For every phase:
 
-- one focused commit or a small ordered set when tests must precede implementation;
-- exact changed-file list;
-- deterministic tests added in the existing test layout;
-- actual checks distinguished from checks not run;
-- final diff reviewed for unrelated files;
-- no generated runtime data, screenshots, logs, caches, or local rules committed;
-- no live-source or Surface correctness claim without exact-revision evidence.
+- use one focused commit or a small ordered set;
+- modify only required files;
+- add tests in the existing test layout;
+- distinguish checks run from checks not run;
+- review the final diff for unrelated files;
+- commit no runtime data or generated evidence;
+- make no claim stronger than the available evidence.
 
 ## Current phase status
 
 | Phase | Status | Evidence |
 | --- | --- | --- |
-| 0 — plan and baseline | in progress | branch confirmed identical to `66a6567` before creating this file |
-| 1 — rule storage | pending | none |
+| 0 — plan and baseline | complete | branch was identical to `66a6567`; temporary plan committed as `6fcc5e65` |
+| 1 — rule storage | implemented; repository validation pending | `studio_rules.py` commit `af8f2ec3`; tests commit `4f506b8a`; exact-content isolated run: 8 passed |
 | 2 — 8765 API | pending | none |
 | 3 — snapshot capture | pending | none |
 | 4 — annotation UI | pending | none |
