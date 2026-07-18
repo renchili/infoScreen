@@ -5,17 +5,20 @@ import email.utils
 import json
 import mimetypes
 import os
+import shutil
+import stat
 import subprocess
 import sys
 from datetime import datetime, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from urllib.parse import unquote, urlparse
 
 SURFACE_DIR = Path(__file__).resolve().parent
 WEB_DIR = SURFACE_DIR / "web"
 ENV_DIR = Path(os.environ.get("INFOSCREEN_ENV_DIR", str(SURFACE_DIR / ".env"))).expanduser().resolve()
 CONF_DIR = SURFACE_DIR / "conf"
+PUBLIC_PHOTO_PREFIX = "/public_photos/"
 
 JSON_DEFAULTS = {
     "schedule.json": [],
@@ -111,6 +114,54 @@ def openapi_payload() -> dict:
     return build_openapi()
 
 
+def public_photo_path(request_target: str) -> Path | None:
+    """Resolve one public-photo request without permitting traversal or symlinks."""
+    request_path = urlparse(request_target).path
+    if not request_path.startswith(PUBLIC_PHOTO_PREFIX):
+        return None
+
+    encoded_relative = request_path.removeprefix(PUBLIC_PHOTO_PREFIX)
+    try:
+        decoded_relative = unquote(encoded_relative, encoding="utf-8", errors="strict")
+    except UnicodeDecodeError:
+        return None
+
+    if (
+        not decoded_relative
+        or "\x00" in decoded_relative
+        or "\\" in decoded_relative
+        or decoded_relative.startswith(("/", "\\"))
+    ):
+        return None
+
+    raw_parts = decoded_relative.split("/")
+    if any(part in {"", ".", ".."} for part in raw_parts):
+        return None
+
+    relative = PurePosixPath(*raw_parts)
+    if relative.is_absolute():
+        return None
+
+    public_root = (ENV_DIR / "public_photos").resolve()
+    lexical_target = public_root.joinpath(*relative.parts)
+
+    current = public_root
+    for part in relative.parts:
+        current = current / part
+        if current.is_symlink():
+            return None
+
+    try:
+        target = lexical_target.resolve(strict=True)
+        target.relative_to(public_root)
+    except (FileNotFoundError, OSError, ValueError):
+        return None
+
+    if not target.is_file():
+        return None
+    return target
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(WEB_DIR), **kwargs)
@@ -166,24 +217,42 @@ class Handler(SimpleHTTPRequestHandler):
             self.end_headers()
             return
 
-        stat = path.stat()
+        file_stat = path.stat()
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(stat.st_size))
-        self.send_header("Last-Modified", email.utils.formatdate(stat.st_mtime, usegmt=True))
+        self.send_header("Content-Length", str(file_stat.st_size))
+        self.send_header("Last-Modified", email.utils.formatdate(file_stat.st_mtime, usegmt=True))
         self.end_headers()
 
-    def send_env_file(self, path: Path) -> None:
-        if not path.exists() or not path.is_file():
+    def send_public_photo(self, head_only: bool = False) -> None:
+        target = public_photo_path(self.path)
+        if target is None:
             self.send_error(404, "not found")
             return
-        data = path.read_bytes()
-        self.send_response(200)
-        self.send_header("Content-Type", mimetypes.guess_type(str(path))[0] or "application/octet-stream")
-        self.send_header("Content-Length", str(len(data)))
-        self.send_header("Last-Modified", email.utils.formatdate(path.stat().st_mtime, usegmt=True))
-        self.end_headers()
-        self.wfile.write(data)
+
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            descriptor = os.open(target, flags)
+        except OSError:
+            self.send_error(404, "not found")
+            return
+
+        try:
+            file_stat = os.fstat(descriptor)
+            if not stat.S_ISREG(file_stat.st_mode):
+                self.send_error(404, "not found")
+                return
+
+            self.send_response(200)
+            self.send_header("Content-Type", mimetypes.guess_type(str(target))[0] or "application/octet-stream")
+            self.send_header("Content-Length", str(file_stat.st_size))
+            self.send_header("Last-Modified", email.utils.formatdate(file_stat.st_mtime, usegmt=True))
+            self.end_headers()
+            if not head_only:
+                with os.fdopen(descriptor, "rb", closefd=False) as source:
+                    shutil.copyfileobj(source, self.wfile)
+        finally:
+            os.close(descriptor)
 
     def body_json(self):
         size = int(self.headers.get("Content-Length", "0") or "0")
@@ -204,19 +273,8 @@ class Handler(SimpleHTTPRequestHandler):
         if name in JSON_DEFAULTS:
             return self.send_json_head(name)
 
-        if path.startswith("/public_photos/"):
-            rel = unquote(path.removeprefix("/public_photos/")).lstrip("/")
-            target = ENV_DIR / "public_photos" / rel
-            if target.exists() and target.is_file():
-                self.send_response(200)
-                self.send_header("Content-Type", mimetypes.guess_type(str(target))[0] or "application/octet-stream")
-                self.send_header("Content-Length", str(target.stat().st_size))
-                self.send_header("Last-Modified", email.utils.formatdate(target.stat().st_mtime, usegmt=True))
-                self.end_headers()
-                return
-            self.send_response(404)
-            self.end_headers()
-            return
+        if path.startswith(PUBLIC_PHOTO_PREFIX):
+            return self.send_public_photo(head_only=True)
 
         return super().do_HEAD()
 
@@ -239,9 +297,8 @@ class Handler(SimpleHTTPRequestHandler):
         if name in JSON_DEFAULTS:
             return self.send_json(runtime_json(name))
 
-        if path.startswith("/public_photos/"):
-            rel = unquote(path.removeprefix("/public_photos/")).lstrip("/")
-            return self.send_env_file(ENV_DIR / "public_photos" / rel)
+        if path.startswith(PUBLIC_PHOTO_PREFIX):
+            return self.send_public_photo()
 
         return super().do_GET()
 
