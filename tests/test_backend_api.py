@@ -11,9 +11,11 @@ from surface.api_models import (
     LocalEventSearchResponse,
     MarketConfigRequest,
     PhotosResponse,
+    StudioCaptureRequest,
     StudioRuleBindingRequest,
     StudioRuleImportRequest,
     StudioRuleRollbackRequest,
+    StudioSnapshotMetadata,
 )
 from surface.openapi_spec import build_openapi
 
@@ -45,6 +47,9 @@ def test_openapi_covers_dashboard_and_mutating_routes() -> None:
         "/api/local-events/studio/rollback": {"post"},
         "/api/local-events/studio/import": {"post"},
         "/api/local-events/studio/export": {"get"},
+        "/api/local-events/studio/capture": {"post"},
+        "/api/local-events/studio/snapshots": {"get"},
+        "/api/local-events/studio/snapshot-asset": {"get"},
     }
     for path, methods in studio_paths.items():
         assert path in paths
@@ -54,6 +59,9 @@ def test_openapi_covers_dashboard_and_mutating_routes() -> None:
     assert "LocalEventStudioRule" in schemas
     assert "StudioRuleListResponse" in schemas
     assert "StudioSourcesResponse" in schemas
+    assert "StudioCaptureRequest" in schemas
+    assert "StudioSnapshotMetadata" in schemas
+    assert "StudioSnapshotListResponse" in schemas
 
 
 def test_pydantic_models_validate_closed_loop_fixture() -> None:
@@ -71,7 +79,8 @@ def test_studio_request_models_reject_invalid_version_and_missing_rule() -> None
         source_id="esplanade",
         listing_url="https://www.esplanade.com/whats-on",
     )
-    assert binding.source_id == "esplanade"
+    capture = StudioCaptureRequest.model_validate(binding.model_dump())
+    assert capture.source_id == "esplanade"
 
     with pytest.raises(ValidationError):
         StudioRuleRollbackRequest(
@@ -82,6 +91,18 @@ def test_studio_request_models_reject_invalid_version_and_missing_rule() -> None
 
     with pytest.raises(ValidationError):
         StudioRuleImportRequest.model_validate({})
+
+    snapshot = StudioSnapshotMetadata.model_validate(
+        {
+            "schema_version": 1,
+            "snapshot_id": "20260719T040506123456Z-4183667b5e",
+            "source_id": "esplanade",
+            "listing_url": "https://www.esplanade.com/whats-on",
+            "final_url": "https://www.esplanade.com/whats-on",
+            "captured_at": "2026-07-19T04:05:06.123456+00:00",
+        }
+    )
+    assert snapshot.dom_element_count == 0
 
 
 def test_market_config_request_rejects_empty_symbols() -> None:
