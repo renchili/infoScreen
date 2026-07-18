@@ -18,7 +18,13 @@ from urllib.parse import parse_qs, unquote, urlparse
 from pydantic import ValidationError
 
 try:
-    from .api_models import StudioRuleBindingRequest, StudioRuleImportRequest, StudioRuleRollbackRequest
+    from .api_models import (
+        StudioCaptureRequest,
+        StudioRuleBindingRequest,
+        StudioRuleImportRequest,
+        StudioRuleRollbackRequest,
+    )
+    from .local_events_runtime.studio_capture import list_snapshots, snapshot_asset_path
     from .local_events_runtime.studio_rules import (
         LocalEventStudioRuleStore,
         RuleConflictError,
@@ -28,7 +34,13 @@ try:
         UnknownSourceError,
     )
 except ImportError:
-    from api_models import StudioRuleBindingRequest, StudioRuleImportRequest, StudioRuleRollbackRequest
+    from api_models import (
+        StudioCaptureRequest,
+        StudioRuleBindingRequest,
+        StudioRuleImportRequest,
+        StudioRuleRollbackRequest,
+    )
+    from local_events_runtime.studio_capture import list_snapshots, snapshot_asset_path
     from local_events_runtime.studio_rules import (
         LocalEventStudioRuleStore,
         RuleConflictError,
@@ -45,6 +57,7 @@ CONF_DIR = SURFACE_DIR / "conf"
 PUBLIC_PHOTO_PREFIX = "/public_photos/"
 MAX_JSON_BODY_BYTES = 1_048_576
 STUDIO_MUTATION_LOCK = threading.Lock()
+STUDIO_CAPTURE_TIMEOUT_SECONDS = int(os.environ.get("LOCAL_EVENT_STUDIO_CAPTURE_TIMEOUT_SECONDS", "180"))
 
 JSON_DEFAULTS = {
     "schedule.json": [],
@@ -142,11 +155,15 @@ def openapi_payload() -> dict:
     return build_openapi()
 
 
+def studio_root() -> Path:
+    return ENV_DIR / "local_event_studio"
+
+
 def studio_rule_store() -> LocalEventStudioRuleStore:
     """Return a rule store rooted in the active machine-local runtime directory."""
 
     return LocalEventStudioRuleStore(
-        root=ENV_DIR / "local_event_studio",
+        root=studio_root(),
         source_config_path=CONF_DIR / "event_sources.json",
     )
 
@@ -159,6 +176,12 @@ def studio_sources_payload(store: LocalEventStudioRuleStore | None = None) -> di
     """List configured source/listing pairs with only rule-state metadata."""
 
     active = store or studio_rule_store()
+    raw_inventory = read_json(CONF_DIR / "event_sources.json", {"sources": []})
+    names = {
+        str(item.get("id")): str(item.get("name") or "")
+        for item in raw_inventory.get("sources") or []
+        if isinstance(item, dict) and item.get("id")
+    }
     sources = []
     for source in active.configured_sources():
         listing_states = []
@@ -177,7 +200,7 @@ def studio_sources_payload(store: LocalEventStudioRuleStore | None = None) -> di
         sources.append(
             {
                 "source_id": source.id,
-                "name": getattr(source, "name", None),
+                "name": names.get(source.id) or None,
                 "listing_urls": listing_states,
             }
         )
@@ -330,26 +353,20 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Last-Modified", email.utils.formatdate(file_stat.st_mtime, usegmt=True))
         self.end_headers()
 
-    def send_public_photo(self, head_only: bool = False) -> None:
-        target = public_photo_path(self.path)
-        if target is None:
-            self.send_error(404, "not found")
-            return
-
+    def send_file(self, target: Path, content_type: str, *, head_only: bool = False) -> None:
         flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
         try:
             descriptor = os.open(target, flags)
         except OSError:
             self.send_error(404, "not found")
             return
-
         try:
             file_stat = os.fstat(descriptor)
             if not stat.S_ISREG(file_stat.st_mode):
                 self.send_error(404, "not found")
                 return
             self.send_response(200)
-            self.send_header("Content-Type", mimetypes.guess_type(str(target))[0] or "application/octet-stream")
+            self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(file_stat.st_size))
             self.send_header("Last-Modified", email.utils.formatdate(file_stat.st_mtime, usegmt=True))
             self.end_headers()
@@ -358,6 +375,36 @@ class Handler(SimpleHTTPRequestHandler):
                     shutil.copyfileobj(source, self.wfile)
         finally:
             os.close(descriptor)
+
+    def send_public_photo(self, head_only: bool = False) -> None:
+        target = public_photo_path(self.path)
+        if target is None:
+            self.send_error(404, "not found")
+            return
+        self.send_file(target, mimetypes.guess_type(str(target))[0] or "application/octet-stream", head_only=head_only)
+
+    def send_studio_snapshot_asset(self, head_only: bool = False) -> None:
+        try:
+            source_id = self.query_value("source_id") or ""
+            snapshot_id = self.query_value("snapshot_id") or ""
+            asset = self.query_value("asset") or ""
+        except Exception as exc:
+            return self.send_studio_error(exc)
+        target = snapshot_asset_path(
+            source_id,
+            snapshot_id,
+            asset,
+            root=studio_root(),
+        )
+        if target is None:
+            return self.send_json({"ok": False, "error": "snapshot_asset_not_found"}, 404)
+        content_type = {
+            "page.png": "image/png",
+            "page.html": "text/html; charset=utf-8",
+            "dom.json": "application/json; charset=utf-8",
+            "metadata.json": "application/json; charset=utf-8",
+        }[asset]
+        return self.send_file(target, content_type, head_only=head_only)
 
     def body_json(self):
         size = int(self.headers.get("Content-Length", "0") or "0")
@@ -390,6 +437,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_openapi(head_only=True)
         if path == "/docs":
             return self.send_html(SWAGGER_UI_HTML, head_only=True)
+        if path == "/api/local-events/studio/snapshot-asset":
+            return self.send_studio_snapshot_asset(head_only=True)
 
         if name in JSON_DEFAULTS:
             return self.send_json_head(name)
@@ -433,20 +482,32 @@ class Handler(SimpleHTTPRequestHandler):
             try:
                 source_id = self.query_value("source_id") or ""
                 listing_url = self.query_value("listing_url") or ""
-                status = self.query_value("status", required=False) or "published"
-                if status not in {"draft", "published"}:
+                status_value = self.query_value("status", required=False) or "published"
+                if status_value not in {"draft", "published"}:
                     raise ValueError("status must be draft or published")
                 version_text = self.query_value("version", required=False)
                 version = int(version_text) if version_text else None
                 exported = studio_rule_store().export_rule(
                     source_id,
                     listing_url,
-                    status=status,
+                    status=status_value,
                     version=version,
                 )
                 return self.send_json({"ok": True, "rule": json.loads(exported)})
             except Exception as exc:
                 return self.send_studio_error(exc)
+        if path == "/api/local-events/studio/snapshots":
+            try:
+                snapshots = list_snapshots(
+                    root=studio_root(),
+                    source_id=self.query_value("source_id", required=False),
+                    listing_url=self.query_value("listing_url", required=False),
+                )
+                return self.send_json({"ok": True, "snapshots": snapshots})
+            except Exception as exc:
+                return self.send_studio_error(exc)
+        if path == "/api/local-events/studio/snapshot-asset":
+            return self.send_studio_snapshot_asset()
 
         if name in JSON_DEFAULTS:
             return self.send_json(runtime_json(name))
@@ -507,6 +568,43 @@ class Handler(SimpleHTTPRequestHandler):
                 with STUDIO_MUTATION_LOCK:
                     rule = studio_rule_store().import_draft(request.rule)
                 return self.send_json({"ok": True, "rule": studio_rule_payload(rule)})
+            except Exception as exc:
+                return self.send_studio_error(exc)
+
+        if path == "/api/local-events/studio/capture":
+            try:
+                request = StudioCaptureRequest.model_validate(self.body_json())
+                environment = os.environ.copy()
+                environment["INFOSCREEN_ENV_DIR"] = str(ENV_DIR)
+                proc = subprocess.run(
+                    [
+                        sys.executable,
+                        str(SURFACE_DIR / "jobs" / "local_event_studio_capture.py"),
+                        request.source_id,
+                        request.listing_url,
+                    ],
+                    cwd=str(SURFACE_DIR),
+                    text=True,
+                    capture_output=True,
+                    timeout=STUDIO_CAPTURE_TIMEOUT_SECONDS,
+                    env=environment,
+                )
+                if proc.returncode != 0:
+                    return self.send_json(
+                        {
+                            "ok": False,
+                            "error": "studio_capture_failed",
+                            "detail": proc.stderr[-2000:] or proc.stdout[-2000:],
+                        },
+                        500,
+                    )
+                lines = [line for line in proc.stdout.splitlines() if line.strip()]
+                if not lines:
+                    raise ValueError("capture job returned no JSON result")
+                payload = json.loads(lines[-1])
+                if payload.get("ok") is not True or not isinstance(payload.get("snapshot"), dict):
+                    raise ValueError("capture job returned an invalid result")
+                return self.send_json(payload)
             except Exception as exc:
                 return self.send_studio_error(exc)
 
