@@ -9,16 +9,42 @@ import shutil
 import stat
 import subprocess
 import sys
+import threading
 from datetime import datetime, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path, PurePosixPath
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
+
+from pydantic import ValidationError
+
+try:
+    from .api_models import StudioRuleBindingRequest, StudioRuleImportRequest, StudioRuleRollbackRequest
+    from .local_events_runtime.studio_rules import (
+        LocalEventStudioRuleStore,
+        RuleConflictError,
+        RuleNotFoundError,
+        RuleStorageError,
+        UnknownListingError,
+        UnknownSourceError,
+    )
+except ImportError:
+    from api_models import StudioRuleBindingRequest, StudioRuleImportRequest, StudioRuleRollbackRequest
+    from local_events_runtime.studio_rules import (
+        LocalEventStudioRuleStore,
+        RuleConflictError,
+        RuleNotFoundError,
+        RuleStorageError,
+        UnknownListingError,
+        UnknownSourceError,
+    )
 
 SURFACE_DIR = Path(__file__).resolve().parent
 WEB_DIR = SURFACE_DIR / "web"
 ENV_DIR = Path(os.environ.get("INFOSCREEN_ENV_DIR", str(SURFACE_DIR / ".env"))).expanduser().resolve()
 CONF_DIR = SURFACE_DIR / "conf"
 PUBLIC_PHOTO_PREFIX = "/public_photos/"
+MAX_JSON_BODY_BYTES = 1_048_576
+STUDIO_MUTATION_LOCK = threading.Lock()
 
 JSON_DEFAULTS = {
     "schedule.json": [],
@@ -109,9 +135,89 @@ def index_html() -> bytes:
 
 
 def openapi_payload() -> dict:
-    from openapi_spec import build_openapi
-
+    try:
+        from .openapi_spec import build_openapi
+    except ImportError:
+        from openapi_spec import build_openapi
     return build_openapi()
+
+
+def studio_rule_store() -> LocalEventStudioRuleStore:
+    """Return a rule store rooted in the active machine-local runtime directory."""
+
+    return LocalEventStudioRuleStore(
+        root=ENV_DIR / "local_event_studio",
+        source_config_path=CONF_DIR / "event_sources.json",
+    )
+
+
+def studio_rule_payload(rule):
+    return rule.model_dump(mode="json", exclude_none=True) if rule is not None else None
+
+
+def studio_sources_payload(store: LocalEventStudioRuleStore | None = None) -> dict:
+    """List configured source/listing pairs with only rule-state metadata."""
+
+    active = store or studio_rule_store()
+    sources = []
+    for source in active.configured_sources():
+        listing_states = []
+        for listing_url in source.listing_urls:
+            draft = active.load_draft(source.id, listing_url)
+            published = active.load_published(source.id, listing_url)
+            history = active.list_history(source.id, listing_url)
+            listing_states.append(
+                {
+                    "listing_url": listing_url,
+                    "has_draft": draft is not None,
+                    "published_version": published.version if published else None,
+                    "history_versions": [item.version for item in history],
+                }
+            )
+        sources.append(
+            {
+                "source_id": source.id,
+                "name": getattr(source, "name", None),
+                "listing_urls": listing_states,
+            }
+        )
+    return {"ok": True, "sources": sources}
+
+
+def studio_rules_payload(source_id: str, listing_url: str, store: LocalEventStudioRuleStore | None = None) -> dict:
+    """Return all persisted rule states for one configured source/listing pair."""
+
+    active = store or studio_rule_store()
+    draft = active.load_draft(source_id, listing_url)
+    published = active.load_published(source_id, listing_url)
+    history = active.list_history(source_id, listing_url)
+    canonical_url = active._binding(source_id, listing_url)[1]
+    return {
+        "ok": True,
+        "source_id": source_id,
+        "listing_url": canonical_url,
+        "draft": studio_rule_payload(draft),
+        "published": studio_rule_payload(published),
+        "history": [studio_rule_payload(item) for item in history],
+    }
+
+
+def studio_error(exc: Exception) -> tuple[dict, int]:
+    if isinstance(exc, UnknownSourceError):
+        return {"ok": False, "error": "unknown_source", "detail": str(exc)}, 400
+    if isinstance(exc, UnknownListingError):
+        return {"ok": False, "error": "unknown_listing", "detail": str(exc)}, 400
+    if isinstance(exc, ValidationError):
+        return {"ok": False, "error": "invalid_rule", "detail": str(exc)}, 400
+    if isinstance(exc, (ValueError, json.JSONDecodeError, UnicodeDecodeError)):
+        return {"ok": False, "error": "invalid_request", "detail": str(exc)}, 400
+    if isinstance(exc, RuleNotFoundError):
+        return {"ok": False, "error": "rule_not_found", "detail": str(exc)}, 404
+    if isinstance(exc, RuleConflictError):
+        return {"ok": False, "error": "rule_conflict", "detail": str(exc)}, 409
+    if isinstance(exc, RuleStorageError):
+        return {"ok": False, "error": "studio_rule_storage_failed"}, 500
+    return {"ok": False, "error": "studio_operation_failed"}, 500
 
 
 def public_photo_path(request_target: str) -> Path | None:
@@ -242,7 +348,6 @@ class Handler(SimpleHTTPRequestHandler):
             if not stat.S_ISREG(file_stat.st_mode):
                 self.send_error(404, "not found")
                 return
-
             self.send_response(200)
             self.send_header("Content-Type", mimetypes.guess_type(str(target))[0] or "application/octet-stream")
             self.send_header("Content-Length", str(file_stat.st_size))
@@ -256,8 +361,24 @@ class Handler(SimpleHTTPRequestHandler):
 
     def body_json(self):
         size = int(self.headers.get("Content-Length", "0") or "0")
-        raw = self.rfile.read(size).decode("utf-8", "replace") if size else "{}"
-        return json.loads(raw or "{}")
+        if size < 0 or size > MAX_JSON_BODY_BYTES:
+            raise ValueError("request body exceeds the 1 MiB limit")
+        raw = self.rfile.read(size).decode("utf-8", "strict") if size else "{}"
+        value = json.loads(raw or "{}")
+        if not isinstance(value, dict):
+            raise ValueError("request body must be a JSON object")
+        return value
+
+    def query_value(self, name: str, *, required: bool = True) -> str | None:
+        values = parse_qs(urlparse(self.path).query, keep_blank_values=True).get(name, [])
+        value = values[0].strip() if values else ""
+        if required and not value:
+            raise ValueError(f"missing query parameter: {name}")
+        return value or None
+
+    def send_studio_error(self, exc: Exception) -> None:
+        payload, status = studio_error(exc)
+        self.send_json(payload, status)
 
     def do_HEAD(self):
         path = urlparse(self.path).path
@@ -293,6 +414,39 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json(market_config_json())
         if path == "/api/local-events/search":
             return self.send_json(runtime_json("local_event_search_results.json"))
+        if path == "/api/local-events/studio/sources":
+            try:
+                return self.send_json(studio_sources_payload())
+            except Exception as exc:
+                return self.send_studio_error(exc)
+        if path == "/api/local-events/studio/rules":
+            try:
+                return self.send_json(
+                    studio_rules_payload(
+                        self.query_value("source_id") or "",
+                        self.query_value("listing_url") or "",
+                    )
+                )
+            except Exception as exc:
+                return self.send_studio_error(exc)
+        if path == "/api/local-events/studio/export":
+            try:
+                source_id = self.query_value("source_id") or ""
+                listing_url = self.query_value("listing_url") or ""
+                status = self.query_value("status", required=False) or "published"
+                if status not in {"draft", "published"}:
+                    raise ValueError("status must be draft or published")
+                version_text = self.query_value("version", required=False)
+                version = int(version_text) if version_text else None
+                exported = studio_rule_store().export_rule(
+                    source_id,
+                    listing_url,
+                    status=status,
+                    version=version,
+                )
+                return self.send_json({"ok": True, "rule": json.loads(exported)})
+            except Exception as exc:
+                return self.send_studio_error(exc)
 
         if name in JSON_DEFAULTS:
             return self.send_json(runtime_json(name))
@@ -302,8 +456,60 @@ class Handler(SimpleHTTPRequestHandler):
 
         return super().do_GET()
 
+    def do_PUT(self):
+        path = urlparse(self.path).path
+        if path != "/api/local-events/studio/draft":
+            return self.send_json({"ok": False, "error": "not found"}, 404)
+        try:
+            body = self.body_json()
+            with STUDIO_MUTATION_LOCK:
+                rule = studio_rule_store().save_draft(body)
+            return self.send_json({"ok": True, "rule": studio_rule_payload(rule)})
+        except Exception as exc:
+            return self.send_studio_error(exc)
+
+    def do_DELETE(self):
+        path = urlparse(self.path).path
+        if path != "/api/local-events/studio/draft":
+            return self.send_json({"ok": False, "error": "not found"}, 404)
+        try:
+            request = StudioRuleBindingRequest.model_validate(self.body_json())
+            with STUDIO_MUTATION_LOCK:
+                deleted = studio_rule_store().delete_draft(request.source_id, request.listing_url)
+            return self.send_json({"ok": True, "deleted": deleted})
+        except Exception as exc:
+            return self.send_studio_error(exc)
+
     def do_POST(self):
         path = urlparse(self.path).path
+
+        if path == "/api/local-events/studio/publish":
+            try:
+                request = StudioRuleBindingRequest.model_validate(self.body_json())
+                with STUDIO_MUTATION_LOCK:
+                    rule = studio_rule_store().publish(request.source_id, request.listing_url)
+                return self.send_json({"ok": True, "rule": studio_rule_payload(rule)})
+            except Exception as exc:
+                return self.send_studio_error(exc)
+
+        if path == "/api/local-events/studio/rollback":
+            try:
+                request = StudioRuleRollbackRequest.model_validate(self.body_json())
+                with STUDIO_MUTATION_LOCK:
+                    rule = studio_rule_store().rollback(request.source_id, request.listing_url, request.version)
+                return self.send_json({"ok": True, "rule": studio_rule_payload(rule)})
+            except Exception as exc:
+                return self.send_studio_error(exc)
+
+        if path == "/api/local-events/studio/import":
+            try:
+                request = StudioRuleImportRequest.model_validate(self.body_json())
+                with STUDIO_MUTATION_LOCK:
+                    rule = studio_rule_store().import_draft(request.rule)
+                return self.send_json({"ok": True, "rule": studio_rule_payload(rule)})
+            except Exception as exc:
+                return self.send_studio_error(exc)
+
         if path == "/api/market-config":
             try:
                 ENV_DIR.mkdir(exist_ok=True)
