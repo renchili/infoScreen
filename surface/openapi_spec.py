@@ -23,6 +23,7 @@ try:
         ScheduleItem,
         StudioCaptureRequest,
         StudioCaptureResponse,
+        StudioLatestTestResponse,
         StudioRuleBindingRequest,
         StudioRuleDeleteResponse,
         StudioRuleImportRequest,
@@ -34,6 +35,11 @@ try:
         StudioSourceListingState,
         StudioSourcesResponse,
         StudioSourceState,
+        StudioTestAcceptedRow,
+        StudioTestRejectedRow,
+        StudioTestRequest,
+        StudioTestResponse,
+        StudioTestResult,
     )
     from .local_events_runtime.studio_rules import LocalEventStudioRule
 except ImportError:
@@ -55,6 +61,7 @@ except ImportError:
         ScheduleItem,
         StudioCaptureRequest,
         StudioCaptureResponse,
+        StudioLatestTestResponse,
         StudioRuleBindingRequest,
         StudioRuleDeleteResponse,
         StudioRuleImportRequest,
@@ -66,6 +73,11 @@ except ImportError:
         StudioSourceListingState,
         StudioSourcesResponse,
         StudioSourceState,
+        StudioTestAcceptedRow,
+        StudioTestRejectedRow,
+        StudioTestRequest,
+        StudioTestResponse,
+        StudioTestResult,
     )
     from local_events_runtime.studio_rules import LocalEventStudioRule
 
@@ -123,20 +135,20 @@ def build_openapi() -> dict[str, Any]:
         "openapi": OPENAPI_VERSION,
         "info": {
             "title": "InfoScreen Local API",
-            "version": "0.3.0",
-            "description": "Local kiosk API for runtime dashboard JSON, refresh actions, market config, local event search, Local Event Studio rules, and official-list snapshots.",
+            "version": "0.4.0",
+            "description": "Local kiosk API for runtime dashboard JSON, refresh actions, Local Event Studio snapshots, deterministic draft tests, and versioned rule publication.",
         },
         "servers": [{"url": "http://127.0.0.1:8765", "description": "Local Surface kiosk server"}],
         "tags": [
             {"name": "dashboard", "description": "Static dashboard and runtime JSON"},
             {"name": "market", "description": "Market config and refresh APIs"},
             {"name": "local-events", "description": "Rendered DOM local event search APIs"},
-            {"name": "local-event-studio", "description": "Local rules, snapshots, publication, history, import, and export"},
+            {"name": "local-event-studio", "description": "Local rule, snapshot, test, publication, history, import, and export APIs"},
             {"name": "media", "description": "Photo wall media endpoints"},
         ],
         "paths": {
-            "/": {"get": {"tags": ["dashboard"], "summary": "Serve dashboard HTML", "description": "Returns sanitized dashboard HTML.", "responses": {"200": {"description": "HTML dashboard"}}}},
-            "/index.html": {"get": {"tags": ["dashboard"], "summary": "Serve dashboard HTML", "description": "Same as GET /.", "responses": {"200": {"description": "HTML dashboard"}}}},
+            "/": {"get": {"tags": ["dashboard"], "summary": "Serve dashboard HTML", "responses": {"200": {"description": "HTML dashboard"}}}},
+            "/index.html": {"get": {"tags": ["dashboard"], "summary": "Serve dashboard HTML", "responses": {"200": {"description": "HTML dashboard"}}}},
             "/openapi.json": {"get": {"tags": ["dashboard"], "summary": "Return OpenAPI specification", "responses": {"200": json_response(None)}}},
             "/docs": {"get": {"tags": ["dashboard"], "summary": "Serve Swagger UI", "responses": {"200": {"description": "Swagger UI HTML"}}}},
             "/schedule.json": {"get": {"tags": ["dashboard"], "summary": "Read schedule runtime JSON", "responses": {"200": json_response(schedule_list_schema)}}},
@@ -151,23 +163,46 @@ def build_openapi() -> dict[str, Any]:
                 "get": {"tags": ["market"], "summary": "Read active market symbol config", "responses": {"200": json_response(ref("MarketConfigResponse"))}},
                 "post": {"tags": ["market"], "summary": "Update active market symbol config", "requestBody": request_body(ref("MarketConfigRequest")), "responses": {"200": json_response(ref("MarketConfigResponse")), "400": json_response(ref("ErrorResponse"), "Invalid request")}},
             },
-            "/api/market-refresh": {"post": {"tags": ["market"], "summary": "Refresh market runtime data", "description": "Runs surface/fetch_live_data.py.", "responses": {"200": json_response(ref("MarketRefreshResponse")), "500": json_response(ref("ErrorResponse"), "Refresh failed")}}},
+            "/api/market-refresh": {"post": {"tags": ["market"], "summary": "Refresh market runtime data", "responses": {"200": json_response(ref("MarketRefreshResponse")), "500": json_response(ref("ErrorResponse"), "Refresh failed")}}},
             "/api/local-events/search": {
-                "get": {"tags": ["local-events"], "summary": "Read latest local event search results", "description": "Returns runtime JSON without running a new search.", "responses": {"200": json_response(ref("LocalEventSearchResponse")), "404": json_response(ref("RuntimeMissingResponse"), "Runtime JSON missing")}},
-                "post": {"tags": ["local-events"], "summary": "Run local event search for a location", "description": "Runs surface/search_local_events.py.", "requestBody": request_body(ref("LocalEventSearchRequest")), "responses": {"200": json_response(ref("LocalEventSearchResponse")), "500": json_response(ref("ErrorResponse"), "Search failed")}},
+                "get": {"tags": ["local-events"], "summary": "Read latest local event search results", "responses": {"200": json_response(ref("LocalEventSearchResponse")), "404": json_response(ref("RuntimeMissingResponse"), "Runtime JSON missing")}},
+                "post": {"tags": ["local-events"], "summary": "Run local event search for a location", "requestBody": request_body(ref("LocalEventSearchRequest")), "responses": {"200": json_response(ref("LocalEventSearchResponse")), "500": json_response(ref("ErrorResponse"), "Search failed")}},
             },
             "/api/local-events/studio/sources": {
                 "get": {"tags": ["local-event-studio"], "summary": "List configured sources and rule state", "responses": {"200": json_response(ref("StudioSourcesResponse")), "500": json_response(ref("ErrorResponse"), "Rule storage failed")}}
             },
             "/api/local-events/studio/rules": {
-                "get": {"tags": ["local-event-studio"], "summary": "Read draft, published, and history rules", "parameters": studio_binding_parameters, "responses": {"200": json_response(ref("StudioRuleListResponse")), "400": json_response(ref("ErrorResponse"), "Invalid binding"), "500": json_response(ref("ErrorResponse"), "Rule storage failed")}}
+                "get": {"tags": ["local-event-studio"], "summary": "Read draft, published, and history rules", "parameters": studio_binding_parameters, "responses": {"200": json_response(ref("StudioRuleListResponse")), "400": json_response(ref("ErrorResponse"), "Invalid binding")}}
             },
             "/api/local-events/studio/draft": {
-                "put": {"tags": ["local-event-studio"], "summary": "Save a validated draft rule", "requestBody": request_body(ref("LocalEventStudioRule")), "responses": {"200": json_response(ref("StudioRuleResponse")), "400": json_response(ref("ErrorResponse"), "Invalid rule"), "500": json_response(ref("ErrorResponse"), "Rule storage failed")}},
+                "put": {"tags": ["local-event-studio"], "summary": "Save a validated draft rule", "requestBody": request_body(ref("LocalEventStudioRule")), "responses": {"200": json_response(ref("StudioRuleResponse")), "400": json_response(ref("ErrorResponse"), "Invalid rule")}},
                 "delete": {"tags": ["local-event-studio"], "summary": "Delete the mutable draft only", "requestBody": request_body(ref("StudioRuleBindingRequest")), "responses": {"200": json_response(ref("StudioRuleDeleteResponse")), "400": json_response(ref("ErrorResponse"), "Invalid binding")}},
             },
+            "/api/local-events/studio/test": {
+                "post": {
+                    "tags": ["local-event-studio"],
+                    "summary": "Test the current draft against a stored snapshot",
+                    "description": "Runs without external network access and stores accepted, rejected, and field-evidence rows under the machine-local Studio directory.",
+                    "requestBody": request_body(ref("StudioTestRequest")),
+                    "responses": {"200": json_response(ref("StudioTestResponse")), "400": json_response(ref("ErrorResponse"), "Invalid request"), "404": json_response(ref("ErrorResponse"), "Draft or snapshot missing"), "422": json_response(ref("ErrorResponse"), "Draft evaluation failed")},
+                }
+            },
+            "/api/local-events/studio/test-latest": {
+                "get": {
+                    "tags": ["local-event-studio"],
+                    "summary": "Read the latest test result for one source/listing",
+                    "parameters": studio_binding_parameters,
+                    "responses": {"200": json_response(ref("StudioLatestTestResponse")), "400": json_response(ref("ErrorResponse"), "Invalid binding")},
+                }
+            },
             "/api/local-events/studio/publish": {
-                "post": {"tags": ["local-event-studio"], "summary": "Publish the current draft as the next version", "requestBody": request_body(ref("StudioRuleBindingRequest")), "responses": {"200": json_response(ref("StudioRuleResponse")), "400": json_response(ref("ErrorResponse"), "Invalid binding"), "404": json_response(ref("ErrorResponse"), "Draft missing"), "409": json_response(ref("ErrorResponse"), "Version conflict")}}
+                "post": {
+                    "tags": ["local-event-studio"],
+                    "summary": "Publish the tested current draft as the next version",
+                    "description": "Publication is rejected unless the latest publishable snapshot test has the exact current draft fingerprint.",
+                    "requestBody": request_body(ref("StudioRuleBindingRequest")),
+                    "responses": {"200": json_response(ref("StudioRuleResponse")), "400": json_response(ref("ErrorResponse"), "Invalid binding"), "404": json_response(ref("ErrorResponse"), "Draft missing"), "409": json_response(ref("ErrorResponse"), "Version conflict"), "422": json_response(ref("ErrorResponse"), "Matching publishable test required")},
+                }
             },
             "/api/local-events/studio/rollback": {
                 "post": {"tags": ["local-event-studio"], "summary": "Republish a historical rule as a new version", "requestBody": request_body(ref("StudioRuleRollbackRequest")), "responses": {"200": json_response(ref("StudioRuleResponse")), "400": json_response(ref("ErrorResponse"), "Invalid request"), "404": json_response(ref("ErrorResponse"), "History version missing"), "409": json_response(ref("ErrorResponse"), "Version conflict")}}
@@ -190,7 +225,7 @@ def build_openapi() -> dict[str, Any]:
                 "post": {
                     "tags": ["local-event-studio"],
                     "summary": "Capture one configured official listing",
-                    "description": "Runs the one-shot Studio capture job. The job saves screenshot, HTML, DOM evidence, and metadata under surface/.env/local_event_studio/.",
+                    "description": "Runs the one-shot Studio capture job and stores screenshot, HTML, DOM evidence, and metadata.",
                     "requestBody": request_body(ref("StudioCaptureRequest")),
                     "responses": {"200": json_response(ref("StudioCaptureResponse")), "400": json_response(ref("ErrorResponse"), "Invalid source/listing"), "500": json_response(ref("ErrorResponse"), "Capture failed")},
                 }
@@ -219,7 +254,7 @@ def build_openapi() -> dict[str, Any]:
                 }
             },
             "/public_photos/{path}": {
-                "get": {"tags": ["media"], "summary": "Serve a public photo file", "parameters": [{"name": "path", "in": "path", "required": True, "schema": {"type": "string"}, "description": "Relative path under surface/.env/public_photos/."}], "responses": {"200": {"description": "Photo bytes"}, "404": {"description": "Not found"}}},
+                "get": {"tags": ["media"], "summary": "Serve a public photo file", "parameters": [{"name": "path", "in": "path", "required": True, "schema": {"type": "string"}}], "responses": {"200": {"description": "Photo bytes"}, "404": {"description": "Not found"}}},
                 "head": {"tags": ["media"], "summary": "Read public photo metadata", "parameters": [{"name": "path", "in": "path", "required": True, "schema": {"type": "string"}}], "responses": {"200": {"description": "Photo metadata"}, "404": {"description": "Not found"}}},
             },
         },
@@ -250,6 +285,12 @@ def build_openapi() -> dict[str, Any]:
                 "StudioSnapshotMetadata": schema_for(StudioSnapshotMetadata),
                 "StudioCaptureResponse": schema_for(StudioCaptureResponse),
                 "StudioSnapshotListResponse": schema_for(StudioSnapshotListResponse),
+                "StudioTestRequest": schema_for(StudioTestRequest),
+                "StudioTestAcceptedRow": schema_for(StudioTestAcceptedRow),
+                "StudioTestRejectedRow": schema_for(StudioTestRejectedRow),
+                "StudioTestResult": schema_for(StudioTestResult),
+                "StudioTestResponse": schema_for(StudioTestResponse),
+                "StudioLatestTestResponse": schema_for(StudioLatestTestResponse),
                 "EventStreamResponse": schema_for(EventStreamResponse),
                 "PhotoItem": schema_for(PhotoItem),
                 "PhotosResponse": schema_for(PhotosResponse),
