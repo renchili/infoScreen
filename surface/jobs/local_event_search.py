@@ -37,6 +37,7 @@ PARTIAL_OUT = ENV_DIR / "local_event_search_results.partial.json"
 DEBUG_DIR = ENV_DIR / "local_event_debug_cards"
 DEFAULT_LOCATION = "Punggol Singapore"
 VERIFIED_POLICY = "official-listing-authority-v1"
+TIMEOUT_REASON_MARKERS = ("deadline", "budget_exhausted", "timeout")
 
 
 def read_json(path: Path) -> dict:
@@ -51,14 +52,70 @@ def result_count(payload: dict) -> int:
     return len(results) if isinstance(results, list) else int(payload.get("count") or 0)
 
 
-def debug_count(payload: dict) -> int:
-    debug = payload.get("debug_by_source")
-    return len(debug) if isinstance(debug, list) else 0
+def source_completion(debug: dict) -> tuple[str, bool]:
+    listing_urls = debug.get("listing_urls")
+    expected = len(listing_urls) if isinstance(listing_urls, list) else 0
+    try:
+        fetched = int(debug.get("listing_fetched") or 0)
+    except (TypeError, ValueError):
+        fetched = 0
+
+    if debug.get("complete") is True or (expected > 0 and fetched >= expected):
+        return "complete", True
+
+    reason_counts = debug.get("reason_counts")
+    reasons = [str(value).lower() for value in reason_counts] if isinstance(reason_counts, dict) else []
+    previews = debug.get("not_output_preview")
+    if isinstance(previews, list):
+        reasons.extend(
+            str(item.get("reason") or "").lower()
+            for item in previews
+            if isinstance(item, dict)
+        )
+
+    if any("not_started" in reason for reason in reasons):
+        return "not_started", False
+    if any(marker in reason for reason in reasons for marker in TIMEOUT_REASON_MARKERS):
+        return "timed_out", False
+    if fetched > 0:
+        return "partial", False
+    return "failed", False
+
+
+def annotate_source_completion(payload: dict) -> dict:
+    annotated = dict(payload)
+    raw_debug = payload.get("debug_by_source")
+    debug_rows = raw_debug if isinstance(raw_debug, list) else []
+    source_count = int(payload.get("source_count") or len(debug_rows) or 0)
+    completed = 0
+    status_counts: dict[str, int] = {}
+    normalized_debug = []
+
+    for raw in debug_rows:
+        row = dict(raw) if isinstance(raw, dict) else {}
+        status, complete = source_completion(row)
+        row["status"] = status
+        row["complete"] = complete
+        normalized_debug.append(row)
+        status_counts[status] = status_counts.get(status, 0) + 1
+        if complete:
+            completed += 1
+
+    missing_rows = max(0, source_count - len(normalized_debug))
+    if missing_rows:
+        status_counts["not_started"] = status_counts.get("not_started", 0) + missing_rows
+
+    annotated["source_count"] = source_count
+    annotated["debug_by_source"] = normalized_debug
+    annotated["completed_source_count"] = completed
+    annotated["incomplete_source_count"] = max(0, source_count - completed)
+    annotated["source_status_counts"] = status_counts
+    annotated["partial"] = bool(source_count and completed < source_count)
+    return annotated
 
 
 def is_partial(payload: dict) -> bool:
-    source_count = int(payload.get("source_count") or 0)
-    return bool(source_count and debug_count(payload) < source_count)
+    return bool(annotate_source_completion(payload).get("partial"))
 
 
 def verified_previous_payload(payload: dict) -> dict:
@@ -77,34 +134,33 @@ def verified_previous_payload(payload: dict) -> dict:
 
 
 def write_payload(payload: dict) -> None:
-    payload = normalize_payload(payload)
+    payload = annotate_source_completion(normalize_payload(payload))
     old = verified_previous_payload(normalize_payload(read_json(OUT)))
     new_count = result_count(payload)
     old_count = result_count(old)
 
-    if is_partial(payload) and old_count > new_count:
+    if payload["partial"] and old_count > new_count:
         OUT.write_text(json.dumps(old, ensure_ascii=False, indent=2), encoding="utf-8")
         payload = {
             **payload,
             "ok": False,
-            "partial": True,
             "write_policy": "kept_previous_verified_result",
             "previous_count": old_count,
         }
         PARTIAL_OUT.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         return
 
-    payload = {**payload, "partial": is_partial(payload)}
     OUT.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def self_test() -> int:
-    payload = normalize_payload(collect_events(CONFIG, DEFAULT_LOCATION, DEBUG_DIR))
+    payload = annotate_source_completion(normalize_payload(collect_events(CONFIG, DEFAULT_LOCATION, DEBUG_DIR)))
     assert payload["extractor"] == "listing-authoritative-v52"
     assert payload["version"] == 52
     assert payload["text_normalizer"] == "plain-text-v1"
     assert isinstance(payload.get("results"), list)
     assert isinstance(payload.get("debug_by_source"), list)
+    assert isinstance(payload.get("partial"), bool)
     print("local-event listing-authority self-test passed")
     return 0
 
@@ -121,7 +177,7 @@ def main(argv: list[str] | None = None) -> int:
     location = " ".join(args.location).strip() or DEFAULT_LOCATION
     ENV_DIR.mkdir(exist_ok=True)
     DEBUG_DIR.mkdir(parents=True, exist_ok=True)
-    payload = normalize_payload(collect_events(CONFIG, location, DEBUG_DIR))
+    payload = annotate_source_completion(normalize_payload(collect_events(CONFIG, location, DEBUG_DIR)))
     write_payload(payload)
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0
