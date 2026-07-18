@@ -178,6 +178,28 @@ Require a rendered, isolated card from a configured official listing with one ca
 
 Regression tests must show that the SAFRA `Carpark Rates` object and another unmatched typed `Event` are rejected without naming new blacklist terms, that matched structured data enriches only its listed card, that a listed activity such as `Membership Workshop` remains accepted, and that a card without official listing evidence is rejected. Live validation against current sources is still required before claiming current coverage.
 
+## Local Events detail-field authority
+
+### Easy-to-make interpretation
+
+Once a correct listing card is admitted, the source organisation name can be used as the final venue and an internal CMS path or listing URL can be exposed as the event URL even when the official detail page contains a more specific place and a stable public detail route.
+
+### Why it fails
+
+The organisation is often only the host, not the room, wing, level, branch, auditorium, or outdoor location. Some official sites expose both public and internal content paths. Falling back before reading an explicit detail-page `Where:`, `Location:`, or `Venue:` field discards correct information, while publishing the CMS or listing route prevents the card from opening the canonical public activity page.
+
+### Correct requirement interpretation
+
+The configured official listing proves membership. After admission, the official detail page is authoritative for the activity's specific venue and public detail URL. An explicit labeled detail-page venue overrides the configured default venue. Source-configured URL-prefix rewrites may map an internal CMS route to the equivalent public route, but must not enumerate individual activity slugs.
+
+### Required implementation
+
+Parse exact `Where:`, `Location:`, and `Venue:` label/value pairs from the admitted activity's detail page, prefer that value over structured/default venue data, normalize configured CMS path prefixes to public paths, remove fragments, and retain the listing URL separately as evidence rather than using it as the event URL.
+
+### Acceptance evidence
+
+A regression must model the observed National Gallery structure, proving that a CMS URL under `/content/nationalgallerysg/` becomes the corresponding `/sg/en/` detail URL and that `City Hall Wing, Level 4, Wu Guanzhong Gallery` replaces the generic `National Gallery Singapore` default. The config and implementation must contain no event-title or event-slug enumeration. Live collection and visible-card inspection remain required before runtime acceptance.
+
 ## Local Events evidence and partial-result protection
 
 ### Easy-to-make interpretation
