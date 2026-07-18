@@ -88,6 +88,33 @@
             <div><dt>RECT</dt><dd id="inspect-rect">—</dd></div>
           </dl>
         </section>
+
+        <section class="test-preview" aria-labelledby="test-preview-heading">
+          <div class="panel-heading">
+            <h2 id="test-preview-heading">DRAFT TEST PREVIEW</h2>
+            <span id="test-state" class="status">NOT TESTED</span>
+          </div>
+          <div id="test-empty" class="test-empty">Save and test the draft against the selected snapshot.</div>
+          <div id="test-result" class="hidden">
+            <div class="test-metrics">
+              <div><span>MATCHED</span><strong id="test-matched">0</strong></div>
+              <div><span>ACCEPTED</span><strong id="test-accepted">0</strong></div>
+              <div><span>REJECTED</span><strong id="test-rejected">0</strong></div>
+              <div><span>PUBLISHABLE</span><strong id="test-publishable">NO</strong></div>
+            </div>
+            <div id="test-messages" class="test-messages"></div>
+            <div class="preview-columns">
+              <section>
+                <h3>ACCEPTED EVENTS</h3>
+                <div id="accepted-preview" class="preview-list"></div>
+              </section>
+              <section>
+                <h3>REJECTED CARDS</h3>
+                <div id="rejected-preview" class="preview-list"></div>
+              </section>
+            </div>
+          </div>
+        </section>
       </section>
 
       <aside class="panel editor-panel" aria-labelledby="editor-heading">
@@ -142,7 +169,8 @@
           <h3>DRAFT AND VERSIONS</h3>
           <div class="button-grid">
             <button id="save-draft-button" type="button" class="button primary">SAVE DRAFT</button>
-            <button id="publish-button" type="button" class="button warning">PUBLISH</button>
+            <button id="test-draft-button" type="button" class="button primary">TEST DRAFT</button>
+            <button id="publish-button" type="button" class="button warning">PUBLISH TESTED DRAFT</button>
             <button id="export-button" type="button" class="button secondary">EXPORT</button>
             <label class="button secondary file-button">
               IMPORT
