@@ -147,7 +147,7 @@ def _patch_browser() -> None:
     push(out, seen, card, abs, linkText, "detail_link");'''
     _browser.CARD_JS = _browser.CARD_JS.replace(old_anchor, new_anchor)
 
-    old_nhb = '''      const text = textLines(el).join("\n");
+    old_nhb = r'''      const text = textLines(el).join("\n");
       const base = officialHome || document.location.origin;
       const url = detailUrls(el)[0] || sameDomainNonListingUrls(el)[0] || (base.replace(/\/$/, '') + '#nhb-' + textHash(text.slice(0, 600)));
       push(out, seen, el, url, "", "nhb_dom_card");'''
