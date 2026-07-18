@@ -117,6 +117,7 @@ def test_http_dashboard_and_openapi_are_served(http_base: str) -> None:
     assert spec["info"]["title"] == "InfoScreen Local API"
     assert spec["servers"][0]["url"] == "http://127.0.0.1:8765"
     assert "/api/local-events/studio/draft" in spec["paths"]
+    assert "/api/local-events/studio/test" in spec["paths"]
 
 
 def test_http_runtime_json_uses_seeded_fixture_data(http_base: str) -> None:
@@ -132,6 +133,7 @@ def test_http_runtime_json_uses_seeded_fixture_data(http_base: str) -> None:
 def test_http_studio_rule_lifecycle_uses_existing_server(
     http_base: str,
     seeded_env: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     sources = fetch_json(http_base, "/api/local-events/studio/sources")
     esplanade = next(item for item in sources["sources"] if item["source_id"] == "esplanade")
@@ -156,6 +158,11 @@ def test_http_studio_rule_lifecycle_uses_existing_server(
     assert state["draft"]["card"]["selector"] == "main .event-card"
     assert state["published"] is None
 
+    monkeypatch.setattr(
+        serve_infoscreen,
+        "require_publishable_test",
+        lambda draft, root: {"publishable": True, "rule_fingerprint": "fixture"},
+    )
     status, published = request_json(
         http_base,
         "/api/local-events/studio/publish",
