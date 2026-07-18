@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import html
 import re
+from datetime import date
 from html.parser import HTMLParser
 from typing import Any
+from urllib.parse import unquote, urlparse
+
+from . import extract as _extract
 
 HTML_TAG_RE = re.compile(r"</?[A-Za-z][^>]*>|<!--.*?-->", re.S)
 SUMMARY_HEADING_RE = re.compile(
@@ -11,38 +15,24 @@ SUMMARY_HEADING_RE = re.compile(
     re.I,
 )
 BLOCK_TAGS = {
-    "address",
-    "article",
-    "aside",
-    "blockquote",
-    "br",
-    "div",
-    "footer",
-    "h1",
-    "h2",
-    "h3",
-    "h4",
-    "h5",
-    "h6",
-    "header",
-    "hr",
-    "li",
-    "main",
-    "nav",
-    "ol",
-    "p",
-    "section",
-    "table",
-    "td",
-    "th",
-    "tr",
-    "ul",
+    "address", "article", "aside", "blockquote", "br", "div", "footer",
+    "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "li",
+    "main", "nav", "ol", "p", "section", "table", "td", "th", "tr", "ul",
 }
 IGNORED_TAGS = {"script", "style", "noscript", "template"}
 TEXT_FIELDS = ("title", "when", "where", "host", "source_name", "summary")
 WHERE_ALIASES = ("venue", "place", "where_text", "location", "address")
 SUMMARY_ALIASES = ("why_text", "description", "desc")
 MAX_ENTITY_DECODE_ROUNDS = 3
+OPEN_ENDED_RE = re.compile(r"\b(?:ongoing|permanent|from|since)\b", re.I)
+SYNTHETIC_FRAGMENT_RE = re.compile(r"^(?:nhb|nhb-json|structured)-", re.I)
+MEDIA_RE = re.compile(r"\.(?:jpg|jpeg|png|gif|webp|svg|pdf)$", re.I)
+GENERIC_LEAF_RE = re.compile(
+    r"^(?:whats?-on|whatson|events?|overview|view-all|calendar|programmes?|programs?|"
+    r"activities?|exhibitions?|workshops?|tours?|shows?|performances?)$",
+    re.I,
+)
+VERIFIED_POLICY = "official-listing-authority-v1"
 
 
 class _PlainTextParser(HTMLParser):
@@ -116,6 +106,43 @@ def _clean_summary(value: object) -> str:
     return SUMMARY_HEADING_RE.sub("", plain_text(value)).strip()
 
 
+def _iso_date(value: object) -> date | None:
+    text = _collapse(value)
+    if not text:
+        return None
+    try:
+        return date.fromisoformat(text[:10])
+    except ValueError:
+        return None
+
+
+def _invalid_event(event: dict[str, Any]) -> bool:
+    url = _collapse(event.get("url"))
+    if not url.startswith(("http://", "https://")):
+        return True
+    parsed = urlparse(url)
+    if parsed.fragment and SYNTHETIC_FRAGMENT_RE.match(parsed.fragment):
+        return True
+    path = unquote(parsed.path).rstrip("/").lower()
+    if not path or MEDIA_RE.search(path):
+        return True
+    leaf = path.rsplit("/", 1)[-1].removesuffix(".html")
+    if not leaf or GENERIC_LEAF_RE.fullmatch(leaf):
+        return True
+    return _collapse(event.get("candidate_policy")) != VERIFIED_POLICY
+
+
+def _expired_event(event: dict[str, Any]) -> bool:
+    when = _collapse(event.get("when"))
+    if OPEN_ENDED_RE.search(when):
+        return False
+    end = _iso_date(event.get("end_date"))
+    start = _iso_date(event.get("start_date"))
+    when_dates = _extract.label_dates(when)
+    effective_end = end or (max(when_dates) if when_dates else start)
+    return bool(effective_end and effective_end < date.today())
+
+
 def normalize_event(event: dict[str, Any]) -> tuple[dict[str, Any], int]:
     normalized = dict(event)
     changed = 0
@@ -154,13 +181,23 @@ def normalize_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(results, list):
         normalized["text_normalizer"] = "plain-text-v1"
         normalized["normalized_text_fields"] = 0
+        normalized["expired_events_removed"] = 0
+        normalized["invalid_events_removed"] = 0
         return normalized
 
     output: list[Any] = []
     changed = 0
+    expired_removed = 0
+    invalid_removed = 0
     for item in results:
         if isinstance(item, dict):
             clean_item, item_changed = normalize_event(item)
+            if _invalid_event(clean_item):
+                invalid_removed += 1
+                continue
+            if _expired_event(clean_item):
+                expired_removed += 1
+                continue
             output.append(clean_item)
             changed += item_changed
         else:
@@ -170,6 +207,8 @@ def normalize_payload(payload: dict[str, Any]) -> dict[str, Any]:
     normalized["count"] = len(output)
     normalized["text_normalizer"] = "plain-text-v1"
     normalized["normalized_text_fields"] = changed
+    normalized["expired_events_removed"] = expired_removed
+    normalized["invalid_events_removed"] = invalid_removed
     return normalized
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+from datetime import date, timedelta
 
 from .conftest import SURFACE
 
@@ -9,6 +10,37 @@ sys.path.insert(0, str(SURFACE))
 
 from jobs import local_event_search as job  # noqa: E402
 from local_events_runtime.output import normalize_payload, plain_text  # noqa: E402
+
+VERIFIED_POLICY = "official-listing-authority-v1"
+
+
+def future_label(days: int = 30) -> str:
+    value = date.today() + timedelta(days=days)
+    return f"{value.day} {value.strftime('%b')} {value.year}"
+
+
+def complete_source(name: str) -> dict:
+    return {
+        "source": name,
+        "listing_urls": [f"https://example.test/{name.lower()}"],
+        "listing_fetched": 1,
+        "cards_found": 0,
+        "accepted": 0,
+        "reason_counts": {},
+        "not_output_preview": [],
+    }
+
+
+def failed_source(name: str, reason: str = "render_error:TimeoutError") -> dict:
+    return {
+        "source": name,
+        "listing_urls": [f"https://example.test/{name.lower()}"],
+        "listing_fetched": 0,
+        "cards_found": 0,
+        "accepted": 0,
+        "reason_counts": {reason: 1},
+        "not_output_preview": [{"reason": reason}],
+    }
 
 
 def test_plain_text_removes_html_markup_and_hidden_content() -> None:
@@ -44,13 +76,14 @@ def test_local_event_payload_is_normalized_before_runtime_delivery() -> None:
         "results": [
             {
                 "title": "What Happens After Someone Dies: A Practical Guide for Families",
-                "when": "July 14, 2026",
+                "when": future_label(),
                 "where": "<span>Central Public Library</span>",
                 "summary": (
                     '<p><strong>About the Event</strong></p>'
                     '<p>This talk is a compassionate and practical guide to navigating loss.</p>'
                 ),
-                "url": "https://example.test/event?a=1&b=2",
+                "url": "https://example.test/events/practical-guide",
+                "candidate_policy": VERIFIED_POLICY,
             }
         ]
     }
@@ -61,7 +94,7 @@ def test_local_event_payload_is_normalized_before_runtime_delivery() -> None:
     assert event["where"] == "Central Public Library"
     assert event["summary"] == "This talk is a compassionate and practical guide to navigating loss."
     assert "<" not in event["summary"]
-    assert event["url"] == "https://example.test/event?a=1&b=2"
+    assert event["url"] == "https://example.test/events/practical-guide"
     assert normalized["text_normalizer"] == "plain-text-v1"
     assert normalized["normalized_text_fields"] == 2
 
@@ -71,12 +104,14 @@ def test_description_alias_is_cleaned_and_promoted_to_summary() -> None:
         "results": [
             {
                 "title": "What Happens After Someone Dies: A Practical Guide for Families",
-                "when": "July 14, 2026",
+                "when": future_label(),
                 "where": "Central Public Library",
                 "description": (
                     '<p><strong>About the Event</strong><span style="background-color:#00ffff;"></span></p>'
                     '<p>This talk is a compassionate and practical guide to navigating loss.</p>'
                 ),
+                "url": "https://example.test/events/practical-guide",
+                "candidate_policy": VERIFIED_POLICY,
             }
         ]
     }
@@ -96,10 +131,12 @@ def test_local_event_payload_promotes_venue_alias_to_where() -> None:
             "results": [
                 {
                     "title": "Example Event",
-                    "when": "1 Aug 2026",
+                    "when": future_label(),
                     "where": "",
                     "venue": "NLB Building, Level 1",
                     "summary": "Details",
+                    "url": "https://example.test/events/example-event",
+                    "candidate_policy": VERIFIED_POLICY,
                 }
             ]
         }
@@ -108,19 +145,56 @@ def test_local_event_payload_promotes_venue_alias_to_where() -> None:
     assert normalized["results"][0]["where"] == "NLB Building, Level 1"
 
 
-def test_partial_refresh_cleans_the_complete_result_it_keeps(tmp_path, monkeypatch) -> None:
+def test_partial_state_uses_source_completion_not_debug_row_count() -> None:
+    payload = job.annotate_source_completion(
+        {
+            "source_count": 2,
+            "debug_by_source": [
+                complete_source("NLB"),
+                failed_source("SAFRA"),
+            ],
+            "results": [],
+        }
+    )
+
+    assert len(payload["debug_by_source"]) == payload["source_count"] == 2
+    assert payload["partial"] is True
+    assert payload["completed_source_count"] == 1
+    assert payload["incomplete_source_count"] == 1
+    assert payload["debug_by_source"][0]["status"] == "complete"
+    assert payload["debug_by_source"][0]["complete"] is True
+    assert payload["debug_by_source"][1]["status"] == "timed_out"
+    assert payload["debug_by_source"][1]["complete"] is False
+
+
+def test_successful_empty_source_is_complete() -> None:
+    payload = job.annotate_source_completion(
+        {
+            "source_count": 1,
+            "debug_by_source": [complete_source("EmptyButHealthy")],
+            "results": [],
+        }
+    )
+
+    assert payload["partial"] is False
+    assert payload["completed_source_count"] == 1
+
+
+def test_partial_refresh_cleans_the_verified_result_it_keeps(tmp_path, monkeypatch) -> None:
     out = tmp_path / "local_event_search_results.json"
     partial_out = tmp_path / "local_event_search_results.partial.json"
     out.write_text(
         json.dumps(
             {
                 "source_count": 1,
-                "debug_by_source": [{"source": "NLB"}],
+                "debug_by_source": [complete_source("NLB")],
                 "results": [
                     {
                         "title": "What Happens After Someone Dies: A Practical Guide for Families",
-                        "when": "14 Jul 2026",
+                        "when": future_label(),
                         "where": "Central Public Library",
+                        "url": "https://example.test/events/practical-guide",
+                        "candidate_policy": VERIFIED_POLICY,
                         "description": (
                             '<p><strong>About the Event</strong></p>'
                             '<p>This talk is a compassionate and practical guide to navigating loss.</p>'
@@ -137,7 +211,10 @@ def test_partial_refresh_cleans_the_complete_result_it_keeps(tmp_path, monkeypat
     job.write_payload(
         {
             "source_count": 2,
-            "debug_by_source": [{"source": "NLB"}],
+            "debug_by_source": [
+                complete_source("NLB"),
+                failed_source("SAFRA"),
+            ],
             "results": [],
         }
     )
@@ -151,4 +228,91 @@ def test_partial_refresh_cleans_the_complete_result_it_keeps(tmp_path, monkeypat
     assert retained_event["description"] == expected
     assert "<" not in retained_event["summary"]
     assert retained["text_normalizer"] == "plain-text-v1"
-    assert partial["write_policy"] == "kept_previous_complete_result"
+    assert partial["partial"] is True
+    assert partial["completed_source_count"] == 1
+    assert partial["write_policy"] == "kept_previous_verified_result"
+
+
+def test_unverified_legacy_rows_are_not_preserved_during_partial_refresh(tmp_path, monkeypatch) -> None:
+    out = tmp_path / "local_event_search_results.json"
+    partial_out = tmp_path / "local_event_search_results.partial.json"
+    out.write_text(
+        json.dumps(
+            {
+                "source_count": 1,
+                "debug_by_source": [complete_source("SAFRA")],
+                "results": [
+                    {
+                        "title": "Carpark",
+                        "when": future_label(),
+                        "where": "SAFRA Clubs",
+                        "url": "https://example.test/amenities/carpark",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(job, "OUT", out)
+    monkeypatch.setattr(job, "PARTIAL_OUT", partial_out)
+
+    job.write_payload(
+        {
+            "source_count": 2,
+            "debug_by_source": [
+                complete_source("NLB"),
+                failed_source("SAFRA"),
+            ],
+            "results": [],
+        }
+    )
+
+    written = json.loads(out.read_text(encoding="utf-8"))
+    assert written["results"] == []
+    assert written["partial"] is True
+    assert written["completed_source_count"] == 1
+    assert not partial_out.exists()
+
+
+def test_expired_event_is_removed_from_runtime_output() -> None:
+    yesterday = date.today() - timedelta(days=1)
+    payload = normalize_payload(
+        {
+            "results": [
+                {
+                    "title": "Expired Event",
+                    "when": yesterday.isoformat(),
+                    "start_date": yesterday.isoformat(),
+                    "end_date": yesterday.isoformat(),
+                    "url": "https://example.test/events/expired",
+                    "candidate_policy": VERIFIED_POLICY,
+                }
+            ]
+        }
+    )
+
+    assert payload["results"] == []
+    assert payload["expired_events_removed"] == 1
+
+
+def test_active_range_uses_when_end_when_end_date_field_is_missing() -> None:
+    start = date.today() - timedelta(days=10)
+    end = date.today() + timedelta(days=10)
+    when = f"{start.day} {start.strftime('%b')} - {end.day} {end.strftime('%b')} {end.year}"
+    payload = normalize_payload(
+        {
+            "results": [
+                {
+                    "title": "Active Exhibition",
+                    "when": when,
+                    "start_date": start.isoformat(),
+                    "end_date": "",
+                    "url": "https://example.test/events/active-exhibition",
+                    "candidate_policy": VERIFIED_POLICY,
+                }
+            ]
+        }
+    )
+
+    assert [item["title"] for item in payload["results"]] == ["Active Exhibition"]
+    assert payload["expired_events_removed"] == 0
