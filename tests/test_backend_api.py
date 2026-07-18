@@ -49,3 +49,42 @@ def test_runtime_fixtures_are_valid_json() -> None:
     root = Path(__file__).resolve().parent / "fixtures" / "runtime_data"
     for path in root.glob("*.json"):
         json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_public_photo_path_is_confined_to_public_directory(
+    monkeypatch: pytest.MonkeyPatch,
+    seeded_env: Path,
+) -> None:
+    monkeypatch.setattr(serve_infoscreen, "ENV_DIR", seeded_env)
+    expected = (seeded_env / "public_photos" / "fixture-photo.txt").resolve()
+
+    assert serve_infoscreen.public_photo_path("/public_photos/fixture-photo.txt") == expected
+
+    unsafe_paths = [
+        "/public_photos/../market.json",
+        "/public_photos/%2e%2e/market.json",
+        "/public_photos/%2E%2E%2Fmarket.json",
+        "/public_photos/%2Fetc%2Fpasswd",
+        "/public_photos/./fixture-photo.txt",
+        "/public_photos/folder//fixture-photo.txt",
+        "/public_photos/..%5cmarket.json",
+        "/public_photos/%00fixture-photo.txt",
+    ]
+    for request_path in unsafe_paths:
+        assert serve_infoscreen.public_photo_path(request_path) is None
+
+
+def test_public_photo_path_rejects_symlink_escape(
+    monkeypatch: pytest.MonkeyPatch,
+    seeded_env: Path,
+) -> None:
+    monkeypatch.setattr(serve_infoscreen, "ENV_DIR", seeded_env)
+    secret = seeded_env / "secret.txt"
+    secret.write_text("private", encoding="utf-8")
+    link = seeded_env / "public_photos" / "escape.txt"
+    try:
+        link.symlink_to(secret)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    assert serve_infoscreen.public_photo_path("/public_photos/escape.txt") is None
