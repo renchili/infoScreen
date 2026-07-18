@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import json
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
+from threading import Barrier
 
 from .conftest import SURFACE, read_text
 
 sys.path.insert(0, str(SURFACE))
 
-from local_events_runtime import browser, extract, official_feeds  # noqa: E402
+from local_events_runtime import browser, extract, official_feeds, source_overrides  # noqa: E402
 from local_events_runtime.output import normalize_payload  # noqa: E402
 from local_events_runtime.source_overrides import (  # noqa: E402
     LISTING_EVIDENCE,
@@ -58,6 +60,20 @@ def admitted_card(title: str, url: str, when: str) -> dict:
     card = _listing_card(source(), dom_card(title, url, when), "https://example.org/whats-on")
     assert card is not None
     return card
+
+
+def prefer_with_context(
+    policy_source: dict,
+    listing_url: str,
+    structured: list[dict],
+    dom: list[dict],
+    limit: int = 10,
+) -> list[dict]:
+    token = source_overrides._listing_context.set((policy_source, listing_url))
+    try:
+        return _prefer_structured(structured, dom, limit)
+    finally:
+        source_overrides._listing_context.reset(token)
 
 
 def test_browser_discovers_only_isolated_dated_listing_cards() -> None:
@@ -127,10 +143,8 @@ def test_unmatched_structured_records_are_dropped() -> None:
         "https://example.org/whats-on/family-sports-day",
         future_label(),
     )
-    _prefer_structured.source = source()
-    _prefer_structured.listing_url = "https://example.org/whats-on"
 
-    cards = _prefer_structured([unrelated], [listing], 10)
+    cards = prefer_with_context(source(), "https://example.org/whats-on", [unrelated], [listing])
 
     assert len(cards) == 1
     assert cards[0]["link_text"] == "Family Sports Day"
@@ -155,16 +169,55 @@ def test_matching_structured_data_only_enriches_a_listed_activity() -> None:
         0,
     )
     listing = dom_card("Family Sports Day", url, future_label())
-    _prefer_structured.source = source()
-    _prefer_structured.listing_url = "https://example.org/whats-on"
 
-    cards = _prefer_structured([structured], [listing], 10)
+    cards = prefer_with_context(source(), "https://example.org/whats-on", [structured], [listing])
 
     assert len(cards) == 1
     assert cards[0]["url"] == url
     assert cards[0]["structured_event"]["url"] == url
     assert cards[0]["structured_event"]["where"] == "Sports Hall"
     assert cards[0]["listing_evidence"] == LISTING_EVIDENCE
+
+
+def test_listing_context_is_isolated_per_worker() -> None:
+    barrier = Barrier(2)
+
+    def worker(host: str) -> tuple[str, str]:
+        listing_url = f"https://{host}/whats-on"
+        detail_url = f"https://{host}/whats-on/family-sports-day"
+        policy_source = {
+            "id": host,
+            "name": host,
+            "default_venue": host,
+            "allowed_domains": [host],
+            "listing_urls": [listing_url],
+        }
+        listing = dom_card("Family Sports Day", detail_url, future_label())
+        listing["page_url"] = listing_url
+        token = source_overrides._listing_context.set((policy_source, listing_url))
+        try:
+            barrier.wait()
+            cards = _prefer_structured([], [listing], 10)
+            assert len(cards) == 1
+            return cards[0]["listing_url"], cards[0]["url"]
+        finally:
+            source_overrides._listing_context.reset(token)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(worker, "alpha.example")
+        second = executor.submit(worker, "beta.example")
+        results = {first.result(), second.result()}
+
+    assert results == {
+        (
+            "https://alpha.example/whats-on",
+            "https://alpha.example/whats-on/family-sports-day",
+        ),
+        (
+            "https://beta.example/whats-on",
+            "https://beta.example/whats-on/family-sports-day",
+        ),
+    }
 
 
 def test_detail_page_corrects_title_date_and_venue_without_source_rules() -> None:
