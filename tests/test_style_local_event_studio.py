@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from .conftest import read_text
@@ -9,8 +11,11 @@ pytestmark = pytest.mark.style
 
 def test_studio_layout_is_scrollable_and_responsive() -> None:
     css = read_text("surface/web/assets/css/local_event_studio.css")
-    assert "min-height: 100vh" in css
-    assert "overflow: hidden" not in css
+    body = re.search(r"body\s*\{(?P<body>.*?)\}", css, re.S)
+    assert body is not None
+    assert "min-height: 100vh" in body.group("body")
+    assert "overflow: hidden" not in body.group("body")
+    assert ".image-stage" in css and "overflow: auto" in css
     assert "@media (max-width: 1050px)" in css
     assert "@media (max-width: 680px)" in css
     assert "grid-template-columns: minmax(0, 1.65fr) minmax(350px, 0.85fr)" in css
