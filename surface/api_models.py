@@ -199,6 +199,60 @@ class StudioSnapshotListResponse(BaseModel):
     snapshots: list[StudioSnapshotMetadata] = Field(default_factory=list)
 
 
+class StudioTestRequest(StudioRuleBindingRequest):
+    snapshot_id: str = Field(..., min_length=1, max_length=80, description="Stored snapshot used for deterministic draft evaluation.")
+
+
+class StudioTestAcceptedRow(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    card_id: str
+    event: dict[str, Any]
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    detail_page_pending: bool = False
+
+
+class StudioTestRejectedRow(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    card_id: str
+    reason: str
+    reasons: list[str] = Field(default_factory=list)
+    values: dict[str, Any] = Field(default_factory=dict)
+    evidence: dict[str, Any] = Field(default_factory=dict)
+
+
+class StudioTestResult(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    schema_version: Literal[1] = 1
+    run_id: str
+    snapshot_id: str
+    tested_at: str
+    rule_fingerprint: str
+    source_id: str
+    listing_url: str
+    card_selector: str | None = None
+    matched_card_count: int = 0
+    accepted_count: int = 0
+    rejected_count: int = 0
+    publishable: bool = False
+    fatal_errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    accepted: list[StudioTestAcceptedRow] = Field(default_factory=list)
+    rejected: list[StudioTestRejectedRow] = Field(default_factory=list)
+
+
+class StudioTestResponse(BaseModel):
+    ok: Literal[True] = True
+    result: StudioTestResult
+
+
+class StudioLatestTestResponse(BaseModel):
+    ok: Literal[True] = True
+    result: StudioTestResult | None = None
+
+
 class PhotoItem(BaseModel):
     model_config = ConfigDict(extra="allow")
 
