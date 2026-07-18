@@ -23,8 +23,15 @@ try:
         StudioRuleBindingRequest,
         StudioRuleImportRequest,
         StudioRuleRollbackRequest,
+        StudioTestRequest,
     )
     from .local_events_runtime.studio_capture import list_snapshots, snapshot_asset_path
+    from .local_events_runtime.studio_evaluate import (
+        StudioEvaluationError,
+        latest_test_run,
+        require_publishable_test,
+        test_draft,
+    )
     from .local_events_runtime.studio_rules import (
         LocalEventStudioRuleStore,
         RuleConflictError,
@@ -39,8 +46,15 @@ except ImportError:
         StudioRuleBindingRequest,
         StudioRuleImportRequest,
         StudioRuleRollbackRequest,
+        StudioTestRequest,
     )
     from local_events_runtime.studio_capture import list_snapshots, snapshot_asset_path
+    from local_events_runtime.studio_evaluate import (
+        StudioEvaluationError,
+        latest_test_run,
+        require_publishable_test,
+        test_draft,
+    )
     from local_events_runtime.studio_rules import (
         LocalEventStudioRuleStore,
         RuleConflictError,
@@ -236,6 +250,8 @@ def studio_error(exc: Exception) -> tuple[dict, int]:
         return {"ok": False, "error": "invalid_request", "detail": str(exc)}, 400
     if isinstance(exc, RuleNotFoundError):
         return {"ok": False, "error": "rule_not_found", "detail": str(exc)}, 404
+    if isinstance(exc, StudioEvaluationError):
+        return {"ok": False, "error": "studio_test_required", "detail": str(exc)}, 422
     if isinstance(exc, RuleConflictError):
         return {"ok": False, "error": "rule_conflict", "detail": str(exc)}, 409
     if isinstance(exc, RuleStorageError):
@@ -390,12 +406,7 @@ class Handler(SimpleHTTPRequestHandler):
             asset = self.query_value("asset") or ""
         except Exception as exc:
             return self.send_studio_error(exc)
-        target = snapshot_asset_path(
-            source_id,
-            snapshot_id,
-            asset,
-            root=studio_root(),
-        )
+        target = snapshot_asset_path(source_id, snapshot_id, asset, root=studio_root())
         if target is None:
             return self.send_json({"ok": False, "error": "snapshot_asset_not_found"}, 404)
         content_type = {
@@ -442,10 +453,8 @@ class Handler(SimpleHTTPRequestHandler):
 
         if name in JSON_DEFAULTS:
             return self.send_json_head(name)
-
         if path.startswith(PUBLIC_PHOTO_PREFIX):
             return self.send_public_photo(head_only=True)
-
         return super().do_HEAD()
 
     def do_GET(self):
@@ -458,7 +467,6 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_openapi()
         if path == "/docs":
             return self.send_html(SWAGGER_UI_HTML)
-
         if path == "/api/market-config":
             return self.send_json(market_config_json())
         if path == "/api/local-events/search":
@@ -508,13 +516,22 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_studio_error(exc)
         if path == "/api/local-events/studio/snapshot-asset":
             return self.send_studio_snapshot_asset()
+        if path == "/api/local-events/studio/test-latest":
+            try:
+                source_id = self.query_value("source_id") or ""
+                listing_url = self.query_value("listing_url") or ""
+                _, canonical_url = studio_rule_store()._binding(source_id, listing_url)
+                result = latest_test_run(source_id, root=studio_root())
+                if result is not None and result.get("listing_url") != canonical_url:
+                    result = None
+                return self.send_json({"ok": True, "result": result})
+            except Exception as exc:
+                return self.send_studio_error(exc)
 
         if name in JSON_DEFAULTS:
             return self.send_json(runtime_json(name))
-
         if path.startswith(PUBLIC_PHOTO_PREFIX):
             return self.send_public_photo()
-
         return super().do_GET()
 
     def do_PUT(self):
@@ -544,11 +561,31 @@ class Handler(SimpleHTTPRequestHandler):
     def do_POST(self):
         path = urlparse(self.path).path
 
+        if path == "/api/local-events/studio/test":
+            try:
+                request = StudioTestRequest.model_validate(self.body_json())
+                with STUDIO_MUTATION_LOCK:
+                    result = test_draft(
+                        request.source_id,
+                        request.listing_url,
+                        request.snapshot_id,
+                        root=studio_root(),
+                        source_config_path=CONF_DIR / "event_sources.json",
+                    )
+                return self.send_json({"ok": True, "result": result})
+            except Exception as exc:
+                return self.send_studio_error(exc)
+
         if path == "/api/local-events/studio/publish":
             try:
                 request = StudioRuleBindingRequest.model_validate(self.body_json())
                 with STUDIO_MUTATION_LOCK:
-                    rule = studio_rule_store().publish(request.source_id, request.listing_url)
+                    store = studio_rule_store()
+                    draft = store.load_draft(request.source_id, request.listing_url)
+                    if draft is None:
+                        raise RuleNotFoundError("draft not found")
+                    require_publishable_test(draft, root=studio_root())
+                    rule = store.publish(request.source_id, request.listing_url)
                 return self.send_json({"ok": True, "rule": studio_rule_payload(rule)})
             except Exception as exc:
                 return self.send_studio_error(exc)
@@ -631,8 +668,24 @@ class Handler(SimpleHTTPRequestHandler):
 
         if path == "/api/market-refresh":
             try:
-                proc = subprocess.run([sys.executable, str(SURFACE_DIR / "fetch_live_data.py")], cwd=str(SURFACE_DIR), text=True, capture_output=True, timeout=60)
-                return self.send_json({"ok": proc.returncode == 0, "returncode": proc.returncode, "stdout": proc.stdout[-2000:], "stderr": proc.stderr[-2000:], "market": runtime_json("market.json"), "weather": runtime_json("weather.json")}, 200 if proc.returncode == 0 else 500)
+                proc = subprocess.run(
+                    [sys.executable, str(SURFACE_DIR / "fetch_live_data.py")],
+                    cwd=str(SURFACE_DIR),
+                    text=True,
+                    capture_output=True,
+                    timeout=60,
+                )
+                return self.send_json(
+                    {
+                        "ok": proc.returncode == 0,
+                        "returncode": proc.returncode,
+                        "stdout": proc.stdout[-2000:],
+                        "stderr": proc.stderr[-2000:],
+                        "market": runtime_json("market.json"),
+                        "weather": runtime_json("weather.json"),
+                    },
+                    200 if proc.returncode == 0 else 500,
+                )
             except Exception as exc:
                 return self.send_json({"ok": False, "error": str(exc)}, 500)
 
@@ -640,7 +693,13 @@ class Handler(SimpleHTTPRequestHandler):
             try:
                 body = self.body_json()
                 location = str(body.get("location") or "Punggol Singapore")
-                proc = subprocess.run([sys.executable, str(SURFACE_DIR / "search_local_events.py"), location], cwd=str(SURFACE_DIR), text=True, capture_output=True, timeout=330)
+                proc = subprocess.run(
+                    [sys.executable, str(SURFACE_DIR / "search_local_events.py"), location],
+                    cwd=str(SURFACE_DIR),
+                    text=True,
+                    capture_output=True,
+                    timeout=330,
+                )
                 data = runtime_json("local_event_search_results.json")
                 data["ok"] = proc.returncode == 0
                 data["stdout"] = proc.stdout[-1000:]
