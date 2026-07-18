@@ -168,6 +168,37 @@ class StudioSourcesResponse(BaseModel):
     sources: list[StudioSourceState] = Field(default_factory=list)
 
 
+class StudioCaptureRequest(StudioRuleBindingRequest):
+    pass
+
+
+class StudioSnapshotMetadata(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    schema_version: Literal[1] = 1
+    snapshot_id: str
+    source_id: str
+    source_name: str | None = None
+    listing_url: str
+    final_url: str
+    page_title: str = ""
+    captured_at: str
+    prepare: dict[str, Any] = Field(default_factory=dict)
+    dom_element_count: int = 0
+    dom_truncated: bool = False
+    assets: dict[str, str] = Field(default_factory=dict)
+
+
+class StudioCaptureResponse(BaseModel):
+    ok: Literal[True] = True
+    snapshot: StudioSnapshotMetadata
+
+
+class StudioSnapshotListResponse(BaseModel):
+    ok: Literal[True] = True
+    snapshots: list[StudioSnapshotMetadata] = Field(default_factory=list)
+
+
 class PhotoItem(BaseModel):
     model_config = ConfigDict(extra="allow")
 
