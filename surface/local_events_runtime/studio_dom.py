@@ -156,7 +156,7 @@ def _classes(node: dict[str, Any]) -> set[str]:
 
 def _take_name(text: str, start: int) -> tuple[str, int]:
     index = start
-    while index < len(text) and (text[index].isalnum() or text[index] in "_-:"):
+    while index < len(text) and (text[index].isalnum() or text[index] in "_-"):
         index += 1
     return text[start:index], index
 
@@ -165,7 +165,10 @@ def _parse_simple(selector: str) -> dict[str, Any]:
     text = selector.strip()
     parsed: dict[str, Any] = {"tag": "", "id": "", "classes": [], "attrs": [], "nth": None}
     index = 0
-    if text and (text[0].isalpha() or text[0] == "*"):
+    if text.startswith("*"):
+        parsed["tag"] = "*"
+        index = 1
+    elif text and text[0].isalpha():
         parsed["tag"], index = _take_name(text, 0)
     while index < len(text):
         marker = text[index]
