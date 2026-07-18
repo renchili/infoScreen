@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import threading
+import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -35,6 +36,13 @@ def fetch_text(base: str, path: str) -> str:
 
 def fetch_json(base: str, path: str):
     return json.loads(fetch_text(base, path))
+
+
+def assert_http_status(base: str, path: str, method: str, expected: int) -> None:
+    request = urllib.request.Request(base + path, method=method)
+    with pytest.raises(urllib.error.HTTPError) as caught:
+        urllib.request.urlopen(request, timeout=5)
+    assert caught.value.code == expected
 
 
 def test_http_dashboard_and_openapi_are_served(http_base: str) -> None:
@@ -99,3 +107,43 @@ def test_http_local_event_details_are_plain_text_for_stale_runtime(
 
 def test_http_public_photo_fixture_is_served(http_base: str) -> None:
     assert fetch_text(http_base, "/public_photos/fixture-photo.txt") == "fixture photo bytes\n"
+    request = urllib.request.Request(http_base + "/public_photos/fixture-photo.txt", method="HEAD")
+    with urllib.request.urlopen(request, timeout=5) as response:
+        assert response.status == 200
+        assert int(response.headers["Content-Length"]) > 0
+
+
+@pytest.mark.parametrize("method", ["GET", "HEAD"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/public_photos/%2e%2e/market.json",
+        "/public_photos/%2E%2E%2Fmarket.json",
+        "/public_photos/%2Fetc%2Fpasswd",
+        "/public_photos/..%5cmarket.json",
+        "/public_photos/%00fixture-photo.txt",
+    ],
+)
+def test_http_public_photo_traversal_is_rejected(
+    http_base: str,
+    path: str,
+    method: str,
+) -> None:
+    assert_http_status(http_base, path, method, 404)
+
+
+@pytest.mark.parametrize("method", ["GET", "HEAD"])
+def test_http_public_photo_symlink_escape_is_rejected(
+    http_base: str,
+    seeded_env: Path,
+    method: str,
+) -> None:
+    secret = seeded_env / "secret.txt"
+    secret.write_text("private", encoding="utf-8")
+    link = seeded_env / "public_photos" / "escape.txt"
+    try:
+        link.symlink_to(secret)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    assert_http_status(http_base, "/public_photos/escape.txt", method, 404)
