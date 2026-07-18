@@ -10,6 +10,7 @@ from surface.local_events_runtime import studio_capture
 from surface.local_events_runtime.studio_capture import (
     capture_snapshot,
     list_snapshots,
+    make_snapshot_id,
     snapshot_asset_path,
 )
 from surface.local_events_runtime.studio_rules import UnknownListingError, UnknownSourceError
@@ -88,7 +89,12 @@ def test_capture_snapshot_writes_atomic_complete_bundle(tmp_path: Path) -> None:
         now_fn=lambda: captured_at,
     )
 
-    assert metadata["snapshot_id"] == "20260719T040506123456Z-2d47d69be6"
+    assert metadata["snapshot_id"] == make_snapshot_id(
+        "esplanade",
+        "https://www.esplanade.com/whats-on",
+        captured_at,
+    )
+    assert metadata["snapshot_id"] == "20260719T040506123456Z-4183667b5e"
     assert metadata["source_id"] == "esplanade"
     assert metadata["listing_url"] == "https://www.esplanade.com/whats-on"
     assert metadata["dom_element_count"] == 1
