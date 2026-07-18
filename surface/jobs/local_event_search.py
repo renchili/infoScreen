@@ -22,9 +22,11 @@ os.environ.setdefault("LOCAL_EVENTS_PAGE_SCREENSHOTS", "0")
 os.environ.setdefault("LOCAL_EVENTS_CARD_SCREENSHOTS", "0")
 
 from local_events_runtime.detail_authority import apply as apply_detail_authority  # noqa: E402
+from local_events_runtime.listing_url_authority import apply as apply_listing_url_authority  # noqa: E402
 from local_events_runtime.source_overrides import apply as apply_source_overrides  # noqa: E402
 
 apply_source_overrides()
+apply_listing_url_authority()
 apply_detail_authority()
 
 from local_events_runtime import collect_events  # noqa: E402
