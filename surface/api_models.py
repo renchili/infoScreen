@@ -4,12 +4,18 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
+try:
+    from .local_events_runtime.studio_rules import LocalEventStudioRule
+except ImportError:
+    from local_events_runtime.studio_rules import LocalEventStudioRule
+
 
 class ErrorResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     ok: Literal[False] = Field(False, description="Whether the request succeeded.")
-    error: str = Field(..., description="Human-readable error message.")
+    error: str = Field(..., description="Stable machine-readable error code or human-readable legacy error message.")
+    detail: str | None = Field(None, description="Validation detail safe to show to the local operator.")
 
 
 class RuntimeMissingResponse(BaseModel):
@@ -110,6 +116,56 @@ class LocalEventSearchResponse(BaseModel):
     debug_by_source: list[LocalEventSourceDebug] = Field(default_factory=list, description="Extractor debug details by source.")
     stdout: str | None = Field(None, description="Tail of subprocess stdout for POST responses.")
     stderr: str | None = Field(None, description="Tail of subprocess stderr for POST responses.")
+
+
+class StudioRuleBindingRequest(BaseModel):
+    source_id: str = Field(..., min_length=1, max_length=64, description="Configured Local Events source ID.")
+    listing_url: str = Field(..., min_length=8, max_length=2048, description="Configured official listing URL.")
+
+
+class StudioRuleRollbackRequest(StudioRuleBindingRequest):
+    version: int = Field(..., ge=1, description="Historical published version to republish as a new version.")
+
+
+class StudioRuleImportRequest(BaseModel):
+    rule: dict[str, Any] = Field(..., description="Validated Local Event Studio rule object imported as a draft.")
+
+
+class StudioRuleResponse(BaseModel):
+    ok: Literal[True] = True
+    rule: LocalEventStudioRule
+
+
+class StudioRuleDeleteResponse(BaseModel):
+    ok: Literal[True] = True
+    deleted: bool = Field(..., description="Whether a draft existed and was deleted.")
+
+
+class StudioRuleListResponse(BaseModel):
+    ok: Literal[True] = True
+    source_id: str
+    listing_url: str
+    draft: LocalEventStudioRule | None = None
+    published: LocalEventStudioRule | None = None
+    history: list[LocalEventStudioRule] = Field(default_factory=list)
+
+
+class StudioSourceListingState(BaseModel):
+    listing_url: str
+    has_draft: bool = False
+    published_version: int | None = None
+    history_versions: list[int] = Field(default_factory=list)
+
+
+class StudioSourceState(BaseModel):
+    source_id: str
+    name: str | None = None
+    listing_urls: list[StudioSourceListingState] = Field(default_factory=list)
+
+
+class StudioSourcesResponse(BaseModel):
+    ok: Literal[True] = True
+    sources: list[StudioSourceState] = Field(default_factory=list)
 
 
 class PhotoItem(BaseModel):
