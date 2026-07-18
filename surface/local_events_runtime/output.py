@@ -129,7 +129,8 @@ def _invalid_event(event: dict[str, Any]) -> bool:
     leaf = path.rsplit("/", 1)[-1].removesuffix(".html")
     if not leaf or GENERIC_LEAF_RE.fullmatch(leaf):
         return True
-    return _collapse(event.get("candidate_policy")) != VERIFIED_POLICY
+    policy = _collapse(event.get("candidate_policy"))
+    return bool(policy and policy != VERIFIED_POLICY)
 
 
 def _expired_event(event: dict[str, Any]) -> bool:
