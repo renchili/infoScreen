@@ -429,17 +429,33 @@ def test_draft(
     return _write_test_run(studio_root, result, snapshot_id)
 
 
-def latest_test_run(source_id: str, *, root: Path | str = DEFAULT_STUDIO_ROOT) -> dict[str, Any] | None:
+def latest_test_run(
+    source_id: str,
+    listing_url: str | None = None,
+    *,
+    root: Path | str = DEFAULT_STUDIO_ROOT,
+) -> dict[str, Any] | None:
+    """Return the newest valid test for one source, optionally restricted to one listing."""
+
     directory = Path(root).expanduser().resolve() / "test-runs" / source_id
     if not directory.is_dir():
         return None
+    expected_listing = canonical_listing_url(listing_url) if listing_url else None
     for path in sorted(directory.glob("*.json"), reverse=True):
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        if isinstance(payload, dict):
-            return payload
+        if not isinstance(payload, dict):
+            continue
+        if expected_listing is not None:
+            try:
+                payload_listing = canonical_listing_url(payload.get("listing_url"))
+            except (TypeError, ValueError):
+                continue
+            if payload_listing != expected_listing:
+                continue
+        return payload
     return None
 
 
@@ -450,9 +466,9 @@ def require_publishable_test(
 ) -> dict[str, Any]:
     """Block publication unless the current draft exactly matches a publishable test."""
 
-    latest = latest_test_run(rule.source_id, root=root)
+    latest = latest_test_run(rule.source_id, rule.listing_url, root=root)
     if latest is None:
-        raise StudioEvaluationError("draft has no completed snapshot test")
+        raise StudioEvaluationError("draft has no completed snapshot test for this listing")
     if latest.get("listing_url") != rule.listing_url:
         raise StudioEvaluationError("latest test belongs to another listing")
     if latest.get("rule_fingerprint") != rule_fingerprint(rule):
