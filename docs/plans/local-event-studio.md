@@ -2,7 +2,7 @@
 
 Status: temporary working record on `develop/surface-local-events-coverage`.
 
-This file is not final product documentation. It must be deleted before delivery after live acceptance and final cross-document verification.
+This file is not final product documentation. It must be deleted before delivery after the final implementation is folded into the existing project documents without replacing unrelated InfoScreen content.
 
 ## Fixed constraints
 
@@ -17,8 +17,49 @@ This file is not final product documentation. It must be deleted before delivery
 - One source failure must not clear unrelated sources.
 - Structured data may enrich an admitted rendered card but may not independently create an activity.
 - Screenshot coordinates are UI aids only; published rules use selectors and explicit field mappings.
-- Complete deterministic work without pausing for operator input. Operator participation begins only at real-source semantic acceptance.
-- Do not claim live-source, Surface, browser, service, or semantic correctness without direct evidence for the exact commit.
+- Complete deterministic work without pausing for operator input. Operator participation begins only at real-source semantic selection.
+- Do not create or depend on a new CI workflow for this feature.
+- Do not replace or broadly rewrite README, design, API, or questions content around Local Events.
+
+## Current development-branch install and run
+
+Run this on the Surface from the existing checkout:
+
+```bash
+cd ~/infoscreen
+git fetch origin
+git switch develop/surface-local-events-coverage \
+  || git switch -c develop/surface-local-events-coverage \
+       --track origin/develop/surface-local-events-coverage
+git pull --ff-only origin develop/surface-local-events-coverage
+bash deploy/scripts/install-user-systemd.sh
+```
+
+The existing installer now:
+
+- installs missing Ubuntu packages required by the current runtime (`python3`, `python3-pip`, `curl`, and Chromium);
+- installs Pydantic 2 and Playwright for the same user that runs the existing systemd user service;
+- installs and restarts the existing `infoscreen-http.service` and existing producer units;
+- checks `http://127.0.0.1:8765/local-events/studio/`;
+- checks `/api/local-events/studio/sources`;
+- exits with the HTTP service status and journal when either check fails;
+- prints the dashboard and Studio URLs when ready.
+
+After the command finishes successfully, open on the Surface:
+
+```text
+http://127.0.0.1:8765/local-events/studio/
+```
+
+There is no second server, service, port, or separate deployment command.
+
+## Problems this work must fix
+
+1. Activity links must point to the matching public official detail page.
+2. `when` and `where` must come from explicitly mapped fields on the admitted list card or its validated detail page.
+3. Navigation, membership, dining, parking, promotions, facilities, and other non-activity content must not become activities.
+4. The operator must be able to correct each official source locally without changing Python extraction code for every page redesign.
+5. A source-specific correction must not clear or alter unrelated sources.
 
 ## Product workflow
 
@@ -95,7 +136,7 @@ Complete.
 
 ### Phase 1 — rule storage and version management
 
-Implemented.
+Code present on the development branch:
 
 - Pydantic schema and configured binding validation;
 - draft save/load/delete;
@@ -107,7 +148,7 @@ Implemented.
 
 ### Phase 2 — existing `8765` rule API
 
-Implemented.
+Code present on the development branch:
 
 - sources and per-listing state;
 - draft/published/history reads;
@@ -120,7 +161,7 @@ No additional process or port is introduced.
 
 ### Phase 3 — snapshot capture
 
-Implemented.
+Code present on the development branch:
 
 - one-shot capture job invoked by the existing HTTP service;
 - configured binding validation before browser launch;
@@ -128,16 +169,12 @@ Implemented.
 - atomic snapshot publication;
 - snapshot catalog and whitelisted asset reads;
 - path and symlink confinement;
-- no page-wide network-response body collection;
-- backend and HTTP snapshot tests.
-
-Real browser capture remains unverified for the exact branch head.
+- no page-wide network-response body collection.
 
 ### Phase 4 — local annotation UI
 
-Implemented.
+Code present at `/local-events/studio/`:
 
-- `/local-events/studio/` through existing static serving;
 - source/listing/snapshot selection;
 - capture and reload;
 - screenshot and DOM overlay;
@@ -146,14 +183,11 @@ Implemented.
 - field mappings and exclusions;
 - draft, import/export, test, publication, history, and rollback controls;
 - accepted/rejected evidence preview;
-- initialization wait for the first source binding;
-- frontend and responsive-style contracts.
-
-Real browser interaction remains unverified for the exact branch head.
+- production run and result inspection.
 
 ### Phase 5 — deterministic draft test and publication gate
 
-Implemented.
+Code present on the development branch:
 
 - bounded selector engine;
 - offline snapshot evaluation;
@@ -162,12 +196,11 @@ Implemented.
 - atomic test-run persistence;
 - semantic rule fingerprint;
 - service-side publication gate;
-- stale-test indication;
-- backend, API, HTTP, frontend, and style contracts.
+- stale-test indication.
 
 ### Phase 6 — per-source production integration
 
-Implemented in code.
+Code present in the existing Local Events job path:
 
 ```text
 existing structured-first collector
@@ -188,85 +221,43 @@ some listings published -> replace only matching listing-evidence rows
 Studio failure or zero accepted result -> source incomplete and payload partial
 ```
 
-Additional deterministic protections:
+### Phase 7 — Esplanade rule creation
 
-- legacy and Studio debug rows group by common source identity;
-- multiple listing rows do not inflate completed source count;
-- one failed listing makes its source incomplete;
-- a pre-existing `partial: true` signal is retained;
-- current `structured-first` missing-policy rows remain cache-eligible because the output layer displays them;
-- obsolete non-empty policies remain ineligible;
-- unrelated sources are preserved;
-- the existing primary/partial writer boundary remains.
+Not completed.
 
-Repository-wide execution is not yet claimed. A branch workflow now calls the existing `scripts/run_full_ci_tests.sh` and writes an exact commit status, but the current head has not yet reported a status through the available interface.
+Required work in the running Studio:
 
-### Phase 7 — Esplanade live migration and semantic acceptance
-
-Pending operator interaction.
-
-Operator input begins here because a human must confirm that visible official page regions and extracted fields represent real activities.
-
-Required evidence:
-
-- real Esplanade snapshot captured through Studio;
-- at least two confirmed activity cards;
-- explicit title/when/where/public-detail URL mappings;
-- rejected non-activity rows inspected;
-- publishable exact draft test;
-- published rule version;
-- live Local Events run;
-- runtime JSON and visible card inspection;
-- zero non-activity rows in the inspected sample;
-- at least one unrelated source confirmed intact.
-
-Repository tests alone do not satisfy this phase.
+- capture the configured Esplanade listing;
+- select at least two actual repeated activity cards;
+- map title, when, where, and public detail URL;
+- exclude visible non-activity cards;
+- test the draft and inspect accepted/rejected rows;
+- publish the exact tested draft;
+- run Local Events from the same page;
+- correct any remaining link, time, venue, or non-activity errors.
 
 ### Phase 8 — incremental source migration
 
-Pending after the first live migration.
+Pending after Esplanade. Migrate one source at a time through capture, annotation, test, publish, run, and correction. Never distribute one guessed selector or global blacklist across all sources.
 
-Migrate one source at a time through capture, annotation, test, publish, live run, and semantic inspection. Never distribute one guessed selector or global blacklist across all sources.
+### Phase 9 — final documentation consolidation
 
-### Phase 9 — deployment and operation documentation
+Pending.
 
-Complete in documentation.
+The four permanent project documents were restored to their pre-Studio content after an earlier broad rewrite. At delivery, add only the narrowly relevant material:
 
-- `README.md` covers Studio access, existing-unit installation/update, HTTP restart, immediate Local Events trigger, capture/test/publish workflow, rule inspection, rollback, and failure diagnosis;
-- `docs/design.md` covers storage, lifecycle, production routing, completion aggregation, cache protection, and evidence levels;
-- `docs/api-spec.md` covers actual routes, payloads, side effects, and activation;
-- `docs/questions.md` covers requirement interpretations and acceptance boundaries.
+- deployment and operator commands in the existing README deployment/operation sections;
+- architecture and data flow in `docs/design.md`;
+- endpoint contracts in `docs/api-spec.md`;
+- misunderstood requirement boundaries in `docs/questions.md`.
 
-Only existing units are used:
-
-```text
-infoscreen-http.service
-infoscreen-local-events.service
-infoscreen-local-events.timer
-```
+Do not recast the entire InfoScreen project around Local Event Studio.
 
 ### Phase 10 — final consolidation and plan deletion
 
-Pending after live acceptance.
+Pending after the source rules and operator flow are complete.
 
-- incorporate exact live acceptance evidence into final documents;
-- verify routes/models/docs still match the accepted revision;
 - verify no second port/service/server or abandoned duplicate implementation;
+- verify permanent documents contain only narrow, accurate additions;
 - verify no references depend on this temporary plan;
 - delete this file before delivery.
-
-## Current evidence summary
-
-| Phase | Status | Evidence level |
-| --- | --- | --- |
-| 0 — plan and baseline | complete | branch history |
-| 1 — rule storage | implemented | source and deterministic tests present; CI status pending |
-| 2 — `8765` rule API | implemented | models/OpenAPI/server/HTTP tests present; CI status pending |
-| 3 — snapshot capture | implemented | deterministic code/tests; real browser capture pending |
-| 4 — annotation UI | implemented | frontend/style contracts; real browser interaction pending |
-| 5 — draft test | implemented | evaluator/API/UI contracts; CI status pending |
-| 6 — production integration | implemented in code | collector/pipeline/job/cache tests; live run pending |
-| 7 — Esplanade acceptance | pending operator interaction | no live evidence |
-| 8 — source migration | pending | no live evidence |
-| 9 — operations documentation | complete | README/design/API/questions updated |
-| 10 — final consolidation | pending | temporary plan retained until live acceptance |
