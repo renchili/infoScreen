@@ -15,9 +15,11 @@ class StudioParser(HTMLParser):
         self.ids: set[str] = set()
         self.scripts: list[str] = []
         self.styles: list[str] = []
+        self.tags: list[str] = []
         self.external_assets: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.tags.append(tag)
         data = dict(attrs)
         if data.get("id"):
             self.ids.add(str(data["id"]))
@@ -39,151 +41,98 @@ def parse_studio() -> StudioParser:
     return parser
 
 
-def test_studio_page_uses_existing_static_asset_model() -> None:
+def test_studio_page_uses_one_existing_static_asset_pair() -> None:
     parser = parse_studio()
-    assert parser.scripts == [
-        "/assets/js/local_event_studio.js",
-        "/assets/js/local_event_studio_test.js",
-        "/assets/js/local_event_studio_run.js",
-    ]
-    assert parser.styles == [
-        "/assets/css/local_event_studio.css",
-        "/assets/css/local_event_studio_test.css",
-        "/assets/css/local_event_studio_run.css",
-    ]
+    assert parser.scripts == ["/assets/js/local_event_studio.js"]
+    assert parser.styles == ["/assets/css/local_event_studio.css"]
     assert parser.external_assets == []
 
 
-def test_studio_page_contains_complete_local_workflow_controls() -> None:
+def test_studio_page_contains_live_browser_workflow_controls() -> None:
     parser = parse_studio()
     required = {
-        "workflow-state",
+        "global-status",
         "source-select",
         "listing-select",
-        "snapshot-select",
-        "capture-button",
-        "reload-button",
-        "page-image",
-        "annotation-canvas",
+        "open-browser",
+        "reload-state",
+        "browser-message",
+        "rule-status",
         "card-selector",
-        "exclude-selectors",
-        "field-editor",
-        "allow-source-default",
-        "detail-enabled",
+        "url-selector",
+        "listing-fields",
         "detail-fields",
-        "save-draft-button",
-        "test-draft-button",
-        "publish-button",
-        "export-button",
-        "import-input",
-        "history-select",
-        "rollback-button",
-        "field-evidence",
-        "test-state",
-        "test-result",
-        "test-matched",
-        "test-accepted",
-        "test-rejected",
-        "test-publishable",
-        "accepted-preview",
-        "rejected-preview",
-        "production-status",
-        "production-location",
-        "run-local-events-button",
-        "production-count",
-        "production-partial",
-        "production-completed",
-        "production-incomplete",
-        "production-message",
-        "production-results",
+        "test-status",
+        "matched",
+        "accepted",
+        "rejected",
+        "publishable",
+        "accepted-list",
+        "rejected-list",
+        "publish",
+        "run-status",
+        "location",
+        "run",
+        "run-message",
+        "results",
     }
     assert required.issubset(parser.ids)
 
 
+def test_studio_does_not_embed_or_annotate_a_screenshot() -> None:
+    parser = parse_studio()
+    html = read_text("surface/web/local-events/studio/index.html")
+    assert "iframe" not in parser.tags
+    assert "canvas" not in parser.tags
+    assert "page-image" not in parser.ids
+    assert "annotation-canvas" not in parser.ids
+    assert "No iframe and no screenshot clicking" in html
+    assert "OPEN REAL BROWSER" in html
+
+
 def test_studio_javascript_uses_only_existing_8765_relative_apis() -> None:
-    editor_js = read_text("surface/web/assets/js/local_event_studio.js")
-    test_js = read_text("surface/web/assets/js/local_event_studio_test.js")
-    run_js = read_text("surface/web/assets/js/local_event_studio_run.js")
-    combined = editor_js + "\n" + test_js + "\n" + run_js
+    js = read_text("surface/web/assets/js/local_event_studio.js")
     for path in [
         "/api/local-events/studio/sources",
         "/api/local-events/studio/rules",
-        "/api/local-events/studio/snapshots",
-        "/api/local-events/studio/snapshot-asset",
         "/api/local-events/studio/capture",
-        "/api/local-events/studio/draft",
-        "/api/local-events/studio/test",
         "/api/local-events/studio/test-latest",
         "/api/local-events/studio/publish",
-        "/api/local-events/studio/rollback",
-        "/api/local-events/studio/import",
-        "/api/local-events/studio/export",
         "/api/local-events/search",
     ]:
-        assert path in combined
-    assert "8766" not in combined
-    assert "http://127.0.0.1" not in combined
-    assert "https://127.0.0.1" not in combined
-    assert "React" not in combined
+        assert path in js
+    assert "8766" not in js
+    assert "http://127.0.0.1" not in js
+    assert "https://127.0.0.1" not in js
 
 
-def test_studio_annotation_maps_dom_selectors_not_coordinate_rules() -> None:
-    js = read_text("surface/web/assets/js/local_event_studio.js")
-    assert "function relativeSelector" in js
-    assert "function inferCardSelector" in js
-    assert "data-infoscreen-studio-id" not in js
-    assert "payload.card" in js
-    assert "payload.fields" in js
-    assert "regions" not in js
-    assert "x_percent" not in js
-    assert "y_percent" not in js
+def test_live_browser_worker_uses_real_dom_and_detail_pages() -> None:
+    worker = read_text("surface/local_events_runtime/studio_live.py")
+    assert "launch_persistent_context" in worker
+    assert "headless=False" in worker
+    assert "context.expose_binding" in worker
+    assert "DOM_EVIDENCE_JS" in worker
+    assert "detail.goto" in worker
+    assert "live_validation_requires_two_confirmed_detail_pages" in worker
+    assert "window.__infoscreenCardSelector" in worker
 
 
-def test_studio_test_preview_requires_server_publishability() -> None:
-    js = read_text("surface/web/assets/js/local_event_studio_test.js")
-    assert "result.publishable" in js
-    assert "result.run_id" in js
-    assert "PUBLISH TESTED DRAFT" in read_text("surface/web/local-events/studio/index.html")
-    assert 'event.stopImmediatePropagation()' in js
-    assert 'ui.publishButton.addEventListener("click", publishTestedDraft, true);' in js
+def test_live_production_collector_admits_listing_cards_then_reads_details() -> None:
+    collector = read_text("surface/local_events_runtime/studio_live_collect.py")
+    assert "page.locator(rule.card.selector)" in collector
+    assert "validate_detail_url" in collector
+    assert "detail.goto" in collector
+    assert "title_missing_after_detail" not in collector
+    assert 'for name in ("title", "when", "where")' in collector
+    assert '"candidate_policy": "official-listing-authority-v1"' in collector
+    assert '"source_type": "studio_live_rule"' in collector
 
 
-def test_studio_waits_for_initial_source_binding_before_latest_test_lookup() -> None:
-    js = read_text("surface/web/assets/js/local_event_studio_test.js")
-    assert "async function loadLatestWhenBindingReady" in js
-    assert "attempt >= 50" in js
-    assert "loadLatestWhenBindingReady(attempt + 1)" in js
-    assert "setTimeout(() => loadLatestWhenBindingReady()" in js
-
-
-def test_studio_exposes_loading_empty_error_and_retry_interactions() -> None:
+def test_studio_exposes_failure_and_retry_states() -> None:
     html = read_text("surface/web/local-events/studio/index.html")
     js = read_text("surface/web/assets/js/local_event_studio.js")
-    run_js = read_text("surface/web/assets/js/local_event_studio_run.js")
-    assert 'role="status"' in html
-    assert 'aria-live="polite"' in html
-    assert "No snapshots captured" in js
-    assert "setStatus(error.message" in js
-    assert "reload-button" in html
-    assert "CAPTURE NOW" in html
-    assert "RUNNING · MAY TAKE SEVERAL MINUTES" in run_js
-    assert "No production activities are present" in run_js
+    assert "RELOAD STATE" in html
+    assert "VALIDATION FAILED" in js
+    assert "BROWSER START FAILED" in js
     assert "RUN LOCAL EVENTS NOW" in html
-
-
-def test_studio_production_workflow_runs_existing_local_events_endpoint_and_renders_fields() -> None:
-    html = read_text("surface/web/local-events/studio/index.html")
-    js = read_text("surface/web/assets/js/local_event_studio_run.js")
-    assert "CAPTURE" in html
-    assert "CARDS" in html
-    assert "FIELDS" in html
-    assert "TEST" in html
-    assert "PUBLISH" in html
-    assert "RUN" in html
-    assert 'method: "POST"' in js
-    assert 'body: JSON.stringify({ location })' in js
-    assert 'requestJson("/api/local-events/search"' in js
-    assert 'appendDefinition(values, "WHEN", event.when)' in js
-    assert 'appendDefinition(values, "WHERE", event.where)' in js
-    assert 'appendDefinition(values, "POLICY", event.candidate_policy)' in js
-    assert 'window.localStorage.setItem("local_events_location", location)' in js
+    assert "RUNNING" in js
