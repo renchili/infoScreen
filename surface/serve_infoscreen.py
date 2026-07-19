@@ -521,9 +521,7 @@ class Handler(SimpleHTTPRequestHandler):
                 source_id = self.query_value("source_id") or ""
                 listing_url = self.query_value("listing_url") or ""
                 _, canonical_url = studio_rule_store()._binding(source_id, listing_url)
-                result = latest_test_run(source_id, root=studio_root())
-                if result is not None and result.get("listing_url") != canonical_url:
-                    result = None
+                result = latest_test_run(source_id, canonical_url, root=studio_root())
                 return self.send_json({"ok": True, "result": result})
             except Exception as exc:
                 return self.send_studio_error(exc)
