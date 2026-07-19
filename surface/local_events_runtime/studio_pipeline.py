@@ -6,6 +6,7 @@ from typing import Any, Callable
 
 from .extract import label_dates
 from .studio_collect import StudioBrowser, apply_published_studio_rules
+from .studio_live_collect import apply_published_live_rules
 
 SURFACE_DIR = Path(__file__).resolve().parents[1]
 
@@ -19,7 +20,7 @@ def runtime_env_dir() -> Path:
 
 
 def _synchronize_event_dates(event: dict[str, Any]) -> dict[str, Any]:
-    if event.get("source_type") != "studio_published_rule":
+    if event.get("source_type") not in {"studio_published_rule", "studio_live_rule"}:
         return event
     dates = label_dates(str(event.get("when") or ""))
     if not dates:
@@ -36,7 +37,10 @@ def _enforce_live_rule_health(payload: dict[str, Any]) -> dict[str, Any]:
     partial = bool(output.get("partial"))
     for raw in output.get("debug_by_source") or []:
         row = dict(raw) if isinstance(raw, dict) else raw
-        if not isinstance(row, dict) or row.get("adapter") != "studio_published_rule":
+        if not isinstance(row, dict) or row.get("adapter") not in {
+            "studio_published_rule",
+            "studio_live_rule",
+        }:
             debug_rows.append(row)
             continue
         fatal_errors = list(row.get("fatal_errors") or [])
@@ -61,14 +65,27 @@ def apply_runtime_studio_rules(
     *,
     browser_factory: Callable[[], StudioBrowser] = StudioBrowser,
 ) -> dict[str, Any]:
-    """Apply published rules, synchronize final fields, and enforce source health."""
+    """Apply published rules, synchronize detail-derived dates, and enforce source health."""
 
-    output = apply_published_studio_rules(
-        payload,
-        root=runtime_env_dir() / "local_event_studio",
-        source_config_path=SURFACE_DIR / "conf" / "event_sources.json",
-        browser_factory=browser_factory,
-    )
+    root = runtime_env_dir() / "local_event_studio"
+    config = SURFACE_DIR / "conf" / "event_sources.json"
+
+    # Existing deterministic tests inject a browser double. Production uses
+    # the operator-authored live listing/detail collector.
+    if browser_factory is not StudioBrowser:
+        output = apply_published_studio_rules(
+            payload,
+            root=root,
+            source_config_path=config,
+            browser_factory=browser_factory,
+        )
+    else:
+        output = apply_published_live_rules(
+            payload,
+            root=root,
+            source_config_path=config,
+        )
+
     output = dict(output)
     output["results"] = [
         _synchronize_event_dates(dict(item))
