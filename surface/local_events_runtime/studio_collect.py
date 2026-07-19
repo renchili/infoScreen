@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from contextlib import AbstractContextManager
 from datetime import date
 from pathlib import Path
@@ -44,14 +45,23 @@ class StudioBrowser(AbstractContextManager["StudioBrowser"]):
             raise StudioCollectionError("missing_playwright_python_package") from exc
         self._playwright_context = sync_playwright()
         playwright = self._playwright_context.__enter__()
-        self._browser = launch_chromium(playwright)
+        try:
+            self._browser = launch_chromium(playwright)
+        except Exception:
+            self._playwright_context.__exit__(*sys.exc_info())
+            self._playwright_context = None
+            raise
         return self
 
     def __exit__(self, exc_type, exc, traceback) -> None:
-        if self._browser is not None:
-            self._browser.close()
-        if self._playwright_context is not None:
-            self._playwright_context.__exit__(exc_type, exc, traceback)
+        try:
+            if self._browser is not None:
+                self._browser.close()
+        finally:
+            self._browser = None
+            if self._playwright_context is not None:
+                self._playwright_context.__exit__(exc_type, exc, traceback)
+                self._playwright_context = None
 
     def _page(self):
         if self._browser is None:
@@ -243,6 +253,28 @@ def _apply_detail_rule(
         }
 
 
+def _browser_failure_debug(
+    source: dict[str, Any],
+    rule: LocalEventStudioRule,
+    exc: Exception,
+) -> dict[str, Any]:
+    return {
+        "source": source.get("name") or rule.source_id,
+        "source_id": rule.source_id,
+        "adapter": "studio_published_rule",
+        "listing_urls": [rule.listing_url],
+        "studio_rule_version": rule.version,
+        "status": "failed",
+        "complete": False,
+        "listing_fetched": 0,
+        "cards_found": 0,
+        "accepted": 0,
+        "reason_counts": {"studio_browser_start_failed": 1},
+        "error": type(exc).__name__,
+        "detail": str(exc)[:500],
+    }
+
+
 def collect_published_source(
     source: dict[str, Any],
     rules: list[LocalEventStudioRule],
@@ -254,89 +286,96 @@ def collect_published_source(
 
     results: list[dict[str, Any]] = []
     debug_rows: list[dict[str, Any]] = []
-    with browser_factory() as browser:
-        for rule in rules:
-            debug: dict[str, Any] = {
-                "source": source.get("name") or rule.source_id,
-                "source_id": rule.source_id,
-                "adapter": "studio_published_rule",
-                "listing_urls": [rule.listing_url],
-                "studio_rule_version": rule.version,
-                "status": "complete",
-                "complete": True,
-                "listing_fetched": 0,
-                "cards_found": 0,
-                "accepted": 0,
-                "reason_counts": {},
-            }
-            try:
-                rendered = browser.render_listing(source, rule.listing_url)
-                debug["listing_fetched"] = 1
-                debug["final_url"] = rendered.get("final_url")
-                debug["prepare"] = rendered.get("prepare") or {}
-                evaluation = evaluate_rule(
-                    rule,
-                    rendered.get("dom") or {},
-                    source,
-                    today=today,
-                )
-                debug["cards_found"] = evaluation.get("matched_card_count", 0)
-                debug["accepted"] = evaluation.get("accepted_count", 0)
-                debug["publishable"] = evaluation.get("publishable", False)
-                debug["fatal_errors"] = evaluation.get("fatal_errors") or []
-                debug["warnings"] = evaluation.get("warnings") or []
-                debug["not_output_preview"] = (evaluation.get("rejected") or [])[:12]
-                reason_counts: dict[str, int] = {}
-                for rejected in evaluation.get("rejected") or []:
-                    reason = str(rejected.get("reason") or "unknown")
-                    reason_counts[reason] = reason_counts.get(reason, 0) + 1
-                debug["reason_counts"] = reason_counts
+    try:
+        with browser_factory() as browser:
+            for rule in rules:
+                debug: dict[str, Any] = {
+                    "source": source.get("name") or rule.source_id,
+                    "source_id": rule.source_id,
+                    "adapter": "studio_published_rule",
+                    "listing_urls": [rule.listing_url],
+                    "studio_rule_version": rule.version,
+                    "status": "complete",
+                    "complete": True,
+                    "listing_fetched": 0,
+                    "cards_found": 0,
+                    "accepted": 0,
+                    "reason_counts": {},
+                }
+                try:
+                    rendered = browser.render_listing(source, rule.listing_url)
+                    debug["listing_fetched"] = 1
+                    debug["final_url"] = rendered.get("final_url")
+                    debug["prepare"] = rendered.get("prepare") or {}
+                    evaluation = evaluate_rule(
+                        rule,
+                        rendered.get("dom") or {},
+                        source,
+                        today=today,
+                    )
+                    debug["cards_found"] = evaluation.get("matched_card_count", 0)
+                    debug["accepted"] = evaluation.get("accepted_count", 0)
+                    debug["publishable"] = evaluation.get("publishable", False)
+                    debug["fatal_errors"] = evaluation.get("fatal_errors") or []
+                    debug["warnings"] = evaluation.get("warnings") or []
+                    debug["not_output_preview"] = (evaluation.get("rejected") or [])[:12]
+                    reason_counts: dict[str, int] = {}
+                    for rejected in evaluation.get("rejected") or []:
+                        reason = str(rejected.get("reason") or "unknown")
+                        reason_counts[reason] = reason_counts.get(reason, 0) + 1
+                    debug["reason_counts"] = reason_counts
 
-                accepted_rows = list(evaluation.get("accepted") or [])
-                if rule.detail_page.enabled:
-                    accepted_rows = [
-                        _apply_detail_rule(item, rule, source, browser)
-                        if index < DETAIL_LIMIT
-                        else {
-                            **item,
-                            "detail_page_pending": False,
-                            "detail_page": {"ok": False, "error": "detail_limit_reached"},
-                        }
-                        for index, item in enumerate(accepted_rows)
-                    ]
+                    accepted_rows = list(evaluation.get("accepted") or [])
+                    if rule.detail_page.enabled:
+                        accepted_rows = [
+                            _apply_detail_rule(item, rule, source, browser)
+                            if index < DETAIL_LIMIT
+                            else {
+                                **item,
+                                "detail_page_pending": False,
+                                "detail_page": {"ok": False, "error": "detail_limit_reached"},
+                            }
+                            for index, item in enumerate(accepted_rows)
+                        ]
 
-                for item in accepted_rows:
-                    event = dict(item.get("event") or {})
-                    event.update(
+                    for item in accepted_rows:
+                        event = dict(item.get("event") or {})
+                        event.update(
+                            {
+                                "candidate_policy": "official-listing-authority-v1",
+                                "source_type": "studio_published_rule",
+                                "studio_rule_version": rule.version,
+                                "studio_listing_url": rule.listing_url,
+                                "studio_evidence": item.get("evidence") or {},
+                                "studio_detail_page": item.get("detail_page"),
+                            }
+                        )
+                        results.append(event)
+                    debug["accepted_preview"] = [
                         {
-                            "candidate_policy": "official-listing-authority-v1",
-                            "source_type": "studio_published_rule",
-                            "studio_rule_version": rule.version,
-                            "studio_listing_url": rule.listing_url,
-                            "studio_evidence": item.get("evidence") or {},
-                            "studio_detail_page": item.get("detail_page"),
+                            "title": item.get("title"),
+                            "when": item.get("when"),
+                            "where": item.get("where"),
+                            "url": item.get("url"),
+                        }
+                        for item in results[-len(accepted_rows):]
+                    ] if accepted_rows else []
+                except Exception as exc:
+                    debug.update(
+                        {
+                            "status": "failed",
+                            "complete": False,
+                            "error": type(exc).__name__,
+                            "detail": str(exc)[:500],
                         }
                     )
-                    results.append(event)
-                debug["accepted_preview"] = [
-                    {
-                        "title": item.get("title"),
-                        "when": item.get("when"),
-                        "where": item.get("where"),
-                        "url": item.get("url"),
-                    }
-                    for item in results[-len(accepted_rows):]
-                ] if accepted_rows else []
-            except Exception as exc:
-                debug.update(
-                    {
-                        "status": "failed",
-                        "complete": False,
-                        "error": type(exc).__name__,
-                        "detail": str(exc)[:500],
-                    }
-                )
-            debug_rows.append(debug)
+                debug_rows.append(debug)
+    except Exception as exc:
+        if not debug_rows:
+            return [], [_browser_failure_debug(source, rule, exc) for rule in rules]
+        warning = f"studio_browser_close_failed:{type(exc).__name__}:{str(exc)[:200]}"
+        for row in debug_rows:
+            row["warnings"] = list(dict.fromkeys([*(row.get("warnings") or []), warning]))
     return results, debug_rows
 
 
