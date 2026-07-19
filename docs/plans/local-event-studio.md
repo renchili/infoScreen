@@ -2,28 +2,37 @@
 
 Status: temporary working record on `develop/surface-local-events-coverage`.
 
-This file is not final product documentation. It must be deleted before delivery after the final implementation is folded into the existing project documents without replacing unrelated InfoScreen content.
+This file is not final product documentation. It must be deleted before delivery after the implementation is folded narrowly into the existing project documents without replacing unrelated InfoScreen content.
 
 ## Fixed constraints
 
 - Work only on `develop/surface-local-events-coverage`.
-- Do not modify `main`, create a PR, or merge without explicit approval.
+- Do not modify `main`, create a PR, merge, reset, force-push, delete branches, or release without explicit approval.
 - Use the existing `surface/serve_infoscreen.py` process and port `8765`.
 - Do not add another HTTP server, port, daemon, database, systemd service, or duplicate application.
 - Serve `/local-events/studio/` through the existing HTTP service.
-- Store local state under `surface/.env/local_event_studio/`; never commit runtime rules, captures, logs, or screenshots.
+- Store local state under `surface/.env/local_event_studio/`; never commit runtime rules, browser profiles, captures, logs, or screenshots.
 - Drafts and test runs must not affect production collection.
 - Published rules are enabled only for their configured source/listing pair.
 - One source failure must not clear unrelated sources.
-- Structured data may enrich an admitted rendered card but may not independently create an activity.
-- Screenshot coordinates are UI aids only; published rules use selectors and explicit field mappings.
-- Complete deterministic work without pausing for operator input. Operator participation begins only at real-source semantic selection.
+- Structured data may enrich a candidate already admitted from the official listing but may not independently create an activity.
+- Do not use an iframe or a screenshot as the operator interaction surface.
 - Do not create or depend on a new CI workflow for this feature.
 - Do not replace or broadly rewrite README, design, API, or questions content around Local Events.
 
-## Current development-branch install and run
+## Problems this work must fix
 
-Run this on the Surface from the existing checkout:
+1. Activity links must point to the matching public official detail page.
+2. `when` and `where` must come from explicitly mapped fields on the admitted listing card or its verified detail page.
+3. Navigation, membership, dining, parking, promotions, facilities, and other non-activity content must not become activities.
+4. Official sites that require filters, scrolling, expansion, Load More, pagination, native selects, waits, or detail-page interaction must be handled as multi-step browser workflows rather than one static page read.
+5. Every accepted listing candidate must open and verify its public official detail page before becoming output.
+6. The operator must be able to correct each official source locally without changing Python extraction code for every page redesign.
+7. A source-specific correction must not clear or alter unrelated sources.
+
+## Development-branch install and run
+
+Run on the Surface from the existing checkout:
 
 ```bash
 cd ~/infoscreen
@@ -35,55 +44,101 @@ git pull --ff-only origin develop/surface-local-events-coverage
 bash deploy/scripts/install-user-systemd.sh
 ```
 
-The existing installer now:
+The existing installer is the only deployment entrypoint. It installs missing Python/Chromium dependencies, installs and restarts the existing user units, and checks the existing `8765` Studio route and source API.
 
-- installs missing Ubuntu packages required by the current runtime (`python3`, `python3-pip`, `curl`, and Chromium);
-- installs Pydantic 2 and Playwright for the same user that runs the existing systemd user service;
-- installs and restarts the existing `infoscreen-http.service` and existing producer units;
-- checks `http://127.0.0.1:8765/local-events/studio/`;
-- checks `/api/local-events/studio/sources`;
-- exits with the HTTP service status and journal when either check fails;
-- prints the dashboard and Studio URLs when ready.
-
-After the command finishes successfully, open on the Surface:
+Open on the Surface:
 
 ```text
 http://127.0.0.1:8765/local-events/studio/
 ```
 
-There is no second server, service, port, or separate deployment command.
+There is no second server, service, port, or deployment command.
 
-## Problems this work must fix
-
-1. Activity links must point to the matching public official detail page.
-2. `when` and `where` must come from explicitly mapped fields on the admitted list card or its validated detail page.
-3. Navigation, membership, dining, parking, promotions, facilities, and other non-activity content must not become activities.
-4. The operator must be able to correct each official source locally without changing Python extraction code for every page redesign.
-5. A source-specific correction must not clear or alter unrelated sources.
-
-## Product workflow
+## Correct product workflow
 
 ```text
-choose configured source/listing
--> capture official listing page locally
--> inspect screenshot with DOM evidence overlay
--> identify repeated real activity cards
--> infer or edit card selector
--> map title / when / where / detail URL / summary / image
--> add exclusions and optional detail mappings
--> save inert draft
--> test against stored snapshot
--> inspect accepted/rejected rows and field evidence
--> publish exact tested fingerprint
--> run existing Local Events producer
--> inspect runtime and visible output
--> roll back by republishing history as a new version when needed
+choose configured source/listing in the existing Studio page
+-> open a real headed Chromium window on the Surface desktop
+-> browse the real official website normally
+-> record required listing actions:
+   click / repeat click / select option / scroll to bottom / wait
+-> select the repeated activity-card DOM structure
+-> select the public detail link inside that card
+-> open real detail pages normally
+-> record required detail-page actions
+-> map title / when / where and optional summary / image on listing or detail pages
+-> return to the configured listing
+-> validate several real listing candidates by opening their real detail pages
+-> save an inert draft and exact semantic fingerprint
+-> publish only the exact live-validated draft
+-> replay recorded actions in the existing Local Events producer
+-> open and verify every accepted detail page sequentially
+-> inspect final results in the existing Studio page
+```
+
+Screenshots may be retained only as diagnostic evidence after validation. They are not used for clicking, element selection, scrolling, or page interaction.
+
+## Recorded browser actions
+
+Published rules may contain ordered `listing_actions` and `detail_actions`.
+
+Supported actions:
+
+- `click`: click one required or optional control once;
+- `click_repeat`: repeatedly click controls such as Load More until unavailable or the configured limit is reached;
+- `select_option`: replay a native select value;
+- `scroll_to_bottom`: scroll repeatedly until document height stabilizes;
+- `wait`: wait for site-specific asynchronous rendering.
+
+Each action is part of the rule fingerprint and immutable published history. Changing an action makes the previous validation stale and requires validation again.
+
+Cookie or consent controls that may not appear on every run must be explicitly recorded as optional. Missing required action targets fail that source rather than silently continuing with an unprepared page.
+
+## Listing and detail authority
+
+A published rule is bound to one configured source/listing pair and contains:
+
+- ordered listing actions;
+- repeated activity-card selector;
+- zero or more exclusion selectors;
+- explicit listing-card mappings for title, when, where, detail URL, summary, and image;
+- ordered detail actions;
+- optional detail-page field mappings;
+- explicit source-default venue opt-in;
+- public-detail URL and current/future date validation;
+- monotonically increasing version and immutable history.
+
+Only a card matched on the configured official listing may become a candidate. Page-wide JSON, XHR, JSON-LD, navigation, facilities, membership, parking, dining, and promotions cannot independently create output rows.
+
+Every candidate must then pass all of these detail checks:
+
+- URL is a public HTTP/HTTPS URL on an allowed official domain;
+- URL is not the listing itself, an API/internal endpoint, media file, PDF, or synthetic fragment;
+- detail request succeeds and does not redirect outside allowed official domains;
+- detail page contains readable content;
+- recorded detail actions replay successfully;
+- required title, time/date, and venue values are present after detail mapping;
+- date parses and is current or future;
+- duplicate final detail URLs are rejected.
+
+Field precedence is:
+
+```text
+explicit mapped detail-page field
+-> explicit mapped listing-card field
+-> matched structured enrichment
+-> explicit source default only when enabled
+-> reject when a required value remains missing
 ```
 
 ## Local storage
 
 ```text
 surface/.env/local_event_studio/
+├── live/
+│   ├── <source-listing>.json
+│   ├── <source-listing>.log
+│   └── <source-listing>-profile/
 ├── snapshots/<source-id>/<snapshot-id>/
 │   ├── page.png
 │   ├── page.html
@@ -93,171 +148,70 @@ surface/.env/local_event_studio/
 │   ├── draft.json
 │   ├── published.json
 │   └── history/vNNNNNN.json
-├── test-runs/<source-id>/<run-id>.json
-└── crawl-runs/
+└── test-runs/<source-id>/<run-id>.json
 ```
 
-All writes are atomic. Source IDs and listing URLs are validated against `surface/conf/event_sources.json`. Runtime path components are derived from validated bindings.
+Rule and test writes are atomic. Source IDs and listing URLs are validated against `surface/conf/event_sources.json`. Runtime path components are derived from validated bindings.
 
-## Rule and admission contract
+## Current implementation status
 
-A published rule is bound to one configured source/listing pair and contains:
+Code currently present on the development branch includes:
 
-- repeated card selector;
-- zero or more exclusion selectors;
-- explicit list-card mappings for title, when, where, URL, summary, and image;
-- optional detail-page mappings;
-- explicit source-default venue opt-in;
-- public-detail URL and current/future date validation;
-- monotonically increasing version and immutable history.
+- Pydantic rule, selector, validation, and browser-action models;
+- configured source/listing binding checks;
+- draft, publish, immutable history, import/export, and rollback storage;
+- existing `8765` rule APIs and Studio route;
+- detached headed Chromium worker started by the existing HTTP process;
+- real-site shadow-DOM selection toolbar;
+- semantic repeated-card ancestor selection with narrower/wider adjustment;
+- listing and detail field selection against the real DOM;
+- recording of listing/detail clicks, repeat clicks, native selects, scroll, and wait actions;
+- live validation that opens several official detail pages;
+- publication fingerprint including recorded actions;
+- production replay of recorded actions;
+- sequential detail-page verification before output;
+- per-source production replacement and partial-source protection;
+- Studio display of mappings, actions, live validation, publication, and final producer output.
 
-Mandatory publication fields are card, title, when, where, and URL selectors. Coordinates are never persisted as extraction authority.
+This status means code exists on the branch. It does not mean the current commit has been run successfully on the Surface.
 
-Only a card matched on the configured official listing may become an activity. Page-wide JSON, XHR, JSON-LD, navigation, facilities, membership, parking, dining, and promotions cannot independently create output rows.
+## Remaining work
 
-Field precedence is:
+### Static and offline checks
 
-```text
-explicit mapped detail-page field
--> explicit mapped list-card field
--> matched structured enrichment
--> explicit source default only when enabled
--> empty/reject according to field requirement
-```
+- run Python compilation for all affected modules;
+- run focused rule/action/frontend/backend tests;
+- run the repository test suite;
+- correct any syntax, import, schema, or contract failures;
+- review the full branch diff for abandoned screenshot UI code and unrelated changes.
 
-## Phase status
+### Surface interaction check
 
-### Phase 0 — temporary plan and baseline
+- update and restart the existing deployment;
+- open the Studio route;
+- confirm `OPEN REAL BROWSER` opens visible Chromium on the Surface desktop;
+- confirm the toolbar survives scrolling, full navigation, and same-page application navigation;
+- confirm recorded actions appear in the main Studio page;
+- confirm changing a selector or action invalidates the previous live validation.
 
-Complete.
+### Esplanade source rule
 
-- Baseline: `66a6567356ebf7b47817e40f896fc0cecaadb978`.
-- All work remains on `develop/surface-local-events-coverage`.
-
-### Phase 1 — rule storage and version management
-
-Code present on the development branch:
-
-- Pydantic schema and configured binding validation;
-- draft save/load/delete;
-- monotonic publication and immutable history;
-- rollback as a new version;
-- import/export;
-- atomic writes and path confinement;
-- deterministic storage tests.
-
-### Phase 2 — existing `8765` rule API
-
-Code present on the development branch:
-
-- sources and per-listing state;
-- draft/published/history reads;
-- draft save/delete;
-- publish, rollback, import, and export;
-- request/response models and generated OpenAPI;
-- HTTP lifecycle tests.
-
-No additional process or port is introduced.
-
-### Phase 3 — snapshot capture
-
-Code present on the development branch:
-
-- one-shot capture job invoked by the existing HTTP service;
-- configured binding validation before browser launch;
-- screenshot, rendered HTML, bounded DOM evidence, and metadata;
-- atomic snapshot publication;
-- snapshot catalog and whitelisted asset reads;
-- path and symlink confinement;
-- no page-wide network-response body collection.
-
-### Phase 4 — local annotation UI
-
-Code present at `/local-events/studio/`:
-
-- source/listing/snapshot selection;
-- capture and reload;
-- screenshot and DOM overlay;
-- click and drag selection;
-- repeated-card selector inference;
-- field mappings and exclusions;
-- draft, import/export, test, publication, history, and rollback controls;
-- accepted/rejected evidence preview;
-- production run and result inspection.
-
-### Phase 5 — deterministic draft test and publication gate
-
-Code present on the development branch:
-
-- bounded selector engine;
-- offline snapshot evaluation;
-- official public URL and date validation;
-- accepted/rejected rows with field evidence;
-- atomic test-run persistence;
-- semantic rule fingerprint;
-- service-side publication gate;
-- stale-test indication.
-
-### Phase 6 — per-source production integration
-
-Code present in the existing Local Events job path:
-
-```text
-existing structured-first collector
--> published Studio source/listing replacement
--> Studio detail-date synchronization
--> source health enforcement
--> existing output normalization
--> completion aggregation by source
--> output-compatible partial-cache protection
-```
-
-Activation behavior:
-
-```text
-no published rule -> existing result remains
-all configured listings published -> source becomes Studio-only
-some listings published -> replace only matching listing-evidence rows
-Studio failure or zero accepted result -> source incomplete and payload partial
-```
-
-### Phase 7 — Esplanade rule creation
-
-Not completed.
-
-Required work in the running Studio:
-
-- capture the configured Esplanade listing;
-- select at least two actual repeated activity cards;
-- map title, when, where, and public detail URL;
-- exclude visible non-activity cards;
-- test the draft and inspect accepted/rejected rows;
+- prepare the real Esplanade listing using recorded actions when required;
+- select at least two repeated real activity cards;
+- select the public detail link;
+- map required fields on the real detail pages;
+- validate several candidates and inspect rejections;
 - publish the exact tested draft;
-- run Local Events from the same page;
-- correct any remaining link, time, venue, or non-activity errors.
+- run the existing Local Events producer;
+- correct remaining wrong links, times, venues, or non-activity rows.
 
-### Phase 8 — incremental source migration
+### Incremental source migration
 
-Pending after Esplanade. Migrate one source at a time through capture, annotation, test, publish, run, and correction. Never distribute one guessed selector or global blacklist across all sources.
+After Esplanade, migrate one configured listing at a time through real browsing, action recording, mapping, validation, publication, production run, and correction. Never distribute one guessed selector or global title/path blacklist across all sources.
 
-### Phase 9 — final documentation consolidation
+### Final consolidation
 
-Pending.
-
-The four permanent project documents were restored to their pre-Studio content after an earlier broad rewrite. At delivery, add only the narrowly relevant material:
-
-- deployment and operator commands in the existing README deployment/operation sections;
-- architecture and data flow in `docs/design.md`;
-- endpoint contracts in `docs/api-spec.md`;
-- misunderstood requirement boundaries in `docs/questions.md`.
-
-Do not recast the entire InfoScreen project around Local Event Studio.
-
-### Phase 10 — final consolidation and plan deletion
-
-Pending after the source rules and operator flow are complete.
-
-- verify no second port/service/server or abandoned duplicate implementation;
-- verify permanent documents contain only narrow, accurate additions;
-- verify no references depend on this temporary plan;
-- delete this file before delivery.
+- verify no second port, service, server, or abandoned duplicate implementation;
+- add only narrow, accurate operator/API/design clarifications to existing permanent documents;
+- remove temporary or obsolete screenshot-annotation tests/assets;
+- delete this temporary plan before delivery.
