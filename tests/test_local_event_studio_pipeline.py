@@ -31,13 +31,50 @@ def test_pipeline_uses_active_runtime_root_and_committed_source_config(
     marker = object()
     monkeypatch.setattr(studio_pipeline, "apply_published_studio_rules", fake_apply)
     payload = {"results": [], "debug_by_source": []}
-    assert studio_pipeline.apply_runtime_studio_rules(payload, browser_factory=lambda: marker) == {
+    assert studio_pipeline.apply_runtime_studio_rules(
+        payload,
+        browser_factory=lambda: marker,
+    ) == {
         "results": [],
         "debug_by_source": [],
         "count": 0,
     }
     assert observed["root"] == runtime.resolve() / "local_event_studio"
-    assert observed["source_config_path"] == studio_pipeline.SURFACE_DIR / "conf" / "event_sources.json"
+    assert (
+        observed["source_config_path"]
+        == studio_pipeline.SURFACE_DIR / "conf" / "event_sources.json"
+    )
+
+
+def test_pipeline_default_path_uses_live_listing_and_detail_collector(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = tmp_path / "runtime"
+    monkeypatch.setenv("INFOSCREEN_ENV_DIR", str(runtime))
+    observed: dict = {}
+
+    def fake_live(payload, *, root, source_config_path):
+        observed.update(
+            {
+                "payload": payload,
+                "root": root,
+                "source_config_path": source_config_path,
+            }
+        )
+        return {"results": [], "debug_by_source": []}
+
+    monkeypatch.setattr(studio_pipeline, "apply_published_live_rules", fake_live)
+    assert studio_pipeline.apply_runtime_studio_rules({}) == {
+        "results": [],
+        "debug_by_source": [],
+        "count": 0,
+    }
+    assert observed["root"] == runtime.resolve() / "local_event_studio"
+    assert (
+        observed["source_config_path"]
+        == studio_pipeline.SURFACE_DIR / "conf" / "event_sources.json"
+    )
 
 
 def test_pipeline_synchronizes_detail_when_with_start_and_end_dates(
@@ -45,7 +82,7 @@ def test_pipeline_synchronizes_detail_when_with_start_and_end_dates(
 ) -> None:
     monkeypatch.setattr(
         studio_pipeline,
-        "apply_published_studio_rules",
+        "apply_published_live_rules",
         lambda payload, **kwargs: {
             "results": [
                 {
@@ -53,7 +90,7 @@ def test_pipeline_synchronizes_detail_when_with_start_and_end_dates(
                     "when": "20 Jul 2099 - 22 Jul 2099",
                     "start_date": "2099-07-19",
                     "end_date": "2099-07-19",
-                    "source_type": "studio_published_rule",
+                    "source_type": "studio_live_rule",
                 },
                 {
                     "title": "Legacy Event",
@@ -76,13 +113,13 @@ def test_pipeline_marks_zero_acceptance_and_fatal_rules_partial(
 ) -> None:
     monkeypatch.setattr(
         studio_pipeline,
-        "apply_published_studio_rules",
+        "apply_published_live_rules",
         lambda payload, **kwargs: {
             "results": [{"title": "Other source"}],
             "debug_by_source": [
                 {
                     "source": "Esplanade",
-                    "adapter": "studio_published_rule",
+                    "adapter": "studio_live_rule",
                     "accepted": 0,
                     "fatal_errors": [],
                     "status": "complete",
@@ -90,7 +127,7 @@ def test_pipeline_marks_zero_acceptance_and_fatal_rules_partial(
                 },
                 {
                     "source": "National Gallery Singapore",
-                    "adapter": "studio_published_rule",
+                    "adapter": "studio_live_rule",
                     "accepted": 1,
                     "fatal_errors": ["card_selector_invalid"],
                     "status": "complete",
