@@ -10,81 +10,132 @@ OVERLAY_JS = r"""
   host.id = "__infoscreen_studio";
   host.style.cssText = "all:initial;position:fixed;top:8px;right:8px;z-index:2147483647;font:13px system-ui;color:#e8eee9";
   const root = host.attachShadow({mode:"open"});
-  const modes = ["browse","card","exclude","url","title","when","where","summary","image"];
+  const modes = [
+    ["browse","BROWSE"],
+    ["card","LIST CARD"],
+    ["exclude","EXCLUDE"],
+    ["url","DETAIL LINK"],
+    ["title","TITLE"],
+    ["when","WHEN"],
+    ["where","WHERE"],
+    ["summary","SUMMARY"],
+    ["image","IMAGE"],
+    ["action_click","RECORD CLICK"],
+    ["action_repeat","REPEAT CLICK"],
+    ["action_select","RECORD SELECT"],
+  ];
   root.innerHTML = `<style>
-    .p{width:360px;background:#09100c;border:1px solid #66736b;box-shadow:0 10px 34px #0009}
+    .p{width:390px;background:#09100c;border:1px solid #66736b;box-shadow:0 10px 34px #0009}
     .h{padding:9px;border-bottom:1px solid #344039;color:#8cff9b;font-weight:700}
     .b{padding:9px}.g{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
-    .adjust{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:6px}
-    button{font:12px system-ui;min-height:32px;background:#101813;color:#e8eee9;border:1px solid #3d4a42;cursor:pointer}
+    .adjust,.action-row{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:6px}
+    button,input,label{font:12px system-ui}
+    button{min-height:32px;background:#101813;color:#e8eee9;border:1px solid #3d4a42;cursor:pointer}
     button.on{border-color:#8cff9b;color:#8cff9b}.wide{width:100%;margin-top:6px;color:#ffe08a}
-    .s{margin-top:7px;padding:7px;background:#050806;border:1px solid #2b352f;font:11px monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:150px;overflow:auto}
+    .settings{display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;margin-top:6px;align-items:end}
+    .settings label{display:grid;gap:3px;color:#aab5ae;font-size:10px}.settings input{min-width:0;background:#050806;color:#e8eee9;border:1px solid #3d4a42;padding:5px}
+    .optional{display:flex!important;align-items:center;gap:5px}.optional input{width:auto}
+    .s{margin-top:7px;padding:7px;background:#050806;border:1px solid #2b352f;font:11px monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:170px;overflow:auto}
     .x{float:right;color:#ff9a9a}.r{margin-top:4px;color:#ffe08a;font-size:11px}
   </style><div class="p"><div class="h">INFOSCREEN LIVE STUDIO <button class="x">×</button>
-  <div class="r">${args.role === "detail" ? "DETAIL PAGE" : "LISTING PAGE"}</div></div>
+  <div class="r" data-role></div></div>
   <div class="b"><div class="g">
-    ${modes.map(x=>`<button data-m="${x}">${x === "url" ? "DETAIL LINK" : x.toUpperCase()}</button>`).join("")}
-  </div><div class="adjust"><button data-a="narrower">NARROWER ELEMENT</button><button data-a="wider">WIDER ELEMENT</button></div>
+    ${modes.map(([value,label])=>`<button data-m="${value}">${label}</button>`).join("")}
+  </div>
+  <div class="adjust"><button data-a="narrower">NARROWER ELEMENT</button><button data-a="wider">WIDER ELEMENT</button></div>
+  <div class="settings">
+    <label>WAIT MS<input data-wait type="number" min="0" max="15000" value="700"></label>
+    <label>REPEAT MAX<input data-rounds type="number" min="1" max="50" value="20"></label>
+    <label class="optional"><input data-optional type="checkbox">OPTIONAL</label>
+  </div>
+  <div class="action-row"><button data-a="scroll">RECORD SCROLL BOTTOM</button><button data-a="wait">RECORD WAIT</button></div>
+  <button class="wide" data-a="clear-actions">CLEAR ACTIONS FOR THIS PAGE ROLE</button>
   <button class="wide" data-a="capture">SAVE CURRENT LISTING STATE</button>
-  <button class="wide" data-a="clear">CLEAR DRAFT</button><div class="s">Browse normally. Choose a mode only when selecting.</div></div></div>`;
+  <button class="wide" data-a="clear">CLEAR ENTIRE DRAFT</button>
+  <div class="s">Browse normally. Choose a mode only when selecting.</div></div></div>`;
   document.documentElement.appendChild(host);
 
   const status = root.querySelector(".s");
+  const roleLabel = root.querySelector("[data-role]");
+  const waitInput = root.querySelector("[data-wait]");
+  const roundsInput = root.querySelector("[data-rounds]");
+  const optionalInput = root.querySelector("[data-optional]");
   let mode = "browse";
   let outlined = null;
-  let pointerTarget = null;
   let candidatePath = [];
   let candidateIndex = -1;
 
   const send = payload => window[args.binding](payload);
+  const configured = new URL(args.listing_url, location.href);
+  const currentRole = () => {
+    const current = new URL(location.href);
+    return current.hostname.toLowerCase() === configured.hostname.toLowerCase()
+      && current.pathname.replace(/\/$/,"") === configured.pathname.replace(/\/$/,"")
+      ? "listing"
+      : "detail";
+  };
+  const updateRole = () => {
+    roleLabel.textContent = currentRole() === "listing" ? "LISTING PAGE" : "DETAIL PAGE";
+  };
+  updateRole();
+  const roleTimer = window.setInterval(updateRole, 500);
+
+  const actionSettings = () => ({
+    wait_ms: Math.max(0, Math.min(15000, Number(waitInput.value || 0))),
+    max_rounds: Math.max(1, Math.min(50, Number(roundsInput.value || 1))),
+    optional: Boolean(optionalInput.checked),
+  });
   const esc = value => window.CSS?.escape
     ? CSS.escape(value)
     : String(value).replace(/[^a-zA-Z0-9_-]/g, ch => "\\" + ch);
   const stable = value => /^[a-zA-Z_][a-zA-Z0-9_-]{0,80}$/.test(String(value || ""));
-  const visible = el => {
-    if (!(el instanceof Element)) return false;
-    const style = getComputedStyle(el);
-    const rect = el.getBoundingClientRect();
+  const visible = element => {
+    if (!(element instanceof Element)) return false;
+    const style = getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
     return style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity || 1) !== 0
       && rect.width >= 4 && rect.height >= 4;
   };
   const clearOutline = () => {
-    if (outlined) outlined.style.outline = "";
+    if (outlined) {
+      outlined.style.outline = "";
+      outlined.style.outlineOffset = "";
+    }
     outlined = null;
   };
-  const outline = (el, color) => {
+  const outline = (element, color) => {
     clearOutline();
-    if (el) {
-      outlined = el;
-      el.style.outline = `4px solid ${color}`;
-      el.style.outlineOffset = "-2px";
+    if (element) {
+      outlined = element;
+      element.style.outline = `4px solid ${color}`;
+      element.style.outlineOffset = "-2px";
     }
   };
 
-  const selectorPart = (el, nth = false) => {
-    let output = el.tagName.toLowerCase();
+  const selectorPart = (element, nth = false) => {
+    let output = element.tagName.toLowerCase();
     for (const attribute of ["data-testid","data-test","data-component","data-module"]) {
-      const value = el.getAttribute(attribute);
+      const value = element.getAttribute(attribute);
       if (value && /^[a-zA-Z0-9_.:-]{1,120}$/.test(value)) {
         return `${output}[${attribute}="${value}"]`;
       }
     }
-    const classes = [...el.classList]
+    const classes = [...element.classList]
       .filter(stable)
       .filter(name => !/^(active|selected|open|hover|focus|loaded|visible|hidden)$/i.test(name))
       .slice(0,3);
     if (classes.length) output += "." + classes.map(esc).join(".");
-    if (nth && el.parentElement) {
-      const siblings = [...el.parentElement.children].filter(item => item.tagName === el.tagName);
-      if (siblings.length > 1) output += `:nth-of-type(${siblings.indexOf(el)+1})`;
+    if (nth && element.parentElement) {
+      const siblings = [...element.parentElement.children].filter(item => item.tagName === element.tagName);
+      if (siblings.length > 1) output += `:nth-of-type(${siblings.indexOf(element)+1})`;
     }
     return output;
   };
 
-  const uniqueSelector = el => {
-    if (stable(el.id)) return "#" + esc(el.id);
+  const uniqueSelector = element => {
+    if (stable(element.id)) return "#" + esc(element.id);
     const parts = [];
-    let current = el;
+    let current = element;
     for (let depth=0; current && current !== document.body && depth<8; depth++, current=current.parentElement) {
       parts.unshift(selectorPart(current, true));
       const candidate = parts.join(" > ");
@@ -93,32 +144,48 @@ OVERLAY_JS = r"""
     return parts.join(" > ");
   };
 
-  const repeatedSelector = el => {
-    const selector = selectorPart(el, false);
+  const relativeSelector = (element, card) => {
+    if (!card || !card.contains(element) || card === element) return "";
+    const parts = [];
+    let current = element;
+    for (let depth=0; current && current !== card && depth<10; depth++, current=current.parentElement) {
+      parts.unshift(selectorPart(current, true));
+      const candidate = parts.join(" > ");
+      try {
+        if (card.querySelectorAll(candidate).length === 1) return candidate;
+      } catch {}
+    }
+    return current === card ? parts.join(" > ") : "";
+  };
+
+  const repeatedSelector = element => {
+    const selector = selectorPart(element, false);
     try { return {selector, count: document.querySelectorAll(selector).length}; }
     catch { return {selector:"", count:0}; }
   };
 
-  const detailLinks = el => [...el.querySelectorAll("a[href]")].filter(anchor => {
+  const detailLinks = element => [...element.querySelectorAll("a[href]")].filter(anchor => {
     try {
       const url = new URL(anchor.getAttribute("href"), location.href);
-      return /^https?:$/.test(url.protocol) && url.hostname === location.hostname && url.pathname !== location.pathname;
+      return /^https?:$/.test(url.protocol)
+        && url.hostname.toLowerCase() === location.hostname.toLowerCase()
+        && url.pathname.replace(/\/$/,"") !== location.pathname.replace(/\/$/,"");
     } catch { return false; }
   });
 
-  const cardScore = (el, count) => {
-    if (!visible(el) || count < 2 || count > 250) return -10000;
-    const rect = el.getBoundingClientRect();
-    const text = String(el.innerText || el.textContent || "").replace(/\s+/g," ").trim();
+  const cardScore = (element, count) => {
+    if (!visible(element) || count < 2 || count > 250) return -10000;
+    const rect = element.getBoundingClientRect();
+    const text = String(element.innerText || element.textContent || "").replace(/\s+/g," ").trim();
     if (rect.width < 100 || rect.height < 45 || text.length < 8 || text.length > 5000) return -10000;
-    if (["HTML","BODY","MAIN","HEADER","FOOTER","NAV","FORM"].includes(el.tagName)) return -10000;
+    if (["HTML","BODY","MAIN","HEADER","FOOTER","NAV","FORM"].includes(element.tagName)) return -10000;
     if (rect.width > Math.max(innerWidth * .98, 1600) && rect.height > innerHeight * 1.5) return -10000;
-    const attributes = [el.id, el.className, el.getAttribute("role"), el.getAttribute("data-component")].join(" ");
-    const links = detailLinks(el).length;
+    const attributes = [element.id, element.className, element.getAttribute("role"), element.getAttribute("data-component")].join(" ");
+    const links = detailLinks(element).length;
     let score = 0;
-    if (["ARTICLE","LI"].includes(el.tagName)) score += 55;
+    if (["ARTICLE","LI"].includes(element.tagName)) score += 55;
     if (/\b(card|tile|item|event|programme|program|exhibition|listing|result)\b/i.test(attributes)) score += 70;
-    if (el.querySelector("h1,h2,h3,h4")) score += 22;
+    if (element.querySelector("h1,h2,h3,h4")) score += 22;
     if (links === 1) score += 55;
     if (links > 1) score -= Math.min(100, (links - 1) * 30);
     if (count <= 80) score += 20;
@@ -136,9 +203,9 @@ OVERLAY_JS = r"""
       if (score > -10000) candidates.push({element:current, ...repeated, score});
     }
     candidates.sort((a,b) => {
-      const areaA = a.element.getBoundingClientRect().width * a.element.getBoundingClientRect().height;
-      const areaB = b.element.getBoundingClientRect().width * b.element.getBoundingClientRect().height;
-      return areaA - areaB;
+      const aRect = a.element.getBoundingClientRect();
+      const bRect = b.element.getBoundingClientRect();
+      return aRect.width * aRect.height - bRect.width * bRect.height;
     });
     return candidates;
   };
@@ -147,7 +214,7 @@ OVERLAY_JS = r"""
     const candidate = candidatePath[candidateIndex];
     if (!candidate) {
       clearOutline();
-      status.textContent = "No repeated semantic card around this element. Move to the card body or edit the site filters first.";
+      status.textContent = "No repeated semantic card around this element. Move to the card body or prepare the page first.";
       return;
     }
     outline(candidate.element, mode === "exclude" ? "#ff9a9a" : "#8cecff");
@@ -170,25 +237,15 @@ OVERLAY_JS = r"""
     return candidatePath[candidateIndex];
   };
 
-  const selectedCard = el => {
+  const selectedCard = element => {
     const remembered = window.__infoscreenCardSelector || "";
     if (remembered) {
       try {
-        const owner = el.closest(remembered);
+        const owner = element.closest(remembered);
         if (owner) return owner;
       } catch {}
     }
     return null;
-  };
-
-  const relativeSelector = (el, card) => {
-    if (!card || !card.contains(el) || card === el) return "";
-    const parts = [];
-    let current = el;
-    for (let depth=0; current && current !== card && depth<10; depth++, current=current.parentElement) {
-      parts.unshift(selectorPart(current, false));
-    }
-    return current === card ? parts.join(" > ") : "";
   };
 
   const setMode = value => {
@@ -199,11 +256,32 @@ OVERLAY_JS = r"""
     if (value === "browse") clearOutline();
     status.textContent = value === "browse"
       ? "Browse, scroll, filter, paginate or open details normally."
-      : `Move over the real page and select ${value.toUpperCase()}.`;
+      : value === "action_select"
+        ? "Choose the value normally first, then click RECORD SELECT and select the <select> element."
+        : `Move over the real page and select ${value.toUpperCase()}.`;
+  };
+
+  const saveImmediateAction = async modeName => {
+    try {
+      const result = await send({
+        action:"select",
+        mode:modeName,
+        page_role:currentRole(),
+        selector:"",
+        ...actionSettings(),
+      });
+      status.textContent = result.message;
+    } catch (error) {
+      status.textContent = "FAILED: " + error;
+    }
   };
 
   root.querySelectorAll("[data-m]").forEach(button => button.onclick = () => setMode(button.dataset.m));
-  root.querySelector(".x").onclick = () => { clearOutline(); host.remove(); };
+  root.querySelector(".x").onclick = () => {
+    window.clearInterval(roleTimer);
+    clearOutline();
+    host.remove();
+  };
   root.querySelector("[data-a='narrower']").onclick = () => {
     if (!candidatePath.length) return;
     candidateIndex = Math.max(0, candidateIndex - 1);
@@ -214,6 +292,9 @@ OVERLAY_JS = r"""
     candidateIndex = Math.min(candidatePath.length - 1, candidateIndex + 1);
     showCandidate();
   };
+  root.querySelector("[data-a='scroll']").onclick = () => saveImmediateAction("action_scroll");
+  root.querySelector("[data-a='wait']").onclick = () => saveImmediateAction("action_wait");
+  root.querySelector("[data-a='clear-actions']").onclick = () => saveImmediateAction("action_clear");
   root.querySelector("[data-a='clear']").onclick = async () => {
     if (confirm("Clear the current draft?")) status.textContent = (await send({action:"clear_draft"})).message;
   };
@@ -228,13 +309,15 @@ OVERLAY_JS = r"""
 
   document.addEventListener("mousemove", event => {
     if (mode === "browse" || host.contains(event.target) || !(event.target instanceof Element)) return;
-    pointerTarget = event.target;
+    const target = event.target;
     if (mode === "card" || mode === "exclude") {
-      chooseBestCard(pointerTarget);
-    } else {
-      outline(pointerTarget, "#8cecff");
-      status.textContent = `${mode.toUpperCase()} target\n${uniqueSelector(pointerTarget)}`;
+      chooseBestCard(target);
+      return;
     }
+    let outlinedTarget = target;
+    if (mode === "action_select") outlinedTarget = target.closest("select") || target;
+    outline(outlinedTarget, mode.startsWith("action_") ? "#ffe08a" : "#8cecff");
+    status.textContent = `${mode.toUpperCase()} target\n${uniqueSelector(outlinedTarget)}`;
   }, true);
 
   document.addEventListener("click", async event => {
@@ -246,6 +329,9 @@ OVERLAY_JS = r"""
       let selector = "";
       let attribute = null;
       let matchedCount = 1;
+      let value = null;
+      const role = currentRole();
+      const actionMode = mode.startsWith("action_");
 
       if (mode === "card" || mode === "exclude") {
         const candidate = candidatePath[candidateIndex] || chooseBestCard(element);
@@ -253,7 +339,14 @@ OVERLAY_JS = r"""
         element = candidate.element;
         selector = candidate.selector;
         matchedCount = candidate.count;
-      } else if (args.role === "listing") {
+      } else if (actionMode) {
+        if (mode === "action_select") {
+          element = element.closest("select");
+          if (!element) throw new Error("RECORD SELECT requires a native select element");
+          value = element.value;
+        }
+        selector = uniqueSelector(element);
+      } else if (role === "listing") {
         const card = selectedCard(element);
         if (!card) throw new Error("Select LIST CARD first, then select a field inside one matched card");
         if (mode === "url") {
@@ -278,18 +371,27 @@ OVERLAY_JS = r"""
         selector = uniqueSelector(element);
       }
 
+      const selectedMode = mode;
       const result = await send({
         action:"select",
-        mode,
-        page_role:args.role,
+        mode:selectedMode,
+        page_role:role,
         selector,
         attribute,
         matched_count:matchedCount,
+        value,
         page_url:location.href,
+        ...actionSettings(),
       });
-      if (mode === "card") window.__infoscreenCardSelector = result.card_selector || selector;
+      if (selectedMode === "card") window.__infoscreenCardSelector = result.card_selector || selector;
       status.textContent = result.message;
       setMode("browse");
+
+      if (selectedMode === "action_click" || selectedMode === "action_repeat") {
+        window.setTimeout(() => {
+          try { element.click(); } catch {}
+        }, 50);
+      }
     } catch (error) {
       status.textContent = "FAILED: " + error;
     }
