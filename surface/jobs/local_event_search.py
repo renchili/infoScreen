@@ -23,12 +23,9 @@ os.environ.setdefault("LOCAL_EVENTS_CARD_SCREENSHOTS", "0")
 
 from local_events_runtime import collect_events  # noqa: E402
 from local_events_runtime.output import normalize_payload  # noqa: E402
-from local_events_runtime.studio_pipeline import apply_runtime_studio_rules  # noqa: E402
 
 SURFACE_DIR = Path(__file__).resolve().parents[1]
-ENV_DIR = Path(
-    os.environ.get("INFOSCREEN_ENV_DIR", str(SURFACE_DIR / ".env"))
-).expanduser().resolve()
+ENV_DIR = SURFACE_DIR / ".env"
 CONF_DIR = SURFACE_DIR / "conf"
 CONFIG = CONF_DIR / "event_sources.json"
 OUT = ENV_DIR / "local_event_search_results.json"
@@ -81,68 +78,35 @@ def source_completion(debug: dict) -> tuple[str, bool]:
     return "failed", False
 
 
-def _source_debug_key(row: dict, index: int) -> str:
-    source_name = str(row.get("source") or row.get("source_name") or "").strip().casefold()
-    source_id = str(row.get("source_id") or "").strip().casefold()
-    if source_name:
-        return f"name:{source_name}"
-    if source_id:
-        return f"id:{source_id}"
-    return f"row:{index}"
-
-
-def _group_completion(rows: list[dict]) -> tuple[str, bool]:
-    statuses = [str(row.get("status") or "failed") for row in rows]
-    complete = bool(rows) and all(row.get("complete") is True for row in rows)
-    if complete:
-        return "complete", True
-    if "timed_out" in statuses:
-        return "timed_out", False
-    if "partial" in statuses or "complete" in statuses:
-        return "partial", False
-    if "failed" in statuses:
-        return "failed", False
-    return "not_started", False
-
-
 def annotate_source_completion(payload: dict) -> dict:
     annotated = dict(payload)
     raw_debug = payload.get("debug_by_source")
     debug_rows = raw_debug if isinstance(raw_debug, list) else []
-    normalized_debug: list[dict] = []
-    grouped: dict[str, list[dict]] = {}
+    source_count = int(payload.get("source_count") or len(debug_rows) or 0)
+    completed = 0
+    status_counts: dict[str, int] = {}
+    normalized_debug = []
 
-    for index, raw in enumerate(debug_rows):
+    for raw in debug_rows:
         row = dict(raw) if isinstance(raw, dict) else {}
         status, complete = source_completion(row)
         row["status"] = status
         row["complete"] = complete
         normalized_debug.append(row)
-        grouped.setdefault(_source_debug_key(row, index), []).append(row)
-
-    configured_source_count = int(payload.get("source_count") or 0)
-    source_count = max(configured_source_count, len(grouped))
-    completed = 0
-    status_counts: dict[str, int] = {}
-    for rows in grouped.values():
-        status, complete = _group_completion(rows)
         status_counts[status] = status_counts.get(status, 0) + 1
         if complete:
             completed += 1
 
-    missing_sources = max(0, source_count - len(grouped))
-    if missing_sources:
-        status_counts["not_started"] = status_counts.get("not_started", 0) + missing_sources
+    missing_rows = max(0, source_count - len(normalized_debug))
+    if missing_rows:
+        status_counts["not_started"] = status_counts.get("not_started", 0) + missing_rows
 
     annotated["source_count"] = source_count
     annotated["debug_by_source"] = normalized_debug
     annotated["completed_source_count"] = completed
     annotated["incomplete_source_count"] = max(0, source_count - completed)
     annotated["source_status_counts"] = status_counts
-    annotated["partial"] = bool(
-        annotated.get("partial")
-        or (source_count and completed < source_count)
-    )
+    annotated["partial"] = bool(source_count and completed < source_count)
     return annotated
 
 
@@ -151,40 +115,18 @@ def is_partial(payload: dict) -> bool:
 
 
 def verified_previous_payload(payload: dict) -> dict:
-    """Keep exactly the previous rows that the current output contract may display."""
-
     verified = dict(payload)
     results = payload.get("results")
     if not isinstance(results, list):
         return verified
-
-    extractor = str(payload.get("extractor") or "").strip()
-    allow_structured_first_missing_policy = extractor.startswith("structured-first")
-    verified_results = []
-    for item in results:
-        if not isinstance(item, dict):
-            continue
-        policy = str(item.get("candidate_policy") or "").strip()
-        if policy == VERIFIED_POLICY or (allow_structured_first_missing_policy and not policy):
-            verified_results.append(item)
-
+    verified_results = [
+        item for item in results
+        if isinstance(item, dict) and item.get("candidate_policy") == VERIFIED_POLICY
+    ]
     verified["results"] = verified_results
     verified["count"] = len(verified_results)
     verified["legacy_unverified_removed"] = len(results) - len(verified_results)
-    verified["cache_policy"] = (
-        "structured-first-compatible-v1"
-        if allow_structured_first_missing_policy
-        else VERIFIED_POLICY
-    )
     return verified
-
-
-def collect_runtime_payload(location: str) -> dict:
-    """Collect legacy sources, then replace only explicitly published Studio bindings."""
-
-    legacy_payload = collect_events(CONFIG, location, DEBUG_DIR)
-    routed_payload = apply_runtime_studio_rules(legacy_payload)
-    return annotate_source_completion(normalize_payload(routed_payload))
 
 
 def write_payload(payload: dict) -> None:
@@ -200,7 +142,6 @@ def write_payload(payload: dict) -> None:
             "ok": False,
             "write_policy": "kept_previous_verified_result",
             "previous_count": old_count,
-            "previous_cache_policy": old.get("cache_policy"),
         }
         PARTIAL_OUT.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         return
@@ -209,15 +150,14 @@ def write_payload(payload: dict) -> None:
 
 
 def self_test() -> int:
-    payload = collect_runtime_payload(DEFAULT_LOCATION)
+    payload = annotate_source_completion(normalize_payload(collect_events(CONFIG, DEFAULT_LOCATION, DEBUG_DIR)))
     assert payload["extractor"] == "structured-first-v49-source-order"
     assert payload["version"] == 49
     assert payload["text_normalizer"] == "plain-text-v1"
     assert isinstance(payload.get("results"), list)
     assert isinstance(payload.get("debug_by_source"), list)
-    assert isinstance(payload.get("studio_activations", []), list)
     assert isinstance(payload.get("partial"), bool)
-    print("local-event structured-first plus Studio routing self-test passed")
+    print("local-event structured-first self-test passed")
     return 0
 
 
@@ -231,9 +171,9 @@ def main(argv: list[str] | None = None) -> int:
         return self_test()
 
     location = " ".join(args.location).strip() or DEFAULT_LOCATION
-    ENV_DIR.mkdir(parents=True, exist_ok=True)
+    ENV_DIR.mkdir(exist_ok=True)
     DEBUG_DIR.mkdir(parents=True, exist_ok=True)
-    payload = collect_runtime_payload(location)
+    payload = annotate_source_completion(normalize_payload(collect_events(CONFIG, location, DEBUG_DIR)))
     write_payload(payload)
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0
