@@ -11,7 +11,7 @@ SURFACE_DIR = Path(__file__).resolve().parents[1]
 if str(SURFACE_DIR) not in sys.path:
     sys.path.insert(0, str(SURFACE_DIR))
 
-from local_events_runtime.studio_capture import capture_snapshot
+from local_events_runtime.studio_live import start_live_session
 
 
 def studio_root() -> Path:
@@ -23,7 +23,7 @@ def studio_root() -> Path:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Capture one configured Local Events listing for the local Studio.",
+        description="Open one configured Local Events listing in the operator-controlled Studio browser.",
     )
     parser.add_argument("source_id", help="Configured source ID from event_sources.json")
     parser.add_argument("listing_url", help="Configured official listing URL")
@@ -33,7 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        snapshot = capture_snapshot(
+        session = start_live_session(
             args.source_id,
             args.listing_url,
             root=studio_root(),
@@ -44,7 +44,7 @@ def main(argv: list[str] | None = None) -> int:
             json.dumps(
                 {
                     "ok": False,
-                    "error": "studio_capture_failed",
+                    "error": "studio_live_browser_start_failed",
                     "error_type": type(exc).__name__,
                     "detail": str(exc),
                 },
@@ -55,9 +55,29 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
+    snapshot_compat = {
+        "schema_version": 1,
+        "snapshot_id": f"live-{session.get('pid')}",
+        "source_id": session["source_id"],
+        "source_name": None,
+        "listing_url": session["listing_url"],
+        "final_url": session.get("current_url") or session["listing_url"],
+        "page_title": "Live browser session",
+        "captured_at": session.get("started_at") or session.get("updated_at"),
+        "prepare": {
+            "mode": "operator_live_browser",
+            "pid": session.get("pid"),
+            "already_running": bool(session.get("already_running")),
+        },
+        "dom_element_count": 0,
+        "dom_truncated": False,
+        "assets": {},
+        "mode": "operator_live_browser",
+        "session": session,
+    }
     print(
         json.dumps(
-            {"ok": True, "snapshot": snapshot},
+            {"ok": True, "snapshot": snapshot_compat, "session": session},
             ensure_ascii=False,
         ),
         flush=True,
