@@ -34,6 +34,8 @@ DOM_EVIDENCE_JS = r"""
     if (window.CSS && typeof window.CSS.escape === "function") return window.CSS.escape(value);
     return String(value).replace(/[^a-zA-Z0-9_-]/g, (ch) => "\\" + ch);
   };
+  const stableName = (value) => /^[a-zA-Z_][a-zA-Z0-9_-]{0,120}$/.test(String(value || ""));
+  const stableAttributeValue = (value) => /^[a-zA-Z0-9_.:-]{1,160}$/.test(String(value || ""));
 
   function visible(el) {
     if (!el || !(el instanceof Element)) return false;
@@ -44,10 +46,12 @@ DOM_EVIDENCE_JS = r"""
   }
 
   function elementSelector(el) {
-    if (el.id) return "#" + cssEscape(el.id);
+    if (stableName(el.id)) return "#" + cssEscape(el.id);
     for (const attr of ["data-testid", "data-test", "data-component", "data-module"]) {
       const value = el.getAttribute(attr);
-      if (value) return `${el.tagName.toLowerCase()}[${attr}="${String(value).replace(/"/g, "\\\"")}"]`;
+      if (value && stableAttributeValue(value)) {
+        return `${el.tagName.toLowerCase()}[${attr}="${value}"]`;
+      }
     }
 
     const parts = [];
@@ -55,7 +59,7 @@ DOM_EVIDENCE_JS = r"""
     for (let depth = 0; current && current !== document.body && depth < 6; depth += 1) {
       let part = current.tagName.toLowerCase();
       const classes = Array.from(current.classList || [])
-        .filter((name) => /^[a-zA-Z_][a-zA-Z0-9_-]{0,60}$/.test(name))
+        .filter(stableName)
         .filter((name) => !/^(active|selected|open|hover|focus|loaded|visible|hidden)$/i.test(name))
         .slice(0, 2);
       if (classes.length) part += "." + classes.map(cssEscape).join(".");
@@ -84,6 +88,8 @@ DOM_EVIDENCE_JS = r"""
       text ||
       el.hasAttribute("href") ||
       el.hasAttribute("src") ||
+      el.hasAttribute("data-src") ||
+      el.hasAttribute("data-lazy-src") ||
       ["main", "article", "section", "li", "a", "button", "h1", "h2", "h3", "h4", "time", "img"].includes(tag)
     );
   });
@@ -97,7 +103,10 @@ DOM_EVIDENCE_JS = r"""
     const rect = el.getBoundingClientRect();
     const parent = el.parentElement && el.parentElement.closest("[data-infoscreen-studio-id]");
     const attributes = {};
-    for (const name of ["id", "class", "role", "aria-label", "title", "href", "src", "datetime"]) {
+    for (const name of [
+      "id", "class", "role", "aria-label", "title", "href", "src", "datetime",
+      "data-testid", "data-test", "data-component", "data-module", "data-src", "data-lazy-src"
+    ]) {
       const value = el.getAttribute(name);
       if (value) attributes[name] = clean(value).slice(0, 500);
     }
@@ -247,6 +256,22 @@ def _fsync_directory(path: Path) -> None:
         os.close(descriptor)
 
 
+def _snapshot_parent(root: Path, source_id: str) -> Path:
+    snapshots_root = root.expanduser().resolve() / "snapshots"
+    if snapshots_root.is_symlink():
+        raise RuleStorageError("snapshot root must not be a symlink")
+    snapshots_root.mkdir(parents=True, exist_ok=True)
+    parent = snapshots_root / source_id
+    if parent.is_symlink():
+        raise RuleStorageError("snapshot source directory must not be a symlink")
+    parent.mkdir(parents=True, exist_ok=True)
+    try:
+        parent.resolve().relative_to(snapshots_root.resolve())
+    except ValueError as exc:
+        raise RuleStorageError("snapshot source directory escapes the Studio root") from exc
+    return parent
+
+
 def write_snapshot(
     root: Path,
     metadata: dict[str, Any],
@@ -264,9 +289,10 @@ def write_snapshot(
     if not html.strip() or not isinstance(dom, dict):
         raise RuleStorageError("snapshot HTML and DOM evidence are required")
 
-    parent = root.expanduser().resolve() / "snapshots" / source_id
-    parent.mkdir(parents=True, exist_ok=True)
+    parent = _snapshot_parent(root, source_id)
     target = parent / snapshot_id
+    if target.is_symlink():
+        raise RuleStorageError("snapshot target must not be a symlink")
     if target.exists():
         raise RuleConflictError(f"snapshot already exists: {snapshot_id}")
     temporary = parent / f".{snapshot_id}.{uuid.uuid4().hex}.tmp"
@@ -351,19 +377,30 @@ def list_snapshots(
         raise ValueError("invalid source_id")
     wanted_listing = canonical_listing_url(listing_url) if listing_url else None
     snapshots_root = studio_root / "snapshots"
+    if snapshots_root.is_symlink():
+        raise RuleStorageError("snapshot root must not be a symlink")
     candidates = [snapshots_root / source_id] if source_id else list(snapshots_root.glob("*"))
     output: list[dict[str, Any]] = []
     for source_dir in candidates:
-        if not source_dir.is_dir() or not SOURCE_ID_RE.fullmatch(source_dir.name):
+        if source_dir.is_symlink() or not source_dir.is_dir() or not SOURCE_ID_RE.fullmatch(source_dir.name):
             continue
         for metadata_path in source_dir.glob("*/metadata.json"):
-            if not SNAPSHOT_ID_RE.fullmatch(metadata_path.parent.name):
+            if (
+                metadata_path.is_symlink()
+                or metadata_path.parent.is_symlink()
+                or not SNAPSHOT_ID_RE.fullmatch(metadata_path.parent.name)
+            ):
                 continue
             try:
                 metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
+                metadata_listing = canonical_listing_url(metadata.get("listing_url"))
+            except (OSError, json.JSONDecodeError, TypeError, ValueError):
                 continue
-            if wanted_listing and canonical_listing_url(metadata.get("listing_url")) != wanted_listing:
+            if metadata.get("source_id") != source_dir.name:
+                continue
+            if metadata.get("snapshot_id") != metadata_path.parent.name:
+                continue
+            if wanted_listing and metadata_listing != wanted_listing:
                 continue
             output.append(metadata)
     output.sort(key=lambda item: str(item.get("captured_at") or ""), reverse=True)
