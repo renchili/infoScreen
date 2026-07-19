@@ -35,9 +35,10 @@
     <section class="panel">
       <div class="heading"><h2>2 · WORK IN THE REAL WEBSITE</h2><span class="status">BROWSER TOOLBAR</span></div>
       <div class="instructions">
-        <p><strong>Browse first.</strong> Scroll, accept required cookies, choose filters, expand “load more”, paginate, and open detail pages normally.</p>
-        <p>On the listing page select <code>LIST CARD</code>, then <code>DETAIL LINK</code>. On each detail page select <code>TITLE</code>, <code>WHEN</code>, and <code>WHERE</code>. Optional fields are <code>SUMMARY</code> and <code>IMAGE</code>.</p>
-        <p>Return to the configured listing and press <code>SAVE CURRENT LISTING STATE</code> in the browser toolbar. Studio then validates multiple real detail pages.</p>
+        <p><strong>Prepare the page normally.</strong> Scroll, accept required cookies, choose filters, expand sections, paginate, and open detail pages in the real website.</p>
+        <p>Actions that production must repeat are recorded explicitly: <code>RECORD CLICK</code>, <code>REPEAT CLICK</code>, <code>RECORD SELECT</code>, <code>RECORD SCROLL BOTTOM</code>, or <code>RECORD WAIT</code>. Mark cookie or one-time actions as optional.</p>
+        <p>On the listing page select <code>LIST CARD</code> and <code>DETAIL LINK</code>. On detail pages select <code>TITLE</code>, <code>WHEN</code>, and <code>WHERE</code>. Optional fields are <code>SUMMARY</code> and <code>IMAGE</code>.</p>
+        <p>Return to the configured listing and press <code>SAVE CURRENT LISTING STATE</code>. Studio opens and checks multiple real detail pages before allowing publication.</p>
       </div>
     </section>
 
@@ -48,6 +49,8 @@
         <div><span>Detail link</span><code id="url-selector">—</code></div>
         <div><span>Listing fields</span><pre id="listing-fields">—</pre></div>
         <div><span>Detail fields</span><pre id="detail-fields">—</pre></div>
+        <div><span>Listing actions</span><pre id="listing-actions">—</pre></div>
+        <div><span>Detail actions</span><pre id="detail-actions">—</pre></div>
       </div>
     </section>
 
