@@ -82,12 +82,12 @@ def source_completion(debug: dict) -> tuple[str, bool]:
 
 
 def _source_debug_key(row: dict, index: int) -> str:
-    source_id = str(row.get("source_id") or "").strip().lower()
-    source_name = str(row.get("source") or row.get("source_name") or "").strip().lower()
-    if source_id:
-        return f"id:{source_id}"
+    source_name = str(row.get("source") or row.get("source_name") or "").strip().casefold()
+    source_id = str(row.get("source_id") or "").strip().casefold()
     if source_name:
         return f"name:{source_name}"
+    if source_id:
+        return f"id:{source_id}"
     return f"row:{index}"
 
 
