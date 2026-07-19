@@ -10,7 +10,7 @@ from typing import Any
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 from .extract import clean, label_dates
-from .studio_capture import SNAPSHOT_ID_RE, snapshot_asset_path
+from .studio_capture import SOURCE_ID_RE, SNAPSHOT_ID_RE, snapshot_asset_path
 from .studio_dom import SnapshotDom, StudioSelectorError, matches_selector, select_nodes
 from .studio_rules import (
     DEFAULT_SOURCE_CONFIG,
@@ -380,13 +380,42 @@ def _load_snapshot(root: Path, source_id: str, snapshot_id: str) -> tuple[dict[s
     return metadata, dom
 
 
+def _test_run_directory(root: Path, source_id: str, *, create: bool) -> Path | None:
+    if not SOURCE_ID_RE.fullmatch(source_id):
+        raise StudioEvaluationError("invalid test-run source_id")
+    studio_root = root.expanduser().resolve()
+    test_root = studio_root / "test-runs"
+    if test_root.is_symlink():
+        raise RuleStorageError("test-run root must not be a symlink")
+    if create:
+        test_root.mkdir(parents=True, exist_ok=True)
+    elif not test_root.is_dir():
+        return None
+
+    directory = test_root / source_id
+    if directory.is_symlink():
+        raise RuleStorageError("test-run source directory must not be a symlink")
+    if create:
+        directory.mkdir(parents=True, exist_ok=True)
+    elif not directory.is_dir():
+        return None
+    try:
+        directory.resolve().relative_to(test_root.resolve())
+    except ValueError as exc:
+        raise RuleStorageError("test-run directory escapes the Studio root") from exc
+    return directory
+
+
 def _write_test_run(root: Path, result: dict[str, Any], snapshot_id: str) -> dict[str, Any]:
     tested_at = datetime.now(timezone.utc)
     run_id = tested_at.strftime("%Y%m%dT%H%M%S%fZ") + "-" + str(result["rule_fingerprint"])[:12]
     payload = {**result, "run_id": run_id, "snapshot_id": snapshot_id, "tested_at": tested_at.isoformat()}
-    directory = root / "test-runs" / str(result["source_id"])
-    directory.mkdir(parents=True, exist_ok=True)
+    directory = _test_run_directory(root, str(result["source_id"]), create=True)
+    if directory is None:  # pragma: no cover - create=True always returns a directory
+        raise RuleStorageError("test-run directory was not created")
     target = directory / f"{run_id}.json"
+    if target.is_symlink():
+        raise RuleStorageError("test-run target must not be a symlink")
     temporary = directory / f".{run_id}.{uuid.uuid4().hex}.tmp"
     try:
         with temporary.open("x", encoding="utf-8") as handle:
@@ -437,16 +466,18 @@ def latest_test_run(
 ) -> dict[str, Any] | None:
     """Return the newest valid test for one source, optionally restricted to one listing."""
 
-    directory = Path(root).expanduser().resolve() / "test-runs" / source_id
-    if not directory.is_dir():
+    directory = _test_run_directory(Path(root), source_id, create=False)
+    if directory is None:
         return None
     expected_listing = canonical_listing_url(listing_url) if listing_url else None
     for path in sorted(directory.glob("*.json"), reverse=True):
+        if path.is_symlink():
+            continue
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        if not isinstance(payload, dict):
+        if not isinstance(payload, dict) or payload.get("source_id") != source_id:
             continue
         if expected_listing is not None:
             try:
@@ -469,7 +500,7 @@ def require_publishable_test(
     latest = latest_test_run(rule.source_id, rule.listing_url, root=root)
     if latest is None:
         raise StudioEvaluationError("draft has no completed snapshot test for this listing")
-    if latest.get("listing_url") != rule.listing_url:
+    if canonical_listing_url(latest.get("listing_url")) != rule.listing_url:
         raise StudioEvaluationError("latest test belongs to another listing")
     if latest.get("rule_fingerprint") != rule_fingerprint(rule):
         raise StudioEvaluationError("draft changed after the latest snapshot test")
