@@ -41,8 +41,14 @@ def parse_studio() -> StudioParser:
 
 def test_studio_page_uses_existing_static_asset_model() -> None:
     parser = parse_studio()
-    assert parser.scripts == ["/assets/js/local_event_studio.js"]
-    assert parser.styles == ["/assets/css/local_event_studio.css"]
+    assert parser.scripts == [
+        "/assets/js/local_event_studio.js",
+        "/assets/js/local_event_studio_test.js",
+    ]
+    assert parser.styles == [
+        "/assets/css/local_event_studio.css",
+        "/assets/css/local_event_studio_test.css",
+    ]
     assert parser.external_assets == []
 
 
@@ -63,18 +69,29 @@ def test_studio_page_contains_complete_local_workflow_controls() -> None:
         "detail-enabled",
         "detail-fields",
         "save-draft-button",
+        "test-draft-button",
         "publish-button",
         "export-button",
         "import-input",
         "history-select",
         "rollback-button",
         "field-evidence",
+        "test-state",
+        "test-result",
+        "test-matched",
+        "test-accepted",
+        "test-rejected",
+        "test-publishable",
+        "accepted-preview",
+        "rejected-preview",
     }
     assert required.issubset(parser.ids)
 
 
 def test_studio_javascript_uses_only_existing_8765_relative_apis() -> None:
-    js = read_text("surface/web/assets/js/local_event_studio.js")
+    editor_js = read_text("surface/web/assets/js/local_event_studio.js")
+    test_js = read_text("surface/web/assets/js/local_event_studio_test.js")
+    combined = editor_js + "\n" + test_js
     for path in [
         "/api/local-events/studio/sources",
         "/api/local-events/studio/rules",
@@ -82,16 +99,18 @@ def test_studio_javascript_uses_only_existing_8765_relative_apis() -> None:
         "/api/local-events/studio/snapshot-asset",
         "/api/local-events/studio/capture",
         "/api/local-events/studio/draft",
+        "/api/local-events/studio/test",
+        "/api/local-events/studio/test-latest",
         "/api/local-events/studio/publish",
         "/api/local-events/studio/rollback",
         "/api/local-events/studio/import",
         "/api/local-events/studio/export",
     ]:
-        assert path in js
-    assert "8766" not in js
-    assert "http://127.0.0.1" not in js
-    assert "https://127.0.0.1" not in js
-    assert "React" not in js
+        assert path in combined
+    assert "8766" not in combined
+    assert "http://127.0.0.1" not in combined
+    assert "https://127.0.0.1" not in combined
+    assert "React" not in combined
 
 
 def test_studio_annotation_maps_dom_selectors_not_coordinate_rules() -> None:
@@ -104,6 +123,15 @@ def test_studio_annotation_maps_dom_selectors_not_coordinate_rules() -> None:
     assert "regions" not in js
     assert "x_percent" not in js
     assert "y_percent" not in js
+
+
+def test_studio_test_preview_requires_server_publishability() -> None:
+    js = read_text("surface/web/assets/js/local_event_studio_test.js")
+    assert "publishable" in js
+    assert "rule_fingerprint" in js
+    assert "PUBLISH TESTED DRAFT" in read_text("surface/web/local-events/studio/index.html")
+    assert "addEventListener(\"click\"" in js
+    assert "capture: true" in js
 
 
 def test_studio_exposes_loading_empty_error_and_retry_interactions() -> None:
