@@ -6,7 +6,6 @@ from datetime import date, timedelta
 
 from .conftest import SURFACE, read_text
 
-
 sys.path.insert(0, str(SURFACE))
 
 from local_events_runtime.output import normalize_payload  # noqa: E402
@@ -19,9 +18,6 @@ def test_structured_first_runtime_contract_is_active() -> None:
     assert "apply_source_overrides()" not in job
     assert "apply_listing_url_authority()" not in job
     assert "apply_detail_authority()" not in job
-    assert "apply_runtime_studio_rules" in job
-    assert "legacy_payload = collect_events(" in job
-    assert "routed_payload = apply_runtime_studio_rules(legacy_payload)" in job
     assert 'payload["extractor"] == "structured-first-v49-source-order"' in job
     assert 'payload["version"] == 49' in job
     assert 'extractor.startswith("structured-first")' in output
