@@ -2,12 +2,7 @@
 
 Status: temporary working record on `develop/surface-local-events-coverage`.
 
-This file is not final product documentation. It must be deleted before delivery after its implemented content is merged into:
-
-- architecture, storage, and runtime behavior -> `docs/design.md`;
-- requirement clarifications and acceptance evidence -> `docs/questions.md`;
-- HTTP routes and payloads -> `docs/api-spec.md`;
-- deployment and operation -> `README.md`.
+This file is not final product documentation. It must be deleted before delivery after its implemented content is consolidated into `docs/design.md`, `docs/questions.md`, `docs/api-spec.md`, and `README.md`.
 
 ## Fixed constraints
 
@@ -65,7 +60,7 @@ surface/.env/local_event_studio/
 
 All writes are atomic. Source IDs and listing URLs are validated against `surface/conf/event_sources.json`. User-controlled path components are never used directly as filesystem paths.
 
-## Rule contract
+## Rule and admission contract
 
 A published rule is bound to one configured source/listing pair and contains:
 
@@ -79,23 +74,11 @@ A published rule is bound to one configured source/listing pair and contains:
 
 Mandatory publication fields are card, title, when, where, and URL selectors. Coordinates are never part of the persisted rule.
 
-## Admission and field authority
-
-### Activity membership
-
 Only a card matched by the published selector on the configured official listing may become an activity. Page-wide JSON, XHR, JSON-LD, navigation, facilities, membership, parking, dining, and promotions cannot independently create output rows.
 
-### Public URL
+The admitted card must provide a public HTTP/HTTPS detail URL that belongs to the configured source domain and is not a listing, media/document, API/internal CMS path, fragment, or synthetic placeholder.
 
-The admitted card must provide a public HTTP/HTTPS detail URL that:
-
-- belongs to the source's allowed domain;
-- is not the listing URL;
-- is not a media/document/API/internal CMS path;
-- is not a fragment or synthetic placeholder;
-- may use only configured source-level public-prefix rewrites.
-
-### Field precedence
+Field precedence is:
 
 ```text
 explicit mapped detail-page field
@@ -107,23 +90,22 @@ explicit mapped detail-page field
 
 Every tested field records page role, selector, DOM evidence ID, raw value, normalized value, attribute, and precedence.
 
-## Phases
+## Phase status
 
 ### Phase 0 — temporary plan and baseline
 
-- Preserve baseline `66a6567356ebf7b47817e40f896fc0cecaadb978`.
-- Keep this plan as the only temporary planning document.
-- Remove and consolidate it in Phase 10.
+Complete.
+
+- Baseline preserved at `66a6567356ebf7b47817e40f896fc0cecaadb978`.
+- All Studio work remains on `develop/surface-local-events-coverage`.
 
 ### Phase 1 — rule storage and version management
 
-Implemented scope:
+Implemented.
 
-- Pydantic rule schema;
-- source/listing binding validation;
+- Pydantic rule schema and source/listing validation;
 - draft save/load/delete;
-- monotonic publication;
-- immutable history;
+- monotonic publication and immutable history;
 - rollback as a new version;
 - import/export;
 - atomic writes and safe path derivation;
@@ -131,36 +113,37 @@ Implemented scope:
 
 ### Phase 2 — existing `8765` rule API
 
-Implemented scope:
+Implemented.
 
 - sources and per-listing state;
-- read draft/published/history;
-- save/delete draft;
+- draft/published/history reads;
+- draft save/delete;
 - publish, rollback, import, and export;
-- Pydantic request/response models;
-- generated OpenAPI routes and schemas;
-- HTTP closed-loop storage lifecycle tests.
+- request/response models and OpenAPI;
+- HTTP lifecycle tests.
 
 No additional process or port is introduced.
 
 ### Phase 3 — snapshot capture
 
-Implemented scope:
+Implemented.
 
 - one-shot capture job invoked by the existing HTTP service;
 - configured source/listing validation before browser launch;
 - full-page screenshot, rendered HTML, bounded DOM evidence, and metadata;
-- atomic snapshot-directory publication;
+- atomic snapshot publication;
 - snapshot list and whitelisted asset reads;
 - symlink/path confinement;
 - no page-wide network-response collection;
 - backend and HTTP snapshot tests.
 
+Real browser capture remains unverified for the exact branch head.
+
 ### Phase 4 — local annotation UI
 
-Implemented scope:
+Implemented.
 
-- `/local-events/studio/` served as ordinary static content by the existing server;
+- `/local-events/studio/` served by the existing server;
 - source/listing/snapshot selection;
 - capture and reload actions;
 - screenshot and DOM overlay;
@@ -171,25 +154,38 @@ Implemented scope:
 - draft, import/export, publication, history, and rollback controls;
 - frontend and responsive-style contracts.
 
+Real browser interaction remains unverified for the exact branch head.
+
 ### Phase 5 — deterministic draft test and publication gate
 
-Implemented scope:
+Implemented.
 
 - bounded snapshot selector engine;
 - offline card matching and field extraction;
-- official public URL validation;
-- date and duplicate validation;
+- official public URL and date validation;
 - accepted/rejected rows with field evidence;
 - atomic test-run persistence;
 - exact semantic rule fingerprint;
 - service-side publication gate requiring a current publishable test;
-- accepted/rejected preview in Studio;
-- stale-test indication after rule edits;
+- accepted/rejected preview and stale-test indication;
 - backend, HTTP, frontend, and style contracts.
 
 ### Phase 6 — per-source production integration
 
-In progress scope:
+Implemented in code.
+
+Runtime order is now:
+
+```text
+existing structured-first collector
+-> apply only published Studio source/listing rules
+-> synchronize Studio detail dates
+-> mark failed or zero-acceptance Studio sources incomplete
+-> normalize existing output contract
+-> preserve existing partial-write protection
+```
+
+Activation behavior is:
 
 ```text
 no published rule -> legacy result remains
@@ -198,28 +194,26 @@ some listings published -> replace only legacy rows with matching listing eviden
 Studio source failure or zero accepted result -> source incomplete and payload partial
 ```
 
-Implemented supporting modules:
+Implemented evidence includes:
 
 - published-rule discovery;
-- live list rendering with one reusable browser per source;
+- one reusable browser per Studio source;
 - selector-based list admission;
 - optional admitted-detail rendering;
 - detail field precedence and evidence;
 - source/listing activation metadata;
 - unrelated-source preservation;
-- live rule health gates;
 - final date synchronization after detail overrides;
-- deterministic per-source and runtime-pipeline tests.
+- runtime bridge in `surface/jobs/local_event_search.py`;
+- job-order, collector, pipeline, and runtime tests.
 
-Remaining Phase 6 work:
-
-- connect the runtime pipeline between the existing collector and existing normalization/write flow;
-- add the job-order contract test;
-- run repository checks available for the exact branch head.
+Repository-wide execution is not claimed: the current environment cannot clone the repository and the exact branch head has no attached CI status or workflow run.
 
 ### Phase 7 — Esplanade live migration and semantic acceptance
 
-Operator input begins here because a human must confirm that the visible official page regions and extracted semantic fields represent real activities.
+Pending operator interaction.
+
+Operator input begins here because a human must confirm that visible official page regions and extracted fields represent real activities.
 
 Required evidence:
 
@@ -238,11 +232,15 @@ Repository tests alone do not satisfy this phase.
 
 ### Phase 8 — incremental source migration
 
+Pending.
+
 Migrate one source at a time through capture, annotation, test, publish, live run, and semantic inspection. Never distribute one guessed selector or global title/path blacklist across all sources.
 
-### Phase 9 — deployment and operation
+### Phase 9 — deployment and operation documentation
 
-Use only:
+Pending consolidation into `README.md`.
+
+Only the existing units may be used:
 
 ```text
 infoscreen-http.service
@@ -250,32 +248,32 @@ infoscreen-local-events.service
 infoscreen-local-events.timer
 ```
 
-Document update, existing-unit reinstall, HTTP restart, immediate Local Events trigger, Studio access, rule inspection, test evidence, rollback, and source failure diagnosis.
+Documentation must cover update, existing-unit reinstall, HTTP restart, immediate Local Events trigger, Studio access, rule inspection, test evidence, rollback, and source failure diagnosis.
 
 ### Phase 10 — final documentation consolidation and plan deletion
 
-Mandatory final cleanup:
+Pending after live acceptance.
 
-- merge architecture/storage/runtime design into `docs/design.md`;
-- merge corrected requirement boundaries and acceptance conditions into `docs/questions.md`;
-- merge actual endpoints and schemas into `docs/api-spec.md`;
-- merge deployment and operation commands into `README.md`;
-- delete this file;
-- verify no references to this plan remain;
+- merge architecture/storage/runtime behavior into `docs/design.md`;
+- merge requirement boundaries and acceptance evidence into `docs/questions.md`;
+- merge actual routes and schemas into `docs/api-spec.md`;
+- merge deployment and operation into `README.md`;
+- delete this temporary plan;
+- verify no references to it remain;
 - verify no second port/service/server or unused temporary Studio implementation remains.
 
-## Current status
+## Current evidence summary
 
 | Phase | Status | Evidence level |
 | --- | --- | --- |
 | 0 — plan and baseline | complete | branch history and temporary plan |
-| 1 — rule storage | implemented | source and deterministic tests present; full repo run pending |
-| 2 — `8765` rule API | implemented | models/OpenAPI/server/HTTP tests present; full repo run pending |
-| 3 — snapshot capture | implemented | capture/API/path tests present; real browser capture pending |
+| 1 — rule storage | implemented | source and deterministic tests present; repository-wide execution pending |
+| 2 — `8765` rule API | implemented | models/OpenAPI/server/HTTP tests present; repository-wide execution pending |
+| 3 — snapshot capture | implemented | code and deterministic tests present; real browser capture pending |
 | 4 — annotation UI | implemented | frontend/style contracts present; real browser interaction pending |
-| 5 — draft test | implemented | evaluator/API/UI tests present; full repo run pending |
-| 6 — production integration | in progress | collector/pipeline/tests present; job bridge pending |
+| 5 — draft test | implemented | evaluator/API/UI tests present; repository-wide execution pending |
+| 6 — production integration | implemented in code | collector/pipeline/job tests present; live run pending |
 | 7 — Esplanade acceptance | pending operator interaction | no live evidence |
 | 8 — source migration | pending | no live evidence |
-| 9 — operations | pending | documentation not yet consolidated |
-| 10 — consolidation and plan deletion | pending | temporary plan still present |
+| 9 — operations | pending | formal documentation not yet consolidated |
+| 10 — consolidation | pending | temporary plan still present |
