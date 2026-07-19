@@ -204,23 +204,150 @@ A regression must model the observed National Gallery structure, proving that a 
 
 ### Easy-to-make interpretation
 
-A total result count is enough to diagnose coverage, and every completed crawl should replace the current primary file even when several sources failed or the previous file contains rows created under an obsolete candidate policy.
+A total result count is enough to diagnose coverage, and every incomplete crawl should replace the current primary file even when the previous file contains rows accepted by the active output contract.
 
 ### Why it fails
 
-Failure can occur during page access, listing-card discovery, pagination, detail enrichment, date parsing, normalization, or the total crawl budget. Replacing a larger verified result with a smaller partial run removes valid events, while preserving legacy rows without listing evidence can keep known bad data alive indefinitely.
+Failure can occur during page access, listing-card discovery, pagination, detail enrichment, date parsing, normalization, Studio evaluation, or the total crawl budget. Replacing a larger usable result with a smaller partial run removes valid events. Conversely, preserving rows carrying a known obsolete non-empty candidate policy keeps rejected behavior alive.
 
 ### Correct requirement interpretation
 
-The runtime includes `debug_by_source` and optional evidence under `surface/.env/local_event_debug_cards/`. Before partial-result comparison, the previous payload is reduced to rows carrying `candidate_policy: official-listing-authority-v1`. When a new run is partial and contains fewer results than that previous verified set, the primary file remains the verified set and the incomplete run is written to `surface/.env/local_event_search_results.partial.json` with `write_policy: kept_previous_verified_result`. The older `kept_previous_complete_result` rule is insufficient when the previous file predates listing authority.
+The runtime includes `debug_by_source`, `studio_activations`, and optional evidence under `surface/.env/local_event_debug_cards/`. Previous-cache eligibility mirrors the active output contract:
+
+- `candidate_policy: official-listing-authority-v1` is eligible;
+- a missing policy is eligible only when the previous payload identifies the current `structured-first` extractor family;
+- a different non-empty policy is not eligible.
+
+When a new run is partial and contains fewer results than that eligible previous set, the primary file remains the previous set and the incomplete run is written to `surface/.env/local_event_search_results.partial.json` with `write_policy: kept_previous_verified_result`.
 
 ### Required implementation
 
-Record per-source listing admission and rejection evidence, calculate whether source coverage is partial, remove legacy unverified rows from cache consideration, preserve the previous verified primary rows when the protection condition applies, and keep the partial payload for diagnosis.
+Record per-source admission and rejection evidence, aggregate completion by source rather than by listing debug row, preserve an existing `partial: true` signal, apply output-compatible cache filtering, retain the larger eligible primary result when protection applies, and keep the partial payload for diagnosis.
 
 ### Acceptance evidence
 
-Tests must cover verified-complete to partial transitions, removal of legacy unverified rows, result-count comparison, preservation of the verified primary file, creation of the partial file, `write_policy: kept_previous_verified_result`, and retained `debug_by_source`. A real failed-source run must show the same behaviour before deployment acceptance.
+Tests must cover multi-listing completion aggregation, a failed listing making only its source incomplete, structured-first missing-policy cache compatibility, rejection of obsolete non-empty policies, result-count comparison, preservation of the primary file, creation of the partial file, and retained diagnostic evidence. A real failed-source run must show the same behaviour before deployment acceptance.
+
+## Local Event Studio process boundary
+
+### Easy-to-make interpretation
+
+A rule editor can be implemented as a second web app, a second port, a cloud service, or a development-only page that stores selectors in repository files.
+
+### Why it fails
+
+A second server duplicates authentication and deployment concerns, breaks the existing single-process Surface model, and creates another availability dependency. Committing machine-specific selectors, screenshots, or captured HTML mixes runtime state with source code and can leak local evidence.
+
+### Correct requirement interpretation
+
+Local Event Studio is an operator page served by the existing `surface/serve_infoscreen.py` process on port `8765`. It operates only on source/listing pairs already committed in `surface/conf/event_sources.json`. All captures, drafts, published versions, history, and test runs are machine-local under `surface/.env/local_event_studio/`.
+
+### Required implementation
+
+Serve `/local-events/studio/` as ordinary static content from `surface/web/`. Reuse the existing HTTP process and existing Local Events systemd service/timer. Do not add another daemon, database, service, port, arbitrary source URL input, or cloud dependency.
+
+### Acceptance evidence
+
+Static and HTTP checks must show one server and port, no additional systemd unit, source/listing validation before browser launch or file writes, runtime storage under the active `INFOSCREEN_ENV_DIR`, and no committed snapshots or local rules.
+
+## Local Event Studio rule authority and publication
+
+### Easy-to-make interpretation
+
+Saving a selector can immediately change production collection, a successful JSON schema validation can be treated as a tested rule, or rollback can overwrite history in place.
+
+### Why it fails
+
+An unfinished selector can suppress valid events or admit unrelated cards. Schema validation proves shape, not that the selector matches actual activity cards and extracts usable fields. Mutable history prevents proving which version produced a runtime result.
+
+### Correct requirement interpretation
+
+Drafts are inert. A draft must be evaluated against a stored snapshot, produce at least one accepted activity with no fatal errors, and retain the exact semantic fingerprint tested. Publication creates a monotonically increasing immutable version and activates only that configured source/listing pair. Rollback republishes a historical rule as a new version.
+
+### Required implementation
+
+Keep separate draft, published, and immutable history files. Persist accepted/rejected test rows and field evidence. Reject publication when the latest applicable test is missing, non-publishable, belongs to another listing, or no longer matches the draft fingerprint.
+
+### Acceptance evidence
+
+Tests must prove draft inactivity, atomic replacement, publish gating, stale-test rejection after a selector change, immutable history, monotonic versions, import as draft, export, and rollback as a new version. Live acceptance must identify the published version that produced the inspected runtime rows.
+
+## Local Event Studio screenshot and selector semantics
+
+### Easy-to-make interpretation
+
+A rectangle drawn on a screenshot can be saved as the extraction rule, or pixel coordinates can be treated as stable evidence across page sizes and future renders.
+
+### Why it fails
+
+Coordinates change with viewport, responsive layout, fonts, consent banners, and dynamic content. A screenshot alone cannot identify the DOM relationship that provides a title, date, venue, or official URL.
+
+### Correct requirement interpretation
+
+The screenshot is a visual annotation surface. Each selectable rectangle is backed by captured DOM evidence. Published rules store CSS selectors, attributes, field mappings, exclusion selectors, and explicit fallback choices; they never store screenshot coordinates as extraction authority.
+
+### Required implementation
+
+Capture bounded DOM metadata with stable evidence IDs, overlay those elements on the screenshot, infer a repeated card selector from confirmed examples, and save only selector-based rules. Unsupported selector syntax must fail explicitly rather than being approximated.
+
+### Acceptance evidence
+
+Frontend and backend tests must show that coordinates remain UI-only, selector evaluation is deterministic against stored DOM, field evidence identifies the matched element and attribute, and a viewport change does not alter the persisted rule contract.
+
+## Local Event Studio per-source activation and failure isolation
+
+### Easy-to-make interpretation
+
+Publishing one rule can globally replace the collector, a Studio failure can clear every source, or one selector can be copied to all organisations.
+
+### Why it fails
+
+The official sites have different structures. Global activation recreates the same cross-source failure that source-specific collection is designed to prevent. A source with several configured listings also needs listing-specific replacement rather than an all-or-nothing global filter.
+
+### Correct requirement interpretation
+
+The existing collector remains the default. Published Studio rules are applied after legacy collection and before final normalization. No published rule means no behavior change. Full source coverage replaces that source. Partial listing coverage replaces only legacy rows carrying matching listing evidence. Studio failure marks that source incomplete and leaves unrelated sources intact.
+
+### Required implementation
+
+Discover published rules per configured binding, use one reusable browser per Studio source, preserve unrelated results and debug rows, aggregate completion by source, synchronize detail-derived dates, carry rule version and field evidence, and retain existing partial-write protection.
+
+### Acceptance evidence
+
+Offline tests must cover no activation, full-source activation, partial-listing activation, unrelated-source preservation, zero acceptance, fatal selector errors, multi-listing source counts, detail precedence, and output metadata. Live migration must proceed one source at a time and inspect both the migrated source and at least one unaffected source.
+
+## Local Event Studio semantic acceptance boundary
+
+### Easy-to-make interpretation
+
+A passing pytest suite, mocked Playwright result, stored screenshot, or generated report can prove that the current official page contains the right real-world activities.
+
+### Why it fails
+
+Code can verify selector mechanics and policy constraints, but it cannot decide without current page evidence whether a visible card is semantically an activity rather than a promotion, facility, navigation item, or stale page artifact. External structure and content can also change after fixtures are recorded.
+
+### Correct requirement interpretation
+
+Deterministic code and repository tests must be completed without pausing for operator input. Human participation begins only at the first real-source semantic migration. The operator confirms actual activity cards and fields in the local Studio preview; the resulting live output then provides runtime evidence.
+
+### Required implementation
+
+Separate evidence levels explicitly:
+
+```text
+static source review
+-> deterministic unit/integration tests
+-> real Studio capture
+-> human card and field confirmation
+-> publishable snapshot test
+-> published version
+-> live producer run
+-> runtime JSON and visible-card inspection
+```
+
+### Acceptance evidence
+
+For the first Esplanade migration, evidence must show at least two confirmed activity cards, correct title/when/where/public detail URL mappings, rejected non-activity rows, the exact published version, a live run, no non-activity rows in the inspected sample, and unaffected-source preservation. No earlier evidence level may be described as full live acceptance.
 
 ## Local Events package boundary
 
