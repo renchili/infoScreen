@@ -127,11 +127,11 @@ def test_studio_annotation_maps_dom_selectors_not_coordinate_rules() -> None:
 
 def test_studio_test_preview_requires_server_publishability() -> None:
     js = read_text("surface/web/assets/js/local_event_studio_test.js")
-    assert "publishable" in js
-    assert "rule_fingerprint" in js
+    assert "result.publishable" in js
+    assert "result.run_id" in js
     assert "PUBLISH TESTED DRAFT" in read_text("surface/web/local-events/studio/index.html")
-    assert "addEventListener(\"click\"" in js
-    assert "capture: true" in js
+    assert 'event.stopImmediatePropagation()' in js
+    assert 'ui.publishButton.addEventListener("click", publishTestedDraft, true);' in js
 
 
 def test_studio_exposes_loading_empty_error_and_retry_interactions() -> None:
