@@ -72,6 +72,7 @@ PUBLIC_PHOTO_PREFIX = "/public_photos/"
 MAX_JSON_BODY_BYTES = 1_048_576
 STUDIO_MUTATION_LOCK = threading.Lock()
 STUDIO_CAPTURE_TIMEOUT_SECONDS = int(os.environ.get("LOCAL_EVENT_STUDIO_CAPTURE_TIMEOUT_SECONDS", "180"))
+LOCAL_EVENT_SEARCH_TIMEOUT_SECONDS = int(os.environ.get("LOCAL_EVENT_SEARCH_TIMEOUT_SECONDS", "600"))
 
 JSON_DEFAULTS = {
     "schedule.json": [],
@@ -690,21 +691,41 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/api/local-events/search":
             try:
                 body = self.body_json()
-                location = str(body.get("location") or "Punggol Singapore")
+                location = str(body.get("location") or "Punggol Singapore").strip() or "Punggol Singapore"
+                environment = os.environ.copy()
+                environment["INFOSCREEN_ENV_DIR"] = str(ENV_DIR)
                 proc = subprocess.run(
                     [sys.executable, str(SURFACE_DIR / "search_local_events.py"), location],
                     cwd=str(SURFACE_DIR),
                     text=True,
                     capture_output=True,
-                    timeout=330,
+                    timeout=LOCAL_EVENT_SEARCH_TIMEOUT_SECONDS,
+                    env=environment,
                 )
                 data = runtime_json("local_event_search_results.json")
                 data["ok"] = proc.returncode == 0
+                data["returncode"] = proc.returncode
                 data["stdout"] = proc.stdout[-1000:]
                 data["stderr"] = proc.stderr[-1000:]
+                if proc.returncode != 0:
+                    data["error"] = "local_event_search_failed"
                 return self.send_json(data, 200 if proc.returncode == 0 else 500)
+            except subprocess.TimeoutExpired as exc:
+                stdout = exc.stdout.decode("utf-8", "replace") if isinstance(exc.stdout, bytes) else str(exc.stdout or "")
+                stderr = exc.stderr.decode("utf-8", "replace") if isinstance(exc.stderr, bytes) else str(exc.stderr or "")
+                data = runtime_json("local_event_search_results.json")
+                data.update(
+                    {
+                        "ok": False,
+                        "error": "local_event_search_timeout",
+                        "detail": f"Local Events exceeded the HTTP limit of {LOCAL_EVENT_SEARCH_TIMEOUT_SECONDS} seconds",
+                        "stdout": stdout[-1000:],
+                        "stderr": stderr[-1000:],
+                    }
+                )
+                return self.send_json(data, 504)
             except Exception as exc:
-                return self.send_json({"ok": False, "error": str(exc)}, 500)
+                return self.send_json({"ok": False, "error": "local_event_search_request_failed", "detail": str(exc)}, 500)
 
         return self.send_json({"ok": False, "error": "not found"}, 404)
 
