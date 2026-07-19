@@ -23,9 +23,12 @@ os.environ.setdefault("LOCAL_EVENTS_CARD_SCREENSHOTS", "0")
 
 from local_events_runtime import collect_events  # noqa: E402
 from local_events_runtime.output import normalize_payload  # noqa: E402
+from local_events_runtime.studio_runtime import apply_runtime_studio_rules  # noqa: E402
 
 SURFACE_DIR = Path(__file__).resolve().parents[1]
-ENV_DIR = SURFACE_DIR / ".env"
+ENV_DIR = Path(
+    os.environ.get("INFOSCREEN_ENV_DIR", str(SURFACE_DIR / ".env"))
+).expanduser().resolve()
 CONF_DIR = SURFACE_DIR / "conf"
 CONFIG = CONF_DIR / "event_sources.json"
 OUT = ENV_DIR / "local_event_search_results.json"
@@ -106,7 +109,10 @@ def annotate_source_completion(payload: dict) -> dict:
     annotated["completed_source_count"] = completed
     annotated["incomplete_source_count"] = max(0, source_count - completed)
     annotated["source_status_counts"] = status_counts
-    annotated["partial"] = bool(source_count and completed < source_count)
+    annotated["partial"] = bool(
+        annotated.get("partial")
+        or (source_count and completed < source_count)
+    )
     return annotated
 
 
@@ -127,6 +133,14 @@ def verified_previous_payload(payload: dict) -> dict:
     verified["count"] = len(verified_results)
     verified["legacy_unverified_removed"] = len(results) - len(verified_results)
     return verified
+
+
+def collect_runtime_payload(location: str) -> dict:
+    """Collect legacy sources, then replace only explicitly published Studio bindings."""
+
+    legacy_payload = collect_events(CONFIG, location, DEBUG_DIR)
+    routed_payload = apply_runtime_studio_rules(legacy_payload)
+    return annotate_source_completion(normalize_payload(routed_payload))
 
 
 def write_payload(payload: dict) -> None:
@@ -150,14 +164,15 @@ def write_payload(payload: dict) -> None:
 
 
 def self_test() -> int:
-    payload = annotate_source_completion(normalize_payload(collect_events(CONFIG, DEFAULT_LOCATION, DEBUG_DIR)))
+    payload = collect_runtime_payload(DEFAULT_LOCATION)
     assert payload["extractor"] == "structured-first-v49-source-order"
     assert payload["version"] == 49
     assert payload["text_normalizer"] == "plain-text-v1"
     assert isinstance(payload.get("results"), list)
     assert isinstance(payload.get("debug_by_source"), list)
+    assert isinstance(payload.get("studio_activations", []), list)
     assert isinstance(payload.get("partial"), bool)
-    print("local-event structured-first self-test passed")
+    print("local-event structured-first plus Studio routing self-test passed")
     return 0
 
 
@@ -171,9 +186,9 @@ def main(argv: list[str] | None = None) -> int:
         return self_test()
 
     location = " ".join(args.location).strip() or DEFAULT_LOCATION
-    ENV_DIR.mkdir(exist_ok=True)
+    ENV_DIR.mkdir(parents=True, exist_ok=True)
     DEBUG_DIR.mkdir(parents=True, exist_ok=True)
-    payload = annotate_source_completion(normalize_payload(collect_events(CONFIG, location, DEBUG_DIR)))
+    payload = collect_runtime_payload(location)
     write_payload(payload)
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0
