@@ -5,236 +5,79 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>InfoScreen · Local Event Studio</title>
   <link rel="stylesheet" href="/assets/css/local_event_studio.css" />
-  <link rel="stylesheet" href="/assets/css/local_event_studio_test.css" />
-  <link rel="stylesheet" href="/assets/css/local_event_studio_run.css" />
 </head>
 <body>
-  <header class="studio-header">
+  <header class="topbar">
     <div>
-      <div class="studio-brand">INFOSCREEN / LOCAL EVENT STUDIO</div>
-      <div class="studio-subtitle">Capture, identify, test, publish, and run official-list extraction rules on this device.</div>
+      <div class="brand">INFOSCREEN / LOCAL EVENT STUDIO</div>
+      <div class="subtitle">Operate the real official website in a real Chromium window. No iframe and no screenshot clicking.</div>
     </div>
-    <nav class="header-actions" aria-label="Studio navigation">
-      <a class="button secondary" href="/">DASHBOARD</a>
-      <a class="button secondary" href="/docs">API</a>
-    </nav>
+    <a class="button secondary" href="/">DASHBOARD</a>
   </header>
 
-  <main class="studio-shell">
-    <section class="panel workflow-panel" aria-labelledby="workflow-heading">
-      <div class="panel-heading">
-        <h1 id="workflow-heading">OPERATOR WORKFLOW</h1>
-        <span id="workflow-state" class="status" role="status" aria-live="polite">1 · CAPTURE PAGE</span>
+  <main class="shell">
+    <section class="panel">
+      <div class="heading">
+        <h1>1 · CHOOSE OFFICIAL LISTING</h1>
+        <span id="global-status" class="status">LOADING</span>
       </div>
-      <ol class="workflow-steps">
-        <li data-workflow-step="1"><strong>CAPTURE</strong><span>Select a configured source/listing and capture the official page.</span></li>
-        <li data-workflow-step="2"><strong>CARDS</strong><span>Select two real repeated activity cards; mark promotions or other non-activities as EXCLUDE.</span></li>
-        <li data-workflow-step="3"><strong>FIELDS</strong><span>Map TITLE, WHEN, WHERE, and DETAIL URL inside the first card. SUMMARY and IMAGE are optional.</span></li>
-        <li data-workflow-step="4"><strong>TEST</strong><span>Save and test the draft. Inspect every accepted event, rejected card, URL, WHEN, WHERE, and field evidence.</span></li>
-        <li data-workflow-step="5"><strong>PUBLISH</strong><span>Publish only the exact draft fingerprint that passed the selected snapshot test.</span></li>
-        <li data-workflow-step="6"><strong>RUN</strong><span>Run the existing Local Events producer and inspect the production result below.</span></li>
-      </ol>
-    </section>
-
-    <section class="panel source-panel" aria-labelledby="source-heading">
-      <div class="panel-heading">
-        <h1 id="source-heading">SOURCE AND SNAPSHOT</h1>
-        <span id="global-status" class="status" role="status" aria-live="polite">INITIALIZING</span>
+      <div class="grid">
+        <label><span>Official source</span><select id="source-select"></select></label>
+        <label><span>Configured listing</span><select id="listing-select"></select></label>
+        <button id="open-browser" class="button primary" type="button">OPEN REAL BROWSER</button>
+        <button id="reload-state" class="button secondary" type="button">RELOAD STATE</button>
       </div>
-      <div class="source-grid">
-        <label>
-          <span>Official source</span>
-          <select id="source-select"></select>
-        </label>
-        <label>
-          <span>Configured listing</span>
-          <select id="listing-select"></select>
-        </label>
-        <label>
-          <span>Stored snapshot</span>
-          <select id="snapshot-select"></select>
-        </label>
-        <div class="source-actions">
-          <button id="capture-button" type="button" class="button primary">CAPTURE NOW</button>
-          <button id="reload-button" type="button" class="button secondary">RELOAD</button>
-        </div>
+      <div id="browser-message" class="message">
+        The browser opens on the Surface desktop. Use its InfoScreen toolbar while browsing the official site normally.
       </div>
     </section>
 
-    <div class="workspace">
-      <section class="panel viewer-panel" aria-labelledby="viewer-heading">
-        <div class="panel-heading viewer-heading-row">
-          <h2 id="viewer-heading">PAGE EVIDENCE</h2>
-          <label class="check-row">
-            <input id="show-all-elements" type="checkbox" />
-            <span>show element map</span>
-          </label>
-        </div>
-
-        <div class="mode-toolbar" role="toolbar" aria-label="Annotation target">
-          <button type="button" class="mode-button active" data-target="card">CARD EXAMPLE</button>
-          <button type="button" class="mode-button" data-target="exclude">EXCLUDE</button>
-          <button type="button" class="mode-button" data-target="title">TITLE</button>
-          <button type="button" class="mode-button" data-target="when">WHEN</button>
-          <button type="button" class="mode-button" data-target="where">WHERE</button>
-          <button type="button" class="mode-button" data-target="url">DETAIL URL</button>
-          <button type="button" class="mode-button" data-target="summary">SUMMARY</button>
-          <button type="button" class="mode-button" data-target="image">IMAGE</button>
-        </div>
-
-        <div id="viewer-empty" class="empty-state">
-          Select a source and capture or load a stored snapshot.
-        </div>
-        <div id="image-stage" class="image-stage hidden">
-          <img id="page-image" alt="Captured official listing page" />
-          <canvas id="annotation-canvas" aria-label="DOM annotation overlay"></canvas>
-        </div>
-
-        <div class="viewer-help">
-          Click an element to assign the active target. Drag a rectangle to select the smallest DOM element covering that area.
-          Choose two correct activity cards before mapping fields.
-        </div>
-
-        <section class="inspector" aria-labelledby="inspector-heading">
-          <h3 id="inspector-heading">ELEMENT INSPECTOR</h3>
-          <dl>
-            <div><dt>ID</dt><dd id="inspect-id">—</dd></div>
-            <div><dt>TAG</dt><dd id="inspect-tag">—</dd></div>
-            <div><dt>SELECTOR</dt><dd id="inspect-selector">—</dd></div>
-            <div><dt>TEXT / VALUE</dt><dd id="inspect-value">—</dd></div>
-            <div><dt>RECT</dt><dd id="inspect-rect">—</dd></div>
-          </dl>
-        </section>
-
-        <section class="test-preview" aria-labelledby="test-preview-heading">
-          <div class="panel-heading">
-            <h2 id="test-preview-heading">DRAFT TEST PREVIEW</h2>
-            <span id="test-state" class="status">NOT TESTED</span>
-          </div>
-          <div id="test-empty" class="test-empty">Save and test the draft against the selected snapshot.</div>
-          <div id="test-result" class="hidden">
-            <div class="test-metrics">
-              <div><span>MATCHED</span><strong id="test-matched">0</strong></div>
-              <div><span>ACCEPTED</span><strong id="test-accepted">0</strong></div>
-              <div><span>REJECTED</span><strong id="test-rejected">0</strong></div>
-              <div><span>PUBLISHABLE</span><strong id="test-publishable">NO</strong></div>
-            </div>
-            <div id="test-messages" class="test-messages"></div>
-            <div class="preview-columns">
-              <section>
-                <h3>ACCEPTED EVENTS</h3>
-                <div id="accepted-preview" class="preview-list"></div>
-              </section>
-              <section>
-                <h3>REJECTED CARDS</h3>
-                <div id="rejected-preview" class="preview-list"></div>
-              </section>
-            </div>
-          </div>
-        </section>
-      </section>
-
-      <aside class="panel editor-panel" aria-labelledby="editor-heading">
-        <div class="panel-heading">
-          <h2 id="editor-heading">RULE EDITOR</h2>
-          <span id="rule-state" class="status">NO RULE</span>
-        </div>
-
-        <section class="editor-section">
-          <div class="section-heading">
-            <h3>CARD MEMBERSHIP</h3>
-            <button id="clear-card-examples" type="button" class="text-button">clear examples</button>
-          </div>
-          <div class="metric-row">
-            <span>Examples</span><strong id="card-example-count">0 / 2</strong>
-          </div>
-          <label>
-            <span>Card selector</span>
-            <input id="card-selector" type="text" autocomplete="off" spellcheck="false" />
-          </label>
-          <div class="metric-row">
-            <span>Snapshot matches</span><strong id="card-match-count">0</strong>
-          </div>
-          <label>
-            <span>Exclude selectors</span>
-            <textarea id="exclude-selectors" rows="3" spellcheck="false" placeholder="One selector per line"></textarea>
-          </label>
-        </section>
-
-        <section class="editor-section">
-          <h3>LIST CARD FIELDS</h3>
-          <div id="field-editor" class="field-editor"></div>
-          <label class="check-row field-default-toggle">
-            <input id="allow-source-default" type="checkbox" />
-            <span>Allow configured source venue only when mapped WHERE is empty</span>
-          </label>
-        </section>
-
-        <section class="editor-section">
-          <div class="section-heading">
-            <h3>DETAIL PAGE OVERRIDES</h3>
-            <label class="check-row">
-              <input id="detail-enabled" type="checkbox" />
-              <span>enabled</span>
-            </label>
-          </div>
-          <div id="detail-fields" class="detail-fields"></div>
-          <p class="section-note">Detail selectors are evaluated only on the admitted card's validated public URL.</p>
-        </section>
-
-        <section class="editor-section">
-          <h3>DRAFT AND VERSIONS</h3>
-          <div class="button-grid">
-            <button id="save-draft-button" type="button" class="button primary">SAVE DRAFT</button>
-            <button id="test-draft-button" type="button" class="button primary">TEST DRAFT</button>
-            <button id="publish-button" type="button" class="button warning">PUBLISH TESTED DRAFT</button>
-            <button id="export-button" type="button" class="button secondary">EXPORT</button>
-            <label class="button secondary file-button">
-              IMPORT
-              <input id="import-input" type="file" accept="application/json,.json" />
-            </label>
-          </div>
-          <label>
-            <span>Published history</span>
-            <select id="history-select"></select>
-          </label>
-          <button id="rollback-button" type="button" class="button danger">ROLL BACK AS NEW VERSION</button>
-        </section>
-
-        <section class="editor-section evidence-section">
-          <h3>SELECTED FIELD EVIDENCE</h3>
-          <pre id="field-evidence">No field selected.</pre>
-        </section>
-      </aside>
-    </div>
-
-    <section class="panel production-panel" aria-labelledby="production-heading">
-      <div class="panel-heading">
-        <h2 id="production-heading">PRODUCTION RUN</h2>
-        <span id="production-status" class="status" role="status" aria-live="polite">CURRENT RESULT NOT LOADED</span>
+    <section class="panel">
+      <div class="heading"><h2>2 · WORK IN THE REAL WEBSITE</h2><span class="status">BROWSER TOOLBAR</span></div>
+      <div class="instructions">
+        <p><strong>Browse first.</strong> Scroll, accept required cookies, choose filters, expand “load more”, paginate, and open detail pages normally.</p>
+        <p>On the listing page select <code>LIST CARD</code>, then <code>DETAIL LINK</code>. On each detail page select <code>TITLE</code>, <code>WHEN</code>, and <code>WHERE</code>. Optional fields are <code>SUMMARY</code> and <code>IMAGE</code>.</p>
+        <p>Return to the configured listing and press <code>SAVE CURRENT LISTING STATE</code> in the browser toolbar. Studio then validates multiple real detail pages.</p>
       </div>
-      <div class="production-controls">
-        <label>
-          <span>Local Events location</span>
-          <input id="production-location" type="text" autocomplete="off" value="Punggol Singapore" />
-        </label>
-        <button id="run-local-events-button" type="button" class="button warning">RUN LOCAL EVENTS NOW</button>
-        <a class="button secondary" href="/api/local-events/search" target="_blank" rel="noopener">OPEN RUNTIME JSON</a>
+    </section>
+
+    <section class="panel">
+      <div class="heading"><h2>3 · CURRENT RULE</h2><span id="rule-status" class="status">NO DRAFT</span></div>
+      <div class="rule-grid">
+        <div><span>Card</span><code id="card-selector">—</code></div>
+        <div><span>Detail link</span><code id="url-selector">—</code></div>
+        <div><span>Listing fields</span><pre id="listing-fields">—</pre></div>
+        <div><span>Detail fields</span><pre id="detail-fields">—</pre></div>
       </div>
-      <p class="production-help">This runs the existing <code>surface/search_local_events.py</code> producer through the current <code>8765</code> service. It does not create another service or timer.</p>
-      <div class="production-metrics" aria-label="Production result metrics">
-        <div><span>COUNT</span><strong id="production-count">—</strong></div>
-        <div><span>PARTIAL</span><strong id="production-partial">—</strong></div>
-        <div><span>COMPLETED SOURCES</span><strong id="production-completed">—</strong></div>
-        <div><span>INCOMPLETE SOURCES</span><strong id="production-incomplete">—</strong></div>
+    </section>
+
+    <section class="panel">
+      <div class="heading"><h2>4 · LIVE VALIDATION</h2><span id="test-status" class="status">NOT VALIDATED</span></div>
+      <div class="metrics">
+        <div><span>MATCHED CARDS</span><strong id="matched">—</strong></div>
+        <div><span>CONFIRMED DETAILS</span><strong id="accepted">—</strong></div>
+        <div><span>REJECTED</span><strong id="rejected">—</strong></div>
+        <div><span>PUBLISHABLE</span><strong id="publishable">—</strong></div>
       </div>
-      <div id="production-message" class="production-message">Load the current result or run Local Events after publishing a tested rule.</div>
-      <div id="production-results" class="production-results"></div>
+      <div id="test-message" class="message">Use SAVE CURRENT LISTING STATE in the live browser after mappings are complete.</div>
+      <div class="columns">
+        <section><h3>CONFIRMED EVENTS</h3><div id="accepted-list"></div></section>
+        <section><h3>REJECTED SAMPLES</h3><div id="rejected-list"></div></section>
+      </div>
+      <button id="publish" class="button warning" type="button" disabled>PUBLISH VALIDATED RULE</button>
+    </section>
+
+    <section class="panel">
+      <div class="heading"><h2>5 · RUN LOCAL EVENTS</h2><span id="run-status" class="status">NOT RUN</span></div>
+      <div class="grid run-grid">
+        <label><span>Location</span><input id="location" type="text" value="Punggol Singapore" /></label>
+        <button id="run" class="button warning" type="button">RUN LOCAL EVENTS NOW</button>
+      </div>
+      <div id="run-message" class="message">Run after publishing. Results below come from the existing Local Events producer.</div>
+      <div id="results" class="results"></div>
     </section>
   </main>
 
   <script src="/assets/js/local_event_studio.js" defer></script>
-  <script src="/assets/js/local_event_studio_test.js" defer></script>
-  <script src="/assets/js/local_event_studio_run.js" defer></script>
 </body>
 </html>
