@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import re
-
 import pytest
 
 from .conftest import read_text
@@ -9,30 +7,43 @@ from .conftest import read_text
 pytestmark = pytest.mark.style
 
 
-def test_studio_layout_is_scrollable_and_responsive() -> None:
+def test_live_studio_layout_is_scrollable_and_responsive() -> None:
     css = read_text("surface/web/assets/css/local_event_studio.css")
-    body = re.search(r"body\s*\{(?P<body>.*?)\}", css, re.S)
-    assert body is not None
-    assert "min-height: 100vh" in body.group("body")
-    assert "overflow: hidden" not in body.group("body")
-    assert ".image-stage" in css and "overflow: auto" in css
-    assert "@media (max-width: 1050px)" in css
-    assert "@media (max-width: 680px)" in css
-    assert "grid-template-columns: minmax(0, 1.65fr) minmax(350px, 0.85fr)" in css
+    assert "overflow:hidden" not in css.replace(" ", "")
+    for selector in [
+        ".shell",
+        ".panel",
+        ".grid",
+        ".rule-grid",
+        ".metrics",
+        ".columns",
+        ".results",
+    ]:
+        assert selector in css
+    assert "@media(max-width:1000px)" in css.replace(" ", "")
+    assert "@media(max-width:650px)" in css.replace(" ", "")
 
 
-def test_studio_canvas_and_image_share_one_overlay_stage() -> None:
+def test_live_studio_has_no_screenshot_or_canvas_stage() -> None:
     css = read_text("surface/web/assets/css/local_event_studio.css")
-    assert ".image-stage" in css
-    assert "position: relative" in css
-    assert ".image-stage canvas" in css
-    assert "position: absolute" in css
-    assert "touch-action: none" in css
+    assert ".image-stage" not in css
+    assert "canvas" not in css
+    assert "touch-action" not in css
 
 
 def test_studio_uses_project_visual_tokens_without_external_fonts() -> None:
     css = read_text("surface/web/assets/css/local_event_studio.css")
-    for token in ["--bg", "--panel", "--line", "--text", "--muted", "--green", "--cyan", "--yellow", "--red"]:
+    for token in [
+        "--bg",
+        "--panel",
+        "--line",
+        "--text",
+        "--muted",
+        "--green",
+        "--cyan",
+        "--yellow",
+        "--red",
+    ]:
         assert token in css
     assert "@import" not in css
     assert "url(" not in css
