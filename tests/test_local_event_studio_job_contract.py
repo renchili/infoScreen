@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 from pathlib import Path
 
 import pytest
@@ -11,39 +10,15 @@ ROOT = Path(__file__).resolve().parents[1]
 JOB_PATH = ROOT / "surface" / "jobs" / "local_event_search.py"
 
 
-def _call_name(node: ast.Call) -> str:
-    if isinstance(node.func, ast.Name):
-        return node.func.id
-    if isinstance(node.func, ast.Attribute):
-        return node.func.attr
-    return ""
-
-
 def test_local_event_job_applies_studio_between_collection_and_normalization() -> None:
     source = JOB_PATH.read_text(encoding="utf-8")
-    tree = ast.parse(source)
-    parents = {
-        child: parent
-        for parent in ast.walk(tree)
-        for child in ast.iter_child_nodes(parent)
-    }
 
-    studio_calls = [
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call) and _call_name(node) == "apply_runtime_studio_rules"
-    ]
-    assert len(studio_calls) == 1
-    studio_call = studio_calls[0]
-    assert len(studio_call.args) == 1
-    assert isinstance(studio_call.args[0], ast.Call)
-    assert _call_name(studio_call.args[0]) == "collect_events"
+    collect_stage = source.index("legacy_payload = collect_events(CONFIG, location, DEBUG_DIR)")
+    studio_stage = source.index("routed_payload = apply_runtime_studio_rules(legacy_payload)")
+    normalize_stage = source.index("normalize_payload(routed_payload)")
 
-    parent = parents.get(studio_call)
-    while parent is not None and not isinstance(parent, ast.Call):
-        parent = parents.get(parent)
-    assert isinstance(parent, ast.Call)
-    assert _call_name(parent) == "normalize_payload"
+    assert collect_stage < studio_stage < normalize_stage
+    assert "from local_events_runtime.studio_pipeline import apply_runtime_studio_rules" in source
 
 
 def test_local_event_job_keeps_existing_writer_and_partial_protection() -> None:
@@ -54,3 +29,9 @@ def test_local_event_job_keeps_existing_writer_and_partial_protection() -> None:
     assert "apply_detail_authority" not in source
     assert "apply_listing_url_authority" not in source
     assert "apply_source_overrides" not in source
+
+
+def test_local_event_job_uses_active_runtime_directory() -> None:
+    source = JOB_PATH.read_text(encoding="utf-8")
+    assert 'os.environ.get("INFOSCREEN_ENV_DIR", str(SURFACE_DIR / ".env"))' in source
+    assert "ENV_DIR.mkdir(parents=True, exist_ok=True)" in source
