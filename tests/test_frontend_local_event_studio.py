@@ -44,10 +44,12 @@ def test_studio_page_uses_existing_static_asset_model() -> None:
     assert parser.scripts == [
         "/assets/js/local_event_studio.js",
         "/assets/js/local_event_studio_test.js",
+        "/assets/js/local_event_studio_run.js",
     ]
     assert parser.styles == [
         "/assets/css/local_event_studio.css",
         "/assets/css/local_event_studio_test.css",
+        "/assets/css/local_event_studio_run.css",
     ]
     assert parser.external_assets == []
 
@@ -55,6 +57,7 @@ def test_studio_page_uses_existing_static_asset_model() -> None:
 def test_studio_page_contains_complete_local_workflow_controls() -> None:
     parser = parse_studio()
     required = {
+        "workflow-state",
         "source-select",
         "listing-select",
         "snapshot-select",
@@ -84,6 +87,15 @@ def test_studio_page_contains_complete_local_workflow_controls() -> None:
         "test-publishable",
         "accepted-preview",
         "rejected-preview",
+        "production-status",
+        "production-location",
+        "run-local-events-button",
+        "production-count",
+        "production-partial",
+        "production-completed",
+        "production-incomplete",
+        "production-message",
+        "production-results",
     }
     assert required.issubset(parser.ids)
 
@@ -91,7 +103,8 @@ def test_studio_page_contains_complete_local_workflow_controls() -> None:
 def test_studio_javascript_uses_only_existing_8765_relative_apis() -> None:
     editor_js = read_text("surface/web/assets/js/local_event_studio.js")
     test_js = read_text("surface/web/assets/js/local_event_studio_test.js")
-    combined = editor_js + "\n" + test_js
+    run_js = read_text("surface/web/assets/js/local_event_studio_run.js")
+    combined = editor_js + "\n" + test_js + "\n" + run_js
     for path in [
         "/api/local-events/studio/sources",
         "/api/local-events/studio/rules",
@@ -105,6 +118,7 @@ def test_studio_javascript_uses_only_existing_8765_relative_apis() -> None:
         "/api/local-events/studio/rollback",
         "/api/local-events/studio/import",
         "/api/local-events/studio/export",
+        "/api/local-events/search",
     ]:
         assert path in combined
     assert "8766" not in combined
@@ -145,9 +159,31 @@ def test_studio_waits_for_initial_source_binding_before_latest_test_lookup() -> 
 def test_studio_exposes_loading_empty_error_and_retry_interactions() -> None:
     html = read_text("surface/web/local-events/studio/index.html")
     js = read_text("surface/web/assets/js/local_event_studio.js")
+    run_js = read_text("surface/web/assets/js/local_event_studio_run.js")
     assert 'role="status"' in html
     assert 'aria-live="polite"' in html
     assert "No snapshots captured" in js
     assert "setStatus(error.message" in js
     assert "reload-button" in html
     assert "CAPTURE NOW" in html
+    assert "RUNNING · MAY TAKE SEVERAL MINUTES" in run_js
+    assert "No production activities are present" in run_js
+    assert "RUN LOCAL EVENTS NOW" in html
+
+
+def test_studio_production_workflow_runs_existing_local_events_endpoint_and_renders_fields() -> None:
+    html = read_text("surface/web/local-events/studio/index.html")
+    js = read_text("surface/web/assets/js/local_event_studio_run.js")
+    assert "CAPTURE" in html
+    assert "CARDS" in html
+    assert "FIELDS" in html
+    assert "TEST" in html
+    assert "PUBLISH" in html
+    assert "RUN" in html
+    assert 'method: "POST"' in js
+    assert 'body: JSON.stringify({ location })' in js
+    assert 'requestJson("/api/local-events/search"' in js
+    assert 'appendDefinition(values, "WHEN", event.when)' in js
+    assert 'appendDefinition(values, "WHERE", event.where)' in js
+    assert 'appendDefinition(values, "POLICY", event.candidate_policy)' in js
+    assert 'window.localStorage.setItem("local_events_location", location)' in js
