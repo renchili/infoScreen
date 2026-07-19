@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,7 @@ from .browser import (
     find_browser_executable,
 )
 from .extract import clean, label_dates
+from .studio_actions import execute_browser_actions
 from .studio_collect import (
     _debug_belongs_to_source,
     _event_belongs_to_source,
@@ -24,7 +26,14 @@ from .studio_collect import (
     published_rules_by_source,
 )
 from .studio_evaluate import validate_detail_url
-from .studio_rules import DEFAULT_SOURCE_CONFIG, DEFAULT_STUDIO_ROOT, LocalEventStudioRule
+from .studio_rules import (
+    DEFAULT_SOURCE_CONFIG,
+    DEFAULT_STUDIO_ROOT,
+    LocalEventStudioRule,
+)
+
+DETAIL_LIMIT = int(os.environ.get("LOCAL_EVENT_STUDIO_DETAIL_LIMIT", "60"))
+DETAIL_TIMEOUT_MS = int(os.environ.get("LOCAL_EVENT_STUDIO_DETAIL_TIMEOUT_MS", "20000"))
 
 
 def _value(locator: Any, attribute: str | None) -> str:
@@ -55,7 +64,7 @@ def _allowed(url: str, source: dict[str, Any]) -> bool:
 
 def _excluded(card: Any, selectors: list[str]) -> bool:
     for selector in selectors:
-        if bool(card.evaluate("(el, sel) => el.matches(sel)", selector)):
+        if bool(card.evaluate("(element, value) => element.matches(value)", selector)):
             return True
         if card.locator(selector).count() > 0:
             return True
@@ -66,7 +75,11 @@ def _listing_values(card: Any, rule: LocalEventStudioRule) -> dict[str, str]:
     output: dict[str, str] = {}
     for name in ("title", "when", "where", "url", "summary", "image"):
         mapping = getattr(rule.fields, name)
-        output[name] = _value(card.locator(mapping.selector), mapping.attribute) if mapping else ""
+        output[name] = (
+            _value(card.locator(mapping.selector), mapping.attribute)
+            if mapping
+            else ""
+        )
     return output
 
 
@@ -89,13 +102,63 @@ def _launch(playwright: Any):
     )
 
 
+def _goto(page: Any, url: str, *, timeout: int) -> Any:
+    try:
+        response = page.goto(url, wait_until="networkidle", timeout=timeout)
+    except Exception:
+        response = page.goto(url, wait_until="domcontentloaded", timeout=timeout)
+    if response is not None and response.status >= 400:
+        raise RuntimeError(f"http_status_{response.status}")
+    return response
+
+
+def _collect_detail(
+    browser: Any,
+    source: dict[str, Any],
+    rule: LocalEventStudioRule,
+    public_url: str,
+    values: dict[str, str],
+) -> tuple[str, dict[str, str], dict[str, Any]]:
+    detail = browser.new_page(
+        viewport={"width": 1440, "height": 1000},
+        device_scale_factor=1,
+    )
+    try:
+        _goto(detail, public_url, timeout=DETAIL_TIMEOUT_MS)
+        if not _allowed(str(detail.url), source):
+            raise RuntimeError("detail_redirected_outside_allowed_domains")
+        final_url, reason = validate_detail_url(
+            str(detail.url),
+            rule.listing_url,
+            source,
+        )
+        if reason:
+            raise RuntimeError(reason)
+        action_diagnostics = execute_browser_actions(detail, rule.detail_actions)
+        root_text = _value(detail.locator("main, article, body"), None)
+        if not root_text and not clean(detail.title() or ""):
+            raise RuntimeError("detail_page_has_no_readable_content")
+        if rule.detail_page.enabled:
+            for name, value in _detail_values(detail, rule).items():
+                if value:
+                    values[name] = value
+        return final_url, values, {
+            "ok": True,
+            "url": final_url,
+            "page_title": detail.title(),
+            "actions": action_diagnostics,
+        }
+    finally:
+        detail.close()
+
+
 def collect_published_live_source(
     source: dict[str, Any],
     rules: list[LocalEventStudioRule],
     *,
     today: date | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Replay published list selectors and verify every accepted candidate on its detail page."""
+    """Replay published actions, admit listing cards, then verify every output on its detail page."""
 
     try:
         from playwright.sync_api import sync_playwright
@@ -155,22 +218,35 @@ def collect_published_live_source(
                     "accepted": 0,
                     "reason_counts": {},
                     "not_output_preview": [],
+                    "listing_actions": [],
                 }
-                page = browser.new_page(viewport={"width": 1440, "height": 1000}, device_scale_factor=1)
+                page = browser.new_page(
+                    viewport={"width": 1440, "height": 1000},
+                    device_scale_factor=1,
+                )
                 rule_results: list[dict[str, Any]] = []
                 seen_urls: set[str] = set()
+                detail_reads = 0
                 try:
-                    try:
-                        page.goto(rule.listing_url, wait_until="networkidle", timeout=NAV_TIMEOUT_MS)
-                    except Exception:
-                        page.goto(rule.listing_url, wait_until="domcontentloaded", timeout=DOM_TIMEOUT_MS)
+                    _goto(page, rule.listing_url, timeout=NAV_TIMEOUT_MS)
+                    if not _allowed(str(page.url), source):
+                        raise RuntimeError("listing_redirected_outside_allowed_domains")
                     page.wait_for_timeout(LOAD_WAIT_MS)
+                    debug["listing_actions"] = execute_browser_actions(
+                        page,
+                        rule.listing_actions,
+                    )
 
                     for page_index in range(MAX_LISTING_PAGES):
-                        page.evaluate(
+                        prepare = page.evaluate(
                             PREPARE_PAGE_JS,
-                            {"maxRounds": int(source.get("load_more_rounds", LOAD_MORE_ROUNDS))},
+                            {
+                                "maxRounds": int(
+                                    source.get("load_more_rounds", LOAD_MORE_ROUNDS)
+                                )
+                            },
                         )
+                        debug.setdefault("prepare", []).append(prepare)
                         if not _allowed(str(page.url), source):
                             raise RuntimeError("listing_redirected_outside_allowed_domains")
 
@@ -179,11 +255,24 @@ def collect_published_live_source(
                         debug["cards_found"] += len(cards)
 
                         for card_index, card in enumerate(cards):
+                            if detail_reads >= DETAIL_LIMIT:
+                                debug["reason_counts"]["detail_limit_reached"] = (
+                                    debug["reason_counts"].get("detail_limit_reached", 0)
+                                    + 1
+                                )
+                                break
                             card_id = f"{page_index}:{card_index}"
                             try:
-                                if _excluded(card, rule.card.exclude_selectors if rule.card else []):
+                                if _excluded(
+                                    card,
+                                    rule.card.exclude_selectors if rule.card else [],
+                                ):
                                     debug["reason_counts"]["excluded_by_rule"] = (
-                                        debug["reason_counts"].get("excluded_by_rule", 0) + 1
+                                        debug["reason_counts"].get(
+                                            "excluded_by_rule",
+                                            0,
+                                        )
+                                        + 1
                                     )
                                     continue
 
@@ -199,40 +288,14 @@ def collect_published_live_source(
                                     raise RuntimeError("duplicate_detail_url")
                                 seen_urls.add(public_url)
 
-                                detail_info: dict[str, Any] = {"ok": True, "url": public_url}
-                                if rule.detail_page.enabled:
-                                    detail = browser.new_page(
-                                        viewport={"width": 1440, "height": 1000},
-                                        device_scale_factor=1,
-                                    )
-                                    try:
-                                        try:
-                                            detail.goto(
-                                                public_url,
-                                                wait_until="networkidle",
-                                                timeout=20000,
-                                            )
-                                        except Exception:
-                                            detail.goto(
-                                                public_url,
-                                                wait_until="domcontentloaded",
-                                                timeout=20000,
-                                            )
-                                        detail.wait_for_timeout(350)
-                                        if not _allowed(str(detail.url), source):
-                                            raise RuntimeError(
-                                                "detail_redirected_outside_allowed_domains"
-                                            )
-                                        for name, value in _detail_values(detail, rule).items():
-                                            if value:
-                                                values[name] = value
-                                        detail_info = {
-                                            "ok": True,
-                                            "url": str(detail.url),
-                                            "page_title": detail.title(),
-                                        }
-                                    finally:
-                                        detail.close()
+                                detail_reads += 1
+                                public_url, values, detail_info = _collect_detail(
+                                    browser,
+                                    source,
+                                    rule,
+                                    public_url,
+                                    values,
+                                )
 
                                 if (
                                     not values.get("where")
@@ -272,7 +335,8 @@ def collect_published_live_source(
                                         "start_date": min(dates).isoformat(),
                                         "end_date": max(dates).isoformat(),
                                         "source_id": rule.source_id,
-                                        "source_name": source.get("name") or rule.source_id,
+                                        "source_name": source.get("name")
+                                        or rule.source_id,
                                         "host": source.get("name") or rule.source_id,
                                         "listing_url": rule.listing_url,
                                         "studio_listing_url": rule.listing_url,
@@ -289,7 +353,9 @@ def collect_published_live_source(
                                 )
                                 if len(debug["not_output_preview"]) < 20:
                                     try:
-                                        card_text = clean(card.inner_text(timeout=2000) or "")[:400]
+                                        card_text = clean(
+                                            card.inner_text(timeout=2000) or ""
+                                        )[:400]
                                     except Exception:
                                         card_text = ""
                                     debug["not_output_preview"].append(
@@ -300,19 +366,25 @@ def collect_published_live_source(
                                         }
                                     )
 
+                        if detail_reads >= DETAIL_LIMIT:
+                            break
                         if page_index >= MAX_LISTING_PAGES - 1:
                             break
                         next_result = page.evaluate(
                             CLICK_NEXT_PAGE_JS,
                             {
-                                "allowedDomains": source.get("allowed_domains") or [],
+                                "allowedDomains": source.get("allowed_domains")
+                                or [],
                                 "pageIndex": page_index,
                             },
                         )
                         if not next_result.get("clicked"):
                             break
                         try:
-                            page.wait_for_load_state("networkidle", timeout=NEXT_WAIT_MS)
+                            page.wait_for_load_state(
+                                "networkidle",
+                                timeout=NEXT_WAIT_MS,
+                            )
                         except Exception:
                             page.wait_for_timeout(NEXT_WAIT_MS)
 
@@ -352,7 +424,7 @@ def apply_published_live_rules(
     source_config_path: Path | str = DEFAULT_SOURCE_CONFIG,
     today: date | None = None,
 ) -> dict[str, Any]:
-    """Replace only activated source/listing rows with real listing/detail rule output."""
+    """Replace activated source/listing rows with replayed listing/detail-rule output."""
 
     result_payload = dict(payload)
     results = [
@@ -367,7 +439,10 @@ def apply_published_live_rules(
     ]
     config_path = Path(source_config_path).expanduser().resolve()
     sources = _source_inventory(config_path)
-    source_by_id = {str(source.get("id") or ""): source for source in sources}
+    source_by_id = {
+        str(source.get("id") or ""): source
+        for source in sources
+    }
     rules_by_source = published_rules_by_source(
         root=root,
         source_config_path=config_path,
@@ -383,7 +458,10 @@ def apply_published_live_rules(
         source = source_by_id.get(source_id)
         if source is None:
             continue
-        configured = {str(value).rstrip("/") for value in source.get("listing_urls") or []}
+        configured = {
+            str(value).rstrip("/")
+            for value in source.get("listing_urls") or []
+        }
         published = {rule.listing_url.rstrip("/") for rule in rules}
         full_source = bool(configured) and configured == published
 
@@ -421,7 +499,7 @@ def apply_published_live_rules(
                 "listing_urls": sorted(published),
                 "full_source_activation": full_source,
                 "rule_versions": [rule.version for rule in rules],
-                "mode": "live_listing_and_detail",
+                "mode": "recorded_actions_listing_and_detail",
             }
         )
 
