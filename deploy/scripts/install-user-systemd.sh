@@ -67,6 +67,28 @@ print(f"[OK] pydantic={pydantic.__version__}; playwright=available")
 PY
 }
 
+import_graphical_session_environment() {
+  local names=()
+  local name
+
+  for name in DISPLAY WAYLAND_DISPLAY XAUTHORITY DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR; do
+    if [ -n "${!name:-}" ]; then
+      names+=("$name")
+    fi
+  done
+
+  if [ "${#names[@]}" -eq 0 ]; then
+    echo "[WARN] no graphical session variables are present; OPEN REAL BROWSER requires running this installer from the Surface desktop session" >&2
+    return
+  fi
+
+  systemctl --user import-environment "${names[@]}"
+  if command -v dbus-update-activation-environment >/dev/null 2>&1; then
+    dbus-update-activation-environment --systemd "${names[@]}" >/dev/null 2>&1 || true
+  fi
+  echo "[OK] imported graphical session environment: ${names[*]}"
+}
+
 move_runtime_file() {
   local name="$1"
   if [ -f "$REPO_DIR/$name" ]; then
@@ -125,6 +147,7 @@ verify_http_service() {
 
 install_system_dependencies
 install_python_dependencies
+import_graphical_session_environment
 
 # Runtime/state files belong to surface/.env, not repo root.
 for file in \
