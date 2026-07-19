@@ -134,6 +134,14 @@ def test_studio_test_preview_requires_server_publishability() -> None:
     assert 'ui.publishButton.addEventListener("click", publishTestedDraft, true);' in js
 
 
+def test_studio_waits_for_initial_source_binding_before_latest_test_lookup() -> None:
+    js = read_text("surface/web/assets/js/local_event_studio_test.js")
+    assert "async function loadLatestWhenBindingReady" in js
+    assert "attempt >= 50" in js
+    assert "loadLatestWhenBindingReady(attempt + 1)" in js
+    assert "setTimeout(() => loadLatestWhenBindingReady()" in js
+
+
 def test_studio_exposes_loading_empty_error_and_retry_interactions() -> None:
     html = read_text("surface/web/local-events/studio/index.html")
     js = read_text("surface/web/assets/js/local_event_studio.js")
