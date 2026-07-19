@@ -4,18 +4,12 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
-try:
-    from .local_events_runtime.studio_rules import LocalEventStudioRule
-except ImportError:
-    from local_events_runtime.studio_rules import LocalEventStudioRule
-
 
 class ErrorResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     ok: Literal[False] = Field(False, description="Whether the request succeeded.")
-    error: str = Field(..., description="Stable machine-readable error code or human-readable legacy error message.")
-    detail: str | None = Field(None, description="Validation detail safe to show to the local operator.")
+    error: str = Field(..., description="Human-readable error message.")
 
 
 class RuntimeMissingResponse(BaseModel):
@@ -116,141 +110,6 @@ class LocalEventSearchResponse(BaseModel):
     debug_by_source: list[LocalEventSourceDebug] = Field(default_factory=list, description="Extractor debug details by source.")
     stdout: str | None = Field(None, description="Tail of subprocess stdout for POST responses.")
     stderr: str | None = Field(None, description="Tail of subprocess stderr for POST responses.")
-
-
-class StudioRuleBindingRequest(BaseModel):
-    source_id: str = Field(..., min_length=1, max_length=64, description="Configured Local Events source ID.")
-    listing_url: str = Field(..., min_length=8, max_length=2048, description="Configured official listing URL.")
-
-
-class StudioRuleRollbackRequest(StudioRuleBindingRequest):
-    version: int = Field(..., ge=1, description="Historical published version to republish as a new version.")
-
-
-class StudioRuleImportRequest(BaseModel):
-    rule: dict[str, Any] = Field(..., description="Validated Local Event Studio rule object imported as a draft.")
-
-
-class StudioRuleResponse(BaseModel):
-    ok: Literal[True] = True
-    rule: LocalEventStudioRule
-
-
-class StudioRuleDeleteResponse(BaseModel):
-    ok: Literal[True] = True
-    deleted: bool = Field(..., description="Whether a draft existed and was deleted.")
-
-
-class StudioRuleListResponse(BaseModel):
-    ok: Literal[True] = True
-    source_id: str
-    listing_url: str
-    draft: LocalEventStudioRule | None = None
-    published: LocalEventStudioRule | None = None
-    history: list[LocalEventStudioRule] = Field(default_factory=list)
-
-
-class StudioSourceListingState(BaseModel):
-    listing_url: str
-    has_draft: bool = False
-    published_version: int | None = None
-    history_versions: list[int] = Field(default_factory=list)
-
-
-class StudioSourceState(BaseModel):
-    source_id: str
-    name: str | None = None
-    listing_urls: list[StudioSourceListingState] = Field(default_factory=list)
-
-
-class StudioSourcesResponse(BaseModel):
-    ok: Literal[True] = True
-    sources: list[StudioSourceState] = Field(default_factory=list)
-
-
-class StudioCaptureRequest(StudioRuleBindingRequest):
-    pass
-
-
-class StudioSnapshotMetadata(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
-    schema_version: Literal[1] = 1
-    snapshot_id: str
-    source_id: str
-    source_name: str | None = None
-    listing_url: str
-    final_url: str
-    page_title: str = ""
-    captured_at: str
-    prepare: dict[str, Any] = Field(default_factory=dict)
-    dom_element_count: int = 0
-    dom_truncated: bool = False
-    assets: dict[str, str] = Field(default_factory=dict)
-
-
-class StudioCaptureResponse(BaseModel):
-    ok: Literal[True] = True
-    snapshot: StudioSnapshotMetadata
-
-
-class StudioSnapshotListResponse(BaseModel):
-    ok: Literal[True] = True
-    snapshots: list[StudioSnapshotMetadata] = Field(default_factory=list)
-
-
-class StudioTestRequest(StudioRuleBindingRequest):
-    snapshot_id: str = Field(..., min_length=1, max_length=80, description="Stored snapshot used for deterministic draft evaluation.")
-
-
-class StudioTestAcceptedRow(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
-    card_id: str
-    event: dict[str, Any]
-    evidence: dict[str, Any] = Field(default_factory=dict)
-    detail_page_pending: bool = False
-
-
-class StudioTestRejectedRow(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
-    card_id: str
-    reason: str
-    reasons: list[str] = Field(default_factory=list)
-    values: dict[str, Any] = Field(default_factory=dict)
-    evidence: dict[str, Any] = Field(default_factory=dict)
-
-
-class StudioTestResult(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
-    schema_version: Literal[1] = 1
-    run_id: str
-    snapshot_id: str
-    tested_at: str
-    rule_fingerprint: str
-    source_id: str
-    listing_url: str
-    card_selector: str | None = None
-    matched_card_count: int = 0
-    accepted_count: int = 0
-    rejected_count: int = 0
-    publishable: bool = False
-    fatal_errors: list[str] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
-    accepted: list[StudioTestAcceptedRow] = Field(default_factory=list)
-    rejected: list[StudioTestRejectedRow] = Field(default_factory=list)
-
-
-class StudioTestResponse(BaseModel):
-    ok: Literal[True] = True
-    result: StudioTestResult
-
-
-class StudioLatestTestResponse(BaseModel):
-    ok: Literal[True] = True
-    result: StudioTestResult | None = None
 
 
 class PhotoItem(BaseModel):
