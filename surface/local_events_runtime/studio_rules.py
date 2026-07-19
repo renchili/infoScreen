@@ -12,7 +12,6 @@ from urllib.parse import urlsplit, urlunsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-
 SCHEMA_VERSION = 1
 SOURCE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 ATTRIBUTE_RE = re.compile(r"^[A-Za-z_:][A-Za-z0-9_.:-]{0,63}$")
@@ -314,15 +313,30 @@ class LocalEventStudioRuleStore:
             )
         return safe_source, canonical_url
 
+    def _rules_root(self) -> Path:
+        rules_root = self.root / "rules"
+        if rules_root.is_symlink():
+            raise RuleStorageError("rules root must not be a symlink")
+        rules_root.mkdir(parents=True, exist_ok=True)
+        try:
+            rules_root.resolve().relative_to(self.root)
+        except ValueError as exc:
+            raise RuleStorageError("rules root escapes the Studio root") from exc
+        return rules_root
+
     def _binding_dir(self, source_id: object, listing_url: object) -> tuple[Path, str, str]:
         safe_source, canonical_url = self._binding(source_id, listing_url)
         listing_key = hashlib.sha256(canonical_url.encode("utf-8")).hexdigest()[:20]
-        target = self.root / "rules" / safe_source / listing_key
-        target.parent.mkdir(parents=True, exist_ok=True)
-        resolved_parent = target.parent.resolve()
-        rules_root = (self.root / "rules").resolve()
+        rules_root = self._rules_root()
+        source_dir = rules_root / safe_source
+        if source_dir.is_symlink():
+            raise RuleStorageError("rule source directory must not be a symlink")
+        source_dir.mkdir(parents=True, exist_ok=True)
+        target = source_dir / listing_key
+        if target.is_symlink():
+            raise RuleStorageError("rule listing directory must not be a symlink")
         try:
-            resolved_parent.relative_to(rules_root)
+            target.resolve().relative_to(rules_root.resolve())
         except ValueError as exc:
             raise RuleStorageError("resolved rule path escapes the Studio root") from exc
         return target, safe_source, canonical_url
@@ -342,6 +356,17 @@ class LocalEventStudioRuleStore:
         finally:
             os.close(descriptor)
 
+    def _safe_parent(self, target: Path) -> Path:
+        parent = target.parent
+        if parent.is_symlink():
+            raise RuleStorageError(f"rule parent must not be a symlink: {parent.name}")
+        parent.mkdir(parents=True, exist_ok=True)
+        try:
+            parent.resolve().relative_to(self._rules_root().resolve())
+        except ValueError as exc:
+            raise RuleStorageError("rule parent escapes the Studio root") from exc
+        return parent
+
     def _atomic_write(
         self,
         target: Path,
@@ -349,11 +374,11 @@ class LocalEventStudioRuleStore:
         *,
         immutable: bool = False,
     ) -> None:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        if target.exists() and target.is_symlink():
+        parent = self._safe_parent(target)
+        if target.is_symlink():
             raise RuleStorageError(f"refusing to replace symlink: {target.name}")
 
-        temporary = target.parent / f".{target.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp"
+        temporary = parent / f".{target.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp"
         try:
             with temporary.open("x", encoding="utf-8") as handle:
                 json.dump(payload, handle, ensure_ascii=False, indent=2, sort_keys=True)
@@ -372,11 +397,13 @@ class LocalEventStudioRuleStore:
                     temporary.unlink(missing_ok=True)
             else:
                 os.replace(temporary, target)
-            self._fsync_directory(target.parent)
+            self._fsync_directory(parent)
         finally:
             temporary.unlink(missing_ok=True)
 
     def _read_rule(self, path: Path, *, required: bool = False) -> LocalEventStudioRule | None:
+        if path.is_symlink():
+            raise RuleStorageError(f"refusing to read symlink rule: {path.name}")
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))
             return LocalEventStudioRule.model_validate(raw)
@@ -397,7 +424,10 @@ class LocalEventStudioRuleStore:
 
     def _history_dir(self, source_id: object, listing_url: object) -> tuple[Path, str, str]:
         directory, safe_source, canonical_url = self._binding_dir(source_id, listing_url)
-        return directory / "history", safe_source, canonical_url
+        history = directory / "history"
+        if history.is_symlink():
+            raise RuleStorageError("rule history directory must not be a symlink")
+        return history, safe_source, canonical_url
 
     def save_draft(
         self,
@@ -405,18 +435,14 @@ class LocalEventStudioRuleStore:
     ) -> LocalEventStudioRule:
         """Validate and atomically replace the draft for one configured listing."""
 
-        data = (
-            raw.model_dump(mode="python")
-            if isinstance(raw, LocalEventStudioRule)
-            else dict(raw)
-        )
+        data = raw.model_dump(mode="python") if isinstance(raw, LocalEventStudioRule) else dict(raw)
         source_id, listing_url = self._binding(
             data.get("source_id"),
             data.get("listing_url"),
         )
         draft_path, _, _ = self._draft_path(source_id, listing_url)
         previous = self._read_rule(draft_path)
-        now = utc_now()
+        current = utc_now()
 
         data.update(
             {
@@ -425,8 +451,8 @@ class LocalEventStudioRuleStore:
                 "listing_url": listing_url,
                 "version": 0,
                 "status": "draft",
-                "created_at": previous.created_at if previous else now,
-                "updated_at": now,
+                "created_at": previous.created_at if previous else current,
+                "updated_at": current,
                 "published_at": None,
                 "based_on_version": None,
             }
@@ -449,6 +475,8 @@ class LocalEventStudioRuleStore:
         """Delete only the mutable draft; published and history files are untouched."""
 
         path, _, _ = self._draft_path(source_id, listing_url)
+        if path.is_symlink():
+            raise RuleStorageError("refusing to delete a symlink draft")
         try:
             path.unlink()
         except FileNotFoundError:
@@ -486,10 +514,7 @@ class LocalEventStudioRuleStore:
         return output
 
     def _next_version(self, source_id: str, listing_url: str) -> int:
-        versions = [
-            rule.version
-            for rule in self.list_history(source_id, listing_url)
-        ]
+        versions = [rule.version for rule in self.list_history(source_id, listing_url)]
         published = self.load_published(source_id, listing_url)
         if published is not None:
             versions.append(published.version)
@@ -503,7 +528,7 @@ class LocalEventStudioRuleStore:
         listing_url: str,
         based_on_version: int | None = None,
     ) -> LocalEventStudioRule:
-        now = utc_now()
+        current = utc_now()
         version = self._next_version(source_id, listing_url)
         data.update(
             {
@@ -512,12 +537,12 @@ class LocalEventStudioRuleStore:
                 "listing_url": listing_url,
                 "version": version,
                 "status": "published",
-                "updated_at": now,
-                "published_at": now,
+                "updated_at": current,
+                "published_at": current,
                 "based_on_version": based_on_version,
             }
         )
-        data.setdefault("created_at", now)
+        data.setdefault("created_at", current)
         published = LocalEventStudioRule.model_validate(data)
 
         history_dir, _, _ = self._history_dir(source_id, listing_url)
