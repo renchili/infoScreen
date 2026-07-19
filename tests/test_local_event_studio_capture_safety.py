@@ -62,6 +62,13 @@ def test_capture_script_saves_every_attribute_used_by_generated_or_image_rules()
     assert "el.hasAttribute(\"data-lazy-src\")" in DOM_EVIDENCE_JS
 
 
+def test_capture_script_includes_ancestors_and_records_only_direct_parent_ids() -> None:
+    assert "const selectedSet = new Set()" in DOM_EVIDENCE_JS
+    assert "lineage.unshift(current)" in DOM_EVIDENCE_JS
+    assert 'el.parentElement.hasAttribute("data-infoscreen-studio-id")' in DOM_EVIDENCE_JS
+    assert 'el.parentElement.closest("[data-infoscreen-studio-id]")' not in DOM_EVIDENCE_JS
+
+
 def test_snapshot_write_rejects_symlink_source_directory(tmp_path: Path) -> None:
     root = tmp_path / "studio"
     snapshots = root / "snapshots"
@@ -88,6 +95,21 @@ def test_snapshot_asset_rejects_symlinked_source_or_asset(tmp_path: Path) -> Non
     asset = target / "page.png"
     try:
         asset.symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    assert snapshot_asset_path(SOURCE_ID, SNAPSHOT_ID, "page.png", root=root) is None
+
+
+def test_snapshot_asset_rejects_symlinked_snapshot_root(tmp_path: Path) -> None:
+    root = tmp_path / "studio"
+    root.mkdir()
+    outside = tmp_path / "outside-snapshots"
+    asset = outside / SOURCE_ID / SNAPSHOT_ID / "page.png"
+    asset.parent.mkdir(parents=True)
+    asset.write_bytes(PNG)
+    try:
+        (root / "snapshots").symlink_to(outside, target_is_directory=True)
     except OSError as exc:
         pytest.skip(f"symlinks unavailable: {exc}")
 
