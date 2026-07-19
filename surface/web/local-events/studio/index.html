@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>InfoScreen · Local Event Studio</title>
+  <title>InfoScreen · Local Event Review</title>
   <link rel="stylesheet" href="/assets/css/local_event_studio.css" />
 </head>
 <body>
   <header class="topbar">
     <div>
-      <div class="brand">INFOSCREEN / LOCAL EVENT STUDIO</div>
-      <div class="subtitle">Operate the real official website in a real Chromium window. No iframe and no screenshot clicking.</div>
+      <div class="brand">INFOSCREEN / LOCAL EVENT REVIEW</div>
+      <div class="subtitle">Review system-collected pages and events. Separately browse a real listing page and point out activity locations.</div>
     </div>
     <a class="button secondary" href="/">DASHBOARD</a>
   </header>
@@ -18,66 +18,70 @@
   <main class="shell">
     <section class="panel">
       <div class="heading">
-        <h1>1 · CHOOSE OFFICIAL LISTING</h1>
+        <div>
+          <div class="eyebrow">ABILITY 1</div>
+          <h1>System collection and user review</h1>
+        </div>
         <span id="global-status" class="status">LOADING</span>
       </div>
-      <div class="grid">
-        <label><span>Official source</span><select id="source-select"></select></label>
-        <label><span>Configured listing</span><select id="listing-select"></select></label>
-        <button id="open-browser" class="button primary" type="button">OPEN REAL BROWSER</button>
-        <button id="reload-state" class="button secondary" type="button">RELOAD STATE</button>
+
+      <div class="toolbar">
+        <button id="collect-listings" class="button primary" type="button">COLLECT LIST PAGES</button>
+        <button id="collect-events" class="button warning" type="button">COLLECT EVENTS FROM CONFIRMED PAGES</button>
+        <button id="reload-state" class="button secondary" type="button">RELOAD</button>
       </div>
-      <div id="browser-message" class="message">
-        The browser opens on the Surface desktop. Use its InfoScreen toolbar while browsing the official site normally.
+
+      <div class="split">
+        <section>
+          <div class="section-title">
+            <h2>Event list pages</h2>
+            <span id="listing-count" class="counter">0</span>
+          </div>
+          <p class="hint">Confirm or reject each page before event collection.</p>
+          <div id="listing-pages" class="cards"></div>
+        </section>
+
+        <section>
+          <div class="section-title">
+            <h2>Collected event candidates</h2>
+            <span id="event-count" class="counter">0</span>
+          </div>
+          <p class="hint">Every candidate shows its source element, match index, and document position.</p>
+          <div id="event-candidates" class="cards"></div>
+        </section>
       </div>
     </section>
 
     <section class="panel">
-      <div class="heading"><h2>2 · WORK IN THE REAL WEBSITE</h2><span class="status">BROWSER TOOLBAR</span></div>
-      <div class="instructions">
-        <p><strong>Prepare the page normally.</strong> Scroll, accept required cookies, choose filters, expand sections, paginate, and open detail pages in the real website.</p>
-        <p>Actions that production must repeat are recorded explicitly: <code>RECORD CLICK</code>, <code>REPEAT CLICK</code>, <code>RECORD SELECT</code>, <code>RECORD SCROLL BOTTOM</code>, or <code>RECORD WAIT</code>. Mark cookie or one-time actions as optional.</p>
-        <p>On the listing page select <code>LIST CARD</code> and <code>DETAIL LINK</code>. On detail pages select <code>TITLE</code>, <code>WHEN</code>, and <code>WHERE</code>. Optional fields are <code>SUMMARY</code> and <code>IMAGE</code>.</p>
-        <p>Return to the configured listing and press <code>SAVE CURRENT LISTING STATE</code>. Studio opens and checks multiple real detail pages before allowing publication.</p>
+      <div class="heading">
+        <div>
+          <div class="eyebrow">ABILITY 2 · INDEPENDENT</div>
+          <h2>Browse a listing page and point out where an activity exists</h2>
+        </div>
+        <span id="feedback-status" class="status">READY</span>
       </div>
-    </section>
 
-    <section class="panel">
-      <div class="heading"><h2>3 · CURRENT RULE</h2><span id="rule-status" class="status">NO DRAFT</span></div>
-      <div class="rule-grid">
-        <div><span>Card</span><code id="card-selector">—</code></div>
-        <div><span>Detail link</span><code id="url-selector">—</code></div>
-        <div><span>Listing fields</span><pre id="listing-fields">—</pre></div>
-        <div><span>Detail fields</span><pre id="detail-fields">—</pre></div>
-        <div><span>Listing actions</span><pre id="listing-actions">—</pre></div>
-        <div><span>Detail actions</span><pre id="detail-actions">—</pre></div>
+      <div class="feedback-controls">
+        <label>
+          <span>Institution</span>
+          <select id="feedback-source"></select>
+        </label>
+        <label>
+          <span>Listing page</span>
+          <select id="feedback-listing"></select>
+        </label>
+        <button id="open-feedback-browser" class="button primary" type="button">OPEN REAL LISTING PAGE</button>
       </div>
-    </section>
 
-    <section class="panel">
-      <div class="heading"><h2>4 · LIVE VALIDATION</h2><span id="test-status" class="status">NOT VALIDATED</span></div>
-      <div class="metrics">
-        <div><span>MATCHED CARDS</span><strong id="matched">—</strong></div>
-        <div><span>CONFIRMED DETAILS</span><strong id="accepted">—</strong></div>
-        <div><span>REJECTED</span><strong id="rejected">—</strong></div>
-        <div><span>PUBLISHABLE</span><strong id="publishable">—</strong></div>
+      <div id="feedback-message" class="message">
+        The new Chromium window remains fully interactive. Use POINT TO EVENT only when submitting a location.
       </div>
-      <div id="test-message" class="message">Use SAVE CURRENT LISTING STATE in the live browser after mappings are complete.</div>
-      <div class="columns">
-        <section><h3>CONFIRMED EVENTS</h3><div id="accepted-list"></div></section>
-        <section><h3>REJECTED SAMPLES</h3><div id="rejected-list"></div></section>
-      </div>
-      <button id="publish" class="button warning" type="button" disabled>PUBLISH VALIDATED RULE</button>
-    </section>
 
-    <section class="panel">
-      <div class="heading"><h2>5 · RUN LOCAL EVENTS</h2><span id="run-status" class="status">NOT RUN</span></div>
-      <div class="grid run-grid">
-        <label><span>Location</span><input id="location" type="text" value="Punggol Singapore" /></label>
-        <button id="run" class="button warning" type="button">RUN LOCAL EVENTS NOW</button>
+      <div class="section-title">
+        <h3>Submitted positions</h3>
+        <span id="feedback-count" class="counter">0</span>
       </div>
-      <div id="run-message" class="message">Run after publishing. Results below come from the existing Local Events producer.</div>
-      <div id="results" class="results"></div>
+      <div id="feedback-list" class="cards feedback-list"></div>
     </section>
   </main>
 
