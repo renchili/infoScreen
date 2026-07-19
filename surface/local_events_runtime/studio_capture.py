@@ -94,14 +94,30 @@ DOM_EVIDENCE_JS = r"""
     );
   });
 
-  const selected = candidates.slice(0, maxElements);
+  const selectedSet = new Set();
+  for (const candidate of candidates) {
+    const lineage = [];
+    let current = candidate;
+    while (current && current !== document.body) {
+      lineage.unshift(current);
+      current = current.parentElement;
+    }
+    for (const element of lineage) {
+      if (!selectedSet.has(element) && selectedSet.size >= maxElements) break;
+      selectedSet.add(element);
+    }
+    if (selectedSet.size >= maxElements) break;
+  }
+  const selected = all.filter((el) => selectedSet.has(el)).slice(0, maxElements);
   selected.forEach((el, index) => {
     el.setAttribute("data-infoscreen-studio-id", `e${String(index + 1).padStart(5, "0")}`);
   });
 
   const elements = selected.map((el) => {
     const rect = el.getBoundingClientRect();
-    const parent = el.parentElement && el.parentElement.closest("[data-infoscreen-studio-id]");
+    const parent = el.parentElement && el.parentElement.hasAttribute("data-infoscreen-studio-id")
+      ? el.parentElement
+      : null;
     const attributes = {};
     for (const name of [
       "id", "class", "role", "aria-label", "title", "href", "src", "datetime",
@@ -419,7 +435,10 @@ def snapshot_asset_path(
     if asset not in SNAPSHOT_ASSETS:
         return None
     studio_root = Path(root).expanduser().resolve()
-    snapshots_root = (studio_root / "snapshots").resolve()
+    lexical_snapshots_root = studio_root / "snapshots"
+    if lexical_snapshots_root.is_symlink():
+        return None
+    snapshots_root = lexical_snapshots_root.resolve()
     target = snapshots_root / source_id / snapshot_id / asset
     current = snapshots_root
     for part in (source_id, snapshot_id, asset):
