@@ -6,7 +6,6 @@
     payload: null,
     feedbackSourceId: "",
     feedbackListingUrl: "",
-    timer: null,
     busy: false,
   };
 
@@ -41,18 +40,18 @@
     while (node.firstChild) node.firstChild.remove();
   }
 
-  function empty(node, message) {
+  function showEmpty(node, message) {
     clear(node);
-    const value = document.createElement("div");
-    value.className = "empty";
-    value.textContent = message;
-    node.appendChild(value);
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = message;
+    node.appendChild(empty);
   }
 
-  function badge(decision) {
+  function badge(value) {
     const node = document.createElement("span");
-    node.className = `badge ${decision || "pending"}`;
-    node.textContent = decision || "pending";
+    node.className = `badge ${value || "pending"}`;
+    node.textContent = value || "pending";
     return node;
   }
 
@@ -74,19 +73,24 @@
     return button;
   }
 
-  function metaRow(label, value, code = false) {
+  function metaRow(label, value, useCode = false) {
     const row = document.createElement("div");
     const strong = document.createElement("strong");
     strong.textContent = `${label}: `;
     row.appendChild(strong);
-    if (code) {
-      const node = document.createElement("code");
-      node.textContent = text(value);
-      row.appendChild(node);
+    if (useCode) {
+      const code = document.createElement("code");
+      code.textContent = text(value);
+      row.appendChild(code);
     } else {
       row.appendChild(document.createTextNode(text(value)));
     }
     return row;
+  }
+
+  function positionText(position) {
+    const value = position || {};
+    return `x=${value.x ?? 0}, y=${value.y ?? 0}, w=${value.width ?? 0}, h=${value.height ?? 0}`;
   }
 
   async function setListingDecision(candidateId, decision) {
@@ -111,7 +115,7 @@
     clear(ui.listingPages);
     ui.listingCount.textContent = String(rows.length);
     if (!rows.length) {
-      empty(ui.listingPages, "No list pages collected yet.");
+      showEmpty(ui.listingPages, "No list pages collected yet.");
       return;
     }
 
@@ -152,16 +156,14 @@
     });
   }
 
-  function positionText(position) {
-    const value = position || {};
-    return `x=${value.x ?? 0}, y=${value.y ?? 0}, w=${value.width ?? 0}, h=${value.height ?? 0}`;
-  }
-
   function renderEventCandidates(rows) {
     clear(ui.eventCandidates);
     ui.eventCount.textContent = String(rows.length);
     if (!rows.length) {
-      empty(ui.eventCandidates, "No Event candidates collected from confirmed pages yet.");
+      showEmpty(
+        ui.eventCandidates,
+        "No Event candidates collected from confirmed pages yet.",
+      );
       return;
     }
 
@@ -173,13 +175,19 @@
       const head = document.createElement("div");
       head.className = "card-head";
       const heading = document.createElement("h3");
-      heading.appendChild(externalLink(row.detail_url, text(row.title, "Untitled candidate")));
+      heading.appendChild(
+        externalLink(row.detail_url, text(row.title, "Untitled candidate")),
+      );
       head.append(heading, badge(row.decision));
 
       const meta = document.createElement("div");
       meta.className = "meta";
       meta.append(
         metaRow("Institution", row.source_name || row.source_id),
+        metaRow("Detail status", row.detail_status),
+        metaRow("When", row.when),
+        metaRow("Where", row.where),
+        metaRow("Detail page title", row.detail_page_title),
         metaRow("Listing page", row.listing_url, true),
         metaRow("Source element", evidence.selector, true),
         metaRow(
@@ -187,16 +195,19 @@
           `${Number(evidence.selector_index ?? 0) + 1} of ${evidence.selector_match_count ?? 1}`,
         ),
         metaRow("Document position", positionText(evidence.document_position)),
-        metaRow("Page index", evidence.page_index ?? 0),
+        metaRow("Listing page index", evidence.page_index ?? 0),
       );
+      if (row.detail_error) {
+        meta.appendChild(metaRow("Detail issue", row.detail_error));
+      }
 
-      if (evidence.text) {
+      article.append(head, meta);
+      const visibleText = row.summary || evidence.text;
+      if (visibleText) {
         const snippet = document.createElement("div");
         snippet.className = "snippet";
-        snippet.textContent = evidence.text;
-        article.append(head, meta, snippet);
-      } else {
-        article.append(head, meta);
+        snippet.textContent = visibleText;
+        article.appendChild(snippet);
       }
 
       const actions = document.createElement("div");
@@ -221,7 +232,7 @@
     clear(ui.feedbackList);
     ui.feedbackCount.textContent = String(rows.length);
     if (!rows.length) {
-      empty(ui.feedbackList, "No user-submitted Event positions yet.");
+      showEmpty(ui.feedbackList, "No user-submitted Event positions yet.");
       return;
     }
 
@@ -256,15 +267,29 @@
     });
   }
 
-  function listingRowsForSource(sourceId) {
-    const rows = state.payload?.listing_pages || [];
-    return rows.filter((row) => row.source_id === sourceId);
+  function sourceForFeedback(sourceId) {
+    return (state.payload?.sources || []).find(
+      (source) => source.source_id === sourceId,
+    );
+  }
+
+  function feedbackListings(sourceId) {
+    const source = sourceForFeedback(sourceId);
+    const rows = new Map();
+    (source?.listing_urls || []).forEach((url) => {
+      rows.set(url, { url, decision: "configured" });
+    });
+    (state.payload?.listing_pages || [])
+      .filter((row) => row.source_id === sourceId)
+      .forEach((row) => rows.set(row.url, row));
+    return [...rows.values()].sort((left, right) =>
+      left.url.localeCompare(right.url),
+    );
   }
 
   function populateFeedbackSources() {
-    const sources = state.payload?.sources || [];
-    const available = sources.filter(
-      (source) => listingRowsForSource(source.source_id).length > 0,
+    const available = (state.payload?.sources || []).filter(
+      (source) => feedbackListings(source.source_id).length > 0,
     );
     clear(ui.feedbackSource);
     available.forEach((source) => {
@@ -273,6 +298,7 @@
       option.textContent = source.source_name || source.source_id;
       ui.feedbackSource.appendChild(option);
     });
+
     if (!available.length) {
       state.feedbackSourceId = "";
       state.feedbackListingUrl = "";
@@ -288,12 +314,12 @@
   }
 
   function populateFeedbackListings() {
-    const rows = listingRowsForSource(state.feedbackSourceId);
+    const rows = feedbackListings(state.feedbackSourceId);
     clear(ui.feedbackListing);
     rows.forEach((row) => {
       const option = document.createElement("option");
       option.value = row.url;
-      option.textContent = `${row.url} [${row.decision}]`;
+      option.textContent = `${row.url} [${row.decision || "configured"}]`;
       ui.feedbackListing.appendChild(option);
     });
     if (!rows.length) {
@@ -319,8 +345,7 @@
 
   async function loadState() {
     try {
-      const payload = await request("/api/local-events/review/state");
-      render(payload);
+      render(await request("/api/local-events/review/state"));
     } catch (error) {
       setStatus(ui.globalStatus, error.message, "error");
     }
@@ -332,8 +357,7 @@
     button.disabled = true;
     setStatus(ui.globalStatus, statusText, "warn");
     try {
-      const payload = await request(path, { method: "POST", body: "{}" });
-      render(payload);
+      render(await request(path, { method: "POST", body: "{}" }));
     } catch (error) {
       setStatus(ui.globalStatus, error.message, "error");
     } finally {
@@ -346,7 +370,8 @@
     if (!state.feedbackSourceId || !state.feedbackListingUrl) return;
     ui.openFeedback.disabled = true;
     setStatus(ui.feedbackStatus, "OPENING CHROMIUM", "warn");
-    ui.feedbackMessage.textContent = "Opening the real listing page on the Surface desktop...";
+    ui.feedbackMessage.textContent =
+      "Opening the real listing page on the Surface desktop...";
     try {
       await request("/api/local-events/review/open-feedback", {
         method: "POST",
@@ -357,7 +382,7 @@
       });
       setStatus(ui.feedbackStatus, "BROWSER OPEN", "ok");
       ui.feedbackMessage.textContent =
-        "Browse normally. When needed, click POINT TO EVENT in the browser toolbar, choose the element, then submit.";
+        "Browse normally. Use POINT TO EVENT only when submitting an activity location.";
     } catch (error) {
       setStatus(ui.feedbackStatus, "FAILED", "error");
       ui.feedbackMessage.textContent = error.message;
@@ -395,7 +420,7 @@
     ui.collectEvents.addEventListener("click", () =>
       runCollection(
         ui.collectEvents,
-        "COLLECTING EVENTS FROM CONFIRMED PAGES",
+        "COLLECTING EVENTS AND DETAIL PAGES",
         "/api/local-events/review/collect-events",
       ),
     );
@@ -411,7 +436,7 @@
     ui.openFeedback.addEventListener("click", openFeedbackBrowser);
 
     loadState();
-    state.timer = window.setInterval(loadState, 3000);
+    window.setInterval(loadState, 3000);
   }
 
   document.addEventListener("DOMContentLoaded", initialize);
