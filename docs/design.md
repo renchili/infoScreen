@@ -1,6 +1,6 @@
 # InfoScreen system architecture
 
-This document explains what the system is, how components are separated, where every product data stream comes from, and why the implementation has source-specific behavior. It deliberately does not repeat deployment or recovery commands; those belong in `README.md`.
+This document explains what the system is, how components are separated, where each product data stream comes from, and why Local Events uses source-specific behavior. Deployment and recovery commands belong in `README.md`; HTTP methods and payloads belong in `docs/api-spec.md`.
 
 ## 1. Product shape
 
@@ -9,13 +9,13 @@ InfoScreen is an always-on, local-first information screen. Its design prioritie
 - readable from a distance;
 - compact but stable layout;
 - predictable long-running behavior;
-- local ownership of personal data;
+- local ownership of personal data and operator configuration;
 - visible freshness and failure state;
 - no cloud account requirement for local preferences;
 - one renderer for each visible UI mount;
 - explicit producer, runtime, API, and consumer ownership for every data stream.
 
-The frontend is plain HTML, CSS, and JavaScript. The backend is a Python standard-library HTTP server plus short-lived producer jobs. Runtime persistence is local JSON rather than a database.
+The frontend is plain HTML, CSS, and JavaScript. The backend is a Python standard-library HTTP server plus short-lived producer jobs. Runtime persistence is local JSON and local files rather than a database.
 
 ## 2. Deployment topology
 
@@ -30,43 +30,42 @@ Mac
             v
 Surface or Ubuntu device
   systemd --user services and timers
-  producer jobs
-  surface/.env/*.json
+  short-lived producer jobs
+  surface/.env/*
   surface/serve_infoscreen.py
-  HTTP on 127.0.0.1:8765
+  HTTP on port 8765
             |
-            v
-Browser kiosk
-  surface/web/index.html
-  surface/web/assets/css/*
-  surface/web/assets/js/*
+            +-> kiosk page /
+            +-> Local Event Studio /local-events/studio/
+            +-> runtime JSON and local APIs
 ```
 
-The Surface is the runtime host for HTTP, Market, Weather, News, Local Events, Photos, and the kiosk page. The Mac is the authoritative Calendar host because Calendar accounts and EventKit permissions exist there.
+The Surface is the runtime host for HTTP, Market, Weather, News, Local Events, Photos, the kiosk page, and Local Event Studio. The Mac remains the authoritative Calendar host because Calendar accounts and EventKit permissions exist there.
+
+Local Event Studio does not add another server, port, daemon, database, or systemd service. It is static frontend content and bounded local APIs owned by the existing HTTP process.
 
 ## 3. Runtime component boundaries
 
 | Component | Lifecycle | Responsibility | Must not do |
 | --- | --- | --- | --- |
-| `surface/serve_infoscreen.py` | Long-running `infoscreen-http.service` | Serve the dashboard, runtime JSON, public photos, OpenAPI, and local mutation/refresh endpoints | Scrape external data, generate schedule data, or rewrite frontend files |
+| `surface/serve_infoscreen.py` | Long-running `infoscreen-http.service` | Serve the kiosk, Studio page, runtime JSON, public photos, OpenAPI, and bounded local mutation/refresh APIs | Perform ordinary external collection during GET requests, generate Calendar data, or create arbitrary crawler targets |
 | `surface/fetch_live_data.py` | One-shot job | Fetch Weather and Market, apply provider fallback, write two runtime files | Render UI or own scheduling |
-| `surface/fetch_event_stream.py` | One-shot job | Fetch RSS sources, build aligned EN/FR/ZH rows, write `event_stream.json` | Render ticker rows |
+| `surface/fetch_event_stream.py` | One-shot job | Fetch News sources, build aligned EN/FR/ZH rows, write `event_stream.json` | Render ticker rows |
 | `surface/search_local_events.py` | Compatibility wrapper | Preserve the command path used by systemd and HTTP | Contain the full collector implementation |
-| `surface/jobs/local_event_search.py` | One-shot job | Configure crawl budgets, run the source-specific collector, normalize output, and protect verified results from partial replacement | Apply frontend truncation or preserve legacy rows without current candidate evidence |
-| `surface/local_events_runtime/*` | Library | Render official activity lists, establish listing-card membership, enrich admitted cards, normalize fields, preserve source order, and record rejection/debug reasons | Write UI markup or admit arbitrary page-wide structured objects |
+| `surface/jobs/local_event_search.py` | One-shot job | Configure crawl budgets, run the existing collector, apply published Studio rules per source/listing, normalize output, aggregate source completion, and protect the primary result from smaller partial runs | Apply frontend hiding, globally activate draft rules, or preserve rows rejected by the active output contract |
+| `surface/jobs/local_event_studio_capture.py` | One-shot job | Capture one configured official listing for Studio | Run as a new service or accept arbitrary source URLs |
+| `surface/local_events_runtime/*` | Library | Render official lists, establish list-card membership, enrich admitted cards, evaluate Studio rules, preserve evidence, and normalize fields | Render UI markup or admit arbitrary page-wide structured objects |
 | `surface/build_photos_json.py` | One-shot manual job | Normalize/copy local photos and build the manifest | Scan photos from the browser |
-| `mac/export.py` and `mac/sync_schedule.sh` | Mac LaunchAgent job | Export EventKit data and push `schedule.json` | Run on the Surface |
-| Browser scripts | Long-running page session | Fetch runtime/API data, render owned mounts, handle local controls and visual rotation | Produce authoritative external data or repair backend data quality |
+| `mac/export.py`, `mac/sync_schedule.sh` | Mac LaunchAgent job | Export EventKit data and push `schedule.json` | Run on the Surface |
+| Browser scripts | Long-running page session | Fetch local data, render owned mounts, handle local controls and visual rotation | Produce authoritative external data or repair backend data quality |
 
-Runtime state belongs under `surface/.env/`. It is device state or personal data and is not source code.
+Runtime state belongs under `${INFOSCREEN_ENV_DIR:-surface/.env}`. It is device state or personal data and is not repository source code.
 
-## 4. Three refresh layers
+## 4. Refresh layers
 
-The implementation has three independent timing layers. Documentation and troubleshooting must not collapse them into one generic “refresh” concept.
+The implementation has three independent timing layers.
 
 ### 4.1 Producer refresh
-
-A producer refresh fetches or generates data and writes runtime JSON.
 
 | Data | Scheduler | Frequency | Runtime output |
 | --- | --- | --- | --- |
@@ -76,9 +75,9 @@ A producer refresh fetches or generates data and writes runtime JSON.
 | Calendar | Mac LaunchAgent | 120 seconds by default | `schedule.json` pushed to the Surface |
 | Photos | Manual builder | No supported timer | `photos.json`, `public_photos/` |
 
-### 4.2 Browser data reload
+A Studio snapshot capture is an explicit operator action. Publishing a rule changes which source/listing implementation the next Local Events producer run uses; publishing does not itself run the producer.
 
-A browser reload re-reads existing runtime data. It does not invoke the producer unless the UI calls a POST refresh endpoint.
+### 4.2 Browser data reload
 
 | UI data | Browser read behavior |
 | --- | --- |
@@ -87,12 +86,11 @@ A browser reload re-reads existing runtime data. It does not invoke the producer
 | News | Page load and every 5 minutes |
 | Sync status | `HEAD` on page load and every 60 seconds |
 | Local Events | Page load and immediately after POST location search; no periodic GET |
-| Calendar | Page load only; no periodic GET |
+| Calendar | Page load only |
 | Photos | Page load and every 5 minutes |
+| Studio state | Page load, source/listing changes, capture completion, and explicit reload/test/publish actions |
 
 ### 4.3 Visual rotation
-
-Visual rotation changes which already-loaded item is shown.
 
 | UI | Rotation behavior |
 | --- | --- |
@@ -101,33 +99,32 @@ Visual rotation changes which already-loaded item is shown.
 | Photo wall | 9 seconds per image |
 | News and Market tapes | Continuous animation over already-rendered DOM |
 
-This separation explains why a producer can update a file while a Local Event or Calendar panel still displays the previously loaded in-memory list until the page reloads.
+Visual rotation does not fetch or produce new data.
 
-## 5. UI ownership, interaction, and data source map
+## 5. UI ownership and data source map
 
 Every visible mount has one renderer owner.
 
-| Product area | Browser owner | User interaction | Runtime/API | Producer and data source |
+| Product area | Browser owner | Interaction | Runtime/API | Producer or source |
 | --- | --- | --- | --- | --- |
-| Clock, date, refresh time, page uptime | `dashboard.js` | None | No runtime file | Browser clock; uptime is page-session duration |
-| Market card and global tape | `dashboard.js` | Read-only quotes | `/market.json` | `fetch_live_data.py`; Nasdaq → CNBC → Stooq → Yahoo → previous cache |
-| Market configuration panel | `market_custom.js` | Gear, symbol input, `SAVE`, `REFRESH` | `GET/POST /api/market-config`, `POST /api/market-refresh` | User symbols in `market_config.json`; refresh invokes `fetch_live_data.py` |
-| Weather | `dashboard.js` | None | `/weather.json` | `fetch_live_data.py`; Open-Meteo, Singapore coordinates |
-| Local Event card | `local_event_card.js` | Previous, next, location search, official link | `GET/POST /api/local-events/search` | Source-specific official collector configured by `event_sources.json` |
-| Sync ticker | `local_event_card.js` | None | `HEAD` on four runtime paths | Observes file `Last-Modified`; does not produce data |
-| EN/FR/ZH News | `local_event_card.js` | Continuous ticker only | `/event_stream.json` | `fetch_event_stream.py`; RSS sources plus translation |
-| Photo wall | `local_event_card.js` | None | `/photos.json`, `/public_photos/*` | User files processed by `build_photos_json.py` |
-| Calendar board | `calendar_board.js` | None | `/schedule.json` | Mac EventKit export and SCP push |
-| CPU/MEM/DSK/NET bars | `dashboard.js` | None | No runtime file | Browser `Math.random()` demo values |
+| Clock, date, refresh time, page uptime | `dashboard.js` | None | No runtime file | Browser clock |
+| Market card and tape | `dashboard.js` | Read-only quotes | `/market.json` | `fetch_live_data.py` |
+| Market configuration | `market_custom.js` | Gear, `SAVE`, `REFRESH` | `/api/market-config`, `/api/market-refresh` | Runtime symbol config and live-data producer |
+| Weather | `dashboard.js` | None | `/weather.json` | Open-Meteo through `fetch_live_data.py` |
+| Local Event card | `local_event_card.js` | Previous, next, location search, official link | `/api/local-events/search` | Existing collector plus published Studio routing |
+| Local Event Studio | `local_event_studio.js`, `local_event_studio_test.js` | Capture, annotate, draft, test, publish, export/import, rollback | `/api/local-events/studio/*` | Configured official listings and machine-local Studio state |
+| Sync ticker | `local_event_card.js` | None | `HEAD` on four runtime paths | Observes file metadata only |
+| EN/FR/ZH News | `local_event_card.js` | Continuous ticker | `/event_stream.json` | `fetch_event_stream.py` |
+| Photo wall | `local_event_card.js` | None | `/photos.json`, `/public_photos/*` | Photo builder |
+| Calendar board | `calendar_board.js` | None | `/schedule.json` | Mac EventKit export and push |
+| CPU/MEM/DSK/NET bars | `dashboard.js` | None | No runtime file | Browser demo values |
 | POWER/DISPLAY/NETWORK labels | Static HTML | None | No runtime file | Static text |
 
-`market_custom.js` does not render quotes. `local_event_card.js` does not render Market. `dashboard.js` does not render News or Sync status. This prevents asynchronous scripts from overwriting each other’s final DOM.
+Scripts do not repair or filter another script's owned data.
 
 ## 6. Market and Weather pipeline
 
-### 6.1 Shared producer
-
-`infoscreen-live-data.timer` starts one producer that writes both Weather and Market. A manual Market UI refresh therefore also refreshes Weather.
+`infoscreen-live-data.timer` starts one producer that writes both Weather and Market.
 
 ```text
 infoscreen-live-data.timer
@@ -137,39 +134,15 @@ infoscreen-live-data.timer
      -> surface/.env/market.json
 ```
 
-### 6.2 Market providers and fallback
+For each symbol the producer attempts Nasdaq stock/ETF data, CNBC, Stooq, Yahoo, then a previous usable runtime row. A retained row is marked `provider: stale-cache` and `session: STALE`. No live or cached value emits `price: N/A`, `provider: none`, and `session: ERR`.
 
-For each configured symbol, the producer tries:
-
-1. Nasdaq stock and ETF endpoints;
-2. CNBC quote service;
-3. Stooq daily CSV;
-4. Yahoo chart data;
-5. the previous usable item from `market.json`.
-
-A retained previous item is marked `provider: stale-cache` and `session: STALE`. A symbol with no live provider and no previous value is emitted with `price: N/A`, `provider: none`, and `session: ERR` so the failure remains visible.
-
-Market symbols are runtime configuration. The default file is `surface/conf/market_config.default.json`; the active file is `surface/.env/market_config.json`; the API accepts up to 12 unique normalized symbols.
-
-### 6.3 Weather source
-
-Weather uses Open-Meteo with Singapore coordinates, timezone `Asia/Singapore`, and current temperature, apparent temperature, humidity, and weather code. The current location is code configuration in `fetch_live_data.py`, not a browser preference.
+Market symbols are authoritative in `surface/.env/market_config.json`; committed defaults remain in `surface/conf/market_config.default.json`. Weather uses Open-Meteo with Singapore coordinates and timezone `Asia/Singapore`.
 
 ## 7. Multilingual News pipeline
 
-`surface/fetch_event_stream.py` reads a fixed source list:
+`surface/fetch_event_stream.py` reads a fixed set of Singapore-oriented and international RSS sources, selects base stories, and builds complete English, French, and Chinese representations. A row is skipped when any required language cannot be validated, preserving semantic alignment among the three visible ticker rows.
 
-- Google News Singapore English search;
-- CNA;
-- Google News Singapore French search;
-- France24;
-- RFI;
-- Google News Singapore Chinese searches;
-- BBC Chinese.
-
-The producer deduplicates exact titles, randomly selects up to eight base items, and builds a complete EN/FR/ZH triple for each selected item. Google Translate is used when the base item is not already in the target language. A triple is skipped when any target translation fails validation, preserving row alignment across all three tickers.
-
-The runtime contract is:
+The runtime contract includes:
 
 ```text
 event_stream.json
@@ -181,99 +154,56 @@ event_stream.json
   selection
 ```
 
-The UI row labels remain `EN`, `FR`, and `中文`; internal `TR-*` source labels are metadata, not row ownership labels.
+Ticker movement is separate from producer freshness.
 
 ## 8. Source-specific Local Events architecture
 
 ### 8.1 Product requirement
 
-Local Events was developed to show verifiable nearby activity options with source, title, date/time, venue, description, and an official link. It was not designed as a general web search or a recursive site crawler.
+Local Events shows verifiable activity options with source, title, date/time, venue, description, and an official link. It is not a general web-search scraper or recursive site crawler.
 
-The source set is intentionally curated because the official sites differ materially:
+Official sites differ in JavaScript rendering, list expansion, pagination, detail fields, structured data, and source-specific date/venue layouts. One generic selector or one global blacklist cannot reliably cover them.
 
-- some render cards only after JavaScript;
-- some lists require deep scrolling or explicit load-more controls;
-- some expose structured JSON that can improve a listed card;
-- some require detail-page reads for better fields;
-- some place unrelated dated objects in page-wide JSON or adjacent navigation;
-- some need source-specific date or venue repair.
+### 8.2 Source inventory
 
-A single generic selector cannot produce reliable results across these sites, so the collector uses a shared listing-authority pipeline plus per-source configuration and targeted field repair.
+The authoritative inventory is:
 
-### 8.2 Source inventory and adapter choices
+```text
+surface/conf/event_sources.json
+```
 
-The authoritative inventory is `surface/conf/event_sources.json`. Version 6 currently contains 18 organisations.
+It defines each source ID, display name, official home, allowed domains, configured activity-list URLs, default venue, adapter hint, and display order. Studio may operate only on these committed source/listing pairs.
 
-| Source | Adapter | Official listing coverage |
-| --- | --- | --- |
-| Children's Museum Singapore | `nhb` | Heritage/Children’s Museum activity and season listing pages |
-| National Gallery Singapore | `rendered_dom_card` | What’s On listing and exhibition-filtered listing |
-| National Museum Singapore | `nhb` | Today/upcoming overview, exhibitions, view-all |
-| Asian Civilisations Museum | `nhb` | Exhibitions, lectures, programmes, guided tours |
-| Peranakan Museum | `nhb` | Programmes listing |
-| ArtScience Museum | `rendered_dom_card` | Museum What’s On pages |
-| Science Centre Singapore | `rendered_dom_card` | Workshops, exhibitions, shows, and What’s On listings |
-| National Library Board | `nhb` | NLB What’s On and LibCal calendar |
-| onePA / People’s Association | `nhb` | onePA events |
-| SAFRA | `rendered_dom_card` | SAFRA What’s On |
-| One Punggol | `rendered_dom_card` | Events and happenings |
-| Waterway Point | `nhb` | Happenings and promotions |
-| Mandai Wildlife Group | `nhb` | Mandai events and attraction pages |
-| Sentosa | `nhb` | Sentosa events |
-| Resorts World Sentosa | `nhb` | RWS events |
-| Gardens by the Bay | `nhb` | Calendar of events |
-| Esplanade | `rendered_dom_card` | What’s On |
-| The Kallang | `rendered_dom_card` | Things to do / events |
+The adapter names `rendered_dom_card` and `nhb` are historical extraction hints. Neither is allowed to produce an activity without a rendered card from a configured official activity list.
 
-The adapter names are historical extraction hints. They may change how the official list is rendered or how card fields are discovered, but neither adapter may admit a row without a rendered official listing card.
-
-### 8.3 Collection pipeline
+### 8.3 Existing collector pipeline
 
 ```text
 source configuration
-  -> open each configured official activity-list URL with Playwright
-  -> deep-scroll and operate list expansion controls until stable
-  -> evaluate rendered DOM card boundaries
-  -> require one canonical official detail URL, a usable date, and a usable title
-  -> mark the card with official listing evidence
-  -> capture XHR/embedded structured data only as supplementary candidates
-  -> match supplementary data to an admitted list card by canonical URL or activity identity
-  -> discard every unmatched structured record
-  -> optionally enrich admitted cards from their own detail pages
-  -> normalize title, date, venue, summary, and official URL
-  -> validate current/future dates
-  -> record listing admission and rejection evidence by source
+  -> render each configured official activity list with Playwright
+  -> expand and paginate within configured budgets
+  -> isolate rendered card boundaries
+  -> require one official detail URL, usable date, and usable title
+  -> use XHR/embedded structured data only as supplementary candidates
+  -> match supplementary data to an admitted card
+  -> discard unmatched structured records
+  -> optionally enrich the admitted card from its own detail page
+  -> normalize and validate fields
   -> preserve configured source order
-  -> normalize text
-  -> write runtime JSON
+  -> record per-source admission, rejection, and failure evidence
 ```
 
-The policy forbids recursive site crawling, sitemap-first collection, third-party aggregators as the primary source, and page-wide structured objects as independent output candidates.
+Positive event intent is membership in the correct configured activity list. A title, date range, explicit `Event` type, or event-looking route is not an independent admission path.
 
-### 8.4 Positive event intent
+### 8.4 Targeted source behavior
 
-Positive event intent is established by membership in the correct configured official activity list. A title, date range, explicit `Event` type, or event-looking route is not enough on its own.
+Targeted behavior remains in backend collection and tests rather than frontend exceptions. Examples include deep-scroll/list expansion, source-specific public URL prefix rewrites, exact detail venue labels, and Gardens by the Bay date/venue repair after list admission.
 
-The rendered list card is the admission record. Structured XHR, embedded JSON, and detail-page JSON can improve the title, dates, venue, summary, or canonical URL only after they match that listed activity. Unmatched structured objects are discarded even when they are explicitly typed as events.
+A source default venue is a controlled fallback, not proof of the actual room or location.
 
-This prevents classes of false positives such as facilities, membership access, operating information, promotions with validity periods, and navigation state without maintaining an endless blacklist of titles or routes. It also avoids rejecting a legitimate listed activity merely because its title contains a word that appeared in a previous bad record.
+### 8.5 Crawl budgets
 
-### 8.5 Targeted source behavior
-
-The current shared pipeline includes targeted behavior developed from observed official-site structure:
-
-- National Gallery and other dynamic lists: deep-scroll and operate load-more controls until the set of visible links stabilizes;
-- all sources: admit only isolated rendered list cards with one canonical official detail URL plus usable date and title evidence;
-- structured sources: use structured data only when it matches an already admitted list card;
-- detail-enriched sources: read only the admitted card’s own canonical detail page, and retain the list card when detail enrichment fails;
-- Gardens by the Bay: preserve its targeted date-range and concise-venue field repair after listing admission;
-- all sources: preserve configured default venues when extracted venue text is missing, narrative, or implausibly long.
-
-These are collector rules rather than frontend exceptions because the API, debug evidence, runtime JSON, and page must all see the same accepted dataset.
-
-### 8.6 Crawl budgets and configuration
-
-`surface/jobs/local_event_search.py` sets deployment defaults through environment variables before importing the collector:
+`surface/jobs/local_event_search.py` sets defaults before importing the collector:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
@@ -281,62 +211,128 @@ These are collector rules rather than frontend exceptions because the API, debug
 | `LOCAL_EVENTS_SOURCE_CONCURRENCY` | 3 | Parallel source workers |
 | `LOCAL_EVENTS_SOURCE_TIMEOUT_SECONDS` | 160 | Per-source budget |
 | `LOCAL_EVENTS_MAX_LISTING_PAGES` | 2 | Listing pagination limit |
-| `LOCAL_EVENTS_LOAD_MORE_ROUNDS` | 24 | Listing expansion attempts before stability stops the loop |
+| `LOCAL_EVENTS_LOAD_MORE_ROUNDS` | 24 | Expansion attempts |
 | `LOCAL_EVENTS_MAX_TOTAL_EVENTS` | 180 | Final collection cap |
 | `LOCAL_EVENTS_NAV_TIMEOUT_MS` | 25000 | Navigation timeout |
 | `LOCAL_EVENTS_DOM_TIMEOUT_MS` | 25000 | DOM timeout |
-| `LOCAL_EVENTS_DETAIL_LIMIT` | 24 | Maximum supplementary detail-page reads per list run |
-| `LOCAL_EVENTS_DETAIL_TIMEOUT_MS` | 16000 | Supplementary detail-page timeout |
-| `LOCAL_EVENTS_NHB_DETAIL_LIMIT` | 18 | Legacy adapter detail limit retained for compatibility |
-| `LOCAL_EVENTS_NHB_DETAIL_TIMEOUT_MS` | 16000 | Legacy adapter detail timeout retained for compatibility |
-| `LOCAL_EVENTS_PAGE_SCREENSHOTS` | 0 | Optional page screenshot evidence |
-| `LOCAL_EVENTS_CARD_SCREENSHOTS` | 0 | Optional card screenshot evidence |
+| `LOCAL_EVENTS_DETAIL_LIMIT` | 24 | Supplementary detail reads |
+| `LOCAL_EVENTS_DETAIL_TIMEOUT_MS` | 16000 | Detail timeout |
+| `LOCAL_EVENTS_NHB_DETAIL_LIMIT` | 18 | Legacy adapter detail limit |
+| `LOCAL_EVENTS_NHB_DETAIL_TIMEOUT_MS` | 16000 | Legacy adapter detail timeout |
+| `LOCAL_EVENTS_PAGE_SCREENSHOTS` | 0 | Optional page evidence |
+| `LOCAL_EVENTS_CARD_SCREENSHOTS` | 0 | Optional card evidence |
 
-The source inventory and adapter choice are configuration. List-card admission and field extraction are code and tests. Changing either requires evidence from the affected official page and a regression test or fixture representing the observed structure.
+### 8.6 Local Event Studio operator plane
 
-### 8.7 Output, partial-run protection, and evidence
-
-The primary runtime file is:
+Studio provides a local workflow for one configured listing at a time:
 
 ```text
-surface/.env/local_event_search_results.json
+capture rendered official list
+-> inspect full-page screenshot with DOM overlay
+-> confirm repeated activity cards
+-> map title / when / where / URL / summary / image
+-> define exclusions and optional detail mappings
+-> save inert draft
+-> test against stored DOM evidence
+-> inspect accepted and rejected rows
+-> publish the exact tested fingerprint
 ```
 
-The payload includes accepted `results`, configured `sources`, and `debug_by_source`. Accepted rows carry `candidate_policy: official-listing-authority-v1`; debug data records listing admission, enrichment, source failures, and rejection reasons.
+The screenshot is a visual aid. Published extraction authority consists of bounded CSS selectors, field attributes, exclusion selectors, and explicit fallback choices. Coordinates are not stored in rules.
 
-Before partial-result comparison, a previous payload is reduced to rows carrying the current verified candidate policy. When a run covers fewer sources than configured and would replace a larger verified result with fewer events, the job keeps the previous verified rows and writes the new incomplete evidence to:
+### 8.7 Studio local storage
+
+All Studio state is under the active runtime root:
 
 ```text
-surface/.env/local_event_search_results.partial.json
+surface/.env/local_event_studio/
+├── snapshots/<source-id>/<snapshot-id>/
+│   ├── page.png
+│   ├── page.html
+│   ├── dom.json
+│   └── metadata.json
+├── rules/<source-id>/<listing-hash>/
+│   ├── draft.json
+│   ├── published.json
+│   └── history/vNNNNNN.json
+├── test-runs/<source-id>/<run-id>.json
+└── crawl-runs/
 ```
 
-The partial payload records `write_policy: kept_previous_verified_result`. Legacy rows without current listing evidence are not retained merely because they were present in an older complete file.
+Writes are atomic. Path components are derived from validated configured bindings. Asset reads are name-whitelisted and reject path traversal and symlink escape. Captures and rules are machine-local and must not be committed.
 
-Debug card/page evidence is written under:
+### 8.8 Draft, test, publication, and rollback
+
+Drafts never affect production collection. Deterministic snapshot testing validates selector mechanics, mandatory fields, public official detail URLs, current/future dates, duplicates, accepted rows, rejected rows, and field evidence.
+
+A semantic rule fingerprint excludes lifecycle timestamps and version metadata. Publication requires the latest applicable test to be publishable and to match the current draft fingerprint exactly.
+
+Publication creates:
+
+- the next monotonically increasing version;
+- an immutable history file;
+- an atomically replaced `published.json`;
+- removal of the mutable draft.
+
+Rollback republishes one historical rule as a new version and records `based_on_version`; history is never rewritten in place.
+
+### 8.9 Production routing
+
+Runtime order is:
 
 ```text
-surface/.env/local_event_debug_cards/
+existing structured-first collector
+  -> apply published Studio rules per configured source/listing
+  -> synchronize Studio detail dates
+  -> enforce Studio source health
+  -> normalize the existing output contract
+  -> aggregate completion by source
+  -> apply existing partial-write protection
 ```
 
-### 8.8 UI contract
+Activation is bounded:
 
-The Local Event panel displays one accepted result at a time with:
+```text
+no published rule
+  -> existing collector result remains
 
-- organisation/source at the top;
-- title;
-- `WHEN`;
-- `WHERE`;
-- description fitted to the available card height;
-- official-link action;
-- previous, next, search, and position controls.
+all configured listings for one source published
+  -> that source becomes Studio-only
 
-The backend returns full accepted fields. The frontend owns visual fitting and ellipsis; it must not drop backend records based on title-specific rules.
+some listings published
+  -> replace only legacy rows carrying matching listing evidence
 
-The configured source order is preserved in runtime metadata and used by the browser, so events remain grouped by organisation rather than being mixed by unstable browser sort order.
+Studio failure, fatal evaluation, or zero accepted rows
+  -> mark that source incomplete
+  -> keep unrelated sources intact
+  -> mark the payload partial
+```
+
+Accepted Studio rows use the same final candidate policy as other verified rows and additionally carry rule version, listing URL, field evidence, and detail-page evidence.
+
+### 8.10 Source completion and partial-result protection
+
+Studio can produce one debug row per listing while `source_count` counts organisations. The writer therefore groups debug rows by source name/ID before calculating completed and incomplete source counts. One failed listing makes that source incomplete without double-counting its successful listings.
+
+Previous-cache eligibility mirrors the output contract:
+
+- `official-listing-authority-v1` rows are eligible;
+- missing policy is eligible only for a previous payload in the current `structured-first` extractor family;
+- a different non-empty policy is ineligible.
+
+When a partial run has fewer rows than the eligible previous result, the writer keeps the previous primary file and writes the incomplete run to `local_event_search_results.partial.json` with `write_policy: kept_previous_verified_result`.
+
+### 8.11 Evidence and semantic acceptance
+
+Deterministic tests prove storage, selector evaluation, publication gating, HTTP behavior, production routing, and failure isolation for supplied inputs. They do not prove that a current external page contains the intended real-world activities.
+
+The first live migration therefore requires a real Studio capture, human confirmation of activity cards and fields, a publishable test, an identified published version, a live producer run, runtime JSON inspection, visible-card inspection, and confirmation that unrelated sources remain intact.
+
+### 8.12 Local Event UI contract
+
+The kiosk displays one accepted result at a time with organisation, title, `WHEN`, `WHERE`, description, and an official-link action. Backend rows remain authoritative; the frontend may fit or ellipsize text but must not hide records with title-specific rules.
 
 ## 9. Calendar pipeline
-
-The schedule path is deliberately external-push rather than Surface-side account access:
 
 ```text
 macOS Calendar/EventKit
@@ -350,9 +346,7 @@ macOS Calendar/EventKit
   -> calendar_board.js
 ```
 
-The Mac setup writes machine-specific SSH and Python configuration to `mac/local.env`. That file and the generated LaunchAgent are not committed.
-
-The Calendar board loads the runtime file at page startup and rotates already-loaded items. The Sync ticker independently observes the Surface file age every 60 seconds.
+The Mac setup stores machine-specific configuration in uncommitted `mac/local.env`. The Calendar board loads the runtime file at page startup and rotates already-loaded groups. The Sync ticker independently observes Surface file age.
 
 ## 10. Photo pipeline
 
@@ -365,66 +359,60 @@ user files in surface/.env/photos/
   -> browser photo wall
 ```
 
-The browser does not enumerate local files. The builder is manual in the supported deployment so private photo changes remain explicit.
+The browser does not enumerate local files. The builder preserves GIF animation, converts supported HEIC/HEIF input, and avoids exposing original filesystem paths.
 
 ## 11. Freshness observation
 
-The left Sync ticker is an observer, not a scheduler or producer.
+The Sync ticker is an observer, not a scheduler or producer.
 
-| Stat | Observed endpoint | Product dependency | Stale threshold |
+| Stat | Endpoint | Dependency | Stale threshold |
 | --- | --- | --- | --- |
 | `SCHEDULE` | `/schedule.json` | Calendar | 600 seconds |
 | `WEATHER` | `/weather.json` | Weather | 900 seconds |
-| `MARKET` | `/market.json` | Market card/tape | 600 seconds |
-| `NEWS` | `/event_stream.json` | Three-language ticker | 600 seconds |
+| `MARKET` | `/market.json` | Market | 600 seconds |
+| `NEWS` | `/event_stream.json` | News | 600 seconds |
 
-The browser performs `HEAD` and calculates `AGE` from its current clock and the server’s `Last-Modified` header.
-
-```text
-OK     file exists and age is within threshold
-STALE  file exists but age exceeds threshold
-MISS   path or Last-Modified is absent
-ERR    browser HEAD request failed
-```
-
-This contract monitors the final runtime artifact, allowing Mac push and Surface timers to share one freshness model without requiring identical JSON schemas.
+The browser performs `HEAD` and calculates `AGE` from `Last-Modified`.
 
 ## 12. HTTP and runtime boundary
 
-The server exposes committed frontend assets and local runtime state. It does not synthesize producer results during ordinary GET requests.
+Ordinary GET requests serve committed frontend assets or current local runtime state. They do not synthesize external producer data.
 
-- GET runtime endpoints return the current local file or a missing-runtime error payload.
-- HEAD runtime endpoints return size and `Last-Modified` for freshness checks.
-- Market config POST mutates the runtime symbol file.
-- Market refresh POST invokes the shared live-data producer.
-- Local Events POST invokes the source-specific collector with a location input.
+- runtime GET returns the current local file or a missing-runtime payload;
+- runtime HEAD returns size and `Last-Modified`;
+- Market config POST writes the runtime symbol file;
+- Market refresh POST invokes the live-data producer;
+- Local Events search POST invokes the existing command wrapper;
+- Studio mutations are restricted to configured source/listing bindings and machine-local state;
+- Studio capture invokes one short-lived capture job;
+- Studio test is offline against stored snapshot evidence;
+- Studio publish activates only an exact tested draft.
 
-Method, payload, side-effect, and caller details are defined in `docs/api-spec.md`.
+Detailed methods, payloads, and status codes are defined in `docs/api-spec.md`.
 
 ## 13. Failure isolation
 
-The architecture separates failures by owner:
+Failures remain separated by owner:
 
-- HTTP failure affects every panel even when runtime files are healthy;
-- one producer failure affects only its runtime outputs;
-- browser renderer failure affects only its owned mounts;
+- HTTP failure affects every browser area even when runtime files are healthy;
+- one producer failure affects only its outputs;
+- one renderer failure affects only its owned mounts;
 - Mac schedule failure affects Calendar but not Surface producers;
-- a single Local Events source failure is recorded under that source and should not erase evidence from other sources;
-- a partial Local Events run should not replace a larger verified runtime result;
-- legacy Local Events rows without current listing evidence are not eligible for preservation;
-- Market provider failure is isolated per symbol through the fallback chain.
+- one Local Events source failure is recorded under that source;
+- one Studio listing failure makes its source incomplete without erasing unrelated sources;
+- a smaller partial Local Events run does not replace a larger eligible previous result;
+- Market provider failure is isolated per symbol through fallback.
 
-This is why operator diagnosis starts from the visible product area, then follows UI → endpoint → runtime file → producer → external source.
+Diagnosis follows visible area -> endpoint -> runtime file -> producer -> external source.
 
 ## 14. Simulated and static page content
 
-Current CPU/MEM/DSK/NET bars are generated with `Math.random()` in the browser. POWER, DISPLAY, NETWORK, `AC_ONLY`, `ONLINE`, and `LAN_OK` are static labels. Page uptime measures the current browser session.
-
-These are not Surface OS monitoring. Replacing them with real monitoring requires a producer, runtime schema, endpoint, frontend renderer, freshness behavior, tests, and documentation as one coherent change.
+CPU/MEM/DSK/NET bars are generated with `Math.random()` in the browser. POWER, DISPLAY, NETWORK, `AC_ONLY`, `ONLINE`, and `LAN_OK` are static labels. Page uptime measures the current browser session. These are not Surface OS monitoring.
 
 ## 15. Documentation boundaries
 
-- `README.md`: the main project entrypoint covering overview, capabilities, data sources, interaction, refresh behaviour, project structure, deployment, operation, troubleshooting, and validation.
-- `docs/design.md`: this architecture, source ownership, refresh layers, and implementation boundaries.
-- `docs/api-spec.md`: HTTP interaction contract and side effects.
-- `docs/questions.md`: project-specific clarifications, constraints, and supplementary explanations established during development.
+- `README.md`: onboarding, capabilities, interaction, deployment, operation, troubleshooting, and validation.
+- `docs/design.md`: architecture, ownership, data flow, runtime storage, and source-specific behavior.
+- `docs/api-spec.md`: HTTP methods, payloads, responses, side effects, and callers.
+- `docs/questions.md`: requirement interpretations and acceptance evidence.
+- `AGENT.md`, `AGENTS.md`: repository contribution rules and required read order.
