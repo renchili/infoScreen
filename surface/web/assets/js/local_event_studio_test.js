@@ -288,6 +288,21 @@
     renderResult(payload.result, { current: false });
   }
 
+  async function loadLatestWhenBindingReady(attempt = 0) {
+    const current = binding();
+    if (!current.source_id || !current.listing_url) {
+      if (attempt >= 50) {
+        renderResult(null);
+        return;
+      }
+      window.setTimeout(() => {
+        loadLatestWhenBindingReady(attempt + 1).catch(() => renderResult(null));
+      }, 100);
+      return;
+    }
+    await loadLatestTest();
+  }
+
   function bind() {
     Object.assign(ui, {
       globalStatus: byId("global-status"),
@@ -322,7 +337,7 @@
     ui.sourceSelect.addEventListener("change", () => setTimeout(() => loadLatestTest().catch(() => renderResult(null)), 0));
     ui.listingSelect.addEventListener("change", () => setTimeout(() => loadLatestTest().catch(() => renderResult(null)), 0));
     ui.snapshotSelect.addEventListener("change", markTestStale);
-    setTimeout(() => loadLatestTest().catch(() => renderResult(null)), 0);
+    setTimeout(() => loadLatestWhenBindingReady().catch(() => renderResult(null)), 0);
   }
 
   document.addEventListener("DOMContentLoaded", bind);
