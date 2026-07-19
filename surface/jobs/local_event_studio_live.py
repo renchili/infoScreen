@@ -10,7 +10,12 @@ SURFACE_DIR = Path(__file__).resolve().parents[1]
 if str(SURFACE_DIR) not in sys.path:
     sys.path.insert(0, str(SURFACE_DIR))
 
-from local_events_runtime.studio_live import run_live_session
+from local_events_runtime import studio_live
+from local_events_runtime.studio_live_overlay import OVERLAY_JS
+
+# Keep the session lifecycle in studio_live while replacing only the page-side
+# selector UI. This avoids duplicating browser/session/storage behaviour.
+studio_live.OVERLAY_JS = OVERLAY_JS
 
 
 def studio_root() -> Path:
@@ -31,7 +36,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    return run_live_session(
+    return studio_live.run_live_session(
         args.source_id,
         args.listing_url,
         root=studio_root(),
