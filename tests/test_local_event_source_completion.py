@@ -19,16 +19,15 @@ def test_multi_listing_debug_rows_count_as_one_completed_source() -> None:
             "source_count": 2,
             "debug_by_source": [
                 {
-                    "source_id": "esplanade",
                     "source": "Esplanade",
-                    "listing_urls": ["https://example.test/list-a"],
+                    "listing_urls": ["https://example.test/legacy-list"],
                     "listing_fetched": 1,
                     "complete": True,
                 },
                 {
                     "source_id": "esplanade",
                     "source": "Esplanade",
-                    "listing_urls": ["https://example.test/list-b"],
+                    "listing_urls": ["https://example.test/studio-list"],
                     "listing_fetched": 1,
                     "complete": True,
                 },
@@ -56,16 +55,15 @@ def test_one_failed_listing_makes_its_source_partial_without_overcounting() -> N
             "source_count": 2,
             "debug_by_source": [
                 {
-                    "source_id": "esplanade",
                     "source": "Esplanade",
-                    "listing_urls": ["https://example.test/list-a"],
+                    "listing_urls": ["https://example.test/legacy-list"],
                     "listing_fetched": 1,
                     "complete": True,
                 },
                 {
                     "source_id": "esplanade",
                     "source": "Esplanade",
-                    "listing_urls": ["https://example.test/list-b"],
+                    "listing_urls": ["https://example.test/studio-list"],
                     "listing_fetched": 0,
                     "complete": False,
                     "reason_counts": {"browser_failure": 1},
