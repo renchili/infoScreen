@@ -189,6 +189,68 @@ class DetailPageRule(BaseModel):
         return self
 
 
+class BrowserActionRule(BaseModel):
+    """One explicit operator-recorded browser action replayed before extraction."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["click", "click_repeat", "select_option", "scroll_to_bottom", "wait"]
+    selector: str | None = Field(
+        None,
+        description="CSS selector used by click and select actions.",
+    )
+    value: str | None = Field(
+        None,
+        max_length=500,
+        description="Selected option value for select_option actions.",
+    )
+    optional: bool = Field(
+        False,
+        description="Allow a missing or disabled action target without failing the source.",
+    )
+    max_rounds: int = Field(
+        1,
+        ge=1,
+        le=50,
+        description="Maximum clicks for click_repeat actions.",
+    )
+    wait_ms: int = Field(
+        500,
+        ge=0,
+        le=15000,
+        description="Post-action settling delay.",
+    )
+
+    @field_validator("selector", mode="before")
+    @classmethod
+    def validate_optional_selector(cls, value: object) -> str | None:
+        if value is None or not str(value).strip():
+            return None
+        return _selector(value)
+
+    @field_validator("value", mode="before")
+    @classmethod
+    def normalize_value(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        return str(value)
+
+    @model_validator(mode="after")
+    def validate_action_contract(self) -> "BrowserActionRule":
+        selector_actions = {"click", "click_repeat", "select_option"}
+        if self.action in selector_actions and self.selector is None:
+            raise ValueError(f"{self.action} requires a selector")
+        if self.action not in selector_actions and self.selector is not None:
+            raise ValueError(f"{self.action} must not carry a selector")
+        if self.action == "select_option" and self.value is None:
+            raise ValueError("select_option requires a value")
+        if self.action != "select_option" and self.value is not None:
+            raise ValueError(f"{self.action} must not carry a value")
+        if self.action != "click_repeat" and self.max_rounds != 1:
+            raise ValueError("max_rounds is only valid for click_repeat")
+        return self
+
+
 class ValidationRule(BaseModel):
     """Mandatory output checks applied when a Studio rule is published."""
 
@@ -215,6 +277,8 @@ class LocalEventStudioRule(BaseModel):
     card: CardRule | None = None
     fields: FieldMappings = Field(default_factory=FieldMappings)
     detail_page: DetailPageRule = Field(default_factory=DetailPageRule)
+    listing_actions: list[BrowserActionRule] = Field(default_factory=list, max_length=50)
+    detail_actions: list[BrowserActionRule] = Field(default_factory=list, max_length=50)
     validation: ValidationRule = Field(default_factory=ValidationRule)
 
     @field_validator("source_id", mode="before")
@@ -660,6 +724,7 @@ class LocalEventStudioRuleStore:
 
 
 __all__ = [
+    "BrowserActionRule",
     "CardRule",
     "DEFAULT_SOURCE_CONFIG",
     "DEFAULT_STUDIO_ROOT",
