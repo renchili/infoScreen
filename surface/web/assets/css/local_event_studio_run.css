@@ -1,0 +1,195 @@
+.workflow-panel {
+  overflow: hidden;
+}
+
+.workflow-steps {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workflow-steps li {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-height: 92px;
+  padding: 10px;
+  border-right: 1px solid var(--line2);
+  color: var(--muted);
+}
+
+.workflow-steps li:last-child {
+  border-right: 0;
+}
+
+.workflow-steps li strong {
+  color: var(--text);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+
+.workflow-steps li span {
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.workflow-steps li.active {
+  background: rgba(140, 236, 255, 0.08);
+  box-shadow: inset 0 2px 0 var(--cyan);
+}
+
+.workflow-steps li.complete strong {
+  color: var(--green);
+}
+
+.production-controls {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto auto;
+  gap: 10px;
+  align-items: end;
+  padding: 10px;
+}
+
+.production-help {
+  margin: 0;
+  padding: 0 10px 10px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.production-help code {
+  color: var(--cyan);
+}
+
+.production-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid var(--line2);
+  border-bottom: 1px solid var(--line2);
+}
+
+.production-metrics > div {
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  border-right: 1px solid var(--line2);
+}
+
+.production-metrics > div:last-child {
+  border-right: 0;
+}
+
+.production-metrics span {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+.production-metrics strong {
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.production-message {
+  padding: 10px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.production-message.error {
+  color: var(--red);
+}
+
+.production-message.ok {
+  color: var(--green);
+}
+
+.production-results {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 8px;
+  padding: 0 10px 10px;
+}
+
+.production-event {
+  min-width: 0;
+  border: 1px solid var(--line2);
+  background: var(--bg);
+  padding: 9px;
+}
+
+.production-event h3 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.production-event h3 a {
+  color: var(--cyan);
+  text-decoration: none;
+}
+
+.production-event h3 a:hover {
+  text-decoration: underline;
+}
+
+.production-event dl {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+}
+
+.production-event dl div {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 7px;
+}
+
+.production-event dt {
+  color: var(--muted);
+}
+
+.production-event dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1050px) {
+  .workflow-steps {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .workflow-steps li:nth-child(3) {
+    border-right: 0;
+  }
+
+  .workflow-steps li:nth-child(-n + 3) {
+    border-bottom: 1px solid var(--line2);
+  }
+}
+
+@media (max-width: 680px) {
+  .workflow-steps,
+  .production-controls,
+  .production-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .workflow-steps li,
+  .workflow-steps li:nth-child(3),
+  .production-metrics > div {
+    border-right: 0;
+    border-bottom: 1px solid var(--line2);
+  }
+
+  .workflow-steps li:last-child,
+  .production-metrics > div:last-child {
+    border-bottom: 0;
+  }
+}
