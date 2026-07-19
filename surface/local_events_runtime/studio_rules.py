@@ -87,9 +87,18 @@ class SelectorRule(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    selector: str = Field(..., description="CSS selector evaluated inside the owning card or detail page.")
-    attribute: str | None = Field(None, description="HTML attribute to read instead of text content.")
-    optional: bool = Field(False, description="Whether a missing value may be accepted.")
+    selector: str = Field(
+        ...,
+        description="CSS selector evaluated inside the owning card or detail page.",
+    )
+    attribute: str | None = Field(
+        None,
+        description="HTML attribute to read instead of text content.",
+    )
+    optional: bool = Field(
+        False,
+        description="Whether a missing value may be accepted.",
+    )
 
     @field_validator("selector", mode="before")
     @classmethod
@@ -164,13 +173,17 @@ class FieldMappings(BaseModel):
                 raise ValueError(f"{name} must read text content, not an attribute")
         if self.url is not None and self.url.attribute != "href":
             raise ValueError("url must read the href attribute")
-        if self.image is not None and self.image.attribute not in {"src", "data-src", "data-lazy-src"}:
+        if self.image is not None and self.image.attribute not in {
+            "src",
+            "data-src",
+            "data-lazy-src",
+        }:
             raise ValueError("image must read src, data-src, or data-lazy-src")
         return self
 
 
 class DetailPageRule(BaseModel):
-    """Optional detail-page field mappings for one admitted public detail URL."""
+    """Detail-page field mappings for an admitted public detail URL."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -190,11 +203,17 @@ class DetailPageRule(BaseModel):
 
 
 class BrowserActionRule(BaseModel):
-    """One explicit operator-recorded browser action replayed before extraction."""
+    """One operator-recorded browser action replayed before extraction."""
 
     model_config = ConfigDict(extra="forbid")
 
-    action: Literal["click", "click_repeat", "select_option", "scroll_to_bottom", "wait"]
+    action: Literal[
+        "click",
+        "click_repeat",
+        "select_option",
+        "scroll_to_bottom",
+        "wait",
+    ]
     selector: str | None = Field(
         None,
         description="CSS selector used by click and select actions.",
@@ -307,13 +326,23 @@ class LocalEventStudioRule(BaseModel):
             raise ValueError("published version must be at least 1")
         if self.card is None:
             raise ValueError("published rule requires card selector")
-        missing = [
-            name
-            for name in ("title", "when", "where", "url")
-            if getattr(self.fields, name) is None
-        ]
+
+        missing: list[str] = []
+        if self.fields.url is None:
+            missing.append("url")
+        for name in ("title", "when", "where"):
+            listing_mapping = getattr(self.fields, name)
+            detail_mapping = (
+                getattr(self.detail_page.fields, name)
+                if self.detail_page.enabled
+                else None
+            )
+            if listing_mapping is None and detail_mapping is None:
+                missing.append(name)
         if missing:
-            raise ValueError(f"published rule missing required fields: {', '.join(missing)}")
+            raise ValueError(
+                f"published rule missing required listing/detail fields: {', '.join(missing)}"
+            )
         return self
 
 
@@ -369,7 +398,6 @@ class LocalEventStudioRuleStore:
         )
         if source is None:
             raise UnknownSourceError(f"unknown source_id: {safe_source}")
-
         allowed = {canonical_listing_url(value) for value in source.listing_urls}
         if canonical_url not in allowed:
             raise UnknownListingError(
@@ -388,7 +416,11 @@ class LocalEventStudioRuleStore:
             raise RuleStorageError("rules root escapes the Studio root") from exc
         return rules_root
 
-    def _binding_dir(self, source_id: object, listing_url: object) -> tuple[Path, str, str]:
+    def _binding_dir(
+        self,
+        source_id: object,
+        listing_url: object,
+    ) -> tuple[Path, str, str]:
         safe_source, canonical_url = self._binding(source_id, listing_url)
         listing_key = hashlib.sha256(canonical_url.encode("utf-8")).hexdigest()[:20]
         rules_root = self._rules_root()
@@ -465,7 +497,12 @@ class LocalEventStudioRuleStore:
         finally:
             temporary.unlink(missing_ok=True)
 
-    def _read_rule(self, path: Path, *, required: bool = False) -> LocalEventStudioRule | None:
+    def _read_rule(
+        self,
+        path: Path,
+        *,
+        required: bool = False,
+    ) -> LocalEventStudioRule | None:
         if path.is_symlink():
             raise RuleStorageError(f"refusing to read symlink rule: {path.name}")
         try:
@@ -478,16 +515,37 @@ class LocalEventStudioRuleStore:
         except (OSError, json.JSONDecodeError, ValueError) as exc:
             raise RuleStorageError(f"invalid persisted rule {path}: {exc}") from exc
 
-    def _draft_path(self, source_id: object, listing_url: object) -> tuple[Path, str, str]:
-        directory, safe_source, canonical_url = self._binding_dir(source_id, listing_url)
+    def _draft_path(
+        self,
+        source_id: object,
+        listing_url: object,
+    ) -> tuple[Path, str, str]:
+        directory, safe_source, canonical_url = self._binding_dir(
+            source_id,
+            listing_url,
+        )
         return directory / "draft.json", safe_source, canonical_url
 
-    def _published_path(self, source_id: object, listing_url: object) -> tuple[Path, str, str]:
-        directory, safe_source, canonical_url = self._binding_dir(source_id, listing_url)
+    def _published_path(
+        self,
+        source_id: object,
+        listing_url: object,
+    ) -> tuple[Path, str, str]:
+        directory, safe_source, canonical_url = self._binding_dir(
+            source_id,
+            listing_url,
+        )
         return directory / "published.json", safe_source, canonical_url
 
-    def _history_dir(self, source_id: object, listing_url: object) -> tuple[Path, str, str]:
-        directory, safe_source, canonical_url = self._binding_dir(source_id, listing_url)
+    def _history_dir(
+        self,
+        source_id: object,
+        listing_url: object,
+    ) -> tuple[Path, str, str]:
+        directory, safe_source, canonical_url = self._binding_dir(
+            source_id,
+            listing_url,
+        )
         history = directory / "history"
         if history.is_symlink():
             raise RuleStorageError("rule history directory must not be a symlink")
@@ -499,7 +557,11 @@ class LocalEventStudioRuleStore:
     ) -> LocalEventStudioRule:
         """Validate and atomically replace the draft for one configured listing."""
 
-        data = raw.model_dump(mode="python") if isinstance(raw, LocalEventStudioRule) else dict(raw)
+        data = (
+            raw.model_dump(mode="python")
+            if isinstance(raw, LocalEventStudioRule)
+            else dict(raw)
+        )
         source_id, listing_url = self._binding(
             data.get("source_id"),
             data.get("listing_url"),
@@ -507,7 +569,6 @@ class LocalEventStudioRuleStore:
         draft_path, _, _ = self._draft_path(source_id, listing_url)
         previous = self._read_rule(draft_path)
         current = utc_now()
-
         data.update(
             {
                 "schema_version": SCHEMA_VERSION,
@@ -572,13 +633,18 @@ class LocalEventStudioRuleStore:
         for path in sorted(history_dir.glob("v*.json")):
             rule = self._read_rule(path, required=True)
             if rule is None or rule.status != "published":
-                raise RuleStorageError(f"history entry is not published: {path.name}")
+                raise RuleStorageError(
+                    f"history entry is not published: {path.name}"
+                )
             output.append(rule)
         output.sort(key=lambda item: item.version)
         return output
 
     def _next_version(self, source_id: str, listing_url: str) -> int:
-        versions = [rule.version for rule in self.list_history(source_id, listing_url)]
+        versions = [
+            rule.version
+            for rule in self.list_history(source_id, listing_url)
+        ]
         published = self.load_published(source_id, listing_url)
         if published is not None:
             versions.append(published.version)
@@ -612,7 +678,6 @@ class LocalEventStudioRuleStore:
         history_dir, _, _ = self._history_dir(source_id, listing_url)
         history_path = history_dir / f"v{version:06d}.json"
         published_path, _, _ = self._published_path(source_id, listing_url)
-
         payload = self._model_payload(published)
         self._atomic_write(history_path, payload, immutable=True)
         self._atomic_write(published_path, payload)
@@ -674,7 +739,7 @@ class LocalEventStudioRuleStore:
         status: Literal["draft", "published"] = "published",
         version: int | None = None,
     ) -> str:
-        """Export one validated rule as stable JSON without exposing filesystem paths."""
+        """Export one validated rule as stable JSON without exposing paths."""
 
         safe_source, canonical_url = self._binding(source_id, listing_url)
         if version is not None:
@@ -703,7 +768,7 @@ class LocalEventStudioRuleStore:
         self,
         payload: str | bytes | dict[str, Any] | LocalEventStudioRule,
     ) -> LocalEventStudioRule:
-        """Import validated JSON as a mutable draft without importing version history."""
+        """Import validated JSON as a mutable draft without version history."""
 
         if isinstance(payload, LocalEventStudioRule):
             raw: dict[str, Any] = payload.model_dump(mode="python")
@@ -711,7 +776,11 @@ class LocalEventStudioRuleStore:
             raw = dict(payload)
         else:
             try:
-                text = payload.decode("utf-8") if isinstance(payload, bytes) else payload
+                text = (
+                    payload.decode("utf-8")
+                    if isinstance(payload, bytes)
+                    else payload
+                )
                 decoded = json.loads(text)
             except (UnicodeDecodeError, json.JSONDecodeError) as exc:
                 raise RuleStorageError(f"invalid rule import: {exc}") from exc
