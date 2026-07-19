@@ -7,11 +7,24 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
-from urllib.parse import urljoin, urlsplit, urlunsplit
+from urllib.parse import urlsplit, urlunsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from .browser import CARD_JS, LOAD_MORE_ROUNDS, NAV_TIMEOUT_MS, PREPARE_PAGE_JS, launch_chromium
+from .browser import (
+    CARD_JS,
+    CLICK_NEXT_PAGE_JS,
+    DETAIL_CARD_JS,
+    DOM_TIMEOUT_MS,
+    LOAD_MORE_ROUNDS,
+    MAX_LISTING_PAGES,
+    NAV_TIMEOUT_MS,
+    NEXT_WAIT_MS,
+    PREPARE_PAGE_JS,
+    launch_chromium,
+    merge_detail_payload,
+)
+from .extract import clean, event_from_card
 
 SURFACE_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG_PATH = SURFACE_DIR / "conf" / "event_sources.json"
@@ -33,15 +46,15 @@ LISTING_DISCOVERY_JS = r"""
   const rows = [];
   const seen = new Set();
   for (const anchor of document.querySelectorAll("a[href]")) {
-    const href = new URL(anchor.getAttribute("href"), location.href).href;
+    let href = "";
+    try { href = new URL(anchor.getAttribute("href"), location.href).href; } catch { continue; }
     const text = clean([anchor.innerText, anchor.textContent, anchor.getAttribute("aria-label"), anchor.getAttribute("title")].join(" "));
     if (!sameDomain(href) || !terms.test(text + " " + href)) continue;
     const url = new URL(href);
     url.hash = "";
-    const key = url.href;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    rows.push({url: key, link_text: text.slice(0, 240), page_url: location.href});
+    if (seen.has(url.href)) continue;
+    seen.add(url.href);
+    rows.push({url: url.href, link_text: text.slice(0, 240), page_url: location.href});
     if (rows.length >= 80) break;
   }
   return rows;
@@ -59,7 +72,10 @@ CARD_EVIDENCE_JS = r"""
       const attribute = element.getAttribute(name);
       if (attribute && /^[A-Za-z0-9_.:-]{1,120}$/.test(attribute)) return `${value}[${name}="${attribute}"]`;
     }
-    const classes = [...element.classList].filter(stable).filter(name => !/^(active|selected|open|hover|focus|visible|hidden)$/i.test(name)).slice(0, 3);
+    const classes = [...element.classList]
+      .filter(stable)
+      .filter(name => !/^(active|selected|open|hover|focus|visible|hidden)$/i.test(name))
+      .slice(0, 3);
     if (classes.length) value += "." + classes.map(esc).join(".");
     return value;
   };
@@ -72,7 +88,7 @@ CARD_EVIDENCE_JS = r"""
       const selector = pieces.join(" > ");
       try {
         const count = document.querySelectorAll(selector).length;
-        if (count > 0 && count <= 80) return selector;
+        if (count > 0 && count <= 100) return selector;
       } catch {}
     }
     return pieces.join(" > ");
@@ -86,7 +102,7 @@ CARD_EVIDENCE_JS = r"""
     try {
       const matches = [...document.querySelectorAll(selector)];
       index = Math.max(0, matches.indexOf(element));
-      count = matches.length;
+      count = Math.max(1, matches.length);
     } catch {}
     const rect = element.getBoundingClientRect();
     result[id] = {
@@ -112,6 +128,7 @@ CARD_EVIDENCE_JS = r"""
 """
 
 Decision = Literal["pending", "confirmed", "rejected"]
+DetailStatus = Literal["collected", "incomplete", "failed"]
 
 
 def utc_now() -> str:
@@ -176,6 +193,12 @@ class EventCandidate(BaseModel):
     listing_url: str
     detail_url: str
     title: str
+    when: str = ""
+    where: str = ""
+    summary: str = ""
+    detail_status: DetailStatus
+    detail_error: str = ""
+    detail_page_title: str = ""
     evidence: EventEvidence
     decision: Decision = "pending"
     collected_at: str
@@ -211,7 +234,7 @@ class ReviewState(BaseModel):
 
 
 class EventReviewStore:
-    """Persist listing review, event review, and operator feedback as separate local state."""
+    """Persist page review, event review, and independent position feedback."""
 
     def __init__(
         self,
@@ -267,6 +290,10 @@ class EventReviewStore:
                     "source_id": str(source.get("id") or ""),
                     "source_name": str(source.get("name") or source.get("id") or ""),
                     "official_home": str(source.get("official_home") or ""),
+                    "listing_urls": [
+                        canonical_url(value)
+                        for value in source.get("listing_urls") or []
+                    ],
                 }
                 for source in self.inventory()
             ],
@@ -279,21 +306,27 @@ class EventReviewStore:
         collection: dict[str, Any],
     ) -> ReviewState:
         state = self.load()
-        old = {item.candidate_id: item for item in state.listing_pages}
-        merged = []
+        previous = {item.candidate_id: item for item in state.listing_pages}
+        merged: list[ListingPageCandidate] = []
         for candidate in candidates:
-            previous = old.get(candidate.candidate_id)
-            if previous is not None:
-                candidate.decision = previous.decision
-                candidate.reviewed_at = previous.reviewed_at
+            old = previous.get(candidate.candidate_id)
+            if old is not None:
+                candidate.decision = old.decision
+                candidate.reviewed_at = old.reviewed_at
             merged.append(candidate)
-        state.listing_pages = sorted(merged, key=lambda item: (item.source_name.casefold(), item.url))
+        state.listing_pages = sorted(
+            merged,
+            key=lambda item: (item.source_name.casefold(), item.url),
+        )
         state.listing_collection = collection
         return self.save(state)
 
     def set_listing_decision(self, candidate_id: str, decision: Decision) -> ReviewState:
         state = self.load()
-        match = next((item for item in state.listing_pages if item.candidate_id == candidate_id), None)
+        match = next(
+            (item for item in state.listing_pages if item.candidate_id == candidate_id),
+            None,
+        )
         if match is None:
             raise ValueError("listing candidate not found")
         match.decision = decision
@@ -306,13 +339,13 @@ class EventReviewStore:
         collection: dict[str, Any],
     ) -> ReviewState:
         state = self.load()
-        old = {item.candidate_id: item for item in state.events}
-        merged = []
+        previous = {item.candidate_id: item for item in state.events}
+        merged: list[EventCandidate] = []
         for candidate in candidates:
-            previous = old.get(candidate.candidate_id)
-            if previous is not None:
-                candidate.decision = previous.decision
-                candidate.reviewed_at = previous.reviewed_at
+            old = previous.get(candidate.candidate_id)
+            if old is not None:
+                candidate.decision = old.decision
+                candidate.reviewed_at = old.reviewed_at
             merged.append(candidate)
         state.events = sorted(
             merged,
@@ -328,7 +361,10 @@ class EventReviewStore:
 
     def set_event_decision(self, candidate_id: str, decision: Decision) -> ReviewState:
         state = self.load()
-        match = next((item for item in state.events if item.candidate_id == candidate_id), None)
+        match = next(
+            (item for item in state.events if item.candidate_id == candidate_id),
+            None,
+        )
         if match is None:
             raise ValueError("event candidate not found")
         match.decision = decision
@@ -338,15 +374,18 @@ class EventReviewStore:
     def append_feedback(self, raw: dict[str, Any]) -> EventFeedback:
         source = self.source(str(raw.get("source_id") or ""))
         listing_url = canonical_url(raw.get("listing_url"))
-        allowed = {canonical_url(value) for value in source.get("listing_urls") or []}
         state = self.load()
-        confirmed = {
+        accepted_pages = {
+            canonical_url(value) for value in source.get("listing_urls") or []
+        }
+        accepted_pages.update(
             item.url
             for item in state.listing_pages
-            if item.source_id == source.get("id") and item.decision == "confirmed"
-        }
-        if listing_url not in allowed and listing_url not in confirmed:
-            raise ValueError("feedback listing URL is not configured or confirmed")
+            if item.source_id == source.get("id")
+        )
+        if listing_url not in accepted_pages:
+            raise ValueError("feedback listing URL is not configured or collected")
+
         feedback = EventFeedback(
             feedback_id=uuid.uuid4().hex,
             source_id=str(source.get("id")),
@@ -372,7 +411,7 @@ class EventReviewStore:
         return feedback
 
 
-def _allowed_host(url: str, source: dict[str, Any]) -> bool:
+def _host_allowed(url: str, source: dict[str, Any]) -> bool:
     host = (urlsplit(url).hostname or "").lower().removeprefix("www.")
     return bool(
         host
@@ -384,12 +423,12 @@ def _allowed_host(url: str, source: dict[str, Any]) -> bool:
     )
 
 
-def collect_listing_pages(store: EventReviewStore) -> ReviewState:
-    started = utc_now()
+def _configured_listing_candidates(
+    inventory: list[dict[str, Any]],
+    discovered_at: str,
+) -> dict[str, ListingPageCandidate]:
     candidates: dict[str, ListingPageCandidate] = {}
-    errors: list[dict[str, str]] = []
-
-    for source in store.inventory():
+    for source in inventory:
         source_id = str(source.get("id") or "")
         source_name = str(source.get("name") or source_id)
         for value in source.get("listing_urls") or []:
@@ -400,9 +439,17 @@ def collect_listing_pages(store: EventReviewStore) -> ReviewState:
                 source_name=source_name,
                 url=url,
                 origin="configured",
-                discovered_at=started,
+                discovered_at=discovered_at,
             )
             candidates[candidate.candidate_id] = candidate
+    return candidates
+
+
+def collect_listing_pages(store: EventReviewStore) -> ReviewState:
+    started = utc_now()
+    inventory = store.inventory()
+    candidates = _configured_listing_candidates(inventory, started)
+    errors: list[dict[str, str]] = []
 
     try:
         from playwright.sync_api import sync_playwright
@@ -410,23 +457,28 @@ def collect_listing_pages(store: EventReviewStore) -> ReviewState:
         with sync_playwright() as playwright:
             browser = launch_chromium(playwright)
             try:
-                context = browser.new_context(viewport={"width": 1440, "height": 1000})
-                page = context.new_page()
-                for source in store.inventory():
+                page = browser.new_page(
+                    viewport={"width": 1440, "height": 1000},
+                    device_scale_factor=1,
+                )
+                for source in inventory:
                     source_id = str(source.get("id") or "")
                     source_name = str(source.get("name") or source_id)
                     home = str(source.get("official_home") or "").strip()
                     if not home:
                         continue
                     try:
-                        page.goto(home, wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
+                        try:
+                            page.goto(home, wait_until="networkidle", timeout=NAV_TIMEOUT_MS)
+                        except Exception:
+                            page.goto(home, wait_until="domcontentloaded", timeout=DOM_TIMEOUT_MS)
                         rows = page.evaluate(
                             LISTING_DISCOVERY_JS,
                             {"allowedDomains": source.get("allowed_domains") or []},
                         )
                         for row in rows:
                             url = canonical_url(row.get("url"))
-                            if not _allowed_host(url, source):
+                            if not _host_allowed(url, source):
                                 continue
                             candidate_id = stable_id(source_id, url)
                             if candidate_id in candidates:
@@ -441,12 +493,18 @@ def collect_listing_pages(store: EventReviewStore) -> ReviewState:
                                 discovered_at=started,
                             )
                     except Exception as exc:
-                        errors.append({"source_id": source_id, "error": f"{type(exc).__name__}: {exc}"[:500]})
-                context.close()
+                        errors.append(
+                            {
+                                "source_id": source_id,
+                                "error": f"{type(exc).__name__}: {exc}"[:500],
+                            }
+                        )
             finally:
                 browser.close()
     except Exception as exc:
-        errors.append({"source_id": "*", "error": f"{type(exc).__name__}: {exc}"[:500]})
+        errors.append(
+            {"source_id": "*", "error": f"{type(exc).__name__}: {exc}"[:500]}
+        )
 
     return store.replace_listing_pages(
         list(candidates.values()),
@@ -459,21 +517,129 @@ def collect_listing_pages(store: EventReviewStore) -> ReviewState:
     )
 
 
-def _title(card: dict[str, Any]) -> str:
-    for value in [*(card.get("headings") or []), card.get("link_text"), *((card.get("text_lines") or [])[:3])]:
-        text = str(value or "").strip()
+def _listing_title(card: dict[str, Any]) -> str:
+    for value in [
+        *(card.get("headings") or []),
+        card.get("link_text"),
+        *((card.get("text_lines") or [])[:3]),
+    ]:
+        text = clean(value)
         if text:
             return text[:300]
     return "Untitled candidate"
 
 
+def _detail_candidate(
+    context: Any,
+    source: dict[str, Any],
+    listing_url: str,
+    raw_url: str,
+    card: dict[str, Any],
+) -> dict[str, str]:
+    if "#nhb-" in raw_url or "#nhb-json-" in raw_url:
+        return {
+            "detail_url": raw_url,
+            "title": _listing_title(card),
+            "when": "",
+            "where": "",
+            "summary": "",
+            "detail_status": "incomplete",
+            "detail_error": "public_detail_url_not_found",
+            "detail_page_title": "",
+        }
+
+    detail_url = canonical_url(raw_url)
+    if not _host_allowed(detail_url, source):
+        raise ValueError("detail URL is outside the source allow-list")
+    if detail_url == canonical_url(listing_url):
+        raise ValueError("detail URL resolves to the listing page")
+
+    detail = context.new_page()
+    try:
+        try:
+            response = detail.goto(
+                detail_url,
+                wait_until="networkidle",
+                timeout=NAV_TIMEOUT_MS,
+            )
+        except Exception:
+            response = detail.goto(
+                detail_url,
+                wait_until="domcontentloaded",
+                timeout=DOM_TIMEOUT_MS,
+            )
+        if response is not None and response.status >= 400:
+            raise ValueError(f"detail_http_status_{response.status}")
+        final_url = canonical_url(str(detail.url))
+        if not _host_allowed(final_url, source):
+            raise ValueError("detail page redirected outside the source allow-list")
+
+        detail_payload = detail.evaluate(DETAIL_CARD_JS)
+        merged = merge_detail_payload({**card, "url": final_url}, detail_payload)
+        extraction_source = dict(source)
+        extraction_source["name"] = ""
+        extraction_source["default_venue"] = ""
+        event, reason = event_from_card(extraction_source, merged)
+        if event is None:
+            return {
+                "detail_url": final_url,
+                "title": _listing_title(merged),
+                "when": "",
+                "where": "",
+                "summary": clean(merged.get("text") or "")[:500],
+                "detail_status": "incomplete",
+                "detail_error": reason,
+                "detail_page_title": clean(detail.title() or ""),
+            }
+        return {
+            "detail_url": final_url,
+            "title": str(event.get("title") or _listing_title(merged)),
+            "when": str(event.get("when") or ""),
+            "where": str(event.get("where") or ""),
+            "summary": str(event.get("summary") or ""),
+            "detail_status": "collected",
+            "detail_error": "",
+            "detail_page_title": clean(detail.title() or ""),
+        }
+    finally:
+        detail.close()
+
+
+def _event_evidence(
+    card: dict[str, Any],
+    raw: dict[str, Any],
+    page_index: int,
+    page_url: str,
+) -> EventEvidence:
+    return EventEvidence(
+        selector=str(raw.get("selector") or ""),
+        selector_index=max(0, int(raw.get("selector_index") or 0)),
+        selector_match_count=max(1, int(raw.get("selector_match_count") or 1)),
+        document_position={
+            key: int((raw.get("document_position") or {}).get(key) or 0)
+            for key in ("x", "y", "width", "height")
+        },
+        viewport_position={
+            key: int((raw.get("viewport_position") or {}).get(key) or 0)
+            for key in ("x", "y", "width", "height")
+        },
+        page_index=page_index,
+        page_url=canonical_url(page_url),
+        text=str(card.get("text") or "").strip()[:5000],
+    )
+
+
 def collect_event_candidates(store: EventReviewStore) -> ReviewState:
     state = store.load()
-    confirmed = [item for item in state.listing_pages if item.decision == "confirmed"]
+    confirmed = [
+        item for item in state.listing_pages if item.decision == "confirmed"
+    ]
     if not confirmed:
         raise ValueError("no confirmed listing pages")
 
-    sources = {str(source.get("id")): source for source in store.inventory()}
+    sources = {
+        str(source.get("id")): source for source in store.inventory()
+    }
     started = utc_now()
     candidates: dict[str, EventCandidate] = {}
     errors: list[dict[str, str]] = []
@@ -483,58 +649,138 @@ def collect_event_candidates(store: EventReviewStore) -> ReviewState:
     with sync_playwright() as playwright:
         browser = launch_chromium(playwright)
         try:
-            context = browser.new_context(viewport={"width": 1440, "height": 1000})
+            context = browser.new_context(
+                viewport={"width": 1440, "height": 1000},
+                device_scale_factor=1,
+            )
             page = context.new_page()
             for listing in confirmed:
                 source = sources.get(listing.source_id)
                 if source is None:
-                    errors.append({"listing_url": listing.url, "error": "source_not_found"})
+                    errors.append(
+                        {"listing_url": listing.url, "error": "source_not_found"}
+                    )
                     continue
                 try:
-                    page.goto(listing.url, wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
-                    page.evaluate(PREPARE_PAGE_JS, {"maxRounds": max(0, LOAD_MORE_ROUNDS)})
-                    cards = page.evaluate(
-                        CARD_JS,
-                        {
-                            "allowedDomains": source.get("allowed_domains") or [],
-                            "maxCards": 120,
-                            "sourceId": listing.source_id,
-                            "pageIndex": 0,
-                            "adapter": source.get("adapter") or "rendered_dom_card",
-                            "officialHome": source.get("official_home") or "",
-                        },
-                    )
-                    evidence_by_id = page.evaluate(CARD_EVIDENCE_JS)
-                    for card in cards:
-                        detail_url = str(card.get("url") or "").strip()
-                        if not detail_url.startswith(("http://", "https://")):
-                            continue
-                        evidence = evidence_by_id.get(str(card.get("id") or ""))
-                        if not isinstance(evidence, dict) or not evidence.get("selector"):
-                            continue
-                        detail_url = canonical_url(urljoin(str(page.url), detail_url))
-                        candidate_id = stable_id(listing.source_id, listing.url, detail_url, str(evidence.get("selector")), str(evidence.get("selector_index")))
-                        candidates[candidate_id] = EventCandidate(
-                            candidate_id=candidate_id,
-                            source_id=listing.source_id,
-                            source_name=listing.source_name,
-                            listing_url=listing.url,
-                            detail_url=detail_url,
-                            title=_title(card),
-                            evidence=EventEvidence(
-                                selector=str(evidence.get("selector")),
-                                selector_index=max(0, int(evidence.get("selector_index") or 0)),
-                                selector_match_count=max(1, int(evidence.get("selector_match_count") or 1)),
-                                document_position={key: int((evidence.get("document_position") or {}).get(key) or 0) for key in ("x", "y", "width", "height")},
-                                viewport_position={key: int((evidence.get("viewport_position") or {}).get(key) or 0) for key in ("x", "y", "width", "height")},
-                                page_index=max(0, int(card.get("page_index") or 0)),
-                                page_url=canonical_url(card.get("page_url") or listing.url),
-                                text=str(card.get("text") or "").strip()[:5000],
-                            ),
-                            collected_at=started,
+                    try:
+                        page.goto(
+                            listing.url,
+                            wait_until="networkidle",
+                            timeout=NAV_TIMEOUT_MS,
                         )
+                    except Exception:
+                        page.goto(
+                            listing.url,
+                            wait_until="domcontentloaded",
+                            timeout=DOM_TIMEOUT_MS,
+                        )
+
+                    for page_index in range(max(1, MAX_LISTING_PAGES)):
+                        page.evaluate(
+                            PREPARE_PAGE_JS,
+                            {"maxRounds": max(0, LOAD_MORE_ROUNDS)},
+                        )
+                        page_url = str(page.url)
+                        cards = page.evaluate(
+                            CARD_JS,
+                            {
+                                "allowedDomains": source.get("allowed_domains") or [],
+                                "maxCards": 120,
+                                "sourceId": listing.source_id,
+                                "pageIndex": page_index,
+                                "adapter": source.get("adapter") or "rendered_dom_card",
+                                "officialHome": source.get("official_home") or "",
+                            },
+                        )
+                        evidence_by_id = page.evaluate(CARD_EVIDENCE_JS)
+
+                        for card in cards:
+                            raw_url = str(card.get("url") or "").strip()
+                            evidence_raw = evidence_by_id.get(
+                                str(card.get("id") or "")
+                            )
+                            if not raw_url.startswith(("http://", "https://")):
+                                continue
+                            if not isinstance(evidence_raw, dict):
+                                continue
+                            if not str(evidence_raw.get("selector") or "").strip():
+                                continue
+
+                            try:
+                                detail = _detail_candidate(
+                                    context,
+                                    source,
+                                    listing.url,
+                                    raw_url,
+                                    card,
+                                )
+                            except Exception as exc:
+                                detail = {
+                                    "detail_url": raw_url,
+                                    "title": _listing_title(card),
+                                    "when": "",
+                                    "where": "",
+                                    "summary": "",
+                                    "detail_status": "failed",
+                                    "detail_error": f"{type(exc).__name__}: {exc}"[:500],
+                                    "detail_page_title": "",
+                                }
+
+                            final_detail_url = str(detail.get("detail_url") or raw_url)
+                            candidate_id = stable_id(
+                                listing.source_id,
+                                listing.url,
+                                final_detail_url,
+                            )
+                            if candidate_id in candidates:
+                                continue
+                            candidates[candidate_id] = EventCandidate(
+                                candidate_id=candidate_id,
+                                source_id=listing.source_id,
+                                source_name=listing.source_name,
+                                listing_url=listing.url,
+                                detail_url=final_detail_url,
+                                title=str(detail.get("title") or _listing_title(card)),
+                                when=str(detail.get("when") or ""),
+                                where=str(detail.get("where") or ""),
+                                summary=str(detail.get("summary") or ""),
+                                detail_status=str(detail.get("detail_status") or "failed"),
+                                detail_error=str(detail.get("detail_error") or ""),
+                                detail_page_title=str(detail.get("detail_page_title") or ""),
+                                evidence=_event_evidence(
+                                    card,
+                                    evidence_raw,
+                                    page_index,
+                                    page_url,
+                                ),
+                                collected_at=started,
+                            )
+
+                        if page_index >= MAX_LISTING_PAGES - 1:
+                            break
+                        next_result = page.evaluate(
+                            CLICK_NEXT_PAGE_JS,
+                            {
+                                "allowedDomains": source.get("allowed_domains") or [],
+                                "pageIndex": page_index,
+                            },
+                        )
+                        if not next_result.get("clicked"):
+                            break
+                        try:
+                            page.wait_for_load_state(
+                                "networkidle",
+                                timeout=NEXT_WAIT_MS,
+                            )
+                        except Exception:
+                            page.wait_for_timeout(NEXT_WAIT_MS)
                 except Exception as exc:
-                    errors.append({"listing_url": listing.url, "error": f"{type(exc).__name__}: {exc}"[:500]})
+                    errors.append(
+                        {
+                            "listing_url": listing.url,
+                            "error": f"{type(exc).__name__}: {exc}"[:500],
+                        }
+                    )
             context.close()
         finally:
             browser.close()
@@ -558,6 +804,7 @@ __all__ = [
     "EventReviewStore",
     "ListingPageCandidate",
     "ReviewState",
+    "canonical_url",
     "collect_event_candidates",
     "collect_listing_pages",
 ]
