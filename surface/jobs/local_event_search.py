@@ -23,7 +23,7 @@ os.environ.setdefault("LOCAL_EVENTS_CARD_SCREENSHOTS", "0")
 
 from local_events_runtime import collect_events  # noqa: E402
 from local_events_runtime.output import normalize_payload  # noqa: E402
-from local_events_runtime.studio_runtime import apply_runtime_studio_rules  # noqa: E402
+from local_events_runtime.studio_pipeline import apply_runtime_studio_rules  # noqa: E402
 
 SURFACE_DIR = Path(__file__).resolve().parents[1]
 ENV_DIR = Path(
