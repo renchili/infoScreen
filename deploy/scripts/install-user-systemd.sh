@@ -6,8 +6,8 @@ SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
 SURFACE_DIR="$REPO_DIR/surface"
 SURFACE_ENV_DIR="$SURFACE_DIR/.env"
 SURFACE_WEB_DIR="$SURFACE_DIR/web"
-STUDIO_URL="http://127.0.0.1:8765/local-events/studio/"
-STUDIO_SOURCES_URL="http://127.0.0.1:8765/api/local-events/studio/sources"
+REVIEW_URL="http://127.0.0.1:8765/local-events/studio/"
+REVIEW_STATE_URL="http://127.0.0.1:8765/api/local-events/review/state"
 
 mkdir -p "$SYSTEMD_USER_DIR" "$SURFACE_ENV_DIR" "$SURFACE_WEB_DIR"
 
@@ -78,7 +78,7 @@ import_graphical_session_environment() {
   done
 
   if [ "${#names[@]}" -eq 0 ]; then
-    echo "[WARN] no graphical session variables are present; OPEN REAL BROWSER requires running this installer from the Surface desktop session" >&2
+    echo "[WARN] no graphical session variables are present; opening the interactive feedback browser requires running this installer from the Surface desktop session" >&2
     return
   fi
 
@@ -118,31 +118,31 @@ move_runtime_dir() {
 verify_http_service() {
   local attempt
   for attempt in $(seq 1 30); do
-    if curl -fsS "$STUDIO_URL" >/tmp/infoscreen-studio.html 2>/dev/null \
-      && grep -q "LOCAL EVENT STUDIO" /tmp/infoscreen-studio.html; then
+    if curl -fsS "$REVIEW_URL" >/tmp/infoscreen-local-event-review.html 2>/dev/null \
+      && grep -q "LOCAL EVENT REVIEW" /tmp/infoscreen-local-event-review.html; then
       break
     fi
     sleep 1
   done
 
-  if ! curl -fsS "$STUDIO_URL" >/tmp/infoscreen-studio.html \
-    || ! grep -q "LOCAL EVENT STUDIO" /tmp/infoscreen-studio.html; then
-    echo "[ERROR] Local Event Studio did not become available at $STUDIO_URL" >&2
+  if ! curl -fsS "$REVIEW_URL" >/tmp/infoscreen-local-event-review.html \
+    || ! grep -q "LOCAL EVENT REVIEW" /tmp/infoscreen-local-event-review.html; then
+    echo "[ERROR] Local Event Review did not become available at $REVIEW_URL" >&2
     systemctl --user status infoscreen-http.service --no-pager -l >&2 || true
     journalctl --user -u infoscreen-http.service -n 120 --no-pager >&2 || true
     exit 1
   fi
 
-  if ! curl -fsS "$STUDIO_SOURCES_URL" \
+  if ! curl -fsS "$REVIEW_STATE_URL" \
     | python3 -c 'import json,sys; payload=json.load(sys.stdin); assert payload.get("ok") is True; assert isinstance(payload.get("sources"), list)' ; then
-    echo "[ERROR] Local Event Studio source API is unavailable: $STUDIO_SOURCES_URL" >&2
+    echo "[ERROR] Local Event Review state API is unavailable: $REVIEW_STATE_URL" >&2
     systemctl --user status infoscreen-http.service --no-pager -l >&2 || true
     journalctl --user -u infoscreen-http.service -n 120 --no-pager >&2 || true
     exit 1
   fi
 
   echo "[READY] dashboard: http://127.0.0.1:8765/"
-  echo "[READY] Local Event Studio: $STUDIO_URL"
+  echo "[READY] Local Event Review: $REVIEW_URL"
 }
 
 install_system_dependencies
