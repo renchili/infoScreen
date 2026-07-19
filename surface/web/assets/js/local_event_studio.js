@@ -3,13 +3,11 @@
 (() => {
   const ui = {};
   const state = {
-    sources: [],
-    sourceId: "",
-    listingUrl: "",
-    rules: null,
-    test: null,
-    testCurrent: false,
+    payload: null,
+    feedbackSourceId: "",
+    feedbackListingUrl: "",
     timer: null,
+    busy: false,
   };
 
   const byId = (id) => document.getElementById(id);
@@ -39,402 +37,381 @@
     node.className = `status ${kind}`.trim();
   }
 
-  function source() {
-    return state.sources.find((item) => item.source_id === state.sourceId) || null;
-  }
-
-  function populateSources() {
-    ui.source.innerHTML = "";
-    state.sources.forEach((item) => {
-      const option = document.createElement("option");
-      option.value = item.source_id;
-      option.textContent = item.name || item.source_id;
-      ui.source.appendChild(option);
-    });
-    state.sourceId = state.sources[0]?.source_id || "";
-    ui.source.value = state.sourceId;
-    populateListings();
-  }
-
-  function populateListings() {
-    ui.listing.innerHTML = "";
-    const items = source()?.listing_urls || [];
-    items.forEach((item) => {
-      const option = document.createElement("option");
-      option.value = item.listing_url;
-      option.textContent = item.listing_url;
-      ui.listing.appendChild(option);
-    });
-    state.listingUrl = items[0]?.listing_url || "";
-    ui.listing.value = state.listingUrl;
-  }
-
-  function fieldLines(fields) {
-    if (!fields || typeof fields !== "object") return "—";
-    const lines = [];
-    for (const name of ["title", "when", "where", "url", "summary", "image"]) {
-      const rule = fields[name];
-      if (rule?.selector) {
-        lines.push(
-          `${name.toUpperCase()}: ${rule.selector}${
-            rule.attribute ? ` @${rule.attribute}` : ""
-          }${rule.optional ? " (optional)" : ""}`,
-        );
-      }
-    }
-    return lines.join("\n") || "—";
-  }
-
-  function actionLines(actions) {
-    if (!Array.isArray(actions) || !actions.length) return "—";
-    return actions
-      .map((action, index) => {
-        const parts = [`${index + 1}. ${String(action.action || "").toUpperCase()}`];
-        if (action.selector) parts.push(action.selector);
-        if (action.value !== undefined && action.value !== null) {
-          parts.push(`value=${JSON.stringify(action.value)}`);
-        }
-        if (action.max_rounds > 1) parts.push(`max=${action.max_rounds}`);
-        if (action.wait_ms) parts.push(`wait=${action.wait_ms}ms`);
-        if (action.optional) parts.push("optional");
-        return parts.join(" · ");
-      })
-      .join("\n");
-  }
-
-  function canonicalJson(value) {
-    if (Array.isArray(value)) {
-      return `[${value.map(canonicalJson).join(",")}]`;
-    }
-    if (value && typeof value === "object") {
-      return `{${Object.keys(value)
-        .sort()
-        .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
-        .join(",")}}`;
-    }
-    return JSON.stringify(value);
-  }
-
-  async function ruleFingerprint(rule) {
-    if (!rule) return "";
-    const semantic = JSON.parse(JSON.stringify(rule));
-    for (const key of [
-      "created_at",
-      "updated_at",
-      "published_at",
-      "version",
-      "status",
-      "based_on_version",
-    ]) {
-      delete semantic[key];
-    }
-    const bytes = new TextEncoder().encode(canonicalJson(semantic));
-    const digest = await crypto.subtle.digest("SHA-256", bytes);
-    return Array.from(new Uint8Array(digest))
-      .map((value) => value.toString(16).padStart(2, "0"))
-      .join("");
-  }
-
-  function renderRule(payload) {
-    state.rules = payload;
-    const rule = payload.draft || payload.published;
-    if (!rule) {
-      setStatus(ui.ruleStatus, "NO DRAFT");
-      ui.card.textContent = "—";
-      ui.url.textContent = "—";
-      ui.listFields.textContent = "—";
-      ui.detailFields.textContent = "—";
-      ui.listActions.textContent = "—";
-      ui.detailActions.textContent = "—";
-      return;
-    }
-    setStatus(
-      ui.ruleStatus,
-      payload.draft
-        ? "DRAFT SAVED BY LIVE BROWSER"
-        : `PUBLISHED V${rule.version}`,
-      payload.draft ? "warn" : "ok",
-    );
-    ui.card.textContent = rule.card?.selector || "—";
-    ui.url.textContent = rule.fields?.url?.selector || "—";
-    ui.listFields.textContent = fieldLines(rule.fields);
-    ui.detailFields.textContent = rule.detail_page?.enabled
-      ? fieldLines(rule.detail_page.fields)
-      : "No detail field overrides; detail pages are still opened and verified.";
-    ui.listActions.textContent = actionLines(rule.listing_actions);
-    ui.detailActions.textContent = actionLines(rule.detail_actions);
-  }
-
   function clear(node) {
     while (node.firstChild) node.firstChild.remove();
   }
 
-  function renderRows(node, rows, accepted) {
+  function empty(node, message) {
     clear(node);
-    if (!rows?.length) {
-      const empty = document.createElement("div");
-      empty.className = "message";
-      empty.textContent = accepted
-        ? "No confirmed detail pages yet."
-        : "No rejected samples.";
-      node.appendChild(empty);
+    const value = document.createElement("div");
+    value.className = "empty";
+    value.textContent = message;
+    node.appendChild(value);
+  }
+
+  function badge(decision) {
+    const node = document.createElement("span");
+    node.className = `badge ${decision || "pending"}`;
+    node.textContent = decision || "pending";
+    return node;
+  }
+
+  function externalLink(url, label) {
+    const link = document.createElement("a");
+    link.href = url;
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.textContent = label;
+    return link;
+  }
+
+  function actionButton(label, className, handler) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `button small ${className || ""}`.trim();
+    button.textContent = label;
+    button.addEventListener("click", handler);
+    return button;
+  }
+
+  function metaRow(label, value, code = false) {
+    const row = document.createElement("div");
+    const strong = document.createElement("strong");
+    strong.textContent = `${label}: `;
+    row.appendChild(strong);
+    if (code) {
+      const node = document.createElement("code");
+      node.textContent = text(value);
+      row.appendChild(node);
+    } else {
+      row.appendChild(document.createTextNode(text(value)));
+    }
+    return row;
+  }
+
+  async function setListingDecision(candidateId, decision) {
+    setStatus(ui.globalStatus, "SAVING LIST PAGE REVIEW", "warn");
+    await request("/api/local-events/review/listing-decision", {
+      method: "POST",
+      body: JSON.stringify({ candidate_id: candidateId, decision }),
+    });
+    await loadState();
+  }
+
+  async function setEventDecision(candidateId, decision) {
+    setStatus(ui.globalStatus, "SAVING EVENT REVIEW", "warn");
+    await request("/api/local-events/review/event-decision", {
+      method: "POST",
+      body: JSON.stringify({ candidate_id: candidateId, decision }),
+    });
+    await loadState();
+  }
+
+  function renderListingPages(rows) {
+    clear(ui.listingPages);
+    ui.listingCount.textContent = String(rows.length);
+    if (!rows.length) {
+      empty(ui.listingPages, "No list pages collected yet.");
       return;
     }
-    rows.slice(0, 20).forEach((row) => {
+
+    rows.forEach((row) => {
       const article = document.createElement("article");
-      article.className = "result";
-      if (accepted) {
-        const event = row.event || {};
-        const heading = document.createElement("h4");
-        const link = document.createElement("a");
-        link.href = event.url || "#";
-        link.target = "_blank";
-        link.rel = "noopener";
-        link.textContent = text(event.title, "Untitled");
-        heading.appendChild(link);
-        const body = document.createElement("p");
-        body.textContent = `${text(event.when)} · ${text(event.where)}`;
-        article.append(heading, body);
-      } else {
-        const heading = document.createElement("h4");
-        heading.textContent = text(row.reason, "rejected");
-        const body = document.createElement("p");
-        body.textContent = text(
-          row.detail || row.card_text || JSON.stringify(row.values || {}),
-          "",
-        );
-        article.append(heading, body);
-      }
-      node.appendChild(article);
+      article.className = `card ${row.decision || "pending"}`;
+
+      const head = document.createElement("div");
+      head.className = "card-head";
+      const heading = document.createElement("h3");
+      heading.appendChild(externalLink(row.url, row.source_name || row.source_id));
+      head.append(heading, badge(row.decision));
+
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      meta.append(
+        metaRow("URL", row.url, true),
+        metaRow("Found as", row.origin),
+      );
+      if (row.link_text) meta.appendChild(metaRow("Link text", row.link_text));
+
+      const actions = document.createElement("div");
+      actions.className = "actions";
+      actions.append(
+        actionButton("CONFIRM LIST PAGE", "primary", () =>
+          setListingDecision(row.candidate_id, "confirmed"),
+        ),
+        actionButton("REJECT", "reject", () =>
+          setListingDecision(row.candidate_id, "rejected"),
+        ),
+        actionButton("RESET", "secondary", () =>
+          setListingDecision(row.candidate_id, "pending"),
+        ),
+      );
+
+      article.append(head, meta, actions);
+      ui.listingPages.appendChild(article);
     });
   }
 
-  function renderTest(result, current) {
-    state.test = result;
-    state.testCurrent = current;
-    if (!result) {
-      setStatus(ui.testStatus, "NOT VALIDATED");
-      ui.matched.textContent = "—";
-      ui.accepted.textContent = "—";
-      ui.rejected.textContent = "—";
-      ui.publishable.textContent = "—";
-      ui.publish.disabled = true;
-      ui.testMessage.textContent =
-        "Use SAVE CURRENT LISTING STATE in the live browser after mappings are complete.";
-      renderRows(ui.acceptedList, [], true);
-      renderRows(ui.rejectedList, [], false);
+  function positionText(position) {
+    const value = position || {};
+    return `x=${value.x ?? 0}, y=${value.y ?? 0}, w=${value.width ?? 0}, h=${value.height ?? 0}`;
+  }
+
+  function renderEventCandidates(rows) {
+    clear(ui.eventCandidates);
+    ui.eventCount.textContent = String(rows.length);
+    if (!rows.length) {
+      empty(ui.eventCandidates, "No Event candidates collected from confirmed pages yet.");
       return;
     }
-    ui.matched.textContent = String(result.matched_card_count ?? 0);
-    ui.accepted.textContent = String(result.accepted_count ?? 0);
-    ui.rejected.textContent = String(result.rejected_count ?? 0);
-    ui.publishable.textContent = result.publishable && current ? "YES" : "NO";
-    if (!current) {
-      setStatus(ui.testStatus, "DRAFT CHANGED AFTER VALIDATION", "warn");
-      ui.testMessage.textContent =
-        "Selectors or recorded actions changed. Save current listing state again.";
-    } else {
-      setStatus(
-        ui.testStatus,
-        result.publishable
-          ? "LIVE DETAIL VALIDATION PASSED"
-          : "VALIDATION FAILED",
-        result.publishable ? "ok" : "error",
+
+    rows.forEach((row) => {
+      const evidence = row.evidence || {};
+      const article = document.createElement("article");
+      article.className = `card ${row.decision || "pending"}`;
+
+      const head = document.createElement("div");
+      head.className = "card-head";
+      const heading = document.createElement("h3");
+      heading.appendChild(externalLink(row.detail_url, text(row.title, "Untitled candidate")));
+      head.append(heading, badge(row.decision));
+
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      meta.append(
+        metaRow("Institution", row.source_name || row.source_id),
+        metaRow("Listing page", row.listing_url, true),
+        metaRow("Source element", evidence.selector, true),
+        metaRow(
+          "Element match",
+          `${Number(evidence.selector_index ?? 0) + 1} of ${evidence.selector_match_count ?? 1}`,
+        ),
+        metaRow("Document position", positionText(evidence.document_position)),
+        metaRow("Page index", evidence.page_index ?? 0),
       );
-      const errors = [
-        ...(result.fatal_errors || []),
-        ...(result.warnings || []),
-      ];
-      ui.testMessage.textContent = errors.length
-        ? errors.join(" · ")
-        : `Validated by ${result.validation_mode || "live browser"} at ${text(
-            result.tested_at,
-          )}`;
+
+      if (evidence.text) {
+        const snippet = document.createElement("div");
+        snippet.className = "snippet";
+        snippet.textContent = evidence.text;
+        article.append(head, meta, snippet);
+      } else {
+        article.append(head, meta);
+      }
+
+      const actions = document.createElement("div");
+      actions.className = "actions";
+      actions.append(
+        actionButton("RELATED ACTIVITY", "primary", () =>
+          setEventDecision(row.candidate_id, "confirmed"),
+        ),
+        actionButton("NOT RELATED", "reject", () =>
+          setEventDecision(row.candidate_id, "rejected"),
+        ),
+        actionButton("RESET", "secondary", () =>
+          setEventDecision(row.candidate_id, "pending"),
+        ),
+      );
+      article.appendChild(actions);
+      ui.eventCandidates.appendChild(article);
+    });
+  }
+
+  function renderFeedback(rows) {
+    clear(ui.feedbackList);
+    ui.feedbackCount.textContent = String(rows.length);
+    if (!rows.length) {
+      empty(ui.feedbackList, "No user-submitted Event positions yet.");
+      return;
     }
-    ui.publish.disabled =
-      !result.publishable || !current || !state.rules?.draft;
-    renderRows(ui.acceptedList, result.accepted || [], true);
-    renderRows(ui.rejectedList, result.rejected || [], false);
+
+    rows.forEach((row) => {
+      const article = document.createElement("article");
+      article.className = "card";
+      const head = document.createElement("div");
+      head.className = "card-head";
+      const heading = document.createElement("h4");
+      heading.textContent = row.source_name || row.source_id;
+      head.append(heading, badge("confirmed"));
+
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      meta.append(
+        metaRow("Listing page", row.listing_url, true),
+        metaRow("Page at submission", row.page_url, true),
+        metaRow("Selected element", row.selector, true),
+        metaRow(
+          "Element match",
+          `${Number(row.selector_index ?? 0) + 1} of ${row.selector_match_count ?? 1}`,
+        ),
+        metaRow("Document position", positionText(row.document_position)),
+      );
+      if (row.href) meta.appendChild(metaRow("Link", row.href, true));
+
+      const snippet = document.createElement("div");
+      snippet.className = "snippet";
+      snippet.textContent = text(row.text, "No visible text");
+      article.append(head, meta, snippet);
+      ui.feedbackList.appendChild(article);
+    });
+  }
+
+  function listingRowsForSource(sourceId) {
+    const rows = state.payload?.listing_pages || [];
+    return rows.filter((row) => row.source_id === sourceId);
+  }
+
+  function populateFeedbackSources() {
+    const sources = state.payload?.sources || [];
+    const available = sources.filter(
+      (source) => listingRowsForSource(source.source_id).length > 0,
+    );
+    clear(ui.feedbackSource);
+    available.forEach((source) => {
+      const option = document.createElement("option");
+      option.value = source.source_id;
+      option.textContent = source.source_name || source.source_id;
+      ui.feedbackSource.appendChild(option);
+    });
+    if (!available.length) {
+      state.feedbackSourceId = "";
+      state.feedbackListingUrl = "";
+      ui.openFeedback.disabled = true;
+      clear(ui.feedbackListing);
+      return;
+    }
+    if (!available.some((source) => source.source_id === state.feedbackSourceId)) {
+      state.feedbackSourceId = available[0].source_id;
+    }
+    ui.feedbackSource.value = state.feedbackSourceId;
+    populateFeedbackListings();
+  }
+
+  function populateFeedbackListings() {
+    const rows = listingRowsForSource(state.feedbackSourceId);
+    clear(ui.feedbackListing);
+    rows.forEach((row) => {
+      const option = document.createElement("option");
+      option.value = row.url;
+      option.textContent = `${row.url} [${row.decision}]`;
+      ui.feedbackListing.appendChild(option);
+    });
+    if (!rows.length) {
+      state.feedbackListingUrl = "";
+      ui.openFeedback.disabled = true;
+      return;
+    }
+    if (!rows.some((row) => row.url === state.feedbackListingUrl)) {
+      state.feedbackListingUrl = rows[0].url;
+    }
+    ui.feedbackListing.value = state.feedbackListingUrl;
+    ui.openFeedback.disabled = false;
+  }
+
+  function render(payload) {
+    state.payload = payload;
+    renderListingPages(payload.listing_pages || []);
+    renderEventCandidates(payload.events || []);
+    renderFeedback(payload.feedback || []);
+    populateFeedbackSources();
+    setStatus(ui.globalStatus, "READY", "ok");
   }
 
   async function loadState() {
-    if (!state.sourceId || !state.listingUrl) return;
     try {
-      const params = new URLSearchParams({
-        source_id: state.sourceId,
-        listing_url: state.listingUrl,
-      });
-      const [rules, latest] = await Promise.all([
-        request(`/api/local-events/studio/rules?${params}`),
-        request(`/api/local-events/studio/test-latest?${params}`),
-      ]);
-      renderRule(rules);
-      const activeRule = rules.draft || rules.published;
-      const currentFingerprint = await ruleFingerprint(activeRule);
-      const latestResult = latest.result || null;
-      renderTest(
-        latestResult,
-        Boolean(
-          latestResult &&
-            currentFingerprint &&
-            latestResult.rule_fingerprint === currentFingerprint,
-        ),
-      );
-      setStatus(ui.globalStatus, "READY", "ok");
+      const payload = await request("/api/local-events/review/state");
+      render(payload);
     } catch (error) {
       setStatus(ui.globalStatus, error.message, "error");
     }
   }
 
-  async function openBrowser() {
-    ui.open.disabled = true;
-    setStatus(ui.globalStatus, "STARTING REAL CHROMIUM", "warn");
-    ui.browserMessage.textContent =
-      "Starting a real browser window on the Surface desktop...";
+  async function runCollection(button, statusText, path) {
+    if (state.busy) return;
+    state.busy = true;
+    button.disabled = true;
+    setStatus(ui.globalStatus, statusText, "warn");
     try {
-      const payload = await request("/api/local-events/studio/capture", {
+      const payload = await request(path, { method: "POST", body: "{}" });
+      render(payload);
+    } catch (error) {
+      setStatus(ui.globalStatus, error.message, "error");
+    } finally {
+      state.busy = false;
+      button.disabled = false;
+    }
+  }
+
+  async function openFeedbackBrowser() {
+    if (!state.feedbackSourceId || !state.feedbackListingUrl) return;
+    ui.openFeedback.disabled = true;
+    setStatus(ui.feedbackStatus, "OPENING CHROMIUM", "warn");
+    ui.feedbackMessage.textContent = "Opening the real listing page on the Surface desktop...";
+    try {
+      await request("/api/local-events/review/open-feedback", {
         method: "POST",
         body: JSON.stringify({
-          source_id: state.sourceId,
-          listing_url: state.listingUrl,
+          source_id: state.feedbackSourceId,
+          listing_url: state.feedbackListingUrl,
         }),
       });
-      const session = payload.session || payload.snapshot?.session || {};
-      ui.browserMessage.textContent = session.already_running
-        ? "The live browser is already open. Continue in that window."
-        : "A real Chromium window was started. Use the InfoScreen toolbar inside the official website.";
-      setStatus(ui.globalStatus, "LIVE BROWSER OPEN", "ok");
-      window.setTimeout(loadState, 1200);
+      setStatus(ui.feedbackStatus, "BROWSER OPEN", "ok");
+      ui.feedbackMessage.textContent =
+        "Browse normally. When needed, click POINT TO EVENT in the browser toolbar, choose the element, then submit.";
     } catch (error) {
-      ui.browserMessage.textContent = error.message;
-      setStatus(ui.globalStatus, "BROWSER START FAILED", "error");
+      setStatus(ui.feedbackStatus, "FAILED", "error");
+      ui.feedbackMessage.textContent = error.message;
     } finally {
-      ui.open.disabled = false;
+      ui.openFeedback.disabled = false;
     }
   }
 
-  async function publish() {
-    ui.publish.disabled = true;
-    try {
-      await request("/api/local-events/studio/publish", {
-        method: "POST",
-        body: JSON.stringify({
-          source_id: state.sourceId,
-          listing_url: state.listingUrl,
-        }),
-      });
-      ui.testMessage.textContent = "Published. Run Local Events below.";
-      await loadState();
-    } catch (error) {
-      ui.testMessage.textContent = error.message;
-      ui.publish.disabled = false;
-    }
-  }
-
-  function renderProduction(payload) {
-    clear(ui.results);
-    const rows = Array.isArray(payload.results) ? payload.results : [];
-    ui.runMessage.textContent = `${rows.length} activities · partial=${Boolean(
-      payload.partial,
-    )} · completed=${
-      payload.completed_source_count ?? "—"
-    } · incomplete=${payload.incomplete_source_count ?? "—"}`;
-    rows.slice(0, 80).forEach((event) => {
-      const article = document.createElement("article");
-      article.className = "result";
-      const heading = document.createElement("h4");
-      const link = document.createElement("a");
-      link.href = event.url;
-      link.target = "_blank";
-      link.rel = "noopener";
-      link.textContent = text(event.title, "Untitled");
-      heading.appendChild(link);
-      const body = document.createElement("p");
-      body.textContent = `${text(event.when)} · ${text(
-        event.where,
-      )} · ${text(event.source_name || event.host)}`;
-      article.append(heading, body);
-      ui.results.appendChild(article);
-    });
-  }
-
-  async function runProduction() {
-    ui.run.disabled = true;
-    setStatus(ui.runStatus, "RUNNING", "warn");
-    const location = ui.location.value.trim() || "Punggol Singapore";
-    window.localStorage.setItem("local_events_location", location);
-    try {
-      const payload = await request("/api/local-events/search", {
-        method: "POST",
-        body: JSON.stringify({ location }),
-      });
-      renderProduction(payload);
-      setStatus(ui.runStatus, "COMPLETE", "ok");
-    } catch (error) {
-      ui.runMessage.textContent = error.message;
-      setStatus(ui.runStatus, "FAILED", "error");
-    } finally {
-      ui.run.disabled = false;
-    }
-  }
-
-  async function initialize() {
+  function initialize() {
     Object.assign(ui, {
       globalStatus: byId("global-status"),
-      source: byId("source-select"),
-      listing: byId("listing-select"),
-      open: byId("open-browser"),
+      collectListings: byId("collect-listings"),
+      collectEvents: byId("collect-events"),
       reload: byId("reload-state"),
-      browserMessage: byId("browser-message"),
-      ruleStatus: byId("rule-status"),
-      card: byId("card-selector"),
-      url: byId("url-selector"),
-      listFields: byId("listing-fields"),
-      detailFields: byId("detail-fields"),
-      listActions: byId("listing-actions"),
-      detailActions: byId("detail-actions"),
-      testStatus: byId("test-status"),
-      matched: byId("matched"),
-      accepted: byId("accepted"),
-      rejected: byId("rejected"),
-      publishable: byId("publishable"),
-      testMessage: byId("test-message"),
-      acceptedList: byId("accepted-list"),
-      rejectedList: byId("rejected-list"),
-      publish: byId("publish"),
-      runStatus: byId("run-status"),
-      location: byId("location"),
-      run: byId("run"),
-      runMessage: byId("run-message"),
-      results: byId("results"),
+      listingPages: byId("listing-pages"),
+      listingCount: byId("listing-count"),
+      eventCandidates: byId("event-candidates"),
+      eventCount: byId("event-count"),
+      feedbackStatus: byId("feedback-status"),
+      feedbackSource: byId("feedback-source"),
+      feedbackListing: byId("feedback-listing"),
+      openFeedback: byId("open-feedback-browser"),
+      feedbackMessage: byId("feedback-message"),
+      feedbackList: byId("feedback-list"),
+      feedbackCount: byId("feedback-count"),
     });
 
-    ui.location.value =
-      window.localStorage.getItem("local_events_location") ||
-      "Punggol Singapore";
-    ui.source.addEventListener("change", async () => {
-      state.sourceId = ui.source.value;
-      populateListings();
-      await loadState();
-    });
-    ui.listing.addEventListener("change", async () => {
-      state.listingUrl = ui.listing.value;
-      await loadState();
-    });
-    ui.open.addEventListener("click", openBrowser);
+    ui.collectListings.addEventListener("click", () =>
+      runCollection(
+        ui.collectListings,
+        "COLLECTING LIST PAGES",
+        "/api/local-events/review/discover-listings",
+      ),
+    );
+    ui.collectEvents.addEventListener("click", () =>
+      runCollection(
+        ui.collectEvents,
+        "COLLECTING EVENTS FROM CONFIRMED PAGES",
+        "/api/local-events/review/collect-events",
+      ),
+    );
     ui.reload.addEventListener("click", loadState);
-    ui.publish.addEventListener("click", publish);
-    ui.run.addEventListener("click", runProduction);
+    ui.feedbackSource.addEventListener("change", () => {
+      state.feedbackSourceId = ui.feedbackSource.value;
+      state.feedbackListingUrl = "";
+      populateFeedbackListings();
+    });
+    ui.feedbackListing.addEventListener("change", () => {
+      state.feedbackListingUrl = ui.feedbackListing.value;
+    });
+    ui.openFeedback.addEventListener("click", openFeedbackBrowser);
 
-    try {
-      const payload = await request("/api/local-events/studio/sources");
-      state.sources = payload.sources || [];
-      populateSources();
-      await loadState();
-      state.timer = window.setInterval(loadState, 2500);
-    } catch (error) {
-      setStatus(ui.globalStatus, error.message, "error");
-    }
+    loadState();
+    state.timer = window.setInterval(loadState, 3000);
   }
 
   document.addEventListener("DOMContentLoaded", initialize);
