@@ -1,6 +1,6 @@
 # InfoScreen HTTP interaction contract
 
-This document defines the HTTP boundary between the kiosk frontend, Local Event Studio, local operator tools, runtime JSON, and producer jobs. Deployment and troubleshooting commands belong in `README.md`; architecture belongs in `docs/design.md`.
+This document defines the HTTP boundary between the kiosk frontend, local operator tools, runtime JSON, and producer jobs. Deployment and troubleshooting commands belong in `README.md`; architecture belongs in `docs/design.md`.
 
 ## 1. Server boundary
 
@@ -30,11 +30,10 @@ Cache-Control: no-store
 | --- | --- | --- | --- |
 | `GET`, `HEAD` | `/` | `serve_infoscreen.py` | `surface/web/index.html` |
 | `GET`, `HEAD` | `/index.html` | `serve_infoscreen.py` | `surface/web/index.html` |
-| `GET`, `HEAD` | `/local-events/studio/` | `SimpleHTTPRequestHandler` | `surface/web/local-events/studio/index.html` |
 | `GET`, `HEAD` | `/docs` | `serve_infoscreen.py` | Swagger UI wrapper |
 | `GET`, `HEAD` | `/openapi.json` | `serve_infoscreen.py`, `openapi_spec.py`, `api_models.py` | Generated OpenAPI JSON |
 
-Static frontend assets are served from `surface/web/` through the existing `SimpleHTTPRequestHandler`. Local Event Studio does not introduce another HTTP process or port.
+Static frontend assets are served from `surface/web/` through `SimpleHTTPRequestHandler`.
 
 ## 3. Runtime JSON reads
 
@@ -242,8 +241,7 @@ Side effect:
 serve_infoscreen.py
   -> subprocess: python surface/search_local_events.py <location>
   -> surface/jobs/local_event_search.py
-  -> existing source-specific official collector
-  -> published Studio source/listing replacement
+  -> source-specific official collector
   -> surface/.env/local_event_search_results.json
   -> optional surface/.env/local_event_search_results.partial.json
   -> debug evidence under surface/.env/local_event_debug_cards/
@@ -269,8 +267,6 @@ Important response fields include:
 results
 sources
 debug_by_source
-studio_activations
-studio_source_count
 partial
 write_policy
 previous_count
@@ -279,340 +275,32 @@ version
 text_normalizer
 ```
 
-The frontend displays only accepted `results`. `debug_by_source` and `studio_activations` are operator/developer evidence and are not rendered as event cards.
+The frontend displays only accepted `results`. `debug_by_source` is operator/developer evidence and is not rendered as event cards.
 
-## 9. Local Event Studio source and rule reads
-
-### List configured sources and rule state
-
-```http
-GET /api/local-events/studio/sources
-```
-
-Response shape:
-
-```json
-{
-  "ok": true,
-  "sources": [
-    {
-      "source_id": "esplanade",
-      "name": "Esplanade",
-      "listing_urls": [
-        {
-          "listing_url": "https://www.esplanade.com/whats-on",
-          "has_draft": false,
-          "published_version": null,
-          "history_versions": []
-        }
-      ]
-    }
-  ]
-}
-```
-
-The endpoint reads committed `surface/conf/event_sources.json` and machine-local Studio rule state. It does not crawl external pages.
-
-### Read one listing’s rule state
-
-```http
-GET /api/local-events/studio/rules?source_id=<id>&listing_url=<url>
-```
-
-Response includes `draft`, `published`, and ascending immutable `history`. The source/listing pair must exist in committed configuration.
-
-### Export one rule
-
-```http
-GET /api/local-events/studio/export?source_id=<id>&listing_url=<url>&status=published
-GET /api/local-events/studio/export?source_id=<id>&listing_url=<url>&status=draft
-GET /api/local-events/studio/export?source_id=<id>&listing_url=<url>&version=<n>
-```
-
-The response wraps a validated rule object. Export does not expose arbitrary filesystem paths.
-
-## 10. Local Event Studio draft mutations
-
-### Save draft
-
-```http
-PUT /api/local-events/studio/draft
-Content-Type: application/json
-```
-
-The request body is the complete `LocalEventStudioRule` object. The server:
-
-- validates source and listing against committed configuration;
-- forces lifecycle state to `draft`, version `0`;
-- preserves the original `created_at` when replacing an existing draft;
-- writes atomically under `surface/.env/local_event_studio/rules/`;
-- does not alter production collection.
-
-### Delete draft
-
-```http
-DELETE /api/local-events/studio/draft
-Content-Type: application/json
-```
-
-Request:
-
-```json
-{
-  "source_id": "esplanade",
-  "listing_url": "https://www.esplanade.com/whats-on"
-}
-```
-
-Only the mutable draft is deleted. Published and historical versions remain.
-
-### Import draft
-
-```http
-POST /api/local-events/studio/import
-Content-Type: application/json
-```
-
-Request:
-
-```json
-{
-  "rule": {}
-}
-```
-
-The imported object is validated and saved as a new mutable draft. Imported publication metadata and history are not activated.
-
-## 11. Local Event Studio snapshot capture and reads
-
-### Capture configured listing
-
-```http
-POST /api/local-events/studio/capture
-Content-Type: application/json
-```
-
-Request:
-
-```json
-{
-  "source_id": "esplanade",
-  "listing_url": "https://www.esplanade.com/whats-on"
-}
-```
-
-Side effect:
-
-```text
-serve_infoscreen.py
-  -> one-shot surface/jobs/local_event_studio_capture.py
-  -> validate configured source/listing before browser launch
-  -> Playwright render and bounded list expansion
-  -> surface/.env/local_event_studio/snapshots/<source>/<snapshot>/page.png
-  -> page.html
-  -> dom.json
-  -> metadata.json
-```
-
-The one-shot job inherits the active `INFOSCREEN_ENV_DIR`. It records rendered DOM evidence but does not collect page-wide XHR response bodies.
-
-### List snapshots
-
-```http
-GET /api/local-events/studio/snapshots?source_id=<id>&listing_url=<url>
-```
-
-Both filters are optional. Results contain validated metadata only.
-
-### Read snapshot asset
-
-```http
-GET /api/local-events/studio/snapshot-asset?source_id=<id>&snapshot_id=<id>&asset=page.png
-HEAD /api/local-events/studio/snapshot-asset?source_id=<id>&snapshot_id=<id>&asset=page.png
-```
-
-Allowed asset names are:
-
-```text
-page.png
-page.html
-dom.json
-metadata.json
-```
-
-Path traversal, unlisted asset names, and symlink escape are rejected.
-
-## 12. Local Event Studio deterministic draft test
-
-### Run test
-
-```http
-POST /api/local-events/studio/test
-Content-Type: application/json
-```
-
-Request:
-
-```json
-{
-  "source_id": "esplanade",
-  "listing_url": "https://www.esplanade.com/whats-on",
-  "snapshot_id": "<stored snapshot id>"
-}
-```
-
-The test runs without external network access. It evaluates the current draft against stored `dom.json`, then atomically stores a test run under:
-
-```text
-surface/.env/local_event_studio/test-runs/<source-id>/
-```
-
-The result includes:
-
-```text
-rule_fingerprint
-matched_card_count
-accepted_count
-rejected_count
-publishable
-fatal_errors
-warnings
-accepted[].event
-accepted[].evidence
-rejected[].reason
-rejected[].reasons
-rejected[].evidence
-```
-
-`publishable` requires no fatal rule error and at least one accepted activity. The test does not activate the draft.
-
-### Read latest test
-
-```http
-GET /api/local-events/studio/test-latest?source_id=<id>&listing_url=<url>
-```
-
-The response contains the latest matching test result when available, otherwise `result: null`. Frontend presentation treats a loaded historical result as stale until the current draft is retested.
-
-## 13. Local Event Studio publish and rollback
-
-### Publish tested draft
-
-```http
-POST /api/local-events/studio/publish
-Content-Type: application/json
-```
-
-Request:
-
-```json
-{
-  "source_id": "esplanade",
-  "listing_url": "https://www.esplanade.com/whats-on"
-}
-```
-
-The server rejects publication unless:
-
-- a current draft exists;
-- a completed snapshot test exists for the same source/listing;
-- the test’s semantic rule fingerprint exactly matches the current draft;
-- the test result is `publishable: true`.
-
-Successful publication:
-
-- assigns the next monotonically increasing version;
-- writes an immutable history file;
-- atomically replaces `published.json`;
-- removes the mutable draft;
-- activates only that configured source/listing on subsequent Local Events jobs.
-
-A draft-test mismatch returns HTTP `422` with `error: studio_test_required`.
-
-### Roll back as a new version
-
-```http
-POST /api/local-events/studio/rollback
-Content-Type: application/json
-```
-
-Request:
-
-```json
-{
-  "source_id": "esplanade",
-  "listing_url": "https://www.esplanade.com/whats-on",
-  "version": 1
-}
-```
-
-Rollback does not overwrite history. The selected historical rule is republished as a new active version with `based_on_version` pointing to the source version.
-
-## 14. Production activation contract
-
-Drafts and test runs never affect production output. `surface/jobs/local_event_search.py` applies Studio after the existing collector and before final normalization/write protection.
-
-Activation rules:
-
-```text
-no published rule
-  -> existing collector output remains
-
-all configured listings for one source published
-  -> legacy rows/debug for that source are replaced by Studio output
-
-only some listings published
-  -> only legacy rows carrying matching listing evidence are replaced
-
-Studio source failure, fatal evaluation, or zero accepted result
-  -> that Studio source is incomplete
-  -> payload is partial
-  -> unrelated sources remain
-```
-
-Accepted Studio rows carry:
-
-```text
-candidate_policy: official-listing-authority-v1
-source_type: studio_published_rule
-studio_rule_version
-studio_listing_url
-studio_evidence
-studio_detail_page
-```
-
-The existing partial-write protection remains the final writer policy.
-
-## 15. Browser interaction summary
+## 9. Browser interaction summary
 
 | UI action | HTTP interaction | Server side effect | Final browser action |
 | --- | --- | --- | --- |
-| Open kiosk page | `GET /`, then runtime GETs | None | Render current runtime state |
+| Open page | `GET /`, then runtime GETs | None | Render current runtime state |
 | Market gear opens | `GET /api/market-config` | None | Populate symbol input |
 | Market `SAVE` | `POST /api/market-config`, then `POST /api/market-refresh` | Write config; run live-data producer | Call `window.loadMarket()` |
 | Market `REFRESH` | `POST /api/market-refresh` | Run live-data producer | Call `window.loadMarket()` |
 | Local Event page load | `GET /api/local-events/search` | None | Render current accepted results |
-| Local Event location search | `POST /api/local-events/search` | Run collector and published Studio routing | Store location and render returned results |
-| Open Studio | `GET /local-events/studio/` | None | Load local source/rule/snapshot state |
-| Studio `CAPTURE NOW` | `POST /api/local-events/studio/capture` | Run one-shot capture and store snapshot | Load screenshot and DOM overlay |
-| Studio `SAVE DRAFT` | `PUT /api/local-events/studio/draft` | Atomically replace draft | Mark draft state |
-| Studio `TEST DRAFT` | draft `PUT`, then test `POST` | Store deterministic test evidence | Render accepted/rejected preview |
-| Studio `PUBLISH TESTED DRAFT` | draft `PUT`, test `POST`, publish `POST` | Publish only exact tested fingerprint | Show active version |
-| Studio rollback | `POST /api/local-events/studio/rollback` | Republish history as new version | Reload versions |
+| Local Event location search | `POST /api/local-events/search` | Run source-specific collector | Store location in browser local storage and render returned results |
 | Sync observation | `HEAD` four runtime paths | None | Compute `AGE` and status |
 | News reload | `GET /event_stream.json` | None | Rebuild three ticker rows |
-| Photo reload | `GET /photos.json`, then image GETs | None | Rebuild and rotate photo wall |
-| Calendar load | `GET /schedule.json` | None | Build and rotate Calendar board |
+| Photo reload | `GET /photos.json`, then image GETs | None | Rebuild and rotate the photo wall |
+| Calendar load | `GET /schedule.json` | None | Build and rotate the Calendar board |
 
-## 16. Endpoints that are intentionally not mutation APIs
+## 10. Endpoints that are intentionally not mutation APIs
 
 There is no HTTP endpoint to:
 
 - edit Calendar accounts or schedule events;
-- add arbitrary Local Events source domains or listing URLs;
+- change Local Events official source configuration;
 - change systemd timer frequency;
 - upload or delete private photos;
 - edit News feed configuration;
 - change Weather coordinates.
 
-Local Event Studio may create rules only for source/listing pairs already committed in `surface/conf/event_sources.json`. This keeps the local API bounded and prevents the kiosk process from becoming an unrestricted crawler or filesystem administration interface.
+Those concerns remain Mac configuration, committed source/configuration, or local filesystem operations. This keeps the local API small and prevents the kiosk page from becoming an unrestricted administration interface.
