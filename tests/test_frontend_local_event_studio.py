@@ -62,6 +62,8 @@ def test_studio_page_contains_live_browser_workflow_controls() -> None:
         "url-selector",
         "listing-fields",
         "detail-fields",
+        "listing-actions",
+        "detail-actions",
         "test-status",
         "matched",
         "accepted",
@@ -106,33 +108,53 @@ def test_studio_javascript_uses_only_existing_8765_relative_apis() -> None:
     assert "https://127.0.0.1" not in js
 
 
-def test_live_browser_worker_uses_real_dom_and_detail_pages() -> None:
+def test_live_browser_worker_uses_real_dom_and_every_detail_page() -> None:
     worker = read_text("surface/local_events_runtime/studio_live.py")
     assert "launch_persistent_context" in worker
     assert "headless=False" in worker
     assert "context.expose_binding" in worker
     assert "DOM_EVIDENCE_JS" in worker
-    assert "detail.goto" in worker
+    assert "_goto_detail(detail, public_url)" in worker
+    assert "execute_browser_actions(detail, rule.detail_actions)" in worker
     assert "live_validation_requires_two_confirmed_detail_pages" in worker
     assert "window.__infoscreenCardSelector" in worker
 
 
-def test_live_production_collector_admits_listing_cards_then_reads_details() -> None:
+def test_live_overlay_records_interactions_on_real_dom() -> None:
+    overlay = read_text("surface/local_events_runtime/studio_live_overlay.py")
+    for value in [
+        "RECORD CLICK",
+        "REPEAT CLICK",
+        "RECORD SELECT",
+        "RECORD SCROLL BOTTOM",
+        "RECORD WAIT",
+        "LIST CARD",
+        "DETAIL LINK",
+    ]:
+        assert value in overlay
+    assert "currentRole" in overlay
+    assert "uniqueSelector" in overlay
+    assert "relativeSelector" in overlay
+    assert "iframe" not in overlay
+
+
+def test_live_production_collector_replays_actions_and_reads_details() -> None:
     collector = read_text("surface/local_events_runtime/studio_live_collect.py")
+    assert "execute_browser_actions" in collector
     assert "page.locator(rule.card.selector)" in collector
     assert "validate_detail_url" in collector
-    assert "detail.goto" in collector
-    assert "title_missing_after_detail" not in collector
+    assert "_collect_detail" in collector
     assert 'for name in ("title", "when", "where")' in collector
     assert '"candidate_policy": "official-listing-authority-v1"' in collector
     assert '"source_type": "studio_live_rule"' in collector
 
 
-def test_studio_exposes_failure_and_retry_states() -> None:
+def test_studio_exposes_failure_retry_and_stale_test_states() -> None:
     html = read_text("surface/web/local-events/studio/index.html")
     js = read_text("surface/web/assets/js/local_event_studio.js")
     assert "RELOAD STATE" in html
     assert "VALIDATION FAILED" in js
+    assert "DRAFT CHANGED AFTER VALIDATION" in js
     assert "BROWSER START FAILED" in js
     assert "RUN LOCAL EVENTS NOW" in html
     assert "RUNNING" in js
