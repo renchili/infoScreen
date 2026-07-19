@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 from surface.local_events_runtime import studio_rules
 from surface.local_events_runtime.studio_rules import (
+    BrowserActionRule,
     LocalEventStudioRule,
     LocalEventStudioRuleStore,
     RuleNotFoundError,
@@ -83,6 +84,29 @@ def draft_payload(
                 },
             },
         },
+        "listing_actions": [
+            {
+                "action": "click",
+                "selector": "button.accept-cookie",
+                "optional": True,
+                "wait_ms": 300,
+            },
+            {
+                "action": "click_repeat",
+                "selector": "button.load-more",
+                "optional": True,
+                "max_rounds": 10,
+                "wait_ms": 500,
+            },
+        ],
+        "detail_actions": [
+            {
+                "action": "click",
+                "selector": "button.expand-details",
+                "optional": True,
+                "wait_ms": 200,
+            }
+        ],
         "validation": {
             "require_public_detail_url": True,
             "require_current_or_future_date": True,
@@ -117,6 +141,30 @@ def test_rule_schema_rejects_extra_fields_and_invalid_published_contract() -> No
         LocalEventStudioRule.model_validate(bad_url_field)
 
 
+def test_browser_actions_have_typed_selector_and_replay_contracts() -> None:
+    click = BrowserActionRule.model_validate(
+        {
+            "action": "click",
+            "selector": "button.accept-cookie",
+            "optional": True,
+            "wait_ms": 400,
+        }
+    )
+    assert click.selector == "button.accept-cookie"
+    assert click.optional is True
+
+    with pytest.raises(ValidationError, match="requires a selector"):
+        BrowserActionRule.model_validate({"action": "click"})
+    with pytest.raises(ValidationError, match="requires a value"):
+        BrowserActionRule.model_validate(
+            {"action": "select_option", "selector": "select.genre"}
+        )
+    with pytest.raises(ValidationError, match="only valid for click_repeat"):
+        BrowserActionRule.model_validate(
+            {"action": "click", "selector": "button", "max_rounds": 2}
+        )
+
+
 def test_store_rejects_unknown_source_and_unconfigured_listing(
     store: LocalEventStudioRuleStore,
 ) -> None:
@@ -138,6 +186,10 @@ def test_draft_round_trip_is_canonical_and_replaces_atomically(
     assert first.listing_url == "https://www.esplanade.com/whats-on"
     assert first.card is not None
     assert first.card.exclude_selectors == [".promotion-card"]
+    assert [action.action for action in first.listing_actions] == [
+        "click",
+        "click_repeat",
+    ]
 
     updated = store.save_draft(draft_payload(title_selector="h3"))
     loaded = store.load_draft("esplanade", "https://www.esplanade.com/whats-on/")
@@ -194,6 +246,7 @@ def test_publish_creates_monotonic_immutable_history(
     assert [item.version for item in history] == [1, 2]
     assert history[0].card is not None
     assert history[0].card.selector == "main .event-card-v1"
+    assert history[0].listing_actions[1].action == "click_repeat"
     assert (
         store.export_rule(
             "esplanade",
@@ -244,6 +297,7 @@ def test_export_import_validates_and_imports_only_as_draft(
     assert imported.status == "draft"
     assert imported.version == 0
     assert imported.published_at is None
+    assert imported.detail_actions[0].selector == "button.expand-details"
 
     tampered = json.loads(exported)
     tampered["listing_url"] = "https://evil.example/events"
