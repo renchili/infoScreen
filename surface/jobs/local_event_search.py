@@ -151,17 +151,31 @@ def is_partial(payload: dict) -> bool:
 
 
 def verified_previous_payload(payload: dict) -> dict:
+    """Keep exactly the previous rows that the current output contract may display."""
+
     verified = dict(payload)
     results = payload.get("results")
     if not isinstance(results, list):
         return verified
-    verified_results = [
-        item for item in results
-        if isinstance(item, dict) and item.get("candidate_policy") == VERIFIED_POLICY
-    ]
+
+    extractor = str(payload.get("extractor") or "").strip()
+    allow_structured_first_missing_policy = extractor.startswith("structured-first")
+    verified_results = []
+    for item in results:
+        if not isinstance(item, dict):
+            continue
+        policy = str(item.get("candidate_policy") or "").strip()
+        if policy == VERIFIED_POLICY or (allow_structured_first_missing_policy and not policy):
+            verified_results.append(item)
+
     verified["results"] = verified_results
     verified["count"] = len(verified_results)
     verified["legacy_unverified_removed"] = len(results) - len(verified_results)
+    verified["cache_policy"] = (
+        "structured-first-compatible-v1"
+        if allow_structured_first_missing_policy
+        else VERIFIED_POLICY
+    )
     return verified
 
 
@@ -186,6 +200,7 @@ def write_payload(payload: dict) -> None:
             "ok": False,
             "write_policy": "kept_previous_verified_result",
             "previous_count": old_count,
+            "previous_cache_policy": old.get("cache_policy"),
         }
         PARTIAL_OUT.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         return
