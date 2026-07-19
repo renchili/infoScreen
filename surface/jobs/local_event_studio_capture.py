@@ -5,13 +5,14 @@ import argparse
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 SURFACE_DIR = Path(__file__).resolve().parents[1]
 if str(SURFACE_DIR) not in sys.path:
     sys.path.insert(0, str(SURFACE_DIR))
 
-from local_events_runtime.studio_live import start_live_session
+from local_events_runtime import studio_live
 
 
 def studio_root() -> Path:
@@ -30,14 +31,52 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _wait_for_browser(
+    root: Path,
+    source_id: str,
+    listing_url: str,
+    initial: dict,
+) -> dict:
+    """Wait briefly so the HTTP API does not report a browser that already failed."""
+
+    if initial.get("already_running") and initial.get("status") == "running":
+        return initial
+    current = dict(initial)
+    for _ in range(60):
+        time.sleep(0.1)
+        current = studio_live._read_state(root, source_id, listing_url)
+        status = str(current.get("status") or "")
+        if status == "running":
+            return {**current, "already_running": bool(initial.get("already_running"))}
+        if status in {"failed", "closed"}:
+            detail = str(current.get("error") or status)
+            log_path = Path(str(current.get("log_path") or ""))
+            if log_path.is_file():
+                try:
+                    log_tail = log_path.read_text(encoding="utf-8", errors="replace")[-1600:]
+                except OSError:
+                    log_tail = ""
+                if log_tail:
+                    detail = f"{detail}: {log_tail}"
+            raise RuntimeError(detail)
+    raise RuntimeError("live browser did not reach running state within 6 seconds")
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    root = studio_root()
     try:
-        session = start_live_session(
+        session = studio_live.start_live_session(
             args.source_id,
             args.listing_url,
-            root=studio_root(),
+            root=root,
             source_config_path=SURFACE_DIR / "conf" / "event_sources.json",
+        )
+        session = _wait_for_browser(
+            root,
+            args.source_id,
+            args.listing_url,
+            session,
         )
     except Exception as exc:
         print(
