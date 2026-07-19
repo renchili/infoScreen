@@ -2,7 +2,15 @@
 
 (() => {
   const ui = {};
-  const state = { sources: [], sourceId: "", listingUrl: "", rules: null, test: null, timer: null };
+  const state = {
+    sources: [],
+    sourceId: "",
+    listingUrl: "",
+    rules: null,
+    test: null,
+    testCurrent: false,
+    timer: null,
+  };
 
   const byId = (id) => document.getElementById(id);
   const text = (value, fallback = "—") => String(value ?? "").trim() || fallback;
@@ -11,9 +19,14 @@
     const response = await fetch(path, {
       cache: "no-store",
       ...options,
-      headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+      headers: {
+        "Content-Type": "application/json",
+        ...(options.headers || {}),
+      },
     });
-    const payload = await response.json().catch(async () => ({ error: await response.text() }));
+    const payload = await response
+      .json()
+      .catch(async () => ({ error: await response.text() }));
     if (!response.ok) {
       const detail = payload.detail ? `: ${payload.detail}` : "";
       throw new Error(`${payload.error || `HTTP ${response.status}`}${detail}`);
@@ -61,9 +74,65 @@
     const lines = [];
     for (const name of ["title", "when", "where", "url", "summary", "image"]) {
       const rule = fields[name];
-      if (rule?.selector) lines.push(`${name.toUpperCase()}: ${rule.selector}${rule.attribute ? ` @${rule.attribute}` : ""}`);
+      if (rule?.selector) {
+        lines.push(
+          `${name.toUpperCase()}: ${rule.selector}${
+            rule.attribute ? ` @${rule.attribute}` : ""
+          }${rule.optional ? " (optional)" : ""}`,
+        );
+      }
     }
     return lines.join("\n") || "—";
+  }
+
+  function actionLines(actions) {
+    if (!Array.isArray(actions) || !actions.length) return "—";
+    return actions
+      .map((action, index) => {
+        const parts = [`${index + 1}. ${String(action.action || "").toUpperCase()}`];
+        if (action.selector) parts.push(action.selector);
+        if (action.value !== undefined && action.value !== null) {
+          parts.push(`value=${JSON.stringify(action.value)}`);
+        }
+        if (action.max_rounds > 1) parts.push(`max=${action.max_rounds}`);
+        if (action.wait_ms) parts.push(`wait=${action.wait_ms}ms`);
+        if (action.optional) parts.push("optional");
+        return parts.join(" · ");
+      })
+      .join("\n");
+  }
+
+  function canonicalJson(value) {
+    if (Array.isArray(value)) {
+      return `[${value.map(canonicalJson).join(",")}]`;
+    }
+    if (value && typeof value === "object") {
+      return `{${Object.keys(value)
+        .sort()
+        .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
+        .join(",")}}`;
+    }
+    return JSON.stringify(value);
+  }
+
+  async function ruleFingerprint(rule) {
+    if (!rule) return "";
+    const semantic = JSON.parse(JSON.stringify(rule));
+    for (const key of [
+      "created_at",
+      "updated_at",
+      "published_at",
+      "version",
+      "status",
+      "based_on_version",
+    ]) {
+      delete semantic[key];
+    }
+    const bytes = new TextEncoder().encode(canonicalJson(semantic));
+    const digest = await crypto.subtle.digest("SHA-256", bytes);
+    return Array.from(new Uint8Array(digest))
+      .map((value) => value.toString(16).padStart(2, "0"))
+      .join("");
   }
 
   function renderRule(payload) {
@@ -75,17 +144,25 @@
       ui.url.textContent = "—";
       ui.listFields.textContent = "—";
       ui.detailFields.textContent = "—";
+      ui.listActions.textContent = "—";
+      ui.detailActions.textContent = "—";
       return;
     }
     setStatus(
       ui.ruleStatus,
-      payload.draft ? "DRAFT SAVED BY LIVE BROWSER" : `PUBLISHED V${rule.version}`,
+      payload.draft
+        ? "DRAFT SAVED BY LIVE BROWSER"
+        : `PUBLISHED V${rule.version}`,
       payload.draft ? "warn" : "ok",
     );
     ui.card.textContent = rule.card?.selector || "—";
     ui.url.textContent = rule.fields?.url?.selector || "—";
     ui.listFields.textContent = fieldLines(rule.fields);
-    ui.detailFields.textContent = rule.detail_page?.enabled ? fieldLines(rule.detail_page.fields) : "disabled";
+    ui.detailFields.textContent = rule.detail_page?.enabled
+      ? fieldLines(rule.detail_page.fields)
+      : "No detail field overrides; detail pages are still opened and verified.";
+    ui.listActions.textContent = actionLines(rule.listing_actions);
+    ui.detailActions.textContent = actionLines(rule.detail_actions);
   }
 
   function clear(node) {
@@ -97,7 +174,9 @@
     if (!rows?.length) {
       const empty = document.createElement("div");
       empty.className = "message";
-      empty.textContent = accepted ? "No confirmed detail pages yet." : "No rejected samples.";
+      empty.textContent = accepted
+        ? "No confirmed detail pages yet."
+        : "No rejected samples.";
       node.appendChild(empty);
       return;
     }
@@ -120,15 +199,19 @@
         const heading = document.createElement("h4");
         heading.textContent = text(row.reason, "rejected");
         const body = document.createElement("p");
-        body.textContent = text(row.detail || row.card_text || JSON.stringify(row.values || {}), "");
+        body.textContent = text(
+          row.detail || row.card_text || JSON.stringify(row.values || {}),
+          "",
+        );
         article.append(heading, body);
       }
       node.appendChild(article);
     });
   }
 
-  function renderTest(result) {
+  function renderTest(result, current) {
     state.test = result;
+    state.testCurrent = current;
     if (!result) {
       setStatus(ui.testStatus, "NOT VALIDATED");
       ui.matched.textContent = "—";
@@ -136,7 +219,8 @@
       ui.rejected.textContent = "—";
       ui.publishable.textContent = "—";
       ui.publish.disabled = true;
-      ui.testMessage.textContent = "Use SAVE CURRENT LISTING STATE in the live browser after mappings are complete.";
+      ui.testMessage.textContent =
+        "Use SAVE CURRENT LISTING STATE in the live browser after mappings are complete.";
       renderRows(ui.acceptedList, [], true);
       renderRows(ui.rejectedList, [], false);
       return;
@@ -144,13 +228,31 @@
     ui.matched.textContent = String(result.matched_card_count ?? 0);
     ui.accepted.textContent = String(result.accepted_count ?? 0);
     ui.rejected.textContent = String(result.rejected_count ?? 0);
-    ui.publishable.textContent = result.publishable ? "YES" : "NO";
-    setStatus(ui.testStatus, result.publishable ? "LIVE DETAIL VALIDATION PASSED" : "VALIDATION FAILED", result.publishable ? "ok" : "error");
-    const errors = [...(result.fatal_errors || []), ...(result.warnings || [])];
-    ui.testMessage.textContent = errors.length
-      ? errors.join(" · ")
-      : `Validated by ${result.validation_mode || "live browser"} at ${text(result.tested_at)}`;
-    ui.publish.disabled = !result.publishable || !state.rules?.draft;
+    ui.publishable.textContent = result.publishable && current ? "YES" : "NO";
+    if (!current) {
+      setStatus(ui.testStatus, "DRAFT CHANGED AFTER VALIDATION", "warn");
+      ui.testMessage.textContent =
+        "Selectors or recorded actions changed. Save current listing state again.";
+    } else {
+      setStatus(
+        ui.testStatus,
+        result.publishable
+          ? "LIVE DETAIL VALIDATION PASSED"
+          : "VALIDATION FAILED",
+        result.publishable ? "ok" : "error",
+      );
+      const errors = [
+        ...(result.fatal_errors || []),
+        ...(result.warnings || []),
+      ];
+      ui.testMessage.textContent = errors.length
+        ? errors.join(" · ")
+        : `Validated by ${result.validation_mode || "live browser"} at ${text(
+            result.tested_at,
+          )}`;
+    }
+    ui.publish.disabled =
+      !result.publishable || !current || !state.rules?.draft;
     renderRows(ui.acceptedList, result.accepted || [], true);
     renderRows(ui.rejectedList, result.rejected || [], false);
   }
@@ -158,13 +260,26 @@
   async function loadState() {
     if (!state.sourceId || !state.listingUrl) return;
     try {
-      const params = new URLSearchParams({ source_id: state.sourceId, listing_url: state.listingUrl });
+      const params = new URLSearchParams({
+        source_id: state.sourceId,
+        listing_url: state.listingUrl,
+      });
       const [rules, latest] = await Promise.all([
         request(`/api/local-events/studio/rules?${params}`),
         request(`/api/local-events/studio/test-latest?${params}`),
       ]);
       renderRule(rules);
-      renderTest(latest.result || null);
+      const activeRule = rules.draft || rules.published;
+      const currentFingerprint = await ruleFingerprint(activeRule);
+      const latestResult = latest.result || null;
+      renderTest(
+        latestResult,
+        Boolean(
+          latestResult &&
+            currentFingerprint &&
+            latestResult.rule_fingerprint === currentFingerprint,
+        ),
+      );
       setStatus(ui.globalStatus, "READY", "ok");
     } catch (error) {
       setStatus(ui.globalStatus, error.message, "error");
@@ -174,11 +289,15 @@
   async function openBrowser() {
     ui.open.disabled = true;
     setStatus(ui.globalStatus, "STARTING REAL CHROMIUM", "warn");
-    ui.browserMessage.textContent = "Starting a real browser window on the Surface desktop...";
+    ui.browserMessage.textContent =
+      "Starting a real browser window on the Surface desktop...";
     try {
       const payload = await request("/api/local-events/studio/capture", {
         method: "POST",
-        body: JSON.stringify({ source_id: state.sourceId, listing_url: state.listingUrl }),
+        body: JSON.stringify({
+          source_id: state.sourceId,
+          listing_url: state.listingUrl,
+        }),
       });
       const session = payload.session || payload.snapshot?.session || {};
       ui.browserMessage.textContent = session.already_running
@@ -199,7 +318,10 @@
     try {
       await request("/api/local-events/studio/publish", {
         method: "POST",
-        body: JSON.stringify({ source_id: state.sourceId, listing_url: state.listingUrl }),
+        body: JSON.stringify({
+          source_id: state.sourceId,
+          listing_url: state.listingUrl,
+        }),
       });
       ui.testMessage.textContent = "Published. Run Local Events below.";
       await loadState();
@@ -212,7 +334,11 @@
   function renderProduction(payload) {
     clear(ui.results);
     const rows = Array.isArray(payload.results) ? payload.results : [];
-    ui.runMessage.textContent = `${rows.length} activities · partial=${Boolean(payload.partial)} · completed=${payload.completed_source_count ?? "—"} · incomplete=${payload.incomplete_source_count ?? "—"}`;
+    ui.runMessage.textContent = `${rows.length} activities · partial=${Boolean(
+      payload.partial,
+    )} · completed=${
+      payload.completed_source_count ?? "—"
+    } · incomplete=${payload.incomplete_source_count ?? "—"}`;
     rows.slice(0, 80).forEach((event) => {
       const article = document.createElement("article");
       article.className = "result";
@@ -224,7 +350,9 @@
       link.textContent = text(event.title, "Untitled");
       heading.appendChild(link);
       const body = document.createElement("p");
-      body.textContent = `${text(event.when)} · ${text(event.where)} · ${text(event.source_name || event.host)}`;
+      body.textContent = `${text(event.when)} · ${text(
+        event.where,
+      )} · ${text(event.source_name || event.host)}`;
       article.append(heading, body);
       ui.results.appendChild(article);
     });
@@ -233,10 +361,12 @@
   async function runProduction() {
     ui.run.disabled = true;
     setStatus(ui.runStatus, "RUNNING", "warn");
+    const location = ui.location.value.trim() || "Punggol Singapore";
+    window.localStorage.setItem("local_events_location", location);
     try {
       const payload = await request("/api/local-events/search", {
         method: "POST",
-        body: JSON.stringify({ location: ui.location.value.trim() || "Punggol Singapore" }),
+        body: JSON.stringify({ location }),
       });
       renderProduction(payload);
       setStatus(ui.runStatus, "COMPLETE", "ok");
@@ -250,17 +380,38 @@
 
   async function initialize() {
     Object.assign(ui, {
-      globalStatus: byId("global-status"), source: byId("source-select"), listing: byId("listing-select"),
-      open: byId("open-browser"), reload: byId("reload-state"), browserMessage: byId("browser-message"),
-      ruleStatus: byId("rule-status"), card: byId("card-selector"), url: byId("url-selector"),
-      listFields: byId("listing-fields"), detailFields: byId("detail-fields"),
-      testStatus: byId("test-status"), matched: byId("matched"), accepted: byId("accepted"),
-      rejected: byId("rejected"), publishable: byId("publishable"), testMessage: byId("test-message"),
-      acceptedList: byId("accepted-list"), rejectedList: byId("rejected-list"), publish: byId("publish"),
-      runStatus: byId("run-status"), location: byId("location"), run: byId("run"),
-      runMessage: byId("run-message"), results: byId("results"),
+      globalStatus: byId("global-status"),
+      source: byId("source-select"),
+      listing: byId("listing-select"),
+      open: byId("open-browser"),
+      reload: byId("reload-state"),
+      browserMessage: byId("browser-message"),
+      ruleStatus: byId("rule-status"),
+      card: byId("card-selector"),
+      url: byId("url-selector"),
+      listFields: byId("listing-fields"),
+      detailFields: byId("detail-fields"),
+      listActions: byId("listing-actions"),
+      detailActions: byId("detail-actions"),
+      testStatus: byId("test-status"),
+      matched: byId("matched"),
+      accepted: byId("accepted"),
+      rejected: byId("rejected"),
+      publishable: byId("publishable"),
+      testMessage: byId("test-message"),
+      acceptedList: byId("accepted-list"),
+      rejectedList: byId("rejected-list"),
+      publish: byId("publish"),
+      runStatus: byId("run-status"),
+      location: byId("location"),
+      run: byId("run"),
+      runMessage: byId("run-message"),
+      results: byId("results"),
     });
 
+    ui.location.value =
+      window.localStorage.getItem("local_events_location") ||
+      "Punggol Singapore";
     ui.source.addEventListener("change", async () => {
       state.sourceId = ui.source.value;
       populateListings();
