@@ -6,12 +6,13 @@
   <title>InfoScreen · Local Event Studio</title>
   <link rel="stylesheet" href="/assets/css/local_event_studio.css" />
   <link rel="stylesheet" href="/assets/css/local_event_studio_test.css" />
+  <link rel="stylesheet" href="/assets/css/local_event_studio_run.css" />
 </head>
 <body>
   <header class="studio-header">
     <div>
       <div class="studio-brand">INFOSCREEN / LOCAL EVENT STUDIO</div>
-      <div class="studio-subtitle">Capture, identify, test, and publish official-list extraction rules on this device.</div>
+      <div class="studio-subtitle">Capture, identify, test, publish, and run official-list extraction rules on this device.</div>
     </div>
     <nav class="header-actions" aria-label="Studio navigation">
       <a class="button secondary" href="/">DASHBOARD</a>
@@ -20,6 +21,21 @@
   </header>
 
   <main class="studio-shell">
+    <section class="panel workflow-panel" aria-labelledby="workflow-heading">
+      <div class="panel-heading">
+        <h1 id="workflow-heading">OPERATOR WORKFLOW</h1>
+        <span id="workflow-state" class="status" role="status" aria-live="polite">1 · CAPTURE PAGE</span>
+      </div>
+      <ol class="workflow-steps">
+        <li data-workflow-step="1"><strong>CAPTURE</strong><span>Select a configured source/listing and capture the official page.</span></li>
+        <li data-workflow-step="2"><strong>CARDS</strong><span>Select two real repeated activity cards; mark promotions or other non-activities as EXCLUDE.</span></li>
+        <li data-workflow-step="3"><strong>FIELDS</strong><span>Map TITLE, WHEN, WHERE, and DETAIL URL inside the first card. SUMMARY and IMAGE are optional.</span></li>
+        <li data-workflow-step="4"><strong>TEST</strong><span>Save and test the draft. Inspect every accepted event, rejected card, URL, WHEN, WHERE, and field evidence.</span></li>
+        <li data-workflow-step="5"><strong>PUBLISH</strong><span>Publish only the exact draft fingerprint that passed the selected snapshot test.</span></li>
+        <li data-workflow-step="6"><strong>RUN</strong><span>Run the existing Local Events producer and inspect the production result below.</span></li>
+      </ol>
+    </section>
+
     <section class="panel source-panel" aria-labelledby="source-heading">
       <div class="panel-heading">
         <h1 id="source-heading">SOURCE AND SNAPSHOT</h1>
@@ -191,9 +207,34 @@
         </section>
       </aside>
     </div>
+
+    <section class="panel production-panel" aria-labelledby="production-heading">
+      <div class="panel-heading">
+        <h2 id="production-heading">PRODUCTION RUN</h2>
+        <span id="production-status" class="status" role="status" aria-live="polite">CURRENT RESULT NOT LOADED</span>
+      </div>
+      <div class="production-controls">
+        <label>
+          <span>Local Events location</span>
+          <input id="production-location" type="text" autocomplete="off" value="Punggol Singapore" />
+        </label>
+        <button id="run-local-events-button" type="button" class="button warning">RUN LOCAL EVENTS NOW</button>
+        <a class="button secondary" href="/api/local-events/search" target="_blank" rel="noopener">OPEN RUNTIME JSON</a>
+      </div>
+      <p class="production-help">This runs the existing <code>surface/search_local_events.py</code> producer through the current <code>8765</code> service. It does not create another service or timer.</p>
+      <div class="production-metrics" aria-label="Production result metrics">
+        <div><span>COUNT</span><strong id="production-count">—</strong></div>
+        <div><span>PARTIAL</span><strong id="production-partial">—</strong></div>
+        <div><span>COMPLETED SOURCES</span><strong id="production-completed">—</strong></div>
+        <div><span>INCOMPLETE SOURCES</span><strong id="production-incomplete">—</strong></div>
+      </div>
+      <div id="production-message" class="production-message">Load the current result or run Local Events after publishing a tested rule.</div>
+      <div id="production-results" class="production-results"></div>
+    </section>
   </main>
 
   <script src="/assets/js/local_event_studio.js" defer></script>
   <script src="/assets/js/local_event_studio_test.js" defer></script>
+  <script src="/assets/js/local_event_studio_run.js" defer></script>
 </body>
 </html>
