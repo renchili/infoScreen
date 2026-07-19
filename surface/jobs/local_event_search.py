@@ -81,28 +81,58 @@ def source_completion(debug: dict) -> tuple[str, bool]:
     return "failed", False
 
 
+def _source_debug_key(row: dict, index: int) -> str:
+    source_id = str(row.get("source_id") or "").strip().lower()
+    source_name = str(row.get("source") or row.get("source_name") or "").strip().lower()
+    if source_id:
+        return f"id:{source_id}"
+    if source_name:
+        return f"name:{source_name}"
+    return f"row:{index}"
+
+
+def _group_completion(rows: list[dict]) -> tuple[str, bool]:
+    statuses = [str(row.get("status") or "failed") for row in rows]
+    complete = bool(rows) and all(row.get("complete") is True for row in rows)
+    if complete:
+        return "complete", True
+    if "timed_out" in statuses:
+        return "timed_out", False
+    if "partial" in statuses or "complete" in statuses:
+        return "partial", False
+    if "failed" in statuses:
+        return "failed", False
+    return "not_started", False
+
+
 def annotate_source_completion(payload: dict) -> dict:
     annotated = dict(payload)
     raw_debug = payload.get("debug_by_source")
     debug_rows = raw_debug if isinstance(raw_debug, list) else []
-    source_count = int(payload.get("source_count") or len(debug_rows) or 0)
-    completed = 0
-    status_counts: dict[str, int] = {}
-    normalized_debug = []
+    normalized_debug: list[dict] = []
+    grouped: dict[str, list[dict]] = {}
 
-    for raw in debug_rows:
+    for index, raw in enumerate(debug_rows):
         row = dict(raw) if isinstance(raw, dict) else {}
         status, complete = source_completion(row)
         row["status"] = status
         row["complete"] = complete
         normalized_debug.append(row)
+        grouped.setdefault(_source_debug_key(row, index), []).append(row)
+
+    configured_source_count = int(payload.get("source_count") or 0)
+    source_count = max(configured_source_count, len(grouped))
+    completed = 0
+    status_counts: dict[str, int] = {}
+    for rows in grouped.values():
+        status, complete = _group_completion(rows)
         status_counts[status] = status_counts.get(status, 0) + 1
         if complete:
             completed += 1
 
-    missing_rows = max(0, source_count - len(normalized_debug))
-    if missing_rows:
-        status_counts["not_started"] = status_counts.get("not_started", 0) + missing_rows
+    missing_sources = max(0, source_count - len(grouped))
+    if missing_sources:
+        status_counts["not_started"] = status_counts.get("not_started", 0) + missing_sources
 
     annotated["source_count"] = source_count
     annotated["debug_by_source"] = normalized_debug
