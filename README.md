@@ -18,6 +18,86 @@ Runtime JSON, machine-local configuration, Studio rules and captures, logs, debu
 
 The primary operator maintains one always-on Surface or Ubuntu display and may use a Mac to supply Calendar data. A maintainer should be comfortable with Python commands, browser inspection, systemd user services on the Surface, and LaunchAgent/SSH diagnostics on the Mac when Calendar sync is enabled.
 
+## Local Event Studio: deploy and use
+
+This is the complete operator path for correcting bad Local Events links, `when`, `where`, and non-activity rows. It uses only the existing InfoScreen HTTP service on port `8765` and the existing Local Events service/timer.
+
+### Deploy or update the existing Surface services
+
+```bash
+cd ~/infoscreen
+git pull --ff-only
+bash deploy/scripts/install-user-systemd.sh
+systemctl --user restart infoscreen-http.service
+```
+
+The installer copies the committed user units, reloads systemd, enables the existing timers, starts HTTP, and triggers the producer services. It does not install a second Studio service.
+
+Open Studio:
+
+```text
+http://127.0.0.1:8765/local-events/studio/
+```
+
+Open the kiosk:
+
+```text
+http://127.0.0.1:8765/
+```
+
+### Complete Studio workflow
+
+The Studio page shows the same six steps at the top:
+
+1. **CAPTURE** — select a configured official source/listing and press `CAPTURE NOW`.
+2. **CARDS** — select two real repeated activity cards. Use `EXCLUDE` on promotions, navigation, membership, facilities, parking, dining, or other non-activity cards.
+3. **FIELDS** — map `TITLE`, `WHEN`, `WHERE`, and `DETAIL URL` inside the first selected card. `SUMMARY` and `IMAGE` are optional. Detail-page overrides are optional and use only the admitted public detail URL.
+4. **TEST** — press `TEST DRAFT`. Inspect every accepted event and rejected card. Confirm that the URL is the public activity detail page and that `WHEN` and `WHERE` show the intended field evidence.
+5. **PUBLISH** — press `PUBLISH TESTED DRAFT` only when the test says `PUBLISHABLE: YES`. Publication requires the exact tested draft fingerprint.
+6. **RUN** — enter the location in `PRODUCTION RUN`, press `RUN LOCAL EVENTS NOW`, and inspect the production count, partial state, completed/incomplete sources, title, URL, `WHEN`, `WHERE`, source, and policy directly in Studio.
+
+`RUN LOCAL EVENTS NOW` calls the existing `POST /api/local-events/search`, which runs `surface/search_local_events.py`. It does not create another daemon, service, timer, or port.
+
+The current runtime JSON is always available from:
+
+```text
+http://127.0.0.1:8765/api/local-events/search
+```
+
+The main runtime file is:
+
+```text
+surface/.env/local_event_search_results.json
+```
+
+Incomplete-run evidence may also be written to:
+
+```text
+surface/.env/local_event_search_results.partial.json
+```
+
+### Immediate service trigger without the Studio button
+
+```bash
+systemctl --user start infoscreen-local-events.service
+```
+
+The normal six-hour timer remains:
+
+```text
+infoscreen-local-events.timer
+```
+
+### Studio data location
+
+All captures, drafts, published rules, immutable history, and test runs stay under:
+
+```text
+surface/.env/local_event_studio/
+```
+
+Do not commit that directory. Drafts and test runs do not affect production. Only a published rule activates its configured source/listing pair.
+
 ## First 10 minutes
 
 The smallest useful path starts the local HTTP server and opens the committed dashboard without requiring external providers, systemd, a Mac, personal runtime data, or a Studio rule.
@@ -128,7 +208,7 @@ The dashboard includes:
 - current Singapore weather;
 - aligned English, French, and Chinese news rows;
 - a Local Events card built from curated official organisation sources;
-- Local Event Studio for per-source/listing capture, annotation, deterministic testing, publication, and rollback;
+- Local Event Studio for per-source/listing capture, annotation, deterministic testing, publication, production running, result inspection, and rollback;
 - a Calendar board supplied by macOS Calendar/EventKit;
 - a local Photo wall;
 - a Sync ticker showing Schedule, Weather, Market, and News freshness;
@@ -172,7 +252,7 @@ Runtime and personal-data root:
 | Weather | Open-Meteo, Singapore coordinates | `infoscreen-live-data.timer` or Market refresh | `weather.json`, `/weather.json` | `dashboard.js` |
 | News | Google News RSS, CNA, France24, RFI, BBC Chinese, translation | `infoscreen-event-stream.timer` | `event_stream.json` | `local_event_card.js` |
 | Local Events | Curated official listing/detail pages | `infoscreen-local-events.timer` or location search | `local_event_search_results.json`, `/api/local-events/search` | `local_event_card.js` |
-| Local Event Studio | Configured official listing pages and local rule state | Explicit operator actions | `/api/local-events/studio/*` | `local_event_studio.js`, `local_event_studio_test.js` |
+| Local Event Studio | Configured official listing pages and local rule state | Explicit operator actions | `/api/local-events/studio/*`, `/api/local-events/search` | `local_event_studio.js`, `local_event_studio_test.js`, `local_event_studio_run.js` |
 | Calendar | macOS Calendar/EventKit | Mac LaunchAgent | `schedule.json` | `calendar_board.js` |
 | Photos | User files under `surface/.env/photos/` | Manual photo builder | `photos.json`, `/public_photos/*` | `local_event_card.js` |
 | Sync status | Runtime-file `Last-Modified` | Browser `HEAD` checks | Four runtime endpoints | `local_event_card.js` |
@@ -220,6 +300,8 @@ choose configured source and listing
 -> TEST DRAFT against the selected stored snapshot
 -> inspect accepted/rejected rows and field evidence
 -> PUBLISH TESTED DRAFT only when publishable
+-> RUN LOCAL EVENTS NOW
+-> inspect production result fields and source health
 ```
 
 Important boundaries:
@@ -229,6 +311,7 @@ Important boundaries:
 - drafts and test runs do not affect production;
 - publication requires the exact current draft fingerprint to have a publishable test;
 - publication activates only that source/listing in subsequent Local Events jobs;
+- `RUN LOCAL EVENTS NOW` uses the existing Local Events command and runtime file;
 - rollback republishes a historical version as a new version.
 
 ### Calendar
@@ -264,7 +347,7 @@ The browser does not scan the filesystem directly.
 | Calendar | Mac LaunchAgent | 120 seconds |
 | Photos | Manual builder | No timer |
 
-Publishing a Studio rule does not automatically run Local Events; start the existing Local Events service when an immediate production result is required.
+Publishing a Studio rule does not silently run Local Events. Use `RUN LOCAL EVENTS NOW` in Studio or start `infoscreen-local-events.service` when an immediate production result is required.
 
 ### Browser reload
 
@@ -277,7 +360,7 @@ Publishing a Studio rule does not automatically run Local Events; start the exis
 | Local Events | Page load and after on-demand search |
 | Calendar | Page load only |
 | Photos | Page load and every 5 minutes |
-| Studio | Explicit source/listing/snapshot, reload, capture, test, publish actions |
+| Studio | Explicit source/listing/snapshot, reload, capture, test, publish, production-run, and result-inspection actions |
 
 ### Visual rotation
 
@@ -351,7 +434,7 @@ Architecture details are in `docs/design.md`; HTTP details are in `docs/api-spec
 surface/serve_infoscreen.py                         local HTTP server and APIs
 surface/fetch_live_data.py                           Market and Weather producer
 surface/fetch_event_stream.py                        multilingual News producer
-surface/search_local_events.py                       Local Events command wrapper
+surface/search_local_events.py                       Local Events command entrypoint
 surface/jobs/local_event_search.py                   Local Events orchestration
 surface/jobs/local_event_studio_capture.py           one-shot Studio capture
 surface/local_events_runtime/                        canonical Local Events library
@@ -362,7 +445,7 @@ surface/local_events_runtime/studio_evaluate.py      offline draft tests
 surface/local_events_runtime/studio_collect.py       published live collection
 surface/local_events_runtime/studio_pipeline.py      production replacement/health
 surface/web/local-events/studio/index.html            Studio page
-surface/web/assets/js/local_event_studio*.js          Studio interaction/test preview
+surface/web/assets/js/local_event_studio*.js          Studio interaction/test/production UI
 surface/web/assets/css/local_event_studio*.css        Studio layout/preview styles
 surface/build_photos_json.py                          Photo manifest builder
 surface/conf/                                         committed defaults and source inventory
@@ -407,6 +490,14 @@ systemctl --user restart infoscreen-http.service
 Rerun the installer after unit-file changes because active user units are copied to `~/.config/systemd/user/`.
 
 ### Trigger Local Events immediately
+
+From Studio, press:
+
+```text
+RUN LOCAL EVENTS NOW
+```
+
+Or use systemd:
 
 ```bash
 systemctl --user start infoscreen-local-events.service
@@ -492,6 +583,17 @@ Publication requires a current publishable snapshot test with the exact draft fi
 
 HTTP `422` with `studio_test_required` means the applicable test is missing, stale, or not publishable.
 
+### Production run fails in Studio
+
+The Studio production panel calls `POST /api/local-events/search`. The same failure evidence is available from the existing HTTP and Local Events journals:
+
+```bash
+journalctl --user -u infoscreen-http.service -n 300 --no-pager
+journalctl --user -u infoscreen-local-events.service -n 300 --no-pager
+```
+
+The production panel displays the returned error, count, partial state, source completion, and any returned runtime rows. A failed HTTP request is not proof that the existing timer is disabled; inspect the timer and service separately.
+
 ### Inspect Studio state
 
 ```bash
@@ -510,7 +612,7 @@ Do not manually edit published/history files while the service is active. Use dr
 
 ### Roll back a Studio rule
 
-Use the Studio history selector and `ROLL BACK AS NEW VERSION`. Rollback republishes the selected historical rule as the next version; it does not delete or rewrite history. Trigger the existing Local Events service afterward to produce a new runtime result.
+Use the Studio history selector and `ROLL BACK AS NEW VERSION`. Rollback republishes the selected historical rule as the next version; it does not delete or rewrite history. Run Local Events afterward to produce a new runtime result.
 
 ### Local Events is empty, partial, stale, or contains a bad record
 
@@ -590,13 +692,15 @@ The Sync ticker compares the browser clock with HTTP `Last-Modified`. Check prod
 
 ## 10. Development and validation
 
-Run repository validation:
+Run repository validation locally:
 
 ```bash
 cd ~/infoscreen
 python3 -m pytest
 bash scripts/run_full_ci_tests.sh
 ```
+
+The script name is historical; it is also the local full-regression entrypoint. GitHub Actions may be disabled and is not required to run this command locally.
 
 The full runner uses fixture runtime data and writes logs, JUnit XML, generated OpenAPI, and a summary under:
 
@@ -619,7 +723,7 @@ Evidence levels remain separate:
 
 ```text
 source review
--> repository tests/CI
+-> local repository tests
 -> real source capture
 -> human semantic annotation
 -> publishable test
