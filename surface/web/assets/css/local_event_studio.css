@@ -26,6 +26,7 @@ a{color:var(--cyan)}
 .button.secondary{color:var(--muted)}
 .button.reject{border-color:var(--red);color:var(--red)}
 .button.small{min-height:30px;padding:5px 8px;font-size:11px}
+.review-filters{display:grid;grid-template-columns:minmax(190px,1fr) minmax(170px,.8fr);gap:8px;margin-left:auto;min-width:min(520px,100%)}
 .split{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:12px;padding:12px}
 .split>section{min-width:0}
 .section-title{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px}
@@ -33,6 +34,7 @@ a{color:var(--cyan)}
 .hint{margin:0 0 9px;color:var(--muted);font-size:11px;line-height:1.45}
 .cards{display:grid;gap:8px}
 .card{min-width:0;border:1px solid var(--line2);background:var(--panel2);padding:10px}
+.card[hidden]{display:none!important}
 .card.confirmed{border-color:rgba(140,255,155,.55)}
 .card.rejected{border-color:rgba(255,154,154,.5);opacity:.72}
 .card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
@@ -51,12 +53,23 @@ select{width:100%;min-width:0;padding:8px;border:1px solid var(--line);backgroun
 .feedback-list{padding:0 12px 12px}
 .panel>.section-title{padding:0 12px 8px}
 .empty{padding:18px;border:1px dashed var(--line2);color:var(--muted);text-align:center}
+.review-blocking-overlay{position:fixed;inset:0;z-index:2147483646;display:grid;place-items:center;background:rgba(0,0,0,.72);backdrop-filter:blur(2px)}
+.review-blocking-overlay[hidden]{display:none}
+.review-blocking-dialog{display:grid;justify-items:center;gap:12px;width:min(430px,calc(100vw - 32px));padding:28px;border:1px solid var(--green);background:#080c09;box-shadow:0 20px 80px rgba(0,0,0,.75);text-align:center}
+.review-spinner{width:42px;height:42px;border:3px solid var(--line);border-top-color:var(--green);border-radius:50%;animation:review-spin .8s linear infinite}
+.review-blocking-title{color:var(--green);font-size:15px;font-weight:800;letter-spacing:.05em;text-transform:uppercase}
+.review-blocking-detail{color:var(--muted);line-height:1.5}
+.review-blocking-elapsed{color:var(--yellow)}
+.review-is-blocked{overflow:hidden}
+@keyframes review-spin{to{transform:rotate(360deg)}}
 @media(max-width:1100px){
   .split{grid-template-columns:1fr}
   .feedback-controls{grid-template-columns:1fr 1fr}
+  .review-filters{width:100%;margin-left:0}
 }
 @media(max-width:680px){
   .topbar{position:static;align-items:flex-start;flex-direction:column}
   .feedback-controls{grid-template-columns:1fr}
   .toolbar{display:grid}
+  .review-filters{grid-template-columns:1fr}
 }
