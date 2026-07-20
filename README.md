@@ -181,6 +181,75 @@ The Local Event search control opens a location input.
 - The configured official source inventory remains the same; the entered location is an input to the collection job.
 - Previous and next controls change the current card immediately.
 
+### Local Event review and user feedback
+
+The development branch `develop/surface-local-events-coverage` adds an operator page to the existing InfoScreen HTTP service. It does not add a second server, service, or port.
+
+Update and install on the Surface from a visible desktop session:
+
+```bash
+cd ~/infoscreen
+git fetch origin
+git switch develop/surface-local-events-coverage
+git pull --ff-only origin develop/surface-local-events-coverage
+bash deploy/scripts/install-user-systemd.sh
+```
+
+The installer starts or restarts the existing HTTP service on port `8765`. Running it from the Surface desktop session allows the service to receive the graphical-session environment required when it opens the separate Chromium feedback window.
+
+Open:
+
+```text
+http://127.0.0.1:8765/local-events/studio/
+```
+
+The page exposes two independent abilities.
+
+#### Review system-collected list pages and Events
+
+1. Click `COLLECT LIST PAGES`.
+2. Open each candidate URL and choose `CONFIRM LIST PAGE`, `REJECT`, or `RESET`.
+3. After confirming the required pages, click `COLLECT EVENTS FROM CONFIRMED PAGES`.
+4. Review each collected Event. The card shows the official detail URL and detail-page fields together with the originating listing URL, DOM selector, selector match number, listing page index, and document position.
+5. Choose `RELATED ACTIVITY`, `NOT RELATED`, or `RESET`.
+
+Only pages marked `confirmed` are used by the Event-review collection action. This operator-review state is separate from the normal kiosk Local Events runtime file.
+
+#### Browse a listing page and point out an Event location
+
+This ability does not require the list-page or Event collection steps above to be run first.
+
+1. Select the institution and listing page under `ABILITY 2 · INDEPENDENT`.
+2. Click `OPEN REAL LISTING PAGE`.
+3. Use the opened Chromium window normally. Scrolling, filters, tabs, expanding sections, pagination, links, and other page controls remain available while the toolbar is in `BROWSE` mode.
+4. When the required Event is visible, click `POINT TO EVENT`, then click the corresponding Event link, card, row, or tile.
+5. Use `SMALLER` or `LARGER` to select the appropriate DOM level when the first highlighted element is too narrow or too broad.
+6. Click `SUBMIT THIS POSITION`.
+7. The toolbar returns to `BROWSE` mode. The submitted selector, match number, page position, visible text, page URL, and link appear in `Submitted positions` on the operator page.
+
+`POINT TO EVENT` pauses the next page click only while selecting an element. It is not required for normal browsing and does not turn the whole browsing session into a marking mode.
+
+Review data, submitted feedback, browser session metadata, and the feedback browser profile are local runtime state under:
+
+```text
+surface/.env/local_event_review/
+├── state.json
+├── browser_sessions/
+└── browser_profiles/
+```
+
+These files must not be committed. The operator page reloads review state automatically and also provides a `RELOAD` button.
+
+For a manual foreground server start, with Chromium, Playwright, and Pydantic already installed:
+
+```bash
+cd ~/infoscreen
+mkdir -p surface/.env
+python3 surface/serve_infoscreen.py
+```
+
+Then open the same `/local-events/studio/` URL. The foreground process must inherit a graphical desktop environment for `OPEN REAL LISTING PAGE` to create a visible Chromium window.
+
 ### Calendar
 
 Calendar accounts and permissions remain on the Mac. The Surface has no Calendar account configuration. Only the Mac-to-Surface target and sync interval are configured.
