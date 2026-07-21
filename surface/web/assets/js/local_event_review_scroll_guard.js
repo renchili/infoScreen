@@ -75,6 +75,7 @@
       if (
         document.hidden
         || document.documentElement.classList.contains("review-is-blocked")
+        || document.documentElement.classList.contains("review-sequence-busy")
       ) {
         return;
       }
