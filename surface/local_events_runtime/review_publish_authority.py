@@ -48,33 +48,31 @@ def _merge_runtime(
     payload: dict[str, Any],
     confirmed: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    # Rebuild the operator-confirmed portion from current review state so REJECT
-    # and RESET remove rows that were previously published.
+    # Rebuild only rows previously added by review publication. System-collected
+    # rows remain untouched, even when a confirmed review candidate has the same
+    # identity; in that case the Event is already visible and no duplicate is added.
     results = [
         dict(item)
         for item in payload.get("results") or []
         if isinstance(item, dict)
         and item.get("operator_review_decision") != "confirmed"
     ]
-    by_identity = {
-        _event_identity(item): index
-        for index, item in enumerate(results)
+    identities = {
+        _event_identity(item)
+        for item in results
         if _runtime._canonical_url(item.get("url"))
     }
 
+    added = 0
+    already_present = 0
     for event in confirmed:
         identity = _event_identity(event)
-        existing_index = by_identity.get(identity)
-        if existing_index is None:
-            by_identity[identity] = len(results)
-            results.append(event)
+        if identity in identities:
+            already_present += 1
             continue
-
-        current = dict(results[existing_index])
-        for field, value in event.items():
-            if value not in {"", None}:
-                current[field] = value
-        results[existing_index] = current
+        identities.add(identity)
+        results.append(event)
+        added += 1
 
     published = dict(payload)
     published["ok"] = True
@@ -84,6 +82,8 @@ def _merge_runtime(
     published["review_publish"] = {
         "published_at": published["updated_at"],
         "confirmed_count": len(confirmed),
+        "added": added,
+        "already_present": already_present,
         "mode": "event_decision",
     }
     return _output.normalize_payload(published)
