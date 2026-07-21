@@ -3,24 +3,17 @@ from __future__ import annotations
 import hashlib
 import re
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
 
 from . import browser as _browser
-from . import event_review as _review
-from . import event_review_diagnostics as _diagnostics
 from . import extract as _extract
-from . import official_feeds as _official_feeds
-from . import review_runtime_authority as _review_runtime
 from . import source_overrides as _source_overrides
 
 MANDAI_SOURCE_ID = "mandai"
-LISTING_REFERENCE_PREFIX = "infoscreen-card-"
-LISTING_REFERENCE_RE = re.compile(r"^infoscreen-card-[0-9a-f]{16}$")
-_DATE_LABEL_RE = re.compile(r"^date\s*:?\s*(.+)$", re.I)
-_TIME_LABEL_RE = re.compile(r"^time\s*:?\s*(.+)$", re.I)
-_LOCATION_LABEL_RE = re.compile(r"^(?:location|venue|where)\s*:?\s*(.+)$", re.I)
+_DATE_LABEL_RE = re.compile(r"^date\s*:?\s*(.*)$", re.I)
+_TIME_LABEL_RE = re.compile(r"^time\s*:?\s*(.*)$", re.I)
+_LOCATION_LABEL_RE = re.compile(r"^(?:location|venue|where)\s*:?\s*(.*)$", re.I)
 _OPEN_DATE_RE = re.compile(
-    r"^(?:daily|ongoing|selected dates?|weekends?|public holidays?)$",
+    r"^(?:daily|ongoing|permanent|selected dates?|weekends?|public holidays?)$",
     re.I,
 )
 
@@ -29,14 +22,11 @@ _BASE_LISTING_CARD = None
 _BASE_CANDIDATE_URL = None
 _BASE_ENRICH = None
 _BASE_DOM_EVENT = None
-_BASE_DETAIL_CANDIDATE = None
-_BASE_DIAGNOSTIC_REASON = None
-_BASE_REVIEW_CANONICAL_URL = None
 
 _OLD_NHB_DATE_GATE = "    if (!hasDateText(text)) return false;"
 _NEW_NHB_DATE_GATE = r'''    if (!hasDateText(text) && !(
       String(sourceId || "").toLowerCase() === "mandai"
-      && /\b(?:date\s*:?\s*)?(?:daily|ongoing|selected dates?|weekends?|public holidays?)\b/i.test(text)
+      && /\b(?:date\s*:?\s*)?(?:daily|ongoing|permanent|selected dates?|weekends?|public holidays?)\b/i.test(text)
     )) return false;'''
 
 _OLD_NHB_PUSH = '''      const listingDetailUrls = detailUrls(el);
@@ -56,28 +46,21 @@ _NEW_NHB_PUSH = '''      const listingDetailUrls = detailUrls(el);
       push(out, seen, el, url, "", "nhb_dom_card");'''
 
 
-def _is_mandai(source: dict[str, Any]) -> bool:
+def is_mandai(source: dict[str, Any]) -> bool:
     return _extract.clean(source.get("id")).lower() == MANDAI_SOURCE_ID
 
 
-def _card_identity(card: dict[str, Any]) -> str:
-    existing = _extract.clean(card.get("id"))
+def card_identity(card: dict[str, Any]) -> str:
+    """Return a stable identity from the rendered listing card, not its URL."""
+
     material = "\n".join(
         [
-            existing,
-            _extract.clean(card.get("text"))[:1000],
+            _extract.clean(card.get("id")),
+            _extract.clean(card.get("text"))[:1200],
             _extract.clean(card.get("page_url")),
         ]
     )
-    return hashlib.sha256(material.encode("utf-8")).hexdigest()[:16]
-
-
-def listing_reference_url(listing_url: str, card: dict[str, Any]) -> str:
-    """Return an honest official-listing URL with a stable local card fragment."""
-
-    parsed = urlsplit(_extract.clean(listing_url))
-    fragment = f"{LISTING_REFERENCE_PREFIX}{_card_identity(card)}"
-    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, parsed.query, fragment))
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()[:20]
 
 
 def _card_lines(card: dict[str, Any]) -> list[str]:
@@ -89,9 +72,32 @@ def _card_lines(card: dict[str, Any]) -> list[str]:
     return _extract.lines(card.get("text") or "")
 
 
+def _labeled_value(
+    lines: list[str],
+    pattern: re.Pattern[str],
+    index: int,
+) -> tuple[str, int]:
+    match = pattern.fullmatch(lines[index])
+    if not match:
+        return "", index
+    inline = _extract.clean(match.group(1))
+    if inline:
+        return inline, index
+    for next_index in range(index + 1, min(len(lines), index + 4)):
+        candidate = _extract.clean(lines[next_index])
+        if not candidate:
+            continue
+        if any(
+            other.fullmatch(candidate)
+            for other in (_DATE_LABEL_RE, _TIME_LABEL_RE, _LOCATION_LABEL_RE)
+        ):
+            break
+        return candidate, next_index
+    return "", index
+
+
 def _date_value(line: str) -> str:
-    match = _DATE_LABEL_RE.fullmatch(line)
-    value = _extract.clean(match.group(1) if match else line)
+    value = _extract.clean(line)
     if not value:
         return ""
     if _extract.DATE_LINE_RE.search(value):
@@ -102,36 +108,36 @@ def _date_value(line: str) -> str:
         re.I,
     ):
         return value
-    if _OPEN_DATE_RE.fullmatch(value):
-        return value
-    return ""
+    return value if _OPEN_DATE_RE.fullmatch(value) else ""
 
 
 def _time_value(line: str) -> str:
-    match = _TIME_LABEL_RE.fullmatch(line)
-    value = _extract.clean(match.group(1) if match else line)
+    value = _extract.clean(line)
     if not value or _extract.DATE_LINE_RE.search(value):
         return ""
-    if match or _extract.TIME_RE.search(value):
-        return value
-    return ""
+    return value if _extract.TIME_RE.search(value) else ""
 
 
-def _mandai_when(card: dict[str, Any]) -> tuple[str, str]:
+def mandai_when(card: dict[str, Any]) -> tuple[str, str]:
+    lines = _card_lines(card)
     date_value = ""
     date_line = ""
     time_value = ""
-    for line in _card_lines(card):
+
+    for index, line in enumerate(lines):
         if not date_value:
-            candidate = _date_value(line)
+            labeled, _ = _labeled_value(lines, _DATE_LABEL_RE, index)
+            candidate = _date_value(labeled or line)
             if candidate:
                 date_value = candidate
                 date_line = line
                 continue
         if not time_value:
-            candidate = _time_value(line)
+            labeled, _ = _labeled_value(lines, _TIME_LABEL_RE, index)
+            candidate = _time_value(labeled or line)
             if candidate:
                 time_value = candidate
+
     if not date_value:
         return "", ""
     if time_value and time_value.casefold() not in date_value.casefold():
@@ -139,22 +145,21 @@ def _mandai_when(card: dict[str, Any]) -> tuple[str, str]:
     return date_value, date_line
 
 
-def _mandai_where(
+def mandai_where(
     source: dict[str, Any],
     card: dict[str, Any],
     when: str,
     date_line: str,
 ) -> str:
-    for line in _card_lines(card):
-        match = _LOCATION_LABEL_RE.fullmatch(line)
-        if match:
-            value = _extract.clean(match.group(1))
-            if value:
-                return value
+    lines = _card_lines(card)
+    for index in range(len(lines)):
+        value, _ = _labeled_value(lines, _LOCATION_LABEL_RE, index)
+        if value:
+            return value
     return _extract.pick_venue(source, card, when, date_line)
 
 
-def _mandai_summary(card: dict[str, Any], title: str, when: str, where: str) -> str:
+def mandai_summary(card: dict[str, Any], title: str, when: str, where: str) -> str:
     title_key = _extract.norm_key(title)
     where_key = _extract.norm_key(where)
     narrative: list[str] = []
@@ -162,9 +167,10 @@ def _mandai_summary(card: dict[str, Any], title: str, when: str, where: str) -> 
         key = _extract.norm_key(line)
         if not line or key in {title_key, where_key}:
             continue
-        if _DATE_LABEL_RE.fullmatch(line) or _TIME_LABEL_RE.fullmatch(line):
-            continue
-        if _LOCATION_LABEL_RE.fullmatch(line):
+        if any(
+            pattern.fullmatch(line)
+            for pattern in (_DATE_LABEL_RE, _TIME_LABEL_RE, _LOCATION_LABEL_RE)
+        ):
             continue
         if _date_value(line) or _time_value(line):
             continue
@@ -182,16 +188,16 @@ def _mandai_summary(card: dict[str, Any], title: str, when: str, where: str) -> 
     return _extract.pick_summary(card, title, when, where)
 
 
-def _mandai_dom_event(
+def mandai_event(
     source: dict[str, Any],
     card: dict[str, Any],
 ) -> dict[str, Any] | None:
     title = _extract.pick_title(card)
-    when, date_line = _mandai_when(card)
+    when, date_line = mandai_when(card)
     if not title or not when:
         return None
-    where = _mandai_where(source, card, when, date_line)
-    summary = _mandai_summary(card, title, when, where)
+    where = mandai_where(source, card, when, date_line)
+    summary = mandai_summary(card, title, when, where)
     dates = _extract.label_dates(when)
     listing_only = int(card.get("detail_url_count") or 0) == 0
     return {
@@ -217,29 +223,63 @@ def _mandai_dom_event(
     }
 
 
+def review_detail(
+    source: dict[str, Any],
+    listing_url: str,
+    card: dict[str, Any],
+) -> dict[str, Any]:
+    """Build a Review candidate from a complete card without opening a page."""
+
+    event = mandai_event(source, card)
+    if event is None:
+        return {
+            "detail_url": listing_url,
+            "title": _extract.pick_title(card),
+            "when": "",
+            "where": "",
+            "summary": _extract.clean(card.get("text"))[:500],
+            "detail_status": "incomplete",
+            "detail_error": "listing_card_fields_incomplete",
+            "detail_page_title": "",
+            "listing_only": True,
+            "detail_available": False,
+        }
+    return {
+        "detail_url": listing_url,
+        "title": event["title"],
+        "when": event["when"],
+        "where": event["where"],
+        "summary": event["summary"],
+        "detail_status": "collected",
+        "detail_error": "",
+        "detail_page_title": "",
+        "listing_only": True,
+        "detail_available": False,
+    }
+
+
 def _listing_card(
     source: dict[str, Any],
     card: dict[str, Any],
     listing_url: str,
 ) -> dict[str, Any] | None:
     admitted = _BASE_LISTING_CARD(source, card, listing_url)
-    if admitted is not None or not _is_mandai(source):
+    if admitted is not None or not is_mandai(source):
         return admitted
     if _extract.clean(card.get("extraction_mode")) != "nhb_dom_card":
         return None
     if int(card.get("detail_url_count") or 0) != 0:
         return None
-    if _mandai_dom_event(source, card) is None:
+    if mandai_event(source, card) is None:
         return None
 
-    reference = listing_reference_url(listing_url, card)
     admitted = dict(card)
     admitted.update(
-        url=reference,
+        url=_extract.clean(listing_url),
         page_url=_extract.clean(listing_url),
         listing_evidence=_source_overrides.LISTING_EVIDENCE,
         listing_url=_extract.clean(listing_url),
-        listing_card_id=_extract.clean(card.get("id")) or _card_identity(card),
+        listing_card_id=_extract.clean(card.get("id")) or card_identity(card),
         listing_extraction_mode="mandai_listing_card_without_detail",
         listing_only=True,
         detail_available=False,
@@ -248,8 +288,8 @@ def _listing_card(
 
 
 def _candidate_url(source: dict[str, Any], card: dict[str, Any]) -> str:
-    if _is_mandai(source) and card.get("listing_only") is True:
-        return _extract.clean(card.get("url"))
+    if is_mandai(source) and card.get("listing_only") is True:
+        return _extract.clean(card.get("listing_url") or card.get("url"))
     return _BASE_CANDIDATE_URL(source, card)
 
 
@@ -257,13 +297,16 @@ def _enrich(
     source: dict[str, Any],
     cards: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
-    if not _is_mandai(source):
+    if not is_mandai(source):
         return _BASE_ENRICH(source, cards)
 
     enrichable = [card for card in cards if card.get("listing_only") is not True]
     enriched, debug = _BASE_ENRICH(source, enrichable)
     iterator = iter(enriched)
-    output = [card if card.get("listing_only") is True else next(iterator) for card in cards]
+    output = [
+        card if card.get("listing_only") is True else next(iterator)
+        for card in cards
+    ]
     debug = dict(debug)
     debug["candidates"] = len(cards)
     debug["listing_only"] = len(cards) - len(enrichable)
@@ -271,64 +314,9 @@ def _enrich(
 
 
 def _dom_event(source: dict[str, Any], card: dict[str, Any]) -> dict[str, Any] | None:
-    if _is_mandai(source):
-        return _mandai_dom_event(source, card)
+    if is_mandai(source):
+        return mandai_event(source, card)
     return _BASE_DOM_EVENT(source, card)
-
-
-def _detail_candidate(
-    context: Any,
-    source: dict[str, Any],
-    listing_url: str,
-    raw_url: str,
-    card: dict[str, Any],
-) -> dict[str, str]:
-    if _is_mandai(source) and card.get("listing_only") is True:
-        event, reason = _extract.event_from_card(source, card)
-        if event is None:
-            return {
-                "detail_url": raw_url,
-                "title": _extract.pick_title(card),
-                "when": "",
-                "where": "",
-                "summary": _extract.clean(card.get("text"))[:500],
-                "detail_status": "incomplete",
-                "detail_error": reason,
-                "detail_page_title": "",
-            }
-        return {
-            "detail_url": raw_url,
-            "title": str(event.get("title") or _extract.pick_title(card)),
-            "when": str(event.get("when") or ""),
-            "where": str(event.get("where") or ""),
-            "summary": str(event.get("summary") or ""),
-            "detail_status": "collected",
-            "detail_error": "",
-            "detail_page_title": "",
-        }
-    return _BASE_DETAIL_CANDIDATE(context, source, listing_url, raw_url, card)
-
-
-def _diagnostic_reason(diagnostic):
-    if diagnostic.candidates_created > 0 and diagnostic.detail_link_count == 0:
-        return (
-            "collected",
-            "events_recognised_from_complete_listing_cards",
-            f"Recognised {diagnostic.candidates_created} Event candidate(s) directly "
-            "from complete official listing cards without detail pages.",
-        )
-    return _BASE_DIAGNOSTIC_REASON(diagnostic)
-
-
-def _review_canonical_url(value: object) -> str:
-    canonical = _BASE_REVIEW_CANONICAL_URL(value)
-    raw_fragment = urlsplit(str(value or "").strip()).fragment
-    if not LISTING_REFERENCE_RE.fullmatch(raw_fragment):
-        return canonical
-    parsed = urlsplit(canonical)
-    return urlunsplit(
-        (parsed.scheme, parsed.netloc, parsed.path, parsed.query, raw_fragment)
-    )
 
 
 def _patch_browser() -> None:
@@ -350,8 +338,6 @@ def apply() -> None:
 
     global _APPLIED
     global _BASE_LISTING_CARD, _BASE_CANDIDATE_URL, _BASE_ENRICH, _BASE_DOM_EVENT
-    global _BASE_DETAIL_CANDIDATE, _BASE_DIAGNOSTIC_REASON
-    global _BASE_REVIEW_CANONICAL_URL
     if _APPLIED:
         return
 
@@ -360,24 +346,19 @@ def apply() -> None:
     _BASE_CANDIDATE_URL = _source_overrides._candidate_url
     _BASE_ENRICH = _source_overrides._enrich
     _BASE_DOM_EVENT = _source_overrides._dom_event
-    _BASE_DETAIL_CANDIDATE = _review._detail_candidate
-    _BASE_DIAGNOSTIC_REASON = _diagnostics._reason
-    _BASE_REVIEW_CANONICAL_URL = _review_runtime._canonical_url
 
     _patch_browser()
     _source_overrides._listing_card = _listing_card
     _source_overrides._candidate_url = _candidate_url
     _source_overrides._enrich = _enrich
     _source_overrides._dom_event = _dom_event
-    _review._detail_candidate = _detail_candidate
-    _diagnostics._reason = _diagnostic_reason
-    _review_runtime._canonical_url = _review_canonical_url
     _APPLIED = True
 
 
 __all__ = [
     "apply",
-    "listing_reference_url",
-    "LISTING_REFERENCE_RE",
-    "MANDAI_SOURCE_ID",
+    "card_identity",
+    "is_mandai",
+    "mandai_event",
+    "review_detail",
 ]
