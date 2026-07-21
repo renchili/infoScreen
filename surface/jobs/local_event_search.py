@@ -7,25 +7,29 @@ import os
 from pathlib import Path
 
 os.environ.setdefault("LOCAL_EVENTS_MAX_SECONDS", "520")
-os.environ.setdefault("LOCAL_EVENTS_SOURCE_CONCURRENCY", "3")
-os.environ.setdefault("LOCAL_EVENTS_SOURCE_TIMEOUT_SECONDS", "160")
+os.environ.setdefault("LOCAL_EVENTS_SOURCE_CONCURRENCY", "4")
+os.environ.setdefault("LOCAL_EVENTS_SOURCE_TIMEOUT_SECONDS", "95")
 os.environ.setdefault("LOCAL_EVENTS_MAX_LISTING_PAGES", "2")
 os.environ.setdefault("LOCAL_EVENTS_LOAD_MORE_ROUNDS", "24")
 os.environ.setdefault("LOCAL_EVENTS_MAX_TOTAL_EVENTS", "180")
 os.environ.setdefault("LOCAL_EVENTS_NAV_TIMEOUT_MS", "25000")
 os.environ.setdefault("LOCAL_EVENTS_DOM_TIMEOUT_MS", "25000")
-os.environ.setdefault("LOCAL_EVENTS_NHB_DETAIL_LIMIT", "18")
-os.environ.setdefault("LOCAL_EVENTS_NHB_DETAIL_TIMEOUT_MS", "16000")
-os.environ.setdefault("LOCAL_EVENTS_DETAIL_LIMIT", "24")
-os.environ.setdefault("LOCAL_EVENTS_DETAIL_TIMEOUT_MS", "16000")
+# The listing-authority pipeline performs the only supported detail pass.
+# Disable the legacy NHB pre-enrichment to avoid reading every detail twice.
+os.environ.setdefault("LOCAL_EVENTS_NHB_DETAIL_LIMIT", "0")
+os.environ.setdefault("LOCAL_EVENTS_NHB_DETAIL_TIMEOUT_MS", "8000")
+os.environ.setdefault("LOCAL_EVENTS_DETAIL_LIMIT", "6")
+os.environ.setdefault("LOCAL_EVENTS_DETAIL_TIMEOUT_MS", "8000")
 os.environ.setdefault("LOCAL_EVENTS_PAGE_SCREENSHOTS", "0")
 os.environ.setdefault("LOCAL_EVENTS_CARD_SCREENSHOTS", "0")
 
 import local_events_runtime as _local_events_runtime  # noqa: E402
 from local_events_runtime import detail_date_authority  # noqa: E402
+from local_events_runtime import review_runtime_authority  # noqa: E402
 from local_events_runtime.output import normalize_payload  # noqa: E402
 
 detail_date_authority.apply()
+review_runtime_authority.apply()
 collect_events = _local_events_runtime.collect_events
 
 SURFACE_DIR = Path(__file__).resolve().parents[1]
@@ -161,6 +165,7 @@ def self_test() -> int:
     assert isinstance(payload.get("results"), list)
     assert isinstance(payload.get("debug_by_source"), list)
     assert isinstance(payload.get("partial"), bool)
+    assert isinstance(payload.get("review_authority"), dict)
     print("local-event listing-authoritative self-test passed")
     return 0
 
