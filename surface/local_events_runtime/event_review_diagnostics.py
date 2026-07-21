@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from . import browser as _browser
 from . import event_review as _review
+from . import source_overrides as _source_overrides
 
 
 LISTING_DIAGNOSTIC_JS = r"""
@@ -86,6 +87,7 @@ class ListingRecognitionDiagnostic(BaseModel):
     same_domain_link_count: int = Field(default=0, ge=0)
     detail_link_count: int = Field(default=0, ge=0)
     extracted_card_count: int = Field(default=0, ge=0)
+    admitted_card_count: int = Field(default=0, ge=0)
     marked_card_count: int = Field(default=0, ge=0)
     cards_with_evidence: int = Field(default=0, ge=0)
     cards_with_selector: int = Field(default=0, ge=0)
@@ -136,11 +138,17 @@ def _reason(diagnostic: ListingRecognitionDiagnostic) -> tuple[RecognitionStatus
             "detail_links_not_isolated_into_cards",
             f"{diagnostic.detail_link_count} possible Event detail link(s) were found, but the extractor could not isolate them into independent cards with one official detail link each.",
         )
+    if diagnostic.admitted_card_count == 0:
+        return (
+            "empty",
+            "extracted_cards_not_admitted",
+            f"{diagnostic.extracted_card_count} DOM card(s) were extracted, but none had both a usable title and exactly one allowed official detail link. A date on the listing card is not required.",
+        )
     if diagnostic.cards_with_evidence == 0:
         return (
             "empty",
             "card_dom_evidence_missing",
-            f"{diagnostic.extracted_card_count} card(s) were extracted, but none could be matched back to a rendered DOM element for selector evidence.",
+            f"{diagnostic.admitted_card_count} Event card(s) were admitted, but none could be matched back to a rendered DOM element for selector evidence.",
         )
     if diagnostic.cards_with_selector == 0:
         return (
@@ -285,7 +293,16 @@ def collect_event_candidates(store: _review.EventReviewStore) -> _review.ReviewS
                             ][:5]
 
                         diagnostic.extracted_card_count += len(cards)
-                        for card in cards:
+                        for raw_card in cards:
+                            card = _source_overrides._listing_card(
+                                source,
+                                raw_card,
+                                listing.url,
+                            )
+                            if card is None:
+                                continue
+                            diagnostic.admitted_card_count += 1
+
                             raw_url = str(card.get("url") or "").strip()
                             evidence_raw = evidence_by_id.get(str(card.get("id") or ""))
                             if isinstance(evidence_raw, dict):
