@@ -6,9 +6,9 @@ import json
 import os
 from pathlib import Path
 
-os.environ.setdefault("LOCAL_EVENTS_MAX_SECONDS", "520")
+os.environ.setdefault("LOCAL_EVENTS_MAX_SECONDS", "900")
 os.environ.setdefault("LOCAL_EVENTS_SOURCE_CONCURRENCY", "4")
-os.environ.setdefault("LOCAL_EVENTS_SOURCE_TIMEOUT_SECONDS", "95")
+os.environ.setdefault("LOCAL_EVENTS_SOURCE_TIMEOUT_SECONDS", "780")
 os.environ.setdefault("LOCAL_EVENTS_MAX_LISTING_PAGES", "2")
 os.environ.setdefault("LOCAL_EVENTS_LOAD_MORE_ROUNDS", "24")
 os.environ.setdefault("LOCAL_EVENTS_MAX_TOTAL_EVENTS", "180")
@@ -18,8 +18,13 @@ os.environ.setdefault("LOCAL_EVENTS_DOM_TIMEOUT_MS", "25000")
 # Disable the legacy NHB pre-enrichment to avoid reading every detail twice.
 os.environ.setdefault("LOCAL_EVENTS_NHB_DETAIL_LIMIT", "0")
 os.environ.setdefault("LOCAL_EVENTS_NHB_DETAIL_TIMEOUT_MS", "8000")
-os.environ.setdefault("LOCAL_EVENTS_DETAIL_LIMIT", "6")
-os.environ.setdefault("LOCAL_EVENTS_DETAIL_TIMEOUT_MS", "8000")
+# Every admitted card may require its detail page for date and venue fields.
+# Do not impose a smaller arbitrary detail limit than the run's Event budget.
+os.environ.setdefault(
+    "LOCAL_EVENTS_DETAIL_LIMIT",
+    os.environ["LOCAL_EVENTS_MAX_TOTAL_EVENTS"],
+)
+os.environ.setdefault("LOCAL_EVENTS_DETAIL_TIMEOUT_MS", "60000")
 os.environ.setdefault("LOCAL_EVENTS_PAGE_SCREENSHOTS", "0")
 os.environ.setdefault("LOCAL_EVENTS_CARD_SCREENSHOTS", "0")
 
