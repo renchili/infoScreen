@@ -141,7 +141,11 @@ def _date_value(line: str) -> str:
 
 def _time_value(line: str) -> str:
     value = _extract.clean(line)
-    if not value or _extract.DATE_LINE_RE.search(value):
+    if (
+        not value
+        or _extract.DATE_LINE_RE.search(value)
+        or _OPEN_DATE_RE.fullmatch(value)
+    ):
         return ""
     return value if _extract.TIME_RE.search(value) else ""
 
