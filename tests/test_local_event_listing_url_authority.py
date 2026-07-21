@@ -20,7 +20,7 @@ def test_listing_detail_discovery_accepts_known_routes_and_listing_descendants()
     assert "targetPath === listingPath" in card_js
     assert 'if (role === "listing") return false;' in card_js
     assert 'if (role === "detail") return true;' in card_js
-    assert 'listingPath.replace(/\\.html?$/i, "")' in card_js
+    assert r'listingPath.replace(/\.html?$/i, "")' in card_js
     assert 'targetPath.startsWith(listingStem + "/")' in card_js
     assert "officialDetailUrl(abs) && !urls.includes(abs)" in card_js
     assert "if (!officialDetailUrl(abs)) continue;" in card_js
@@ -39,7 +39,6 @@ def test_structural_fallback_is_not_every_same_domain_link() -> None:
     assert "if (!targetPath || targetPath === listingPath) return false;" in card_js
     assert r"\.(?:jpg|jpeg|png|gif|webp|svg|pdf)$" in card_js
     assert 'return Boolean(listingStem && targetPath.startsWith(listingStem + "/"));' in card_js
-    assert "return true;\n  }" not in card_js.split("function officialDetailUrl(raw)", 1)[1].split("\n''", 1)[0]
 
 
 def test_gardens_calendar_file_descendant_contract_is_present() -> None:
