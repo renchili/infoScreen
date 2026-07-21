@@ -8,12 +8,14 @@ _APPLIED = False
 
 
 def apply() -> None:
-    """Force every patched Local Events Chromium launch to disable HTTP/2.
+    """Install the shared Local Events browser and review-backend bootstrap.
 
     The Surface has observed Chromium navigation failures with
-    ERR_HTTP2_PROTOCOL_ERROR on official Event sites. Collection should start in
-    HTTP/1.1 mode directly; it must not perform a first HTTP/2 attempt or retry by
-    switching browser instances.
+    ERR_HTTP2_PROTOCOL_ERROR on official Event sites. Collection starts in
+    HTTP/1.1 mode directly. The same bootstrap also installs the review
+    diagnostic collector before ``serve_infoscreen`` binds its local
+    ``collect_event_candidates`` reference; otherwise the Studio can only show
+    the generic ``backend_diagnostics_not_loaded`` placeholder.
     """
 
     global _APPLIED
@@ -50,6 +52,14 @@ def apply() -> None:
             ) from exc
 
     _browser.launch_chromium = launch_chromium_http1
+
+    # This function is called by serve_infoscreen before it imports and binds
+    # collect_event_candidates. Apply the diagnostic replacement here so that
+    # the HTTP endpoint receives the diagnostic implementation, not the legacy
+    # collector that omits event_collection.listing_diagnostics.
+    from .event_review_diagnostics import apply as apply_event_review_diagnostics
+
+    apply_event_review_diagnostics()
     _APPLIED = True
 
 
