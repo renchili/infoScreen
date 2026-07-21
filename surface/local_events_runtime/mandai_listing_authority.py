@@ -46,6 +46,31 @@ _NEW_NHB_PUSH = '''      const listingDetailUrls = detailUrls(el);
       push(out, seen, el, url, "", "nhb_dom_card");'''
 
 
+class OfficialListingCardURL(str):
+    """A real official URL whose in-memory identity also includes one DOM card.
+
+    Python's collector historically deduplicates on the ``url`` object before it
+    knows a card's title/date. Multiple Mandai activities legitimately share the
+    same official listing URL. This str subclass serializes as that exact URL but
+    keeps separate cards distinct while the collector's sets are built.
+    """
+
+    def __new__(cls, value: str, identity: str):
+        instance = super().__new__(cls, value)
+        instance.card_identity = identity
+        return instance
+
+    def __hash__(self) -> int:
+        return hash((str(self), self.card_identity))
+
+    def __eq__(self, other: object) -> bool:
+        return bool(
+            isinstance(other, OfficialListingCardURL)
+            and str(self) == str(other)
+            and self.card_identity == other.card_identity
+        )
+
+
 def is_mandai(source: dict[str, Any]) -> bool:
     return _extract.clean(source.get("id")).lower() == MANDAI_SOURCE_ID
 
@@ -206,7 +231,7 @@ def mandai_event(
         "where": where,
         "host": source.get("name") or "Official source",
         "source_name": source.get("name") or "Official source",
-        "url": _extract.clean(card.get("url")),
+        "url": card.get("url") or "",
         "summary": summary,
         "start_date": _extract.best_start_date(when),
         "end_date": max(dates).isoformat() if len(dates) >= 2 else "",
@@ -241,8 +266,6 @@ def review_detail(
             "detail_status": "incomplete",
             "detail_error": "listing_card_fields_incomplete",
             "detail_page_title": "",
-            "listing_only": True,
-            "detail_available": False,
         }
     return {
         "detail_url": listing_url,
@@ -253,8 +276,6 @@ def review_detail(
         "detail_status": "collected",
         "detail_error": "",
         "detail_page_title": "",
-        "listing_only": True,
-        "detail_available": False,
     }
 
 
@@ -273,13 +294,15 @@ def _listing_card(
     if mandai_event(source, card) is None:
         return None
 
+    identity = _extract.clean(card.get("id")) or card_identity(card)
+    official_url = _extract.clean(listing_url)
     admitted = dict(card)
     admitted.update(
-        url=_extract.clean(listing_url),
-        page_url=_extract.clean(listing_url),
+        url=OfficialListingCardURL(official_url, identity),
+        page_url=official_url,
         listing_evidence=_source_overrides.LISTING_EVIDENCE,
-        listing_url=_extract.clean(listing_url),
-        listing_card_id=_extract.clean(card.get("id")) or card_identity(card),
+        listing_url=official_url,
+        listing_card_id=identity,
         listing_extraction_mode="mandai_listing_card_without_detail",
         listing_only=True,
         detail_available=False,
@@ -287,9 +310,9 @@ def _listing_card(
     return admitted
 
 
-def _candidate_url(source: dict[str, Any], card: dict[str, Any]) -> str:
+def _candidate_url(source: dict[str, Any], card: dict[str, Any]):
     if is_mandai(source) and card.get("listing_only") is True:
-        return _extract.clean(card.get("listing_url") or card.get("url"))
+        return card.get("url") or card.get("listing_url") or ""
     return _BASE_CANDIDATE_URL(source, card)
 
 
@@ -360,5 +383,6 @@ __all__ = [
     "card_identity",
     "is_mandai",
     "mandai_event",
+    "OfficialListingCardURL",
     "review_detail",
 ]
