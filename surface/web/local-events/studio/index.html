@@ -56,7 +56,7 @@
       <div class="heading">
         <div>
           <div class="eyebrow">ABILITY 2 · INDEPENDENT</div>
-          <h2>Browse a listing page and point out where an activity exists</h2>
+          <h2>Browse on this device and point out where an activity exists</h2>
         </div>
         <span id="feedback-status" class="status">READY</span>
       </div>
@@ -70,11 +70,12 @@
           <span>Listing page</span>
           <select id="feedback-listing"></select>
         </label>
-        <button id="open-feedback-browser" class="button primary" type="button">OPEN REAL LISTING PAGE</button>
+        <button id="open-feedback-browser" class="button primary" type="button">OPEN ON THIS DEVICE</button>
+        <a id="download-feedback-helper" class="button secondary" href="#">DOWNLOAD CHROME HELPER</a>
       </div>
 
       <div id="feedback-message" class="message">
-        The new Chromium window remains fully interactive. Use POINT TO EVENT only when submitting a location.
+        Install the Chrome helper once on the computer you are using now. The listing page then opens here, not on the Surface display.
       </div>
 
       <div class="section-title">
@@ -91,5 +92,7 @@
   <script src="/assets/js/local_event_review_filters.js" defer></script>
   <script src="/assets/js/local_event_review_previews.js" defer></script>
   <script src="/assets/js/local_event_review_diagnostics.js" defer></script>
+  <script src="/assets/js/local_event_feedback_extension_download.js" defer></script>
+  <script src="/assets/js/local_event_review_remote_feedback.js" defer></script>
 </body>
 </html>

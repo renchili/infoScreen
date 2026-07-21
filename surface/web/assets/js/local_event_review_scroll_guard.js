@@ -13,6 +13,7 @@
   let restoreFrame = 0;
   let restoreTimer = 0;
   let restoring = false;
+  let resumeHandler = null;
 
   function pathAndMethod(input, init = {}) {
     const raw = typeof input === "string" ? input : input?.url || "";
@@ -67,27 +68,34 @@
 
   const previousSetInterval = window.setInterval.bind(window);
   window.setInterval = (handler, delay, ...args) => {
-    if (Number(delay) !== 3000 || typeof handler !== "function") {
-      return previousSetInterval(handler, delay, ...args);
+    if (Number(delay) === 3000 && typeof handler === "function") {
+      resumeHandler = () => handler(...args);
+      return -1;
+    }
+    return previousSetInterval(handler, delay, ...args);
+  };
+
+  async function refreshAfterReturning() {
+    if (
+      document.hidden
+      || typeof resumeHandler !== "function"
+      || document.documentElement.classList.contains("review-is-blocked")
+      || document.documentElement.classList.contains("review-sequence-busy")
+    ) {
+      return;
     }
 
-    return previousSetInterval(async (...callbackArgs) => {
-      if (
-        document.hidden
-        || document.documentElement.classList.contains("review-is-blocked")
-        || document.documentElement.classList.contains("review-sequence-busy")
-      ) {
-        return;
-      }
+    rememberScroll();
+    try {
+      await resumeHandler();
+    } finally {
+      restoreScroll();
+    }
+  }
 
-      rememberScroll();
-      try {
-        await handler(...callbackArgs);
-      } finally {
-        restoreScroll();
-      }
-    }, delay, ...args);
-  };
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) refreshAfterReturning();
+  });
 
   document.addEventListener(
     "click",

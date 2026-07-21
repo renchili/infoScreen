@@ -7,6 +7,17 @@
 
   const text = (value) => String(value || "").trim();
 
+  function canonical(value) {
+    try {
+      const url = new URL(value, window.location.href);
+      url.hash = "";
+      if (url.pathname !== "/") url.pathname = url.pathname.replace(/\/$/, "");
+      return url.href;
+    } catch {
+      return text(value);
+    }
+  }
+
   function listingUrl(card) {
     for (const row of card.querySelectorAll(".meta > div")) {
       if (!text(row.textContent).startsWith("URL:")) continue;
@@ -15,10 +26,14 @@
     return "";
   }
 
-  function diagnosticFor(payload, url) {
+  function diagnostics(payload) {
     const rows = payload?.event_collection?.listing_diagnostics;
-    if (!Array.isArray(rows)) return null;
-    return rows.find((row) => text(row?.listing_url) === url) || null;
+    return Array.isArray(rows) ? rows : [];
+  }
+
+  function diagnosticFor(payload, url) {
+    const expected = canonical(url);
+    return diagnostics(payload).find((row) => canonical(row?.listing_url) === expected) || null;
   }
 
   function stage(label, value) {
@@ -31,7 +46,28 @@
     return row;
   }
 
-  function renderDiagnostic(card, diagnostic) {
+  function missingDiagnosticReason(payload, url) {
+    const collection = payload?.event_collection || {};
+    const rows = diagnostics(payload);
+    if (!text(collection.completed_at)) {
+      return {
+        code: "collection_not_run_for_this_state",
+        reason: "No completed Event collection is present in the current backend state.",
+      };
+    }
+    if (!rows.length) {
+      return {
+        code: "backend_diagnostics_not_loaded",
+        reason: "The browser assets are newer than the running Python backend. Restart infoscreen-http.service, then run PREVIEW EVENTS again. The old backend cannot explain why this page returned zero Events.",
+      };
+    }
+    return {
+      code: "diagnostic_scope_did_not_include_page",
+      reason: `The last collection contains diagnostics, but not for ${url}. Run PREVIEW EVENTS on this exact list page again.`,
+    };
+  }
+
+  function renderDiagnostic(card, diagnostic, payload, url) {
     const preview = card.querySelector(".listing-event-preview");
     if (!preview) return;
 
@@ -45,24 +81,21 @@
     title.textContent = "WHY NO EVENT WAS RECOGNISED";
     block.appendChild(title);
 
-    if (!diagnostic) {
-      const message = document.createElement("div");
-      message.className = "preview-warning";
-      message.textContent = "No diagnostic record exists for this collection. Run PREVIEW EVENTS again after updating the service.";
-      block.appendChild(message);
-      preview.appendChild(block);
-      return;
-    }
-
+    const fallback = diagnostic ? null : missingDiagnosticReason(payload, url);
     const code = document.createElement("code");
     code.className = "listing-event-diagnostic-code";
-    code.textContent = text(diagnostic.reason_code) || "unknown_reason";
+    code.textContent = text(diagnostic?.reason_code) || fallback.code;
     block.appendChild(code);
 
     const reason = document.createElement("div");
     reason.className = "listing-event-diagnostic-reason";
-    reason.textContent = text(diagnostic.reason) || "The collector did not provide a reason.";
+    reason.textContent = text(diagnostic?.reason) || fallback.reason;
     block.appendChild(reason);
+
+    if (!diagnostic) {
+      preview.appendChild(block);
+      return;
+    }
 
     const stages = document.createElement("div");
     stages.className = "listing-event-diagnostic-stages";
@@ -116,7 +149,7 @@
       if (!heading || text(heading.textContent) !== "EVENT PREVIEW · 0") continue;
       const url = listingUrl(card);
       if (!url) continue;
-      renderDiagnostic(card, diagnosticFor(payload, url));
+      renderDiagnostic(card, diagnosticFor(payload, url), payload, url);
     }
   }
 
@@ -132,8 +165,14 @@
 
   function scheduleDiagnostics() {
     window.clearTimeout(refreshTimer);
-    refreshTimer = window.setTimeout(loadDiagnostics, 80);
+    refreshTimer = window.setTimeout(() => {
+      if (lastPayload) applyDiagnostics(lastPayload);
+    }, 40);
   }
+
+  document.addEventListener("infoscreen:review-state", (event) => {
+    if (event.detail && typeof event.detail === "object") applyDiagnostics(event.detail);
+  });
 
   document.addEventListener("DOMContentLoaded", () => {
     loadDiagnostics();

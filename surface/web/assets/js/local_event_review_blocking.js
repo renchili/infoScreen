@@ -4,9 +4,7 @@
   const labels = {
     "/api/local-events/review/discover-listings": "Collecting institution list pages",
     "/api/local-events/review/collect-events": "Collecting events and reading detail pages",
-    "/api/local-events/review/listing-decision": "Saving list-page review",
-    "/api/local-events/review/event-decision": "Saving event review",
-    "/api/local-events/review/open-feedback": "Opening the real listing page",
+    "/api/local-events/review/open-feedback": "Saving or opening Event feedback",
   };
 
   function ensureOverlay() {

@@ -20,6 +20,12 @@
     return payload;
   }
 
+  function publishState(payload) {
+    document.dispatchEvent(new CustomEvent("infoscreen:review-state", {
+      detail: payload,
+    }));
+  }
+
   function previews() {
     try {
       const value = JSON.parse(sessionStorage.getItem(PREVIEW_STORAGE_KEY) || "{}");
@@ -44,10 +50,6 @@
       return text(row.querySelector("code")?.textContent || row.textContent.replace(/^URL:\s*/, ""));
     }
     return "";
-  }
-
-  function listingSourceId(card) {
-    return text(card.dataset.sourceId);
   }
 
   function eventRowsFor(url) {
@@ -119,7 +121,7 @@
     if (!rows.length) {
       const message = document.createElement("div");
       message.className = "preview-warning";
-      message.textContent = "No Event candidates were returned for this page. Do not confirm it as a list page without checking the real page.";
+      message.textContent = "No Event candidates were returned for this page. The diagnostic below must explain the exact failed recognition stage.";
       box.appendChild(message);
       return;
     }
@@ -252,6 +254,7 @@
 
       const rows = normalizedPreviewRows(payload, url);
       savePreview(url, rows);
+      publishState(payload);
       if (card.isConnected) {
         renderPreviewRows(card, rows, { collectedAt: new Date().toISOString() });
       }
@@ -288,6 +291,7 @@
           method: "POST",
           body: "{}",
         });
+        publishState(payload);
         setGlobalStatus(`${(payload.events || []).length} EVENT CANDIDATES RETURNED`, "ok");
         await reloadState();
         return;
@@ -310,6 +314,7 @@
         }),
       );
 
+      publishState(payload);
       const count = (payload.events || []).filter((row) => row.source_id === sourceId).length;
       setGlobalStatus(`${count} EVENT CANDIDATES RETURNED FOR ${sourceName}`, count ? "ok" : "error");
       await reloadState();
