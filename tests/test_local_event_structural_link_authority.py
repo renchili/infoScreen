@@ -11,15 +11,18 @@ from local_events_runtime.detail_date_authority import apply as apply_detail_dat
 from local_events_runtime.structural_link_authority import apply as apply_structural_link_authority  # noqa: E402
 
 
-def test_calendar_of_events_detail_links_use_structural_authority() -> None:
+def test_calendar_of_events_uses_verified_activity_card_boundary() -> None:
     apply_detail_date_authority()
     apply_structural_link_authority()
 
-    # The real CARD extractor must not require route-name enumeration.
-    assert "officialDetailUrl(abs)" in browser.CARD_JS
+    card_js = browser.CARD_JS
+    assert 'gardensbythebay: ["a.programme-title.row-listing-title[href]"]' in card_js
+    assert "configuredCardAnchors.length" in card_js
+    assert "officialDetailUrl(abs)" in card_js
 
-    # Review diagnostics must use the same same-domain/non-listing/media rule.
     diagnostic_js = event_review_diagnostics.LISTING_DIAGNOSTIC_JS
+    assert 'a.programme-title.row-listing-title[href]' in diagnostic_js
+    assert "configuredCardAnchors.length" in diagnostic_js
     assert "targetPath === listingPath" in diagnostic_js
     assert "jpg|jpeg|png|gif|webp|svg|pdf" in diagnostic_js
     assert 'pathRole(anchor.getAttribute("href") || "") === "detail"' not in diagnostic_js
