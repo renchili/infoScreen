@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from . import detail_authority
@@ -12,6 +13,10 @@ from .source_overrides import (
 )
 
 _APPLIED = False
+REVIEW_DETAIL_TIMEOUT_MS = max(
+    1000,
+    int(os.environ.get("LOCAL_EVENT_REVIEW_DETAIL_TIMEOUT_MS", "8000")),
+)
 
 
 def _official_detail_url(
@@ -77,7 +82,12 @@ def _detail_candidate(
     raw_url: str,
     card: dict[str, Any],
 ) -> dict[str, str]:
-    """Collect review fields through the same authoritative detail parser as output."""
+    """Collect review fields through the same authoritative detail parser as output.
+
+    Preview navigation waits once for DOMContentLoaded. It must not first spend a
+    full network-idle timeout and then repeat the same navigation with another
+    timeout; many official sites keep analytics connections open indefinitely.
+    """
 
     if "#nhb-" in raw_url or "#nhb-json-" in raw_url:
         return {
@@ -99,18 +109,12 @@ def _detail_candidate(
 
     detail = context.new_page()
     try:
-        try:
-            response = detail.goto(
-                requested_url,
-                wait_until="networkidle",
-                timeout=_review.NAV_TIMEOUT_MS,
-            )
-        except Exception:
-            response = detail.goto(
-                requested_url,
-                wait_until="domcontentloaded",
-                timeout=_review.DOM_TIMEOUT_MS,
-            )
+        response = detail.goto(
+            requested_url,
+            wait_until="domcontentloaded",
+            timeout=REVIEW_DETAIL_TIMEOUT_MS,
+        )
+        detail.wait_for_timeout(250)
         if response is not None and response.status >= 400:
             raise ValueError(f"detail_http_status_{response.status}")
 
@@ -184,4 +188,4 @@ def apply() -> None:
     _APPLIED = True
 
 
-__all__ = ["apply"]
+__all__ = ["REVIEW_DETAIL_TIMEOUT_MS", "apply"]
