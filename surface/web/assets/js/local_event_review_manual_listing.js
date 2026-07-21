@@ -2,6 +2,7 @@
 
 (() => {
   const ENDPOINT = "/api/local-events/review/listing-page";
+  const MANUAL_MARKER = "Manually added by operator";
 
   const byId = (id) => document.getElementById(id);
   const text = (value) => String(value || "").trim();
@@ -11,6 +12,21 @@
     if (!node) return;
     node.textContent = message;
     node.className = `status ${kind}`.trim();
+  }
+
+  function labelManualCards() {
+    for (const card of document.querySelectorAll("#listing-pages > .card")) {
+      const rows = [...card.querySelectorAll(".meta > div")];
+      const manual = rows.some((row) => text(row.textContent).includes(MANUAL_MARKER));
+      if (!manual) continue;
+      card.dataset.listingOrigin = "manual";
+      const foundAs = rows.find((row) => text(row.textContent).startsWith("Found as:"));
+      if (!foundAs) continue;
+      foundAs.replaceChildren();
+      const label = document.createElement("strong");
+      label.textContent = "Found as: ";
+      foundAs.append(label, document.createTextNode("manual"));
+    }
   }
 
   async function addListingPage() {
@@ -70,5 +86,11 @@
     document.addEventListener("infoscreen:review-source-change", () => {
       setStatus("READY");
     });
+
+    const listing = byId("listing-pages");
+    if (listing) {
+      new MutationObserver(labelManualCards).observe(listing, { childList: true });
+    }
+    labelManualCards();
   });
 })();
