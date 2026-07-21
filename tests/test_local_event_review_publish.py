@@ -110,6 +110,53 @@ def test_rejected_decision_removes_previously_published_review_row(tmp_path) -> 
     assert persisted["review_publish"]["confirmed_count"] == 0
 
 
+def test_existing_system_event_is_not_overwritten_or_removed(tmp_path) -> None:
+    store = store_at(tmp_path)
+    runtime_path = store.root.parent / "local_event_search_results.json"
+    runtime_path.parent.mkdir(parents=True, exist_ok=True)
+    runtime_path.write_text(
+        json.dumps(
+            {
+                "ok": True,
+                "results": [
+                    {
+                        "title": "Keeper Talk",
+                        "when": "Daily · 10:30am",
+                        "where": "Singapore Zoo",
+                        "host": "Mandai Wildlife Group",
+                        "source_name": "Mandai Wildlife Group",
+                        "url": MANDAI_LISTING,
+                        "summary": "System-collected description.",
+                        "start_date": "2026-07-22",
+                        "kind": "event",
+                        "source_type": "official_listing_card_without_detail",
+                        "candidate_policy": "official-listing-authority-v1",
+                        "listing_url": MANDAI_LISTING,
+                        "listing_only": True,
+                        "detail_available": False,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    state = ReviewState(
+        events=[candidate("keeper-talk", "Keeper Talk", "Daily · 10:30am", "confirmed")]
+    )
+    store.save(state)
+
+    confirmed = publish_review_state(store, state)
+    assert confirmed["count"] == 1
+    assert confirmed["results"][0]["summary"] == "System-collected description."
+    assert confirmed["review_publish"]["already_present"] == 1
+
+    state.events[0].decision = "rejected"
+    store.save(state)
+    rejected = publish_review_state(store, state)
+    assert rejected["count"] == 1
+    assert rejected["results"][0]["source_type"] == "official_listing_card_without_detail"
+
+
 def test_http_bootstrap_installs_immediate_review_publication() -> None:
     bootstrap = read_text("surface/local_events_runtime/http1_browser.py")
 
