@@ -76,6 +76,10 @@ def apply() -> None:
     from .event_review_diagnostics import apply as apply_event_review_diagnostics
 
     apply_event_review_diagnostics()
+
+    from .review_publish_authority import apply as apply_review_publish_authority
+
+    apply_review_publish_authority()
     _APPLIED = True
 
 
