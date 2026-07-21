@@ -6,6 +6,7 @@ from typing import Any
 
 from . import browser as _browser
 from . import extract as _extract
+from . import official_feeds as _official_feeds
 from . import source_overrides as _source_overrides
 
 MANDAI_SOURCE_ID = "mandai"
@@ -22,6 +23,8 @@ _BASE_LISTING_CARD = None
 _BASE_CANDIDATE_URL = None
 _BASE_ENRICH = None
 _BASE_DOM_EVENT = None
+_BASE_SAME_CANDIDATE = None
+_BASE_MERGE_STRUCTURED = None
 
 _OLD_NHB_DATE_GATE = "    if (!hasDateText(text)) return false;"
 _NEW_NHB_DATE_GATE = r'''    if (!hasDateText(text) && !(
@@ -316,6 +319,39 @@ def _candidate_url(source: dict[str, Any], card: dict[str, Any]):
     return _BASE_CANDIDATE_URL(source, card)
 
 
+def _same_candidate(
+    structured: dict[str, Any],
+    listing: dict[str, Any],
+) -> bool:
+    if listing.get("listing_only") is True:
+        structured_title = _official_feeds.card_title(structured)
+        listing_title = _official_feeds.card_title(listing)
+        return bool(structured_title and structured_title == listing_title)
+    return _BASE_SAME_CANDIDATE(structured, listing)
+
+
+def _merge_structured_with_listing(
+    structured: dict[str, Any],
+    listing: dict[str, Any],
+) -> dict[str, Any]:
+    if listing.get("listing_only") is not True:
+        return _BASE_MERGE_STRUCTURED(structured, listing)
+
+    merged = dict(listing)
+    structured_event = structured.get("structured_event")
+    if isinstance(structured_event, dict):
+        event = dict(structured_event)
+        event["url"] = str(listing.get("listing_url") or listing.get("url") or "")
+        merged["structured_event"] = event
+    merged.update(
+        detail_url_count=0,
+        detail_urls=[],
+        listing_only=True,
+        detail_available=False,
+    )
+    return merged
+
+
 def _enrich(
     source: dict[str, Any],
     cards: list[dict[str, Any]],
@@ -361,6 +397,7 @@ def apply() -> None:
 
     global _APPLIED
     global _BASE_LISTING_CARD, _BASE_CANDIDATE_URL, _BASE_ENRICH, _BASE_DOM_EVENT
+    global _BASE_SAME_CANDIDATE, _BASE_MERGE_STRUCTURED
     if _APPLIED:
         return
 
@@ -369,10 +406,14 @@ def apply() -> None:
     _BASE_CANDIDATE_URL = _source_overrides._candidate_url
     _BASE_ENRICH = _source_overrides._enrich
     _BASE_DOM_EVENT = _source_overrides._dom_event
+    _BASE_SAME_CANDIDATE = _source_overrides._same_candidate
+    _BASE_MERGE_STRUCTURED = _source_overrides._merge_structured_with_listing
 
     _patch_browser()
     _source_overrides._listing_card = _listing_card
     _source_overrides._candidate_url = _candidate_url
+    _source_overrides._same_candidate = _same_candidate
+    _source_overrides._merge_structured_with_listing = _merge_structured_with_listing
     _source_overrides._enrich = _enrich
     _source_overrides._dom_event = _dom_event
     _APPLIED = True
