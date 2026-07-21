@@ -9,13 +9,12 @@ from typing import Any
 
 from . import event_review as _review
 from . import extract as _extract
-from . import listing_only_output_authority as _listing_output
 from . import listing_only_runtime_authority as _listing_runtime
-from . import output as _output
 from . import review_runtime_authority as _runtime
 
 _APPLIED = False
 _BASE_SET_EVENT_DECISION = None
+_REVIEW_PUBLISH_ORIGIN = "review_state"
 
 
 def _read_payload(path: Path) -> dict[str, Any]:
@@ -48,14 +47,17 @@ def _merge_runtime(
     payload: dict[str, Any],
     confirmed: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    # Rebuild only rows previously added by review publication. System-collected
-    # rows remain untouched, even when a confirmed review candidate has the same
-    # identity; in that case the Event is already visible and no duplicate is added.
+    """Replace only rows previously published from review state.
+
+    A review decision must not re-normalize, expire, validate, or otherwise mutate
+    unrelated system-collected rows. Those rows are copied exactly as persisted.
+    """
+
     results = [
         dict(item)
         for item in payload.get("results") or []
         if isinstance(item, dict)
-        and item.get("operator_review_decision") != "confirmed"
+        and item.get("review_publish_origin") != _REVIEW_PUBLISH_ORIGIN
     ]
     identities = {
         _event_identity(item)
@@ -71,7 +73,12 @@ def _merge_runtime(
             already_present += 1
             continue
         identities.add(identity)
-        results.append(event)
+        published_event = dict(event)
+        published_event["review_publish_origin"] = _REVIEW_PUBLISH_ORIGIN
+        published_event["review_candidate_id"] = str(
+            event.get("listing_card_id") or ""
+        )
+        results.append(published_event)
         added += 1
 
     published = dict(payload)
@@ -86,7 +93,7 @@ def _merge_runtime(
         "already_present": already_present,
         "mode": "event_decision",
     }
-    return _output.normalize_payload(published)
+    return published
 
 
 def _atomic_write(path: Path, payload: dict[str, Any]) -> None:
@@ -114,7 +121,6 @@ def publish_review_state(
     """Publish current Event decisions without running any website collector."""
 
     _listing_runtime.apply()
-    _listing_output.apply()
     current = state or store.load()
     runtime_path = store.root.parent / "local_event_search_results.json"
     payload = _merge_runtime(_read_payload(runtime_path), _confirmed_events(current))
@@ -167,7 +173,6 @@ def apply() -> None:
     if _APPLIED:
         return
     _listing_runtime.apply()
-    _listing_output.apply()
     _BASE_SET_EVENT_DECISION = _review.EventReviewStore.set_event_decision
     _review.EventReviewStore.set_event_decision = set_event_decision
     _APPLIED = True
