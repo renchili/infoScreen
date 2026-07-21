@@ -79,18 +79,19 @@ def build_openapi() -> dict[str, Any]:
             "decision": {"type": "string", "enum": ["pending", "confirmed", "rejected"]},
         },
     }
-    feedback_open_schema = {
+    manual_listing_schema = {
         "type": "object",
         "additionalProperties": False,
-        "required": ["source_id", "listing_url"],
+        "required": ["source_id", "url"],
         "properties": {
-            "source_id": {"type": "string", "description": "Configured institution ID."},
-            "listing_url": {
+            "source_id": {
                 "type": "string",
-                "description": (
-                    "Normal official listing URL for the legacy Surface-local Chromium flow, "
-                    "or feedback:<base64url-json> when the client-device Chrome helper submits a selected DOM position."
-                ),
+                "description": "Configured institution ID selected by the global institution control.",
+            },
+            "url": {
+                "type": "string",
+                "format": "uri",
+                "description": "Official HTTP/HTTPS Event listing page on the institution allow-list.",
             },
         },
     }
@@ -107,7 +108,7 @@ def build_openapi() -> dict[str, Any]:
             {"name": "dashboard", "description": "Static dashboard and runtime JSON"},
             {"name": "market", "description": "Market config and refresh APIs"},
             {"name": "local-events", "description": "Rendered DOM local event search APIs"},
-            {"name": "local-event-review", "description": "Operator review, diagnostics, and browser feedback APIs"},
+            {"name": "local-event-review", "description": "Operator review and diagnostics APIs"},
             {"name": "media", "description": "Photo wall media endpoints"},
         ],
         "paths": {
@@ -130,25 +131,25 @@ def build_openapi() -> dict[str, Any]:
             "/api/market-refresh": {"post": {"tags": ["market"], "summary": "Refresh market runtime data", "description": "Runs surface/fetch_live_data.py.", "responses": {"200": json_response(ref("MarketRefreshResponse")), "500": json_response(ref("ErrorResponse"), "Refresh failed")}}},
             "/api/local-events/search": {
                 "get": {"tags": ["local-events"], "summary": "Read latest local event search results", "description": "Returns runtime JSON without running a new search.", "responses": {"200": json_response(ref("LocalEventSearchResponse")), "404": json_response(ref("RuntimeMissingResponse"), "Runtime JSON missing")}},
-                "post": {"tags": ["local-events"], "summary": "Run local event search for a location", "description": "Runs surface/search_local_events.py.", "requestBody": request_body(ref("LocalEventSearchRequest")), "responses": {"200": json_response(ref("LocalEventSearchResponse")), "500": json_response(ref("ErrorResponse"), "Search failed")}},
+                "post": {"tags": ["local-events"], "summary": "Run local event search for a location", "description": "Runs surface/search_local_events.py. The supported entrypoint forces Chromium to start with --disable-http2.", "requestBody": request_body(ref("LocalEventSearchRequest")), "responses": {"200": json_response(ref("LocalEventSearchResponse")), "500": json_response(ref("ErrorResponse"), "Search failed")}},
             },
             "/api/local-events/review/state": {
                 "get": {"tags": ["local-event-review"], "summary": "Read Local Event review state", "description": "Returns configured institutions, list-page decisions, Event candidates, diagnostics, and submitted positions from surface/.env/local_event_review/state.json.", "responses": {"200": json_response(object_schema), "500": json_response(ref("ErrorResponse"), "State read failed")}},
             },
             "/api/local-events/review/discover-listings": {
-                "post": {"tags": ["local-event-review"], "summary": "Discover candidate official list pages", "description": "Runs Playwright against configured institution home pages and persists candidate list pages.", "responses": {"200": json_response(object_schema), "500": json_response(ref("ErrorResponse"), "Discovery failed")}},
+                "post": {"tags": ["local-event-review"], "summary": "Discover candidate official list pages", "description": "Runs Playwright against configured institution home pages. Chromium starts with --disable-http2 and performs no HTTP/2-first retry.", "responses": {"200": json_response(object_schema), "500": json_response(ref("ErrorResponse"), "Discovery failed")}},
+            },
+            "/api/local-events/review/listing-page": {
+                "post": {"tags": ["local-event-review"], "summary": "Add one operator-supplied official Event list page", "description": "Validates the selected institution and allowed official domain, saves the page as pending review state, and does not collect Events until it is confirmed.", "requestBody": request_body(manual_listing_schema), "responses": {"200": json_response(object_schema), "400": json_response(ref("ErrorResponse"), "Invalid institution or listing URL")}},
             },
             "/api/local-events/review/listing-decision": {
                 "post": {"tags": ["local-event-review"], "summary": "Save a list-page review decision", "requestBody": request_body(decision_schema), "responses": {"200": json_response(object_schema), "400": json_response(ref("ErrorResponse"), "Invalid decision")}},
             },
             "/api/local-events/review/collect-events": {
-                "post": {"tags": ["local-event-review"], "summary": "Collect Event candidates from confirmed pages", "description": "Reads confirmed list pages, follows official detail links, writes per-listing recognition diagnostics, and persists Event candidates.", "responses": {"200": json_response(object_schema), "500": json_response(ref("ErrorResponse"), "Collection failed")}},
+                "post": {"tags": ["local-event-review"], "summary": "Collect Event candidates from confirmed pages", "description": "Reads confirmed list pages with Chromium forced to --disable-http2, follows official detail links, writes per-listing recognition diagnostics, and persists Event candidates.", "responses": {"200": json_response(object_schema), "500": json_response(ref("ErrorResponse"), "Collection failed")}},
             },
             "/api/local-events/review/event-decision": {
                 "post": {"tags": ["local-event-review"], "summary": "Save an Event candidate review decision", "requestBody": request_body(decision_schema), "responses": {"200": json_response(object_schema), "400": json_response(ref("ErrorResponse"), "Invalid decision")}},
-            },
-            "/api/local-events/review/open-feedback": {
-                "post": {"tags": ["local-event-review"], "summary": "Open legacy feedback browser or save client-browser feedback", "description": "A normal listing_url starts the legacy Surface-local Playwright Chromium flow. The Chrome helper uses feedback:<base64url-json> to submit a selected DOM position from the operator's current device without opening a browser on the Surface.", "requestBody": request_body(feedback_open_schema), "responses": {"200": json_response(object_schema), "500": json_response(ref("ErrorResponse"), "Feedback operation failed")}},
             },
             "/public_photos/{path}": {
                 "get": {"tags": ["media"], "summary": "Serve a public photo file", "parameters": [{"name": "path", "in": "path", "required": True, "schema": {"type": "string"}, "description": "Relative path under surface/.env/public_photos/."}], "responses": {"200": {"description": "Photo bytes"}, "404": {"description": "Not found"}}},
