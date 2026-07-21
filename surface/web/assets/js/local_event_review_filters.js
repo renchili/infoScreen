@@ -3,19 +3,15 @@
 (() => {
   const FILTER_SOURCE_KEY = "infoscreen.review.filter.source";
   const FILTER_STATUS_KEY = "infoscreen.review.filter.status";
+  const REVIEW_STATE_PATH = "/api/local-events/review/state";
+
   let restoreScrollY = null;
   let restoreTimer = null;
+  let sourcesById = new Map();
+  let sourceIdByName = new Map();
 
-  function cardInstitution(card) {
-    const heading = card.querySelector(".card-head h3 a, .card-head h3, .card-head h4");
-    if (heading && heading.textContent.trim()) return heading.textContent.trim();
-    for (const row of card.querySelectorAll(".meta > div")) {
-      const value = row.textContent.trim();
-      if (value.startsWith("Institution:")) {
-        return value.slice("Institution:".length).trim();
-      }
-    }
-    return "Unknown institution";
+  function text(value) {
+    return String(value || "").trim();
   }
 
   function cardStatus(card) {
@@ -29,6 +25,41 @@
       ...document.querySelectorAll("#listing-pages > .card"),
       ...document.querySelectorAll("#event-candidates > .card"),
     ];
+  }
+
+  function institutionNameFromMeta(card) {
+    for (const row of card.querySelectorAll(".meta > div")) {
+      const value = text(row.textContent);
+      if (!value.startsWith("Institution:")) continue;
+      return text(value.slice("Institution:".length));
+    }
+    return "";
+  }
+
+  function institutionNameFromListingHeading(card) {
+    if (!card.matches("#listing-pages > .card")) return "";
+    return text(card.querySelector(".card-head h3 a, .card-head h3")?.textContent);
+  }
+
+  function cardSourceId(card) {
+    const explicit = text(card.dataset.sourceId);
+    if (explicit && sourcesById.has(explicit)) return explicit;
+
+    const institutionName = institutionNameFromMeta(card);
+    if (institutionName && sourceIdByName.has(institutionName)) {
+      const sourceId = sourceIdByName.get(institutionName);
+      card.dataset.sourceId = sourceId;
+      return sourceId;
+    }
+
+    const listingName = institutionNameFromListingHeading(card);
+    if (listingName && sourceIdByName.has(listingName)) {
+      const sourceId = sourceIdByName.get(listingName);
+      card.dataset.sourceId = sourceId;
+      return sourceId;
+    }
+
+    return "";
   }
 
   function ensureFilters() {
@@ -58,8 +89,9 @@
 
     const source = document.getElementById("review-filter-source");
     const status = document.getElementById("review-filter-status");
-    source.value = sessionStorage.getItem(FILTER_SOURCE_KEY) || "";
+
     status.value = sessionStorage.getItem(FILTER_STATUS_KEY) || "";
+
     source.addEventListener("change", () => {
       sessionStorage.setItem(FILTER_SOURCE_KEY, source.value);
       applyFilters();
@@ -70,23 +102,56 @@
     });
   }
 
-  function refreshInstitutionOptions() {
+  function rebuildInstitutionOptions() {
     const select = document.getElementById("review-filter-source");
     if (!select) return;
-    const current = select.value;
-    const names = [...new Set(allCards().map(cardInstitution))].sort((a, b) => a.localeCompare(b));
+
+    const requested = sessionStorage.getItem(FILTER_SOURCE_KEY) || select.value || "";
     select.replaceChildren(new Option("ALL INSTITUTIONS", ""));
-    names.forEach((name) => select.add(new Option(name, name)));
-    select.value = names.includes(current) ? current : "";
+
+    [...sourcesById.values()]
+      .sort((left, right) => left.source_name.localeCompare(right.source_name))
+      .forEach((source) => {
+        select.add(new Option(source.source_name, source.source_id));
+      });
+
+    select.value = sourcesById.has(requested) ? requested : "";
+    if (!select.value) sessionStorage.removeItem(FILTER_SOURCE_KEY);
+  }
+
+  async function loadInstitutions() {
+    try {
+      const response = await fetch(REVIEW_STATE_PATH, { cache: "no-store" });
+      const payload = await response.json();
+      if (!response.ok || !Array.isArray(payload.sources)) return;
+
+      sourcesById = new Map();
+      sourceIdByName = new Map();
+
+      payload.sources.forEach((raw) => {
+        const sourceId = text(raw.source_id);
+        const sourceName = text(raw.source_name || raw.source_id);
+        if (!sourceId || !sourceName) return;
+        const source = { source_id: sourceId, source_name: sourceName };
+        sourcesById.set(sourceId, source);
+        sourceIdByName.set(sourceName, sourceId);
+      });
+
+      rebuildInstitutionOptions();
+      applyFilters();
+    } catch {
+      // Main page status already reports review-state failures.
+    }
   }
 
   function applyFilters() {
     const sourceValue = document.getElementById("review-filter-source")?.value || "";
     const statusValue = document.getElementById("review-filter-status")?.value || "";
+
     allCards().forEach((card) => {
-      const institution = cardInstitution(card);
+      const sourceId = cardSourceId(card);
       const status = cardStatus(card);
-      const sourceMatches = !sourceValue || institution === sourceValue;
+      const sourceMatches = !sourceValue || sourceId === sourceValue;
       const statusMatches = !statusValue
         || status === statusValue
         || (statusValue === "reviewed" && status !== "pending");
@@ -100,24 +165,23 @@
     restoreScrollY = window.scrollY;
   }
 
-  function scheduleRestore() {
-    refreshInstitutionOptions();
+  function scheduleRefresh() {
     applyFilters();
     if (restoreScrollY === null) return;
+
     window.clearTimeout(restoreTimer);
     restoreTimer = window.setTimeout(() => {
-      window.scrollTo({ top: restoreScrollY, left: 0, behavior: "instant" });
+      window.scrollTo({ top: restoreScrollY, left: 0, behavior: "auto" });
       restoreScrollY = null;
     }, 0);
   }
 
   document.addEventListener("DOMContentLoaded", () => {
     ensureFilters();
-    refreshInstitutionOptions();
-    applyFilters();
+    loadInstitutions();
     document.addEventListener("click", captureScrollForAction, true);
 
-    const observer = new MutationObserver(scheduleRestore);
+    const observer = new MutationObserver(scheduleRefresh);
     const listing = document.getElementById("listing-pages");
     const events = document.getElementById("event-candidates");
     if (listing) observer.observe(listing, { childList: true });
