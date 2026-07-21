@@ -15,6 +15,8 @@ from .event_review import (
 )
 
 MANUAL_LINK_TEXT = "Manually added by operator"
+_APPLIED = False
+_ORIGINAL_REPLACE_LISTING_PAGES = EventReviewStore.replace_listing_pages
 
 
 class ManualListingRequest(BaseModel):
@@ -90,4 +92,43 @@ def add_manual_listing(
     return store.save(state)
 
 
-__all__ = ["ManualListingRequest", "add_manual_listing"]
+def _replace_listing_pages_preserving_manual(
+    store: EventReviewStore,
+    candidates: list[ListingPageCandidate],
+    collection: dict[str, Any],
+) -> ReviewState:
+    previous = store.load()
+    manual = {
+        item.candidate_id: item
+        for item in previous.listing_pages
+        if item.link_text == MANUAL_LINK_TEXT
+    }
+
+    state = _ORIGINAL_REPLACE_LISTING_PAGES(store, candidates, collection)
+    present = {item.candidate_id for item in state.listing_pages}
+    missing = [item for candidate_id, item in manual.items() if candidate_id not in present]
+    if not missing:
+        return state
+
+    state.listing_pages.extend(missing)
+    state.listing_pages = sorted(
+        state.listing_pages,
+        key=lambda item: (item.source_name.casefold(), item.url),
+    )
+    return store.save(state)
+
+
+def apply() -> None:
+    """Keep manually supplied pages when automated discovery refreshes candidates."""
+
+    global _APPLIED
+    if _APPLIED:
+        return
+    EventReviewStore.replace_listing_pages = _replace_listing_pages_preserving_manual
+    _APPLIED = True
+
+
+apply()
+
+
+__all__ = ["ManualListingRequest", "add_manual_listing", "apply"]
