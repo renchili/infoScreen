@@ -12,9 +12,22 @@ _OLD_ANCHOR_DECLARATION = (
 
 _CARD_FIRST_ANCHOR_DECLARATION = r'''  const allAnchors = Array.from(document.querySelectorAll("a[href]")).filter(a => visible(a));
 
-  // Locate repeated rendered activity cards before considering their links. A
-  // listing page may contain dozens of official-domain navigation links, but its
-  // Event cards normally repeat the same semantic anchor structure.
+  // Use a verified source-specific card boundary when the official listing has
+  // one. Gardens by the Bay renders each activity as one repeated anchor; this
+  // selector intentionally excludes header, footer, ticketing, and navigation
+  // links from Event candidate discovery.
+  const sourceCardSelectors = {
+    gardensbythebay: ["a.programme-title.row-listing-title[href]"]
+  };
+  const configuredSelectors = sourceCardSelectors[String(sourceId || "").toLowerCase()] || [];
+  const configuredCardAnchors = [...new Set(configuredSelectors.flatMap(selector => {
+    try { return Array.from(document.querySelectorAll(selector)); } catch { return []; }
+  }))].filter(anchor => visible(anchor));
+
+  // For sources without an explicit selector, locate repeated rendered activity
+  // cards before considering their links. A listing page may contain dozens of
+  // official-domain navigation links, while real activity cards repeat one
+  // semantic anchor structure.
   const cardAnchorSignature = anchor => {
     const classes = Array.from(anchor.classList || [])
       .map(value => String(value || "").toLowerCase())
@@ -41,17 +54,20 @@ _CARD_FIRST_ANCHOR_DECLARATION = r'''  const allAnchors = Array.from(document.qu
     repeatedCardAnchors.push(...group);
   }
 
-  // When repeated activity-card anchors are present, only those anchors may
-  // produce Event candidates. Do not fall through to header/footer/navigation
-  // links on the same official domain.
-  const anchors = repeatedCardAnchors.length ? repeatedCardAnchors : allAnchors;'''
+  const anchors = configuredCardAnchors.length
+    ? configuredCardAnchors
+    : (repeatedCardAnchors.length ? repeatedCardAnchors : allAnchors);'''
 
 _OLD_DIAGNOSTIC_FILTER = (
     '  const detailAnchors = sameDomainAnchors.filter(anchor => '
     'pathRole(anchor.getAttribute("href") || "") === "detail");'
 )
 
-_CARD_FIRST_DIAGNOSTIC_FILTER = r'''  const cardAnchorSignature = anchor => {
+_CARD_FIRST_DIAGNOSTIC_FILTER = r'''  const configuredCardAnchors = /(^|\.)gardensbythebay\.com\.sg$/i.test(location.hostname)
+    ? Array.from(document.querySelectorAll("a.programme-title.row-listing-title[href]")).filter(visible)
+    : [];
+
+  const cardAnchorSignature = anchor => {
     const classes = Array.from(anchor.classList || [])
       .map(value => String(value || "").toLowerCase())
       .filter(value => /(^|[-_])(card|tile|item|event|programme|program|exhibition|activity|listing|result)([-_]|$)/.test(value))
@@ -95,9 +111,9 @@ _CARD_FIRST_DIAGNOSTIC_FILTER = r'''  const cardAnchorSignature = anchor => {
     return Boolean(listingStem && targetPath.startsWith(listingStem + "/"));
   });
 
-  const detailAnchors = repeatedCardAnchors.length
-    ? repeatedCardAnchors
-    : routeDetailAnchors;'''
+  const detailAnchors = configuredCardAnchors.length
+    ? configuredCardAnchors
+    : (repeatedCardAnchors.length ? repeatedCardAnchors : routeDetailAnchors);'''
 
 
 def _patch_card_locator() -> None:
@@ -127,7 +143,7 @@ def _patch_diagnostics() -> None:
 
 
 def apply() -> None:
-    """Locate repeated activity cards first, then read one link from each card."""
+    """Locate official activity cards first, then read one link from each card."""
 
     global _APPLIED
     if _APPLIED:
