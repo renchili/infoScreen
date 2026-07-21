@@ -58,7 +58,7 @@
     if (!rows.length) {
       return {
         code: "backend_diagnostics_not_loaded",
-        reason: "The browser assets are newer than the running Python backend. Restart infoscreen-http.service, then run PREVIEW EVENTS again. The old backend cannot explain why this page returned zero Events.",
+        reason: "The running Python backend completed the preview but did not return listing diagnostics. Update and restart infoscreen-http.service, then run PREVIEW EVENTS again.",
       };
     }
     return {
@@ -166,7 +166,11 @@
   function scheduleDiagnostics() {
     window.clearTimeout(refreshTimer);
     refreshTimer = window.setTimeout(() => {
-      if (lastPayload) applyDiagnostics(lastPayload);
+      // Listing cards are recreated whenever the main state refreshes. Fetch the
+      // persisted backend state again instead of repainting with the previous
+      // in-memory payload, otherwise a completed PREVIEW can keep showing the
+      // stale placeholder diagnostic.
+      loadDiagnostics();
     }, 40);
   }
 
