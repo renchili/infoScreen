@@ -26,6 +26,8 @@ os.environ.setdefault("LOCAL_EVENTS_CARD_SCREENSHOTS", "0")
 import local_events_runtime as _local_events_runtime  # noqa: E402
 from local_events_runtime import detail_date_authority  # noqa: E402
 from local_events_runtime import gardens_field_authority  # noqa: E402
+from local_events_runtime import listing_only_output_authority  # noqa: E402
+from local_events_runtime import listing_only_runtime_authority  # noqa: E402
 from local_events_runtime import listing_url_authority  # noqa: E402
 from local_events_runtime import mandai_listing_authority  # noqa: E402
 from local_events_runtime import open_ended_date_authority  # noqa: E402
@@ -37,6 +39,8 @@ open_ended_date_authority.apply()
 gardens_field_authority.apply()
 mandai_listing_authority.apply()
 listing_url_authority.apply()
+listing_only_output_authority.apply()
+listing_only_runtime_authority.apply()
 review_runtime_authority.apply()
 collect_events = _local_events_runtime.collect_events
 
