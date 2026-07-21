@@ -13,6 +13,7 @@ from .event_review import (
     stable_id,
     utc_now,
 )
+from .review_detail_authority import apply as apply_review_detail_authority
 
 MANUAL_LINK_TEXT = "Manually added by operator"
 _APPLIED = False
@@ -119,12 +120,13 @@ def _replace_listing_pages_preserving_manual(
 
 
 def apply() -> None:
-    """Keep manually supplied pages when automated discovery refreshes candidates."""
+    """Install review-state persistence and authoritative detail-field policies."""
 
     global _APPLIED
     if _APPLIED:
         return
     EventReviewStore.replace_listing_pages = _replace_listing_pages_preserving_manual
+    apply_review_detail_authority()
     _APPLIED = True
 
 
