@@ -13,6 +13,7 @@ _OLD_DIAGNOSTIC_FILTER = (
 _STRUCTURAL_DIAGNOSTIC_FILTER = r'''  const listingUrl = new URL(location.href);
   const cleanPath = value => decodeURIComponent(String(value || "")).replace(/\/+$/, "");
   const listingPath = cleanPath(listingUrl.pathname);
+  const listingStem = listingPath.replace(/\.html?$/i, "");
   const detailAnchors = sameDomainAnchors.filter(anchor => {
     let target;
     try {
@@ -23,27 +24,28 @@ _STRUCTURAL_DIAGNOSTIC_FILTER = r'''  const listingUrl = new URL(location.href);
     const targetPath = cleanPath(target.pathname);
     if (!targetPath || targetPath === listingPath) return false;
     if (/\.(?:jpg|jpeg|png|gif|webp|svg|pdf)$/i.test(targetPath)) return false;
-    return true;
+
+    const role = pathRole(target.href);
+    if (role === "listing") return false;
+    if (role === "detail") return true;
+    return Boolean(listingStem && targetPath.startsWith(listingStem + "/"));
   });'''
 
 
 def apply() -> None:
-    """Use one structural rule for production extraction and Review diagnostics.
+    """Use the same route-scoped official-link rule in collection and diagnostics.
 
-    An official detail link is a same-domain HTTP(S) link whose path differs from
-    the current listing page and is not a media/document asset. This intentionally
-    does not enumerate route words: valid sites may use paths such as
-    ``calendar-of-events/<event>.html``.
+    Normal recognised Event routes remain accepted. The structural fallback is
+    limited to descendants of a listing file stem, so a page with dozens of
+    unrelated official navigation links cannot trigger dozens of detail reads.
     """
 
     global _APPLIED
     if _APPLIED:
         return
 
-    # Patch CARD_JS so the real collector accepts structural official links.
     listing_url_authority.apply()
 
-    # Keep the Studio's "Possible detail links" counter on the exact same rule.
     script = _diagnostics.LISTING_DIAGNOSTIC_JS
     if _OLD_DIAGNOSTIC_FILTER in script:
         script = script.replace(
