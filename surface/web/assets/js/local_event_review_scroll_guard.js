@@ -9,10 +9,10 @@
     "/api/local-events/review/event-decision",
   ]);
 
+  let pendingCard = null;
   let pendingScrollY = null;
   let restoreFrame = 0;
   let restoreTimer = 0;
-  let restoring = false;
   let resumeHandler = null;
 
   function pathAndMethod(input, init = {}) {
@@ -24,30 +24,99 @@
     return { path, method };
   }
 
-  function rememberScroll() {
-    if (pendingScrollY === null) pendingScrollY = window.scrollY;
+  function normalizedUrl(value) {
+    try {
+      const url = new URL(value || "", window.location.href);
+      url.hash = "";
+      return url.href;
+    } catch {
+      return String(value || "").trim();
+    }
   }
 
-  function restoreScroll() {
-    if (pendingScrollY === null) return;
+  function cardKey(card) {
+    if (!card) return "";
+    const primaryUrl = normalizedUrl(
+      card.querySelector(".card-head a[href]")?.getAttribute("href") || "",
+    );
+    const listingUrl = normalizedUrl(
+      card.querySelector(".meta code")?.textContent || "",
+    );
+    return `${primaryUrl}\n${listingUrl}`;
+  }
+
+  function visibleCards(container) {
+    if (!container) return [];
+    return [...container.children].filter(
+      (card) => card.classList?.contains("card") && !card.hidden,
+    );
+  }
+
+  function rememberCard(button) {
+    const card = button?.closest(".card");
+    const container = card?.parentElement;
+    if (!card || !container?.id) return;
+
+    const cards = visibleCards(container);
+    pendingCard = {
+      containerId: container.id,
+      key: cardKey(card),
+      visibleIndex: Math.max(0, cards.indexOf(card)),
+      viewportTop: card.getBoundingClientRect().top,
+      scrollY: window.scrollY,
+    };
+    pendingScrollY = null;
+  }
+
+  function rememberScroll() {
+    if (pendingCard || pendingScrollY !== null) return;
+    pendingScrollY = window.scrollY;
+  }
+
+  function restorePosition() {
     window.cancelAnimationFrame(restoreFrame);
     window.clearTimeout(restoreTimer);
 
-    const target = pendingScrollY;
     restoreFrame = window.requestAnimationFrame(() => {
       restoreFrame = window.requestAnimationFrame(() => {
         restoreTimer = window.setTimeout(() => {
+          if (pendingCard) {
+            const saved = pendingCard;
+            const container = document.getElementById(saved.containerId);
+            const allCards = container
+              ? [...container.children].filter((card) => card.classList?.contains("card"))
+              : [];
+            let target = allCards.find((card) => cardKey(card) === saved.key && !card.hidden);
+            if (!target) {
+              const visible = visibleCards(container);
+              target = visible[Math.min(saved.visibleIndex, Math.max(0, visible.length - 1))];
+            }
+
+            if (target) {
+              const delta = target.getBoundingClientRect().top - saved.viewportTop;
+              window.scrollTo({
+                top: Math.max(0, window.scrollY + delta),
+                left: 0,
+                behavior: "auto",
+              });
+            } else {
+              window.scrollTo({ top: saved.scrollY, left: 0, behavior: "auto" });
+            }
+            pendingCard = null;
+            pendingScrollY = null;
+            return;
+          }
+
+          if (pendingScrollY === null) return;
           const maxScroll = Math.max(
             0,
             document.documentElement.scrollHeight - window.innerHeight,
           );
-          restoring = true;
           window.scrollTo({
-            top: Math.min(target, maxScroll),
+            top: Math.min(pendingScrollY, maxScroll),
             left: 0,
             behavior: "auto",
           });
-          restoring = false;
           pendingScrollY = null;
         }, 0);
       });
@@ -89,7 +158,7 @@
     try {
       await resumeHandler();
     } finally {
-      restoreScroll();
+      restorePosition();
     }
   }
 
@@ -100,21 +169,24 @@
   document.addEventListener(
     "click",
     (event) => {
-      const trigger = event.target.closest(
-        "#collect-listings, #collect-events, #reload-state, "
-          + "#listing-pages button, #event-candidates button",
+      const reviewButton = event.target.closest(
+        "#listing-pages button, #event-candidates button",
       );
-      if (trigger) rememberScroll();
+      if (reviewButton) {
+        rememberCard(reviewButton);
+        return;
+      }
+
+      const globalButton = event.target.closest(
+        "#collect-listings, #collect-events, #reload-state",
+      );
+      if (globalButton) rememberScroll();
     },
     true,
   );
 
-  document.addEventListener("scroll", () => {
-    if (restoring) return;
-  }, { passive: true });
-
   document.addEventListener("DOMContentLoaded", () => {
-    const observer = new MutationObserver(() => restoreScroll());
+    const observer = new MutationObserver(() => restorePosition());
     for (const id of ["listing-pages", "event-candidates", "feedback-list"]) {
       const node = document.getElementById(id);
       if (node) observer.observe(node, { childList: true });
