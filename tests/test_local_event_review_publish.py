@@ -80,12 +80,12 @@ def test_two_confirmed_listing_only_cards_with_one_url_are_both_published(tmp_pa
     assert {item["url"] for item in payload["results"]} == {MANDAI_LISTING}
     assert all(item["listing_only"] is True for item in payload["results"])
     assert all(
-        item["candidate_policy"] == "official-listing-authority-v1"
+        item["review_publish_origin"] == "review_state"
         for item in payload["results"]
     )
 
 
-def test_rejected_decision_removes_previously_published_review_row(tmp_path) -> None:
+def test_rejected_decision_removes_only_previously_published_review_row(tmp_path) -> None:
     store = store_at(tmp_path)
     confirmed = ReviewState(
         events=[candidate("keeper-talk", "Keeper Talk", "Daily · 10:30am", "confirmed")]
@@ -93,6 +93,7 @@ def test_rejected_decision_removes_previously_published_review_row(tmp_path) -> 
     store.save(confirmed)
     first = publish_review_state(store, confirmed)
     assert first["count"] == 1
+    assert first["results"][0]["review_publish_origin"] == "review_state"
 
     rejected = ReviewState(
         events=[candidate("keeper-talk", "Keeper Talk", "Daily · 10:30am", "rejected")]
@@ -108,6 +109,37 @@ def test_rejected_decision_removes_previously_published_review_row(tmp_path) -> 
     )
     assert persisted["results"] == []
     assert persisted["review_publish"]["confirmed_count"] == 0
+
+
+def test_publish_does_not_revalidate_or_delete_unrelated_runtime_rows(tmp_path) -> None:
+    store = store_at(tmp_path)
+    runtime_path = store.root.parent / "local_event_search_results.json"
+    runtime_path.parent.mkdir(parents=True, exist_ok=True)
+    unrelated = {
+        "title": "Existing correct activity",
+        "when": "Ongoing",
+        "where": "Gallery 2",
+        "host": "Existing source",
+        "source_name": "Existing source",
+        "url": "https://example.org/events.html",
+        "summary": "<strong>Preserve this exact system row.</strong>",
+        "operator_review_decision": "confirmed",
+        "source_type": "official_listing_card",
+    }
+    runtime_path.write_text(
+        json.dumps({"ok": True, "results": [unrelated]}),
+        encoding="utf-8",
+    )
+    state = ReviewState(
+        events=[candidate("keeper-talk", "Keeper Talk", "Daily · 10:30am", "confirmed")]
+    )
+    store.save(state)
+
+    payload = publish_review_state(store, state)
+
+    assert payload["count"] == 2
+    assert payload["results"][0] == unrelated
+    assert payload["results"][1]["title"] == "Keeper Talk"
 
 
 def test_existing_system_event_is_not_overwritten_or_removed(tmp_path) -> None:
