@@ -80,6 +80,9 @@ def apply() -> None:
 
     package = sys.modules.get(__package__)
     if package is not None:
+        # The active package-level event parser resolves this private global at
+        # call time, so patch both public and private names.
+        package._current_date_label = current_date_label
         package.current_date_label = current_date_label
     _APPLIED = True
 
