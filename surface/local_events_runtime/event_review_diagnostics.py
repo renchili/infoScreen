@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from . import browser as _browser
 from . import event_review as _review
+from . import mandai_listing_authority as _mandai
 from . import source_overrides as _source_overrides
 
 
@@ -114,65 +115,79 @@ def _reason(diagnostic: ListingRecognitionDiagnostic) -> tuple[RecognitionStatus
             "listing_document_empty",
             "The page loaded, but the rendered document contained almost no visible text.",
         )
-    if diagnostic.visible_link_count == 0:
+    if diagnostic.visible_link_count == 0 and diagnostic.extracted_card_count == 0:
         return (
             "empty",
-            "no_visible_links",
-            "The rendered page contained no visible links, so no Event detail link could be evaluated.",
+            "no_visible_links_or_cards",
+            "The rendered page contained no visible links or complete activity cards.",
         )
-    if diagnostic.same_domain_link_count == 0:
+    if diagnostic.candidates_created > 0 and diagnostic.detail_link_count == 0:
         return (
-            "empty",
-            "no_same_domain_links",
-            "Visible links were present, but none pointed to an allowed official domain for this institution.",
+            "collected",
+            "events_recognised_from_complete_listing_cards",
+            f"Recognised {diagnostic.candidates_created} Event candidate(s) directly "
+            "from complete official listing cards without detail pages.",
         )
-    if diagnostic.detail_link_count == 0:
+    if diagnostic.same_domain_link_count == 0 and diagnostic.extracted_card_count == 0:
         return (
             "empty",
-            "no_detail_links_recognised",
-            "Official-domain links were present, but none matched an Event detail-page route. The listing URL itself may still be correct; its link pattern is not recognised by the current extractor.",
+            "no_same_domain_links_or_cards",
+            "No allowed official link or complete activity card was recognised.",
+        )
+    if diagnostic.detail_link_count == 0 and diagnostic.extracted_card_count == 0:
+        return (
+            "empty",
+            "no_detail_links_or_complete_cards",
+            "No Event detail route or complete standalone activity card was recognised.",
         )
     if diagnostic.extracted_card_count == 0:
         return (
             "empty",
-            "detail_links_not_isolated_into_cards",
-            f"{diagnostic.detail_link_count} possible Event detail link(s) were found, but the extractor could not isolate them into independent cards with one official detail link each.",
+            "activity_links_not_isolated_into_cards",
+            f"{diagnostic.detail_link_count} possible Event detail link(s) were found, "
+            "but the extractor could not isolate independent activity cards.",
         )
     if diagnostic.admitted_card_count == 0:
         return (
             "empty",
             "extracted_cards_not_admitted",
-            f"{diagnostic.extracted_card_count} DOM card(s) were extracted, but none had both a usable title and exactly one allowed official detail link. A date on the listing card is not required.",
+            f"{diagnostic.extracted_card_count} DOM card(s) were extracted, but none "
+            "contained either a usable official detail link or complete listing-card fields.",
         )
     if diagnostic.cards_with_evidence == 0:
         return (
             "empty",
             "card_dom_evidence_missing",
-            f"{diagnostic.admitted_card_count} Event card(s) were admitted, but none could be matched back to a rendered DOM element for selector evidence.",
+            f"{diagnostic.admitted_card_count} Event card(s) were admitted, but none "
+            "could be matched back to a rendered DOM element for selector evidence.",
         )
     if diagnostic.cards_with_selector == 0:
         return (
             "empty",
             "card_selector_missing",
-            f"{diagnostic.cards_with_evidence} card(s) had DOM evidence, but no stable selector could be generated.",
+            f"{diagnostic.cards_with_evidence} card(s) had DOM evidence, but no stable "
+            "selector could be generated.",
         )
     if diagnostic.candidates_created == 0:
         return (
             "empty",
             "all_recognised_cards_deduplicated",
-            "Cards and selectors were recognised, but every resulting detail URL duplicated an Event candidate already collected in this run.",
+            "Cards and selectors were recognised, but every resulting card identity "
+            "duplicated a candidate already collected in this run.",
         )
     if diagnostic.detail_collected == 0 and diagnostic.detail_failed > 0:
         return (
             "collected",
             "candidates_created_detail_pages_failed",
-            f"{diagnostic.candidates_created} Event candidate(s) were recognised, but every detail-page read failed. The candidates remain visible with their individual detail errors.",
+            f"{diagnostic.candidates_created} Event candidate(s) were recognised, but "
+            "every required detail-page read failed.",
         )
     if diagnostic.detail_collected == 0 and diagnostic.detail_incomplete > 0:
         return (
             "collected",
-            "candidates_created_detail_fields_incomplete",
-            f"{diagnostic.candidates_created} Event candidate(s) were recognised, but their detail pages did not provide all required fields. Each candidate shows its exact detail error.",
+            "candidates_created_fields_incomplete",
+            f"{diagnostic.candidates_created} Event candidate(s) were recognised, but "
+            "their available official content did not provide all required fields.",
         )
     return (
         "collected",
@@ -184,6 +199,16 @@ def _reason(diagnostic: ListingRecognitionDiagnostic) -> tuple[RecognitionStatus
 def _finish(diagnostic: ListingRecognitionDiagnostic) -> ListingRecognitionDiagnostic:
     diagnostic.status, diagnostic.reason_code, diagnostic.reason = _reason(diagnostic)
     return diagnostic
+
+
+def _candidate_identity(card: dict[str, Any], detail_url: str) -> str:
+    if card.get("listing_only") is True:
+        return str(
+            card.get("listing_card_id")
+            or card.get("id")
+            or _mandai.card_identity(card)
+        )
+    return detail_url
 
 
 def collect_event_candidates(store: _review.EventReviewStore) -> _review.ReviewState:
@@ -256,8 +281,8 @@ def collect_event_candidates(store: _review.EventReviewStore) -> _review.ReviewS
                                 "adapter": source.get("adapter") or "rendered_dom_card",
                                 "officialHome": source.get("official_home") or "",
                             },
-                        )
-                        evidence_by_id = page.evaluate(_review.CARD_EVIDENCE_JS)
+                        ) or []
+                        evidence_by_id = page.evaluate(_review.CARD_EVIDENCE_JS) or {}
                         observed = page.evaluate(
                             LISTING_DIAGNOSTIC_JS,
                             {"allowedDomains": source.get("allowed_domains") or []},
@@ -281,7 +306,9 @@ def collect_event_candidates(store: _review.EventReviewStore) -> _review.ReviewS
                             diagnostic.detail_link_count,
                             int(observed.get("detail_link_count") or 0),
                         )
-                        diagnostic.marked_card_count += int(observed.get("marked_card_count") or 0)
+                        diagnostic.marked_card_count += int(
+                            observed.get("marked_card_count") or 0
+                        )
                         if not diagnostic.detail_link_examples:
                             diagnostic.detail_link_examples = [
                                 {
@@ -294,6 +321,8 @@ def collect_event_candidates(store: _review.EventReviewStore) -> _review.ReviewS
 
                         diagnostic.extracted_card_count += len(cards)
                         for raw_card in cards:
+                            if not isinstance(raw_card, dict):
+                                continue
                             card = _source_overrides._listing_card(
                                 source,
                                 raw_card,
@@ -316,13 +345,23 @@ def collect_event_candidates(store: _review.EventReviewStore) -> _review.ReviewS
                             diagnostic.cards_with_selector += 1
 
                             try:
-                                detail = _review._detail_candidate(
-                                    context,
-                                    source,
-                                    listing.url,
-                                    raw_url,
-                                    card,
-                                )
+                                if (
+                                    card.get("listing_only") is True
+                                    and _mandai.is_mandai(source)
+                                ):
+                                    detail = _mandai.review_detail(
+                                        source,
+                                        listing.url,
+                                        card,
+                                    )
+                                else:
+                                    detail = _review._detail_candidate(
+                                        context,
+                                        source,
+                                        listing.url,
+                                        raw_url,
+                                        card,
+                                    )
                             except Exception as exc:
                                 detail = {
                                     "detail_url": raw_url,
@@ -335,7 +374,9 @@ def collect_event_candidates(store: _review.EventReviewStore) -> _review.ReviewS
                                     "detail_page_title": "",
                                 }
 
-                            detail_status = str(detail.get("detail_status") or "failed")
+                            detail_status = str(
+                                detail.get("detail_status") or "failed"
+                            )
                             if detail_status == "collected":
                                 diagnostic.detail_collected += 1
                             elif detail_status == "incomplete":
@@ -343,11 +384,13 @@ def collect_event_candidates(store: _review.EventReviewStore) -> _review.ReviewS
                             else:
                                 diagnostic.detail_failed += 1
 
-                            final_detail_url = str(detail.get("detail_url") or raw_url)
+                            final_detail_url = str(
+                                detail.get("detail_url") or raw_url
+                            )
                             candidate_id = _review.stable_id(
                                 listing.source_id,
                                 listing.url,
-                                final_detail_url,
+                                _candidate_identity(card, final_detail_url),
                             )
                             if candidate_id in candidates:
                                 continue
@@ -357,13 +400,18 @@ def collect_event_candidates(store: _review.EventReviewStore) -> _review.ReviewS
                                 source_name=listing.source_name,
                                 listing_url=listing.url,
                                 detail_url=final_detail_url,
-                                title=str(detail.get("title") or _review._listing_title(card)),
+                                title=str(
+                                    detail.get("title")
+                                    or _review._listing_title(card)
+                                ),
                                 when=str(detail.get("when") or ""),
                                 where=str(detail.get("where") or ""),
                                 summary=str(detail.get("summary") or ""),
                                 detail_status=detail_status,
                                 detail_error=str(detail.get("detail_error") or ""),
-                                detail_page_title=str(detail.get("detail_page_title") or ""),
+                                detail_page_title=str(
+                                    detail.get("detail_page_title") or ""
+                                ),
                                 evidence=_review._event_evidence(
                                     card,
                                     evidence_raw,
@@ -428,6 +476,7 @@ def apply() -> None:
 
 __all__ = [
     "ListingRecognitionDiagnostic",
-    "apply",
+    "LISTING_DIAGNOSTIC_JS",
     "collect_event_candidates",
+    "apply",
 ]
