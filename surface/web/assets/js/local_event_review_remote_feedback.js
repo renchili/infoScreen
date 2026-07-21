@@ -95,10 +95,6 @@
     }
   });
 
-  document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) byId("reload-state")?.click();
-  });
-
   document.addEventListener("DOMContentLoaded", () => {
     replaceOpenButton();
     window.postMessage({ type: PING }, "*");
