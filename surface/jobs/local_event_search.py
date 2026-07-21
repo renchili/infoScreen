@@ -27,11 +27,15 @@ import local_events_runtime as _local_events_runtime  # noqa: E402
 from local_events_runtime import detail_date_authority  # noqa: E402
 from local_events_runtime import gardens_field_authority  # noqa: E402
 from local_events_runtime import listing_url_authority  # noqa: E402
+from local_events_runtime import mandai_listing_authority  # noqa: E402
+from local_events_runtime import open_ended_date_authority  # noqa: E402
 from local_events_runtime import review_runtime_authority  # noqa: E402
 from local_events_runtime.output import normalize_payload  # noqa: E402
 
 detail_date_authority.apply()
+open_ended_date_authority.apply()
 gardens_field_authority.apply()
+mandai_listing_authority.apply()
 listing_url_authority.apply()
 review_runtime_authority.apply()
 collect_events = _local_events_runtime.collect_events
