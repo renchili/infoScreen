@@ -21,8 +21,12 @@ os.environ.setdefault("LOCAL_EVENTS_DETAIL_TIMEOUT_MS", "16000")
 os.environ.setdefault("LOCAL_EVENTS_PAGE_SCREENSHOTS", "0")
 os.environ.setdefault("LOCAL_EVENTS_CARD_SCREENSHOTS", "0")
 
-from local_events_runtime import collect_events  # noqa: E402
+import local_events_runtime as _local_events_runtime  # noqa: E402
+from local_events_runtime import detail_date_authority  # noqa: E402
 from local_events_runtime.output import normalize_payload  # noqa: E402
+
+detail_date_authority.apply()
+collect_events = _local_events_runtime.collect_events
 
 SURFACE_DIR = Path(__file__).resolve().parents[1]
 ENV_DIR = SURFACE_DIR / ".env"
@@ -151,13 +155,13 @@ def write_payload(payload: dict) -> None:
 
 def self_test() -> int:
     payload = annotate_source_completion(normalize_payload(collect_events(CONFIG, DEFAULT_LOCATION, DEBUG_DIR)))
-    assert payload["extractor"] == "structured-first-v49-source-order"
-    assert payload["version"] == 49
+    assert payload["extractor"] == "listing-authoritative-v52"
+    assert payload["version"] == 52
     assert payload["text_normalizer"] == "plain-text-v1"
     assert isinstance(payload.get("results"), list)
     assert isinstance(payload.get("debug_by_source"), list)
     assert isinstance(payload.get("partial"), bool)
-    print("local-event structured-first self-test passed")
+    print("local-event listing-authoritative self-test passed")
     return 0
 
 
