@@ -16,6 +16,11 @@ from .source_overrides import (
 _APPLIED = False
 _GARDENS_SOURCE_ID = "gardensbythebay"
 _DEFAULT_SUMMARY = "Open the official page for details."
+_PAGE_CHROME_RE = _extract.re.compile(
+    r"\b(?:home|things to do|learn with us|for schools|buy tickets|membership|"
+    r"contact us|privacy|terms of use)\b",
+    _extract.re.I,
+)
 
 
 def _official_detail_url(
@@ -75,10 +80,30 @@ def _authoritative_title(
 
 
 def _listing_summary(card: dict[str, Any], title: str, when: str, where: str) -> str:
-    """Return a concise summary from the admitted list card, never page chrome."""
+    """Return one narrative line from the admitted list card, never page chrome."""
+
+    title_key = _extract.norm_key(title)
+    where_key = _extract.norm_key(where)
+    for raw in card.get("text_lines") or _extract.lines(card.get("text") or ""):
+        line = clean(raw)
+        if not line or len(line) < 30 or len(line) > 500 or len(line.split()) > 90:
+            continue
+        if title_key and _extract.norm_key(line) == title_key:
+            continue
+        if where_key and _extract.norm_key(line) == where_key:
+            continue
+        if when and clean(when).casefold() in line.casefold():
+            continue
+        if _extract.DATE_LINE_RE.search(line) or _extract.TIME_RE.search(line):
+            continue
+        if _extract.GENERIC_TITLE_RE.match(line) or _extract.FAKE_TITLE_RE.match(line):
+            continue
+        if _PAGE_CHROME_RE.search(line):
+            continue
+        return line
 
     summary = clean(_extract.pick_summary(card, title, when, where))
-    if not summary or summary == _DEFAULT_SUMMARY:
+    if not summary or summary == _DEFAULT_SUMMARY or _PAGE_CHROME_RE.search(summary):
         return ""
     if len(summary) > 500 or len(summary.split()) > 90:
         return ""
