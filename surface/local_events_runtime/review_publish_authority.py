@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import uuid
 from pathlib import Path
 from typing import Any
@@ -133,6 +134,32 @@ def set_event_decision(
     return state
 
 
+def _publish_existing_state() -> None:
+    surface_dir = Path(__file__).resolve().parents[1]
+    env_dir = Path(
+        os.environ.get("INFOSCREEN_ENV_DIR", str(surface_dir / ".env"))
+    ).expanduser().resolve()
+    review_root = env_dir / "local_event_review"
+    state_path = review_root / "state.json"
+    if not state_path.is_file():
+        return
+
+    try:
+        publish_review_state(
+            _review.EventReviewStore(
+                root=review_root,
+                config_path=surface_dir / "conf" / "event_sources.json",
+            )
+        )
+    except Exception as exc:
+        print(
+            f"Local Event review state was not published at startup: "
+            f"{type(exc).__name__}: {exc}",
+            file=sys.stderr,
+            flush=True,
+        )
+
+
 def apply() -> None:
     """Install immediate runtime publication for every Event review decision."""
 
@@ -144,6 +171,7 @@ def apply() -> None:
     _BASE_SET_EVENT_DECISION = _review.EventReviewStore.set_event_decision
     _review.EventReviewStore.set_event_decision = set_event_decision
     _APPLIED = True
+    _publish_existing_state()
 
 
 __all__ = ["apply", "publish_review_state", "set_event_decision"]
