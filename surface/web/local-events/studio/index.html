@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>InfoScreen · Local Event Review</title>
   <link rel="stylesheet" href="/assets/css/local_event_studio.css" />
+  <link rel="stylesheet" href="/assets/css/local_event_review_manual_listing.css" />
 </head>
 <body>
   <header class="topbar">
@@ -29,6 +30,15 @@
         <button id="collect-listings" class="button primary" type="button">COLLECT LIST PAGES</button>
         <button id="collect-events" class="button warning" type="button">COLLECT EVENTS FROM CONFIRMED PAGES</button>
         <button id="reload-state" class="button secondary" type="button">RELOAD</button>
+      </div>
+
+      <div class="manual-listing-form">
+        <label>
+          <span>Add an official Event list page to the selected global institution</span>
+          <input id="manual-listing-url" type="url" inputmode="url" autocomplete="url" placeholder="https://official.example/events" />
+        </label>
+        <button id="add-listing-page" class="button primary" type="button">ADD LIST PAGE</button>
+        <span id="manual-listing-status" class="status">READY</span>
       </div>
 
       <div class="split">
@@ -89,6 +99,7 @@
   <script src="/assets/js/local_event_review_scroll_guard.js"></script>
   <script src="/assets/js/local_event_studio.js" defer></script>
   <script src="/assets/js/local_event_review_filters.js" defer></script>
+  <script src="/assets/js/local_event_review_manual_listing.js" defer></script>
   <script src="/assets/js/local_event_review_previews.js" defer></script>
   <script src="/assets/js/local_event_review_diagnostics.js" defer></script>
 </body>

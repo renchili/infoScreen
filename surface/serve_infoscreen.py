@@ -16,18 +16,32 @@ from pathlib import Path, PurePosixPath
 from urllib.parse import unquote, urlparse
 
 try:
-    from .local_events_runtime.event_feedback import start_feedback_browser
+    from .local_events_runtime.http1_browser import apply as apply_http1_browser
+
+    apply_http1_browser()
+
     from .local_events_runtime.event_review import (
         EventReviewStore,
         collect_event_candidates,
         collect_listing_pages,
     )
+    from .local_events_runtime.manual_listing import (
+        ManualListingRequest,
+        add_manual_listing,
+    )
 except ImportError:
-    from local_events_runtime.event_feedback import start_feedback_browser
+    from local_events_runtime.http1_browser import apply as apply_http1_browser
+
+    apply_http1_browser()
+
     from local_events_runtime.event_review import (
         EventReviewStore,
         collect_event_candidates,
         collect_listing_pages,
+    )
+    from local_events_runtime.manual_listing import (
+        ManualListingRequest,
+        add_manual_listing,
     )
 
 SURFACE_DIR = Path(__file__).resolve().parent
@@ -403,6 +417,24 @@ class Handler(SimpleHTTPRequestHandler):
                     500,
                 )
 
+        if path == "/api/local-events/review/listing-page":
+            try:
+                request = ManualListingRequest.model_validate(self.body_json())
+                with REVIEW_MUTATION_LOCK:
+                    state = add_manual_listing(review_store(), request)
+                return self.send_json(
+                    {"ok": True, **state.model_dump(mode="json")}
+                )
+            except Exception as exc:
+                return self.send_json(
+                    {
+                        "ok": False,
+                        "error": "manual_listing_page_failed",
+                        "detail": str(exc),
+                    },
+                    400,
+                )
+
         if path == "/api/local-events/review/listing-decision":
             try:
                 body = self.body_json()
@@ -468,26 +500,6 @@ class Handler(SimpleHTTPRequestHandler):
                         "detail": str(exc),
                     },
                     400,
-                )
-
-        if path == "/api/local-events/review/open-feedback":
-            try:
-                body = self.body_json()
-                session = start_feedback_browser(
-                    str(body.get("source_id") or "").strip(),
-                    str(body.get("listing_url") or "").strip(),
-                    root=review_root(),
-                    config_path=CONF_DIR / "event_sources.json",
-                )
-                return self.send_json({"ok": True, "session": session})
-            except Exception as exc:
-                return self.send_json(
-                    {
-                        "ok": False,
-                        "error": "feedback_browser_start_failed",
-                        "detail": str(exc),
-                    },
-                    500,
                 )
 
         if path == "/api/market-config":

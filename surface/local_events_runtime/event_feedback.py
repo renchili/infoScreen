@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import json
 import os
 import subprocess
@@ -20,8 +19,6 @@ from .event_review_diagnostics import apply as apply_event_review_diagnostics
 apply_event_review_diagnostics()
 
 from .event_review import DEFAULT_CONFIG_PATH, DEFAULT_REVIEW_ROOT, EventReviewStore, canonical_url
-
-REMOTE_FEEDBACK_PREFIX = "feedback:"
 
 OVERLAY_JS = r"""
 (args) => {
@@ -256,21 +253,6 @@ def _host_allowed(url: str, source: dict[str, Any]) -> bool:
     )
 
 
-def _decode_remote_feedback(value: str) -> dict[str, Any]:
-    encoded = value.removeprefix(REMOTE_FEEDBACK_PREFIX).strip()
-    if not encoded:
-        raise ValueError("remote feedback payload is empty")
-    encoded += "=" * (-len(encoded) % 4)
-    try:
-        raw = base64.urlsafe_b64decode(encoded.encode("ascii")).decode("utf-8")
-        payload = json.loads(raw)
-    except Exception as exc:
-        raise ValueError("remote feedback payload is invalid") from exc
-    if not isinstance(payload, dict):
-        raise ValueError("remote feedback payload must be a JSON object")
-    return payload
-
-
 def session_path(root: Path, source_id: str, listing_url: str) -> Path:
     import hashlib
 
@@ -309,21 +291,6 @@ def start_feedback_browser(
 ) -> dict[str, Any]:
     review_root = Path(root).expanduser().resolve()
     store = EventReviewStore(review_root, config_path)
-
-    if listing_url.startswith(REMOTE_FEEDBACK_PREFIX):
-        payload = _decode_remote_feedback(listing_url)
-        payload["source_id"] = source_id
-        row = store.append_feedback(payload)
-        return {
-            "mode": "remote_submission",
-            "status": "saved",
-            "feedback_id": row.feedback_id,
-            "source_id": row.source_id,
-            "listing_url": row.listing_url,
-            "page_url": row.page_url,
-            "selector": row.selector,
-        }
-
     source = store.source(source_id)
     canonical_listing = canonical_url(listing_url)
     if not _host_allowed(canonical_listing, source):
