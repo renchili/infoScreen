@@ -70,19 +70,44 @@ def request_body(schema: dict[str, Any], required: bool = True) -> dict[str, Any
 def build_openapi() -> dict[str, Any]:
     schedule_list_schema = list_schema_for(ScheduleItem)
     object_schema = {"type": "object", "additionalProperties": True}
+    decision_schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["candidate_id", "decision"],
+        "properties": {
+            "candidate_id": {"type": "string"},
+            "decision": {"type": "string", "enum": ["pending", "confirmed", "rejected"]},
+        },
+    }
+    feedback_open_schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["source_id", "listing_url"],
+        "properties": {
+            "source_id": {"type": "string", "description": "Configured institution ID."},
+            "listing_url": {
+                "type": "string",
+                "description": (
+                    "Normal official listing URL for the legacy Surface-local Chromium flow, "
+                    "or feedback:<base64url-json> when the client-device Chrome helper submits a selected DOM position."
+                ),
+            },
+        },
+    }
 
     return {
         "openapi": OPENAPI_VERSION,
         "info": {
             "title": "InfoScreen Local API",
-            "version": "0.1.0",
-            "description": "Local kiosk API for runtime dashboard JSON, refresh actions, market config, and local event search.",
+            "version": "0.2.0",
+            "description": "Local kiosk API for runtime dashboard JSON, refresh actions, market config, local event search, and Local Event operator review.",
         },
-        "servers": [{"url": "http://127.0.0.1:8765", "description": "Local Surface kiosk server"}],
+        "servers": [{"url": "http://127.0.0.1:8765", "description": "Surface kiosk server; replace 127.0.0.1 with the Surface LAN address when using another device"}],
         "tags": [
             {"name": "dashboard", "description": "Static dashboard and runtime JSON"},
             {"name": "market", "description": "Market config and refresh APIs"},
             {"name": "local-events", "description": "Rendered DOM local event search APIs"},
+            {"name": "local-event-review", "description": "Operator review, diagnostics, and browser feedback APIs"},
             {"name": "media", "description": "Photo wall media endpoints"},
         ],
         "paths": {
@@ -106,6 +131,24 @@ def build_openapi() -> dict[str, Any]:
             "/api/local-events/search": {
                 "get": {"tags": ["local-events"], "summary": "Read latest local event search results", "description": "Returns runtime JSON without running a new search.", "responses": {"200": json_response(ref("LocalEventSearchResponse")), "404": json_response(ref("RuntimeMissingResponse"), "Runtime JSON missing")}},
                 "post": {"tags": ["local-events"], "summary": "Run local event search for a location", "description": "Runs surface/search_local_events.py.", "requestBody": request_body(ref("LocalEventSearchRequest")), "responses": {"200": json_response(ref("LocalEventSearchResponse")), "500": json_response(ref("ErrorResponse"), "Search failed")}},
+            },
+            "/api/local-events/review/state": {
+                "get": {"tags": ["local-event-review"], "summary": "Read Local Event review state", "description": "Returns configured institutions, list-page decisions, Event candidates, diagnostics, and submitted positions from surface/.env/local_event_review/state.json.", "responses": {"200": json_response(object_schema), "500": json_response(ref("ErrorResponse"), "State read failed")}},
+            },
+            "/api/local-events/review/discover-listings": {
+                "post": {"tags": ["local-event-review"], "summary": "Discover candidate official list pages", "description": "Runs Playwright against configured institution home pages and persists candidate list pages.", "responses": {"200": json_response(object_schema), "500": json_response(ref("ErrorResponse"), "Discovery failed")}},
+            },
+            "/api/local-events/review/listing-decision": {
+                "post": {"tags": ["local-event-review"], "summary": "Save a list-page review decision", "requestBody": request_body(decision_schema), "responses": {"200": json_response(object_schema), "400": json_response(ref("ErrorResponse"), "Invalid decision")}},
+            },
+            "/api/local-events/review/collect-events": {
+                "post": {"tags": ["local-event-review"], "summary": "Collect Event candidates from confirmed pages", "description": "Reads confirmed list pages, follows official detail links, writes per-listing recognition diagnostics, and persists Event candidates.", "responses": {"200": json_response(object_schema), "500": json_response(ref("ErrorResponse"), "Collection failed")}},
+            },
+            "/api/local-events/review/event-decision": {
+                "post": {"tags": ["local-event-review"], "summary": "Save an Event candidate review decision", "requestBody": request_body(decision_schema), "responses": {"200": json_response(object_schema), "400": json_response(ref("ErrorResponse"), "Invalid decision")}},
+            },
+            "/api/local-events/review/open-feedback": {
+                "post": {"tags": ["local-event-review"], "summary": "Open legacy feedback browser or save client-browser feedback", "description": "A normal listing_url starts the legacy Surface-local Playwright Chromium flow. The Chrome helper uses feedback:<base64url-json> to submit a selected DOM position from the operator's current device without opening a browser on the Surface.", "requestBody": request_body(feedback_open_schema), "responses": {"200": json_response(object_schema), "500": json_response(ref("ErrorResponse"), "Feedback operation failed")}},
             },
             "/public_photos/{path}": {
                 "get": {"tags": ["media"], "summary": "Serve a public photo file", "parameters": [{"name": "path", "in": "path", "required": True, "schema": {"type": "string"}, "description": "Relative path under surface/.env/public_photos/."}], "responses": {"200": {"description": "Photo bytes"}, "404": {"description": "Not found"}}},

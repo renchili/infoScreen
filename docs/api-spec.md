@@ -10,7 +10,7 @@ The HTTP owner is:
 surface/serve_infoscreen.py
 ```
 
-The process binds `0.0.0.0:8765`. Local kiosk access normally uses `http://127.0.0.1:8765/`. The server has no authentication layer and is intended for a trusted local device/network; exposure beyond that boundary must be controlled outside the application.
+The process binds `0.0.0.0:8765`. Local kiosk access normally uses `http://127.0.0.1:8765/`. A second device on the same trusted network uses the Surface LAN address instead. The server has no authentication layer; exposure beyond the trusted local device/network boundary must be controlled outside the application.
 
 Runtime files are read from:
 
@@ -30,6 +30,7 @@ Cache-Control: no-store
 | --- | --- | --- | --- |
 | `GET`, `HEAD` | `/` | `serve_infoscreen.py` | `surface/web/index.html` |
 | `GET`, `HEAD` | `/index.html` | `serve_infoscreen.py` | `surface/web/index.html` |
+| `GET`, `HEAD` | `/local-events/studio/` | static server | Local Event operator review page |
 | `GET`, `HEAD` | `/docs` | `serve_infoscreen.py` | Swagger UI wrapper |
 | `GET`, `HEAD` | `/openapi.json` | `serve_infoscreen.py`, `openapi_spec.py`, `api_models.py` | Generated OpenAPI JSON |
 
@@ -277,7 +278,122 @@ text_normalizer
 
 The frontend displays only accepted `results`. `debug_by_source` is operator/developer evidence and is not rendered as event cards.
 
-## 9. Browser interaction summary
+## 9. Local Event review and feedback interaction
+
+The operator page uses local review state under:
+
+```text
+surface/.env/local_event_review/state.json
+```
+
+The review state is independent from `local_event_search_results.json` used by the kiosk card.
+
+### Read review state
+
+```http
+GET /api/local-events/review/state
+```
+
+The response includes:
+
+```text
+sources
+listing_pages
+events
+feedback
+listing_collection
+event_collection
+```
+
+`event_collection.listing_diagnostics` contains per-listing stage counts and a `reason_code` explaining zero-result collections. Browser code must not replace that reason with a generic “no events” message.
+
+### Discover candidate list pages
+
+```http
+POST /api/local-events/review/discover-listings
+```
+
+This opens configured institution home pages with Playwright and persists candidate list pages. It is a long-running operation and uses the full-page blocking indicator.
+
+### Save list-page decisions
+
+```http
+POST /api/local-events/review/listing-decision
+Content-Type: application/json
+```
+
+```json
+{
+  "candidate_id": "<candidate-id>",
+  "decision": "pending | confirmed | rejected"
+}
+```
+
+These short writes use inline status only. They do not repeatedly open and close the full-page blocking overlay.
+
+### Collect Event candidates
+
+```http
+POST /api/local-events/review/collect-events
+```
+
+The collector reads pages currently marked `confirmed`, identifies isolated official detail links, records DOM selectors and page positions, and then opens detail pages for title, date/time, venue, and detail diagnostics. A date is not required on the listing card itself.
+
+The response and persisted state include:
+
+```text
+events
+event_collection.errors
+event_collection.listing_diagnostics
+```
+
+The browser does not poll and rebuild the entire review page every three seconds. It reloads state after an explicit action, manual `RELOAD`, or when the operator returns to the tab.
+
+### Save Event review decisions
+
+```http
+POST /api/local-events/review/event-decision
+Content-Type: application/json
+```
+
+```json
+{
+  "candidate_id": "<candidate-id>",
+  "decision": "pending | confirmed | rejected"
+}
+```
+
+### Client-device browser feedback
+
+The supported interactive flow runs in Chrome on the device currently displaying the operator page. It does not require a visible Surface desktop, Surface mouse, or Surface-local Chromium window.
+
+1. `DOWNLOAD CHROME HELPER` builds a ZIP containing the extension manifest, service worker, and content script.
+2. The operator extracts it and loads the directory through `chrome://extensions` using Developer mode and `Load unpacked`.
+3. `OPEN ON THIS DEVICE` sends the selected institution and listing URL to the extension.
+4. The extension opens the official page in a normal browser tab, preserving that device’s cookies, scrolling, filters, pagination, and navigation.
+5. `POINT TO EVENT`, `SMALLER`, `LARGER`, and `SUBMIT THIS POSITION` run in that tab.
+
+The extension submits through the existing endpoint:
+
+```http
+POST /api/local-events/review/open-feedback
+Content-Type: application/json
+```
+
+The extension transport body is:
+
+```json
+{
+  "source_id": "artscience",
+  "listing_url": "feedback:<base64url-encoded-json>"
+}
+```
+
+The decoded JSON contains the original configured `listing_url`, current `page_url`, selector, selector match index/count, document position, visible text, and link. The server validates the institution and original listing URL before appending the feedback row.
+
+A normal HTTP/HTTPS `listing_url` sent to the same endpoint remains the legacy Surface-local Playwright Chromium mode. The operator page does not use that legacy mode.
+
+## 10. Browser interaction summary
 
 | UI action | HTTP interaction | Server side effect | Final browser action |
 | --- | --- | --- | --- |
@@ -287,12 +403,16 @@ The frontend displays only accepted `results`. `debug_by_source` is operator/dev
 | Market `REFRESH` | `POST /api/market-refresh` | Run live-data producer | Call `window.loadMarket()` |
 | Local Event page load | `GET /api/local-events/search` | None | Render current accepted results |
 | Local Event location search | `POST /api/local-events/search` | Run source-specific collector | Store location in browser local storage and render returned results |
+| Review page load or return to tab | `GET /api/local-events/review/state` | None | Render review state once |
+| Review list/Event decision | Review decision POST | Persist review state | Refresh affected cards without recurring polling |
+| Review Event collection | `POST /api/local-events/review/collect-events` | Persist Events and diagnostics | Render Event candidates and exact zero-result reason |
+| Browser feedback submit | `POST /api/local-events/review/open-feedback` with `feedback:` payload | Append feedback to review state | Show the submitted position after returning to the review tab |
 | Sync observation | `HEAD` four runtime paths | None | Compute `AGE` and status |
 | News reload | `GET /event_stream.json` | None | Rebuild three ticker rows |
 | Photo reload | `GET /photos.json`, then image GETs | None | Rebuild and rotate the photo wall |
 | Calendar load | `GET /schedule.json` | None | Build and rotate the Calendar board |
 
-## 10. Endpoints that are intentionally not mutation APIs
+## 11. Endpoints that are intentionally not mutation APIs
 
 There is no HTTP endpoint to:
 
