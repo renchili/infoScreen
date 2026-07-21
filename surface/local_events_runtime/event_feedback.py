@@ -10,6 +10,14 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from .browser import find_browser_executable
+from .detail_date_authority import apply as apply_detail_date_authority
+
+apply_detail_date_authority()
+
+from .event_review_diagnostics import apply as apply_event_review_diagnostics
+
+apply_event_review_diagnostics()
+
 from .event_review import DEFAULT_CONFIG_PATH, DEFAULT_REVIEW_ROOT, EventReviewStore, canonical_url
 
 OVERLAY_JS = r"""
