@@ -33,7 +33,9 @@ review_runtime_authority.apply()
 collect_events = _local_events_runtime.collect_events
 
 SURFACE_DIR = Path(__file__).resolve().parents[1]
-ENV_DIR = SURFACE_DIR / ".env"
+ENV_DIR = Path(
+    os.environ.get("INFOSCREEN_ENV_DIR", str(SURFACE_DIR / ".env"))
+).expanduser().resolve()
 CONF_DIR = SURFACE_DIR / "conf"
 CONFIG = CONF_DIR / "event_sources.json"
 OUT = ENV_DIR / "local_event_search_results.json"
