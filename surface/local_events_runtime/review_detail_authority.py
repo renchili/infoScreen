@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from . import _apply_gardens_card_fields
@@ -16,10 +17,10 @@ from .source_overrides import (
 _APPLIED = False
 _GARDENS_SOURCE_ID = "gardensbythebay"
 _DEFAULT_SUMMARY = "Open the official page for details."
-_PAGE_CHROME_RE = _extract.re.compile(
+_PAGE_CHROME_RE = re.compile(
     r"\b(?:home|things to do|learn with us|for schools|buy tickets|membership|"
     r"contact us|privacy|terms of use)\b",
-    _extract.re.I,
+    re.I,
 )
 
 
