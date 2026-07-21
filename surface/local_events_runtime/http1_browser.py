@@ -12,9 +12,9 @@ def apply() -> None:
 
     The Surface has observed Chromium navigation failures with
     ERR_HTTP2_PROTOCOL_ERROR on official Event sites. Collection starts in
-    HTTP/1.1 mode directly. The same bootstrap installs structural listing-link
-    authority and the review diagnostic collector before ``serve_infoscreen``
-    binds its local ``collect_event_candidates`` reference.
+    HTTP/1.1 mode directly. The same bootstrap installs source-specific field
+    authority, structural listing-link authority, and review diagnostics before
+    ``serve_infoscreen`` binds its local ``collect_event_candidates`` reference.
     """
 
     global _APPLIED
@@ -53,13 +53,16 @@ def apply() -> None:
     _browser.launch_chromium = launch_chromium_http1
 
     # This function runs before serve_infoscreen imports and binds the collector.
-    # Apply source/card authority first, then structural detail-link authority,
-    # then install the diagnostic collector that consumes the patched constants.
+    # Apply source/card and source-specific field authority first, then structural
+    # detail-link authority, then install diagnostics that consume the patched
+    # constants and collector functions.
     from .detail_date_authority import apply as apply_detail_date_authority
+    from .gardens_field_authority import apply as apply_gardens_field_authority
     from .structural_link_authority import apply as apply_structural_link_authority
     from .event_review_diagnostics import apply as apply_event_review_diagnostics
 
     apply_detail_date_authority()
+    apply_gardens_field_authority()
     apply_structural_link_authority()
     apply_event_review_diagnostics()
     _APPLIED = True
