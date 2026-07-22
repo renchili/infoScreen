@@ -18,6 +18,15 @@ a{color:var(--cyan)}
 .status{color:var(--muted);font-size:11px;text-transform:uppercase}
 .status.ok{color:var(--green)}.status.warn{color:var(--yellow)}.status.error{color:var(--red)}
 .toolbar{display:flex;flex-wrap:wrap;gap:8px;padding:12px;border-bottom:1px solid var(--line2)}
+.review-job-progress{display:grid;gap:6px;margin:10px 12px 0;padding:10px;border:1px solid var(--yellow);background:#0c0b06}
+.review-job-progress[hidden]{display:none}
+.review-job-progress[data-status="completed"]{border-color:var(--green);background:#071008}
+.review-job-progress[data-status="failed"]{border-color:var(--red);background:#100707}
+.review-job-progress-head{display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--yellow);font-size:11px;letter-spacing:.05em}
+.review-job-progress[data-status="completed"] .review-job-progress-head{color:var(--green)}
+.review-job-progress[data-status="failed"] .review-job-progress-head{color:var(--red)}
+.review-job-progress-message{color:var(--text);line-height:1.45;overflow-wrap:anywhere}
+.review-job-progress-result{color:var(--muted);font-size:10px;text-transform:uppercase}
 .button{display:inline-flex;align-items:center;justify-content:center;min-height:35px;padding:7px 11px;border:1px solid var(--line);background:#111713;color:var(--text);text-decoration:none;font:inherit;cursor:pointer}
 .button:hover:not(:disabled):not([aria-disabled="true"]){border-color:var(--cyan);color:var(--cyan)}
 .button:disabled,.button[aria-disabled="true"]{opacity:.45;cursor:not-allowed}
