@@ -2,21 +2,23 @@
 
 ## What this is
 
-InfoScreen is a local-first personal information screen for an always-on Surface or Ubuntu display. It combines the current day, schedule, weather, market movement, multilingual news, nearby official Events, local photos, and runtime freshness in one stable kiosk page.
+InfoScreen is a local-first personal information screen for an always-on Surface or Ubuntu display. It combines the current day, personal schedule, weather, market movement, multilingual news, nearby official events, local photos, and runtime freshness in one stable kiosk page.
 
 The project favours readable typography, compact information density, predictable layout, local ownership of personal data, and visible failure states.
 
 ## What this is not
 
-InfoScreen is not a cloud dashboard, a general web-search scraper, a second Calendar account, or real Surface system monitoring. Local Events come from curated official organisation pages. Calendar authority remains on a Mac using macOS Calendar and EventKit. Runtime JSON, logs, debug captures, and personal photos are device state under `surface/.env/`; they are not repository source files.
+InfoScreen is not a cloud dashboard, a general web-search scraper, a second Calendar account, or real Surface system monitoring. Local Events come from curated official organisation pages. Calendar authority remains on a Mac running macOS Calendar/EventKit. The current CPU/MEM/DSK/NET bars are simulated browser values, and POWER/DISPLAY/NETWORK labels are static text.
+
+Runtime JSON, machine-local configuration, logs, debug captures, and personal photos are device state under `surface/.env/`; they are not repository source files or generated artifacts to commit.
 
 ## First 10 minutes
 
 ```bash
- git clone https://github.com/renchili/infoScreen.git ~/infoscreen
- cd ~/infoscreen
- mkdir -p surface/.env
- python3 surface/serve_infoscreen.py
+git clone https://github.com/renchili/infoScreen.git ~/infoscreen
+cd ~/infoscreen
+mkdir -p surface/.env
+python3 surface/serve_infoscreen.py
 ```
 
 Open:
@@ -25,7 +27,7 @@ Open:
 http://127.0.0.1:8765/
 ```
 
-API documentation:
+Open API documentation:
 
 ```text
 http://127.0.0.1:8765/docs
@@ -33,21 +35,20 @@ http://127.0.0.1:8765/docs
 
 ## Prerequisites
 
-Small local path:
+For the smallest local path:
 
 - Python 3;
 - a browser or `curl`;
-- a checkout at `~/infoscreen` when using supported deployment scripts.
+- a checkout at `~/infoscreen` when following the supported deployment scripts.
 
-Full Surface deployment:
+For the full Surface deployment:
 
 - a Linux user session with `systemd --user`;
-- Chromium and Python Playwright for Local Events;
+- Chromium and the Python Playwright package for system-collected Local Events;
 - Pydantic 2;
-- outbound network access for Market, Weather, News, and official Event sources;
-- `ffmpeg` for HEIC or HEIF conversion;
-- ImageMagick `magick` for optional photo normalization;
-- a Mac with EventKit-capable Python only for Calendar sync.
+- outbound network access for Market, Weather, News, and official Local Event sources;
+- `ffmpeg` for HEIC/HEIF conversion and ImageMagick `magick` for optional photo normalization;
+- a Mac with an EventKit-capable Python runtime only when Calendar sync is required.
 
 ## Runtime and configuration
 
@@ -71,15 +72,15 @@ Do not commit runtime JSON, logs, debug captures, personal photos, SSH details, 
 The dashboard includes:
 
 - current time, date, page refresh time, and page-session uptime;
-- Market card and global Market tape;
-- Singapore weather;
-- aligned English, French, and Chinese news;
-- Local Events from curated official institutions;
-- Calendar board supplied by macOS Calendar and EventKit;
-- local Photo wall;
-- Sync ticker for fresh, stale, missing, or unreachable runtime files;
+- a Market card and global Market tape with configurable symbols;
+- current Singapore weather;
+- aligned English, French, and Chinese news rows;
+- a Local Events card built from curated official organisation sources;
+- a Calendar board supplied by macOS Calendar/EventKit;
+- a local Photo wall;
+- a Sync ticker showing whether Schedule, Weather, Market, and News runtime files are fresh, stale, missing, or unreachable;
 - local OpenAPI documentation;
-- Local Event Studio for list-page review, Event review, manual official list entry, and diagnostics.
+- a Local Event operator page for list-page review, Event review, manual correct-list-page entry, and diagnostics.
 
 ## Runtime model
 
@@ -98,94 +99,123 @@ Surface or Ubuntu device
   -> optional operator browser on another trusted LAN device
 ```
 
-## Data ownership
+## Data sources and ownership
 
 | Product area | Producer or trigger | Runtime/API | Browser owner |
 | --- | --- | --- | --- |
-| Market and Weather | `infoscreen-live-data.timer` or manual refresh | `market.json`, `weather.json` | `dashboard.js` |
+| Market and Weather | `infoscreen-live-data.timer` or Market refresh | `market.json`, `weather.json` | `dashboard.js` |
 | Multilingual News | `infoscreen-event-stream.timer` | `event_stream.json` | `local_event_card.js` |
-| Local Events | `infoscreen-local-events.timer`, location search, and Review decisions | `local_event_search_results.json`, `/api/local-events/search` | `local_event_card.js` |
-| Local Event review | Operator actions | `/api/local-events/review/*`, `local_event_review/state.json` | Studio scripts |
+| Local Events | `infoscreen-local-events.timer` or location search | `local_event_search_results.json`, `/api/local-events/search` | `local_event_card.js` |
+| Local Event review | Operator actions | `/api/local-events/review/*`, `local_event_review/state.json` | Local Event Studio scripts |
 | Calendar | Mac LaunchAgent | `schedule.json` | `calendar_board.js` |
 | Photos | Manual photo builder | `photos.json`, `/public_photos/*` | `local_event_card.js` |
 | Sync status | Browser `HEAD` checks | Runtime endpoints | `local_event_card.js` |
 
-Producer jobs write runtime data. Browser scripts render it. The HTTP server serves files and local APIs.
+Each visible DOM mount has one renderer owner. Producers write runtime data; browser scripts render it; the HTTP server serves files and local APIs.
 
 ## Market symbols
 
 - `SAVE` sends `POST /api/market-config`, writes `surface/.env/market_config.json`, and refreshes Market data.
 - `REFRESH` sends `POST /api/market-refresh`.
-- Market refresh also refreshes Weather.
+- A Market refresh runs `surface/fetch_live_data.py`, so it refreshes both Market and Weather.
 - At most 12 unique symbols are stored.
 
 ## Local-event location
 
 - The last location is stored in browser `localStorage` as `local_events_location`.
 - Search sends `POST /api/local-events/search`.
-- The server runs the complete source-specific producer and returns the combined runtime payload.
+- The server runs the source-specific collector and returns the resulting runtime payload.
 
 ## Local Event Studio
 
-Open on the Surface:
+The operator page uses the existing HTTP service and port:
 
 ```text
 http://127.0.0.1:8765/local-events/studio/
 ```
 
-From another trusted LAN computer:
+From another computer on the same trusted LAN:
 
 ```text
 http://<surface-lan-address>:8765/local-events/studio/
 ```
 
-### Review list pages and Events
+Update and restart:
 
-1. Select the institution when work should be scoped to one organisation.
+```bash
+cd ~/infoscreen
+git fetch origin
+git switch develop/surface-local-events-coverage
+git pull --ff-only origin develop/surface-local-events-coverage
+systemctl --user restart infoscreen-http.service
+```
+
+### Review system-collected list pages and Events
+
+1. Select the global institution when work should be scoped to one organisation.
 2. Click `COLLECT LIST PAGES`.
 3. Inspect candidate URLs and use `PREVIEW EVENTS`.
 4. Choose `CONFIRM LIST PAGE`, `REJECT`, or `RESET`.
 5. Click `COLLECT EVENTS FROM CONFIRMED PAGES`.
 6. Review each Event and choose `RELATED ACTIVITY`, `NOT RELATED`, or `RESET`.
 
-A usable official list card proves activity membership. A card may use either:
+A listing card needs a usable title and one official detail link. The list card itself does not need to repeat date or venue. The collector follows detail pages for title, date/time, location, summary, and detail status.
 
-- one official detail URL, with date, venue, and summary enriched from the detail page; or
-- complete fields directly on the official list, with the official list URL used as its public URL.
+Every Event candidate shows its originating list URL, DOM selector, selector match number, listing page index, document position, detail URL, and detail result.
 
-Several listing-only activities may share one list URL and must remain separate Events.
+### Add a correct Event list page manually
 
-Every candidate shows its originating list URL, DOM selector, selector match number, page index, document position, detail URL when present, and detail result.
+The manual input is directly below the top collection toolbar.
 
-### Effect of Event decisions
-
-`RELATED ACTIVITY` is immediately overlaid into `local_event_search_results.json` and becomes visible on the Surface. It does not delete automatically collected Events.
-
-`NOT RELATED` or `RESET` removes only the row previously published from Review state. It does not remove an equivalent automatically collected Event.
-
-A confirmed candidate is not rejected again because a date, summary, venue, or independent detail page is unavailable.
-
-### Add one correct official list page manually
-
-1. Select exactly one institution.
-2. Paste the correct official list URL.
+1. Select exactly one value in `Global institution`.
+2. Paste the correct official Event list URL into `Add an official Event list page to the selected global institution`.
 3. Click `ADD LIST PAGE`.
-4. The page appears as `pending`.
-5. Preview it and use the normal confirm or reject flow.
+4. The page is saved as `pending` and appears in the left-side Event list pages.
+5. Use `PREVIEW EVENTS`.
+6. Confirm or reject it through the same review flow.
 
-The backend validates the configured institution, absolute HTTP or HTTPS URL, and allowed hostname. Manual addition changes Review state only; it does not modify committed `event_sources.json` or collect automatically.
+The backend validates that:
+
+- the institution exists in `surface/conf/event_sources.json`;
+- the URL is absolute HTTP/HTTPS;
+- the hostname is within that institution’s `allowed_domains`.
+
+Manual addition does not modify committed `event_sources.json` and does not collect Events automatically. Adding the same URL again resets it to `pending` for re-review.
 
 ### Zero-result diagnostics
 
-A zero result shows the failed recognition stage rather than only `0 EVENT`. Diagnostics include page access, visible links, official-domain links, possible detail links, extracted and admitted cards, DOM evidence, selectors, candidates, detail status, and stable reason codes.
+A zero result must show the exact failed recognition stage rather than only `0 EVENT`. Diagnostics include page access, visible links, official-domain links, possible detail links, extracted cards, admitted cards, DOM evidence, selector generation, candidates, and detail-page status.
 
-Review state is stored at:
+### HTTP/2 handling
+
+System collection does not first try HTTP/2 and then retry. The supported entrypoints apply:
+
+```text
+surface/local_events_runtime/http1_browser.py
+```
+
+before collector imports, and every patched Chromium launch includes:
+
+```text
+--disable-http2
+```
+
+This applies to:
+
+- Studio discovery and Event collection through `surface/serve_infoscreen.py`;
+- scheduled and HTTP-triggered Local Events through `surface/search_local_events.py`.
+
+### Interactive browser feedback status
+
+The downloadable Chrome Helper, ZIP generator, unpacked extension files, and remote helper transport were removed. The Studio marks Ability 2 as `NOT IMPLEMENTED`; no download or generated archive is required or produced.
+
+Review state is stored under:
 
 ```text
 surface/.env/local_event_review/state.json
 ```
 
-## Complete Local Events producer
+## Local Events collection policy
 
 The maintained institution inventory is:
 
@@ -193,21 +223,18 @@ The maintained institution inventory is:
 surface/conf/event_sources.json
 ```
 
-The supported producer:
+Collection behaviour includes:
 
-- starts every configured institution source;
-- renders and expands every configured official list;
-- preserves official list-card evidence;
-- enriches admitted cards from official detail pages when available;
-- supports complete listing-only cards;
-- preserves configured source order;
-- records per-source and per-listing evidence;
-- normalizes newly collected producer rows;
-- protects verified rows when a later run is incomplete;
-- overlays current confirmed Review Events;
-- atomically writes the primary runtime.
-
-Coverage budgets are applied to the live runtime modules. They allow all source-concurrency batches and enough per-source time for detail pages. Runtime configuration may raise these floors but must not silently lower the supported scope.
+- rendering and expanding configured official lists;
+- admitting isolated list cards with one official detail URL and a usable title;
+- allowing listing cards without dates;
+- following admitted detail pages for required date/time, location, title, summary, and public URL;
+- using XHR/fetch JSON and embedded structured state only to enrich a matched list card;
+- discarding unmatched structured records;
+- avoiding title and URL blacklists as the primary decision mechanism;
+- preserving configured source order;
+- recording per-source and per-listing evidence;
+- preserving previous verified rows when a partial run would replace them with fewer results.
 
 Primary output:
 
@@ -215,7 +242,7 @@ Primary output:
 surface/.env/local_event_search_results.json
 ```
 
-Incomplete evidence:
+Incomplete diagnostic output:
 
 ```text
 surface/.env/local_event_search_results.partial.json
@@ -227,24 +254,6 @@ Debug evidence:
 surface/.env/local_event_debug_cards/
 ```
 
-The partial file does not replace a larger protected producer result. The primary output always combines protected producer rows with current confirmed Review rows.
-
-## HTTP/2 handling
-
-Supported collection entry points apply:
-
-```text
-surface/local_events_runtime/http1_browser.py
-```
-
-before collection. Every patched Chromium launch includes:
-
-```text
---disable-http2
-```
-
-There is no HTTP/2-first attempt or protocol retry loop.
-
 ## Refresh behaviour
 
 | Data | Scheduler | Default frequency |
@@ -255,7 +264,7 @@ There is no HTTP/2-first attempt or protocol retry loop.
 | Calendar | Mac LaunchAgent | 120 seconds |
 | Photos | Manual builder | No timer |
 
-The Local Event Studio reloads on initial load, explicit operations, manual `RELOAD`, and tab return. The kiosk Local Events card polls the primary runtime and avoids redrawing unchanged content.
+The Local Event Studio reloads on initial load, explicit operations, manual `RELOAD`, and tab return. It does not rebuild all cards every three seconds.
 
 ## Project structure
 
@@ -264,7 +273,7 @@ surface/serve_infoscreen.py                         local HTTP server and APIs
 surface/fetch_live_data.py                          Market and Weather producer
 surface/fetch_event_stream.py                       multilingual News producer
 surface/search_local_events.py                      supported Local Events wrapper
-surface/jobs/local_event_search.py                  Local Events producer orchestration
+surface/jobs/local_event_search.py                  Local Events job
 surface/local_events_runtime/                       collector, review, diagnostics, browser policy
 surface/conf/                                       committed defaults and institution inventory
 surface/web/                                        kiosk and operator frontend
@@ -293,9 +302,7 @@ cd ~/infoscreen
 bash deploy/scripts/install-user-systemd.sh
 ```
 
-This step is required after changing service unit files. It copies the units, reloads the user systemd manager, and restarts the services. The Local Events oneshot and HTTP subprocess timeouts are sized for the complete producer run.
-
-When unit files have not changed, restart only the HTTP service:
+When dependencies and unit files are already installed:
 
 ```bash
 systemctl --user restart infoscreen-http.service
@@ -310,7 +317,7 @@ cd ~/infoscreen
 bash scripts/infoscreen_status.sh
 ```
 
-Check HTTP:
+Check HTTP service:
 
 ```bash
 systemctl --user status infoscreen-http.service --no-pager -l
@@ -327,9 +334,13 @@ python3 -m json.tool surface/.env/local_event_search_results.json | less
 python3 -m json.tool surface/.env/local_event_search_results.partial.json | less
 ```
 
-A complete run should show all configured sources in `debug_by_source`. A source with `elapsed_seconds: 0` and `skipped_by_global_deadline` indicates an invalid deployment or old runtime, not an acceptable reduced result.
+When a Studio preview fails, inspect `event_collection.listing_diagnostics` in:
 
-For Studio preview failures, inspect `event_collection.listing_diagnostics` in `surface/.env/local_event_review/state.json`.
+```text
+surface/.env/local_event_review/state.json
+```
+
+A failure before DOM parsing should be shown as a page/navigation error. Missing date on the listing card is not a rejection reason.
 
 ## Calendar sync
 
@@ -376,7 +387,7 @@ python3 -m pytest
 bash scripts/run_full_ci_tests.sh
 ```
 
-Run only checks appropriate to the task and report exactly what was or was not executed.
+Run only checks appropriate to the requested task and report exactly what was or was not executed.
 
 ## Documentation
 

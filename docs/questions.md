@@ -32,7 +32,7 @@ The Surface can act as a second Calendar client or any Python runtime can export
 
 ### Why it fails
 
-macOS Calendar owns accounts, permissions, and authoritative Event state. A Python runtime without `import EventKit` cannot export Calendar data.
+macOS Calendar owns accounts, permissions, and authoritative event state. A Python runtime without `import EventKit` cannot export Calendar data.
 
 ### Correct requirement interpretation
 
@@ -40,7 +40,7 @@ Calendar follows EventKit -> Mac export -> SSH/SCP -> Surface runtime JSON -> br
 
 ### Required implementation
 
-Probe an EventKit-capable Python, keep machine settings in uncommitted `mac/local.env`, and copy to the canonical Surface runtime file.
+Probe EventKit-capable Python, keep machine settings in uncommitted `mac/local.env`, and copy to the canonical Surface runtime file.
 
 ### Acceptance evidence
 
@@ -58,11 +58,11 @@ The server can remain online while individual files are stale, missing, or unrea
 
 ### Correct requirement interpretation
 
-The Sync ticker observes per-file `Last-Modified`. The Local Event Studio refreshes only at explicit operations, manual reload, and tab return.
+The Sync ticker observes per-file `Last-Modified`. The Local Event review page refreshes only at explicit operations, manual reload, and tab return.
 
 ### Required implementation
 
-Keep per-file freshness checks and do not continuously clear and rebuild review cards.
+Keep per-file freshness checks and do not clear/rebuild all review cards every three seconds.
 
 ### Acceptance evidence
 
@@ -76,41 +76,19 @@ All official sites can be handled by one selector, recursive crawler, or generic
 
 ### Why it fails
 
-Official sites differ in rendering, expansion, APIs, detail fields, pagination, anti-bot behaviour, and timing.
+Official sites differ in rendering, expansion, APIs, detail fields, pagination, anti-bot behavior, and timing.
 
 ### Correct requirement interpretation
 
-`surface/conf/event_sources.json` defines curated official institutions, allowed domains, configured list URLs, and adapter behaviour. A rendered card on an official list proves membership.
+`surface/conf/event_sources.json` defines curated official institutions, allowed domains, configured list URLs, and adapter behavior. A rendered card on an official list proves membership.
 
 ### Required implementation
 
-Render and expand every configured list, isolate official activity cards, preserve list evidence, and enrich admitted cards from their official detail page when one exists.
+Render and expand each configured list, isolate activity cards with one official detail URL and a usable title, then enrich those cards from detail pages.
 
 ### Acceptance evidence
 
 For an affected organisation, evidence must include a real collector run, list-card evidence, diagnostics, final runtime JSON, and visible output.
-
-## Local Events complete inventory coverage
-
-### Easy-to-make interpretation
-
-A global deadline, small detail limit, queue timeout, or first-source success may be used to shorten a difficult collection run.
-
-### Why it fails
-
-Queued sources can be marked `skipped_by_global_deadline` without ever starting. A fixed small detail budget can discard later valid cards. This silently lowers the configured 18-source product scope and can reduce the final output to one institution.
-
-### Correct requirement interpretation
-
-Every configured source must receive an execution opportunity. Coverage limits are safety floors sized for the complete inventory and may be raised, but runtime configuration must not silently lower the supported scope.
-
-### Required implementation
-
-Apply collection budgets to the live runtime modules before collection, allow enough total time for all concurrency batches, allow each source enough time for its admitted detail pages, and keep card/detail limits aligned with the supported Event budget. The systemd and HTTP timeouts must exceed the complete producer budget.
-
-### Acceptance evidence
-
-Runtime `debug_by_source` must contain all configured sources without unstarted rows caused by queue waiting. Process and runtime evidence must show the effective concurrency, per-source timeout, complete-run timeout, and all source statuses for the exact revision.
 
 ## Local Events listing-date authority
 
@@ -128,55 +106,35 @@ The official list proves membership. Date and venue can be obtained after admiss
 
 ### Required implementation
 
-Do not require a list-card date. Preserve listing evidence, follow the detail URL, and show exact detail status or errors.
+Do not require a list-card date. Preserve listing evidence, follow the detail URL, and show exact detail status/errors.
 
 ### Acceptance evidence
 
 A date-less list card with one official detail link must be admitted and enriched from its detail page.
 
-## Local Events cards without an independent detail page
-
-### Easy-to-make interpretation
-
-Every valid activity must have a separate detail URL.
-
-### Why it fails
-
-Some official lists, including activity cards that expose location, date, time, and description directly, do not provide an independent detail page.
-
-### Correct requirement interpretation
-
-A complete official list card can itself be the authoritative activity record. The official list URL is the public URL for that activity.
-
-### Required implementation
-
-Admit complete listing-only cards, preserve distinct card identity when several activities share one list URL, and do not open a nonexistent detail page.
-
-### Acceptance evidence
-
-Multiple distinct cards sharing one official listing URL must remain separate in review state, final JSON, and the Surface card.
-
 ## Local Events manual correct-list-page entry
 
 ### Easy-to-make interpretation
 
-The operator can only accept or reject system-discovered URLs, or a correct URL must be added by editing committed configuration.
+The operator can only accept or reject URLs discovered by the system, or a correct URL must be added by editing committed configuration.
 
 ### Why it fails
 
-Automated discovery can return the wrong page, and some institutions expose a shared or non-obvious entry point.
+Automated discovery can return the wrong page, and some institutions expose a shared or non-obvious entrypoint that cannot be discovered reliably. Without a manual input, the user cannot correct the workflow.
 
 ### Correct requirement interpretation
 
-The Studio lets the operator select one institution, add one allowed official list URL to review state, and use the normal preview and decision flow.
+The Studio must let the user select one global institution, enter a correct official Event list URL, save it into review state, and then use the same preview/confirm/reject workflow as discovered pages.
 
 ### Required implementation
 
-Validate `source_id`, absolute HTTP/HTTPS URL, and configured allowed domains. Save as `pending`; do not modify committed source configuration or collect automatically.
+Provide an always-visible URL field and `ADD LIST PAGE` button. Send `source_id` and `url` to `POST /api/local-events/review/listing-page`. Validate the configured institution and its allowed domains. Save the page as `pending`; do not collect automatically and do not edit committed `event_sources.json`.
+
+Adding the same institution/URL again resets it to `pending`, allowing a rejected or stale decision to be reconsidered.
 
 ### Acceptance evidence
 
-A valid URL appears immediately and can be previewed and decided. Invalid institution, malformed URL, and disallowed domain return HTTP `400` without changing state.
+Select an institution, add a valid allowed-domain URL, observe it immediately in the left-side list, preview it, and confirm/reject it. Invalid institution, malformed URL, and disallowed domain must return HTTP `400` without changing review state.
 
 ## Local Events positive Event intent
 
@@ -186,7 +144,7 @@ A title plus dates, explicit `Event` type, event-looking route, or absence of bl
 
 ### Why it fails
 
-Facilities, memberships, promotions, and navigation records can be Event-shaped or typed as Events.
+Facilities, memberships, promotions, and navigation records can be event-shaped or typed as Events.
 
 ### Correct requirement interpretation
 
@@ -200,28 +158,6 @@ Require rendered official list evidence and match enrichment back to that card.
 
 Reject unmatched typed Event objects and accept matched enrichment without adding title blacklists.
 
-## Local Events operator decisions and final output ownership
-
-### Easy-to-make interpretation
-
-Operator-confirmed Events can replace the producer output, or the producer can later overwrite confirmed Events. Another incorrect interpretation is to run confirmed candidates through crawler admission rules again.
-
-### Why it fails
-
-Those designs create competing writers for `local_event_search_results.json`. They can remove correct automatically collected activities, remove confirmed activities on the next scheduled run, or reject an explicit operator decision because a detail field is missing.
-
-### Correct requirement interpretation
-
-The producer owns automatically collected rows. Review decisions are an immediate overlay on that producer result. Both sets form one final runtime. A confirmation is authoritative for activity membership and is not subjected to a second crawler-admission pass.
-
-### Required implementation
-
-The producer normalizes its new system rows, applies partial-result protection, overlays all current `confirmed` review candidates, and atomically writes the primary runtime. The Event decision endpoint applies the same overlay immediately to the existing primary runtime. Reject or reset removes only rows published from review state; unrelated producer rows remain unchanged. Listing-only confirmed Events use their official list URL and may retain blank unavailable fields.
-
-### Acceptance evidence
-
-Tests and runtime evidence must prove: producer rows survive confirmation and rejection; confirmed rows survive later complete and partial producer runs; duplicate system/review Events are not doubled; two listing-only cards sharing one URL remain separate; and the Surface count matches final JSON after both decision and scheduled collection flows.
-
 ## Local Events zero-result diagnostics
 
 ### Easy-to-make interpretation
@@ -230,95 +166,95 @@ A zero count can be displayed as “no Events returned” without explaining the
 
 ### Why it fails
 
-The operator cannot distinguish a load failure from card-boundary, route, selector, detail-page, date, or budget failure.
+The operator cannot distinguish a load failure from unrecognized detail routes, card-boundary failure, selector failure, or detail-page failure.
 
 ### Correct requirement interpretation
 
-Every attempted list page produces diagnostics tied to the exact canonical URL and reports the first failed stage.
+Every attempted list page produces a diagnostic tied to that exact canonical URL and reports the first failed stage.
 
 ### Required implementation
 
-Persist and display page access, visible links, allowed-domain links, possible detail links, extracted and admitted cards, DOM evidence, selectors, candidates, detail results, and stable reason codes.
+Persist and display HTTP status, visible links, allowed-domain links, possible detail links, extracted/admitted cards, DOM evidence, selectors, candidates, and detail results.
 
 ### Acceptance evidence
 
-A zero-result collection shows a stable reason code, reason text, stage counts, and sample links when available.
+A zero-result collection must show a stable `reason_code`, reason text, stage counts, and sample detail links when available.
 
 ## Local Events HTTP/2 handling
 
 ### Easy-to-make interpretation
 
-The collector should first try normal Chromium HTTP/2 navigation and retry after `ERR_HTTP2_PROTOCOL_ERROR`.
+The collector should first try normal Chromium HTTP/2 navigation, catch `ERR_HTTP2_PROTOCOL_ERROR`, then retry with another browser or protocol.
 
 ### Why it fails
 
-That doubles navigation behaviour, complicates diagnostics, and still begins with the known failing protocol.
+That approach doubles navigation behavior, complicates diagnostics, and still starts every collection with the known failing protocol.
 
 ### Correct requirement interpretation
 
-Supported collection entry points disable HTTP/2 before Chromium launches. There is no HTTP/2-first request or protocol retry loop.
+The supported collection entrypoints must disable HTTP/2 before Chromium launches. No HTTP/2-first request and no protocol retry loop should occur.
 
 ### Required implementation
 
-Apply `surface/local_events_runtime/http1_browser.py` for Studio and scheduled or HTTP-triggered collection. Every patched Chromium launch includes `--disable-http2`.
+Apply `surface/local_events_runtime/http1_browser.py` before importing collection code in both `surface/serve_infoscreen.py` and `surface/search_local_events.py`. Every patched Chromium launch must include `--disable-http2`.
 
 ### Acceptance evidence
 
-Runtime launch evidence shows the flag on both paths, and navigation failure is reported directly rather than hidden behind a retry.
+Runtime process/launch evidence must show `--disable-http2` on Studio collection and scheduled/HTTP-triggered Local Event collection. A failing navigation must be reported as its direct error, not as a hidden first-attempt/retry sequence.
 
 ## Generated helper and archive boundary
 
 ### Easy-to-make interpretation
 
-A browser interaction requirement can be solved by generating a ZIP and asking the operator to install an unpacked extension.
+A browser interaction requirement can be solved by generating a ZIP, asking the user to extract it, and loading an unpacked Chrome extension.
 
 ### Why it fails
 
-That adds an unrequested deliverable and installation workflow and changes the product boundary.
+This adds an unrequested generated deliverable and installation workflow, violates repository artifact constraints, and changes the product/deployment boundary.
 
 ### Correct requirement interpretation
 
-Do not generate helper archives or extension installation flows unless explicitly requested.
+Do not generate a ZIP, extension bundle, helper archive, or extra installation flow unless the user explicitly requests that artifact and workflow.
 
 ### Required implementation
 
-Keep removed helper, ZIP, extension, and remote transport paths absent. Unimplemented abilities must be labelled honestly.
+Remove the ZIP builder, download button, extension files, remote `feedback:` transport, and documentation that instructs the operator to install them. Until an accepted interaction design exists, the Studio must state that Ability 2 is not implemented rather than pretending it works.
 
 ### Acceptance evidence
 
-Repository search and rendered Studio contain no active helper download, extension source, ZIP builder, or remote helper route.
+Repository search and the rendered Studio must contain no active helper-download control, extension source directory, ZIP-building JavaScript, or remote helper submission route. No archive is generated at runtime.
 
 ## Local Events evidence and partial-result protection
 
 ### Easy-to-make interpretation
 
-A total count is enough to diagnose coverage, and every producer run may replace the primary file.
+A total count is enough to diagnose coverage, and every completed crawl should replace the primary file.
 
 ### Why it fails
 
-Failure can occur at many stages. Re-normalizing a previous runtime can also remove unrelated correct rows. A partial run can erase valid producer or review Events.
+Failure can occur at page access, expansion, card discovery, detail enrichment, date parsing, normalization, or budget. A smaller partial run can erase valid results.
 
 ### Correct requirement interpretation
 
-New producer rows are normalized once. Previously verified rows retained for partial protection are copied without re-admission. Partial evidence is kept separately, while the primary runtime continues to contain protected producer rows plus current confirmed review rows.
+Runtime output includes per-source evidence. A smaller partial run does not replace a larger verified result.
 
 ### Required implementation
 
-Record per-source evidence, calculate source completion, atomically write the partial payload, protect verified primary rows when the incomplete run would reduce coverage, and apply the same review overlay in complete and partial paths.
+Record per-source evidence, calculate partial coverage, preserve verified primary rows when required, and retain a partial payload.
 
 ### Acceptance evidence
 
-Tests and runtime evidence cover complete-to-partial transitions, exact preservation of unrelated rows, retained diagnostics, and current review decisions.
+Tests and runtime evidence must cover verified-to-partial transitions and retained debug data.
 
 ## Validation boundaries
 
 ### Easy-to-make interpretation
 
-Static review or a fixture test proves live sources, Chromium flags, services, LAN access, and visible UI all work.
+Static review or a successful fixture test proves live sources, Chromium flags, services, LAN access, and visible UI all work.
 
 ### Why it fails
 
-Offline checks cannot prove current reachability, live DOM/API structure, process arguments, service deployment, or browser behaviour.
+Offline checks cannot prove current reachability, live DOM/API structure, process arguments, service deployment, or browser behavior.
 
 ### Correct requirement interpretation
 
@@ -330,4 +266,4 @@ Tie each claim to the exact revision and actual command, test, log, runtime file
 
 ### Acceptance evidence
 
-A final acceptance record states the exact revision, checks run, checks not run, remaining gaps, and a verdict no stronger than the evidence.
+A final acceptance record must state the exact revision, checks run, checks not run, remaining gaps, and a verdict no stronger than the evidence.

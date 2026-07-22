@@ -10,7 +10,7 @@ The HTTP owner is:
 surface/serve_infoscreen.py
 ```
 
-The process binds `0.0.0.0:8765`. Local kiosk access normally uses `http://127.0.0.1:8765/`. A second trusted LAN device uses the Surface LAN address. The server has no application authentication layer; exposure beyond the trusted local network must be controlled outside the application.
+The process binds `0.0.0.0:8765`. Local kiosk access normally uses `http://127.0.0.1:8765/`. A second device on the same trusted network uses the Surface LAN address instead. The server has no authentication layer; exposure beyond the trusted local device/network boundary must be controlled outside the application.
 
 Runtime files are read from:
 
@@ -34,24 +34,24 @@ Cache-Control: no-store
 | `GET`, `HEAD` | `/docs` | `serve_infoscreen.py` | Swagger UI wrapper |
 | `GET`, `HEAD` | `/openapi.json` | `serve_infoscreen.py`, `openapi_spec.py`, `api_models.py` | Generated OpenAPI JSON |
 
-Static assets are served from `surface/web/` through `SimpleHTTPRequestHandler`.
+Static frontend assets are served from `surface/web/` through `SimpleHTTPRequestHandler`.
 
 ## 3. Runtime JSON reads
 
 | Method | Path | Runtime file | Primary caller | Producer |
 | --- | --- | --- | --- | --- |
-| `GET`, `HEAD` | `/schedule.json` | `schedule.json` | Calendar board, Sync ticker | Mac EventKit export and SCP push |
-| `GET`, `HEAD` | `/weather.json` | `weather.json` | Dashboard, Sync ticker | `fetch_live_data.py` |
-| `GET`, `HEAD` | `/market.json` | `market.json` | Dashboard, Sync ticker | `fetch_live_data.py` |
-| `GET`, `HEAD` | `/market_config.json` | `market_config.json` | Operator or debug read | Market config API |
-| `GET`, `HEAD` | `/event_stream.json` | `event_stream.json` | News card, Sync ticker | `fetch_event_stream.py` |
-| `GET`, `HEAD` | `/local_event_search_results.json` | `local_event_search_results.json` | Direct operator or debug read | Local Event producer plus Review overlay |
-| `GET`, `HEAD` | `/photos.json` | `photos.json` | Photo wall | Photo builder |
-| `GET`, `HEAD` | `/sync_status.json` | `sync_status.json` | Reserved or direct read | No active producer documented |
+| `GET`, `HEAD` | `/schedule.json` | `schedule.json` | `calendar_board.js`, Sync ticker | Mac EventKit export and SCP push |
+| `GET`, `HEAD` | `/weather.json` | `weather.json` | `dashboard.js`, Sync ticker | `fetch_live_data.py` |
+| `GET`, `HEAD` | `/market.json` | `market.json` | `dashboard.js`, Sync ticker | `fetch_live_data.py` |
+| `GET`, `HEAD` | `/market_config.json` | `market_config.json` | Direct operator/debug read | Market config API |
+| `GET`, `HEAD` | `/event_stream.json` | `event_stream.json` | `local_event_card.js`, Sync ticker | `fetch_event_stream.py` |
+| `GET`, `HEAD` | `/local_event_search_results.json` | `local_event_search_results.json` | Direct operator/debug read | Local-event job |
+| `GET`, `HEAD` | `/photos.json` | `photos.json` | `local_event_card.js` | Photo builder |
+| `GET`, `HEAD` | `/sync_status.json` | `sync_status.json` | Reserved/direct read | No active producer documented |
 
 ### Missing runtime behaviour
 
-For `GET`, a missing runtime file returns the endpoint default shape plus:
+For `GET`, when the runtime file does not exist, the server returns the endpoint’s default JSON shape plus:
 
 ```json
 {
@@ -65,7 +65,15 @@ For `HEAD`, a missing runtime file returns HTTP `404`.
 
 ### HEAD freshness contract
 
-For an existing runtime file, `HEAD` returns JSON content headers and `Last-Modified`. The Sync ticker uses `Last-Modified`; it does not depend on a JSON `updated_at` field.
+For an existing runtime file, `HEAD` returns:
+
+```text
+Content-Type: application/json; charset=utf-8
+Content-Length: <file size>
+Last-Modified: <file mtime as HTTP date>
+```
+
+The Sync ticker uses `Last-Modified`; it does not parse JSON `updated_at` fields.
 
 ## 4. Public photo reads
 
@@ -73,9 +81,9 @@ For an existing runtime file, `HEAD` returns JSON content headers and `Last-Modi
 | --- | --- | --- | --- |
 | `GET`, `HEAD` | `/public_photos/<relative-path>` | `surface/.env/public_photos/<relative-path>` | Photo wall |
 
-The photo builder controls which files enter the public runtime directory. The browser does not receive arbitrary filesystem access.
+The photo builder controls which files are copied into the public runtime directory. The browser does not receive arbitrary filesystem access.
 
-## 5. Market configuration
+## 5. Market configuration interaction
 
 ### Read active symbols
 
@@ -83,11 +91,25 @@ The photo builder controls which files enter the public runtime directory. The b
 GET /api/market-config
 ```
 
+Caller:
+
+```text
+surface/web/assets/js/market_custom.js
+```
+
 Resolution order:
 
-1. `surface/.env/market_config.json`;
+1. `surface/.env/market_config.json` when present;
 2. `surface/conf/market_config.default.json`;
-3. built-in defaults.
+3. built-in default symbols.
+
+Example response:
+
+```json
+{
+  "symbols": ["AAPL", "NVDA", "MSFT", "TSLA"]
+}
+```
 
 ### Save active symbols
 
@@ -96,13 +118,36 @@ POST /api/market-config
 Content-Type: application/json
 ```
 
+Canonical request body:
+
 ```json
 {
   "symbols": ["AAPL", "NVDA", "MSFT", "TSLA"]
 }
 ```
 
-Values are trimmed and uppercased, duplicates are removed in order, at most 12 symbols are stored, and an empty final list is rejected. Success writes `surface/.env/market_config.json` with `updated_at`. Invalid input returns HTTP `400`.
+Server behaviour:
+
+- input must be a JSON list;
+- values are trimmed and uppercased;
+- duplicates are removed while preserving order;
+- at most 12 symbols are stored;
+- an empty final list is rejected;
+- success writes `surface/.env/market_config.json` with `updated_at`.
+
+Success response:
+
+```json
+{
+  "ok": true,
+  "symbols": ["AAPL", "NVDA", "MSFT", "TSLA"],
+  "updated_at": "<UTC ISO timestamp>"
+}
+```
+
+Invalid input returns HTTP `400`.
+
+Saving configuration does not by itself render quotes. `market_custom.js` follows a successful save by calling the Market refresh endpoint and then `window.loadMarket()`.
 
 ## 6. Market and Weather manual refresh
 
@@ -110,16 +155,18 @@ Values are trimmed and uppercased, duplicates are removed in order, at most 12 s
 POST /api/market-refresh
 ```
 
+Request body: none.
+
 Side effect:
 
 ```text
 serve_infoscreen.py
-  -> python surface/fetch_live_data.py
-  -> weather.json
-  -> market.json
+  -> subprocess: python surface/fetch_live_data.py
+  -> surface/.env/weather.json
+  -> surface/.env/market.json
 ```
 
-HTTP status is `200` when the subprocess exits successfully and `500` otherwise.
+The subprocess timeout is 60 seconds. HTTP status is `200` when the subprocess exits successfully and `500` otherwise.
 
 ## 7. Local Events read interaction
 
@@ -127,19 +174,16 @@ HTTP status is `200` when the subprocess exits successfully and `500` otherwise.
 GET /api/local-events/search
 ```
 
-This endpoint does not run a crawl. It returns the current `local_event_search_results.json` payload.
+This endpoint does not run a crawl. It returns the current normalized `local_event_search_results.json` payload.
 
-The final `results` list contains:
-
-- normalized automatically collected producer rows;
-- current operator-confirmed Review rows that are not already represented by the producer result.
-
-## 8. Local Events producer interaction
+## 8. Local Events search interaction
 
 ```http
 POST /api/local-events/search
 Content-Type: application/json
 ```
+
+Canonical request body:
 
 ```json
 {
@@ -151,30 +195,23 @@ Side effect:
 
 ```text
 serve_infoscreen.py
-  -> python surface/search_local_events.py <location>
+  -> subprocess: python surface/search_local_events.py <location>
   -> surface/jobs/local_event_search.py
-  -> complete official-source collector
-  -> normalize new producer rows
-  -> partial-result protection
-  -> overlay current confirmed Review Events
-  -> local_event_search_results.json
+  -> source-specific official collector
+  -> surface/.env/local_event_search_results.json
 ```
 
-When the run is incomplete, the collector also writes:
+The supported wrapper applies `surface/local_events_runtime/http1_browser.py` before importing the collector. Every Chromium instance launched through that path starts with:
 
 ```text
-surface/.env/local_event_search_results.partial.json
+--disable-http2
 ```
 
-A smaller partial run cannot delete protected verified producer rows. Review rows are overlaid after either a new collector result or a protected previous result.
-
-The deployed HTTP service sets `LOCAL_EVENT_SEARCH_TIMEOUT_SECONDS=7500`, which is longer than the complete producer budget. The endpoint remains synchronous and returns after the producer exits or the HTTP subprocess timeout is reached.
-
-The supported wrapper applies `surface/local_events_runtime/http1_browser.py`. That bootstrap applies complete collection authority and launches Chromium with `--disable-http2`.
+There is no HTTP/2-first attempt and no protocol retry loop.
 
 ## 9. Local Event review interaction
 
-Review state is stored under:
+The operator page uses local review state under:
 
 ```text
 surface/.env/local_event_review/state.json
@@ -186,7 +223,18 @@ surface/.env/local_event_review/state.json
 GET /api/local-events/review/state
 ```
 
-The response includes source inventory, list-page candidates, Event candidates, feedback, and collection metadata.
+The response includes:
+
+```text
+sources
+listing_pages
+events
+feedback
+listing_collection
+event_collection
+```
+
+`event_collection.listing_diagnostics` contains per-listing stage counts and a `reason_code` explaining zero-result collections.
 
 ### Discover candidate list pages
 
@@ -194,14 +242,16 @@ The response includes source inventory, list-page candidates, Event candidates, 
 POST /api/local-events/review/discover-listings
 ```
 
-The server opens configured official home pages and persists discovered list-page candidates.
+This opens configured institution home pages with Playwright and persists candidate list pages. The server applies `--disable-http2` before importing the review collector.
 
-### Add one official list page manually
+### Add one correct official list page manually
 
 ```http
 POST /api/local-events/review/listing-page
 Content-Type: application/json
 ```
+
+Request body:
 
 ```json
 {
@@ -212,15 +262,16 @@ Content-Type: application/json
 
 Rules:
 
-- `source_id` identifies a configured institution;
-- `url` is absolute HTTP or HTTPS;
-- hostname matches the institution `allowed_domains`;
-- the candidate is stored as `pending`;
-- adding an existing institution and URL resets it to `pending`;
-- committed `event_sources.json` is not changed;
-- Events are not collected automatically.
+- `source_id` must identify a configured institution;
+- `url` must be absolute HTTP/HTTPS;
+- the hostname must match that institution’s `allowed_domains`;
+- the page is stored in review state as `pending`;
+- adding an existing page resets it to `pending` so it can be reviewed again;
+- the operation does not write committed `event_sources.json`;
+- the operation does not collect Events automatically;
+- the operator must preview and confirm the page before normal confirmed-page collection.
 
-Invalid input returns HTTP `400` with `manual_listing_page_failed`.
+Success returns the updated review state. Invalid institution or domain returns HTTP `400` with `manual_listing_page_failed`.
 
 ### Save list-page decisions
 
@@ -236,17 +287,15 @@ Content-Type: application/json
 }
 ```
 
-This changes Review state only. A confirmed page becomes eligible for explicit Event candidate collection.
-
 ### Collect Event candidates
 
 ```http
 POST /api/local-events/review/collect-events
 ```
 
-The collector reads list pages marked `confirmed`, records rendered card and DOM evidence, follows official detail pages when present, and keeps complete listing-only cards when no detail page exists. The result is saved to Review state; this operation does not replace the producer result.
+The collector reads pages currently marked `confirmed`, identifies isolated official detail links, records DOM selectors and page positions, and then opens detail pages for title, date/time, venue, and detail diagnostics. A date is not required on the listing card itself. Chromium is forced to start with `--disable-http2` before collection begins.
 
-### Save Event decisions
+### Save Event review decisions
 
 ```http
 POST /api/local-events/review/event-decision
@@ -260,45 +309,33 @@ Content-Type: application/json
 }
 ```
 
-Side effects:
+### Interactive browser feedback status
 
-1. save the decision in `local_event_review/state.json`;
-2. read the current `local_event_search_results.json`;
-3. preserve all rows not created by Review publication;
-4. rebuild the complete current set of `confirmed` Review rows;
-5. skip a confirmed row already represented by the producer result;
-6. atomically write the combined primary runtime.
+The downloadable Chrome Helper, extension files, ZIP generation, and remote `feedback:` transport were removed. The operator page does not expose a replacement interactive browser-feedback action in this branch. `/api/local-events/review/open-feedback` is not part of the active API contract.
 
-A `confirmed` decision is authoritative for activity membership. Publication does not run crawler admission again. Missing date, venue, summary, or independent detail page does not remove the confirmed candidate. Listing-only candidates use their official list URL.
+## 10. Browser interaction summary
 
-Changing a candidate to `rejected` or `pending` removes only its Review-published row. Automatically collected rows remain unchanged.
-
-## 10. Local Events runtime fields
-
-Producer and Review rows carry `candidate_policy: official-listing-authority-v1`.
-
-Review-published rows additionally carry:
-
-```text
-operator_review_decision: confirmed
-review_publish_origin: review_state
-review_candidate_id: <candidate-id>
-```
-
-The primary payload includes `review_publish` metadata with confirmed count, added count, already-present count, publication mode, and Review state path.
-
-Producer completion metadata includes per-source status, completed and incomplete source counts, and `partial`.
-
-## 11. Interactive browser feedback status
-
-The downloadable helper, extension files, ZIP generation, and remote `feedback:` transport are not active API features. `/api/local-events/review/open-feedback` is not part of the supported contract.
-
-## 12. Browser interaction summary
-
-| UI action | HTTP interaction | Server side effect | Browser action |
+| UI action | HTTP interaction | Server side effect | Final browser action |
 | --- | --- | --- | --- |
-| Open kiosk | `GET /` plus runtime reads | None | Render current runtime |
-| Reload Local Events data | `GET /api/local-events/search` | None | Preserve current card when data changed; avoid redraw when unchanged |
-| Search Local Events | `POST /api/local-events/search` | Run complete producer and write combined runtime | Render returned result |
-| Open Studio | `GET /local-events/studio/`, `GET /api/local-events/review/state` | None | Render Review state |
-| Confirm Event | `POST /api/local-events/review/event-decision` | Save state and overlay confirmed rows into primary runtime | Refresh Review state; kiosk polling observes new runtime |
+| Open page | `GET /`, then runtime GETs | None | Render current runtime state |
+| Market `SAVE` | `POST /api/market-config`, then `POST /api/market-refresh` | Write config; run live-data producer | Reload Market |
+| Market `REFRESH` | `POST /api/market-refresh` | Run live-data producer | Reload Market |
+| Local Event location search | `POST /api/local-events/search` | Run source-specific collector with HTTP/2 disabled | Render returned results |
+| Review page load or return to tab | `GET /api/local-events/review/state` | None | Render review state once |
+| Add list page | `POST /api/local-events/review/listing-page` | Persist one pending page for the selected institution | Reload left-side list cards |
+| Review list/Event decision | Review decision POST | Persist review state | Refresh affected cards |
+| Review Event collection | `POST /api/local-events/review/collect-events` | Persist Events and diagnostics | Render Event candidates and exact zero-result reason |
+| Sync observation | `HEAD` four runtime paths | None | Compute `AGE` and status |
+
+## 11. Endpoints that are intentionally not mutation APIs
+
+There is no HTTP endpoint to:
+
+- edit Calendar accounts or schedule events;
+- add a new institution or change its allowed domains;
+- change systemd timer frequency;
+- upload or delete private photos;
+- edit News feed configuration;
+- change Weather coordinates.
+
+The manual listing endpoint adds a review-state candidate only. It does not alter committed institution source configuration.
