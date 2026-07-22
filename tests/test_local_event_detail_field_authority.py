@@ -62,47 +62,99 @@ def test_listing_fields_survive_incomplete_detail_read() -> None:
     assert merged["title"] == "Example Performance"
 
 
-def test_listing_activity_date_cannot_be_replaced_by_last_updated_date() -> None:
+def test_kallang_labeled_event_fields_override_unrelated_page_dates() -> None:
     source = {
-        "id": "acm",
-        "name": "Asian Civilisations Museum",
-        "default_venue": "Asian Civilisations Museum",
+        "id": "thekallang",
+        "name": "The Kallang",
+        "default_venue": "The Kallang",
     }
-    card = {
-        "headings": ["Batik Kita"],
-        "link_text": "Batik Kita",
+    detail_card = {
+        "headings": ["EXO PLANET #6 – EXhOrizon in SINGAPORE"],
+        "link_text": "EXO PLANET #6 – EXhOrizon in SINGAPORE",
+        "text_lines": [
+            "EXO PLANET #6 – EXhOrizon in SINGAPORE",
+            "Event Information",
+            "Date",
+            "Fri & Sun, 24 & 26 Jul 2026",
+            "Location",
+            "Singapore Indoor Stadium",
+            "Notice - Venue Closures for National Day Parade",
+            "19 & 27 Jul 2026",
+            "Weverse Presale",
+            "Start: 20 Apr 2026 : 12PM",
+        ],
+    }
+
+    when, when_line = authority._activity_pick_when(detail_card)
+    where = authority._activity_pick_venue(source, detail_card, when, when_line)
+
+    assert when == "Fri & Sun, 24 & 26 Jul 2026"
+    assert extract.label_dates(when) == [date(2026, 7, 24), date(2026, 7, 26)]
+    assert where == "Singapore Indoor Stadium"
+
+
+def test_kallang_detail_fields_replace_polluted_listing_fields() -> None:
+    source = {
+        "id": "thekallang",
+        "name": "The Kallang",
+        "default_venue": "The Kallang",
+    }
+    polluted_listing_card = {
+        "headings": ["EXO PLANET #6 – EXhOrizon in SINGAPORE"],
+        "link_text": "EXO PLANET #6 – EXhOrizon in SINGAPORE",
         "text": (
-            "Batik Kita\n"
-            "17 Jun 2022 – 2 Oct 2022\n"
-            "Special Exhibitions Gallery, Level 2"
+            "EXO PLANET #6 – EXhOrizon in SINGAPORE\n"
+            "27 July 2026\n"
+            "OCBC Arena"
         ),
         "text_lines": [
-            "Batik Kita",
-            "17 Jun 2022 – 2 Oct 2022",
-            "Special Exhibitions Gallery, Level 2",
+            "EXO PLANET #6 – EXhOrizon in SINGAPORE",
+            "27 July 2026",
+            "OCBC Arena",
         ],
     }
     detail = {
-        "detail_url": "https://www.acm.nhb.gov.sg/whats-on/exhibitions/batik-kita",
-        "title": "Batik Kita",
-        "when": "30 Jun 2026",
-        "where": "",
+        "detail_url": "https://www.thekallang.com.sg/en/things-to-do/events/ex-horizon-world-tour.html",
+        "title": "EXO PLANET #6 – EXhOrizon in SINGAPORE",
+        "when": "Fri & Sun, 24 & 26 Jul 2026",
+        "where": "Singapore Indoor Stadium",
         "summary": "",
         "detail_status": "collected",
         "detail_error": "",
-        "detail_page_title": "Batik Kita",
+        "detail_page_title": "EXO PLANET #6 – EXhOrizon in SINGAPORE",
     }
 
-    merged = authority._merge_detail_fields(source, card, detail)
+    merged = authority._merge_detail_fields(source, polluted_listing_card, detail)
 
-    assert merged["when"] == "17 Jun 2022 – 2 Oct 2022"
-    assert merged["where"] == "Special Exhibitions Gallery"
-    assert authority._candidate_expired(SimpleNamespace(when=merged["when"])) is True
+    assert merged["when"] == "Fri & Sun, 24 & 26 Jul 2026"
+    assert merged["where"] == "Singapore Indoor Stadium"
 
 
-def test_detail_activity_extractor_rejects_page_metadata_dates() -> None:
+def test_historical_activity_date_wins_over_last_updated_metadata() -> None:
+    card = {
+        "text_lines": [
+            "Batik Kita",
+            "Date",
+            "17 Jun 2022 – 2 Oct 2022",
+            "Location",
+            "Special Exhibitions Gallery, Level 2",
+            "Last Updated",
+            "30 Jun 2026",
+        ]
+    }
+
+    when, _ = authority._activity_pick_when(card)
+
+    assert when == "17 Jun 2022 – 2 Oct 2022"
+    assert authority._candidate_expired(SimpleNamespace(when=when)) is True
+
+
+def test_detail_activity_extractor_scopes_primary_event_and_rejects_metadata() -> None:
     script = authority.ACTIVITY_DETAIL_JS.lower()
 
+    assert "primaryheading" in script
+    assert "primaryevent" in script
+    assert "you may also like" in script
     assert "last updated" in script
     assert "previous programme" in script
     assert "next programme" in script
