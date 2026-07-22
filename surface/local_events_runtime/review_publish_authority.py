@@ -9,8 +9,6 @@ from typing import Any
 
 from . import event_review as _review
 from . import extract as _extract
-from . import listing_only_runtime_authority as _listing_runtime
-from . import review_runtime_authority as _runtime
 
 _APPLIED = False
 _BASE_SET_EVENT_DECISION = None
@@ -21,79 +19,126 @@ def _read_payload(path: Path) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return {"ok": True, "results": []}
-    return payload if isinstance(payload, dict) else {"ok": True, "results": []}
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
-def _event_identity(event: dict[str, Any]) -> str:
-    url = _runtime._canonical_url(event.get("url"))
-    if event.get("listing_only") is True:
-        return "listing:" + _extract.semantic_key(event)
-    return "url:" + url
+def _published_title(candidate: _review.EventCandidate) -> str:
+    title = _extract.clean(candidate.title)
+    if title:
+        return title
+    for line in _extract.lines(candidate.evidence.text):
+        if line:
+            return line
+    source = _extract.clean(candidate.source_name or candidate.source_id)
+    return f"{source or 'Local'} activity"
 
 
-def _confirmed_events(state: _review.ReviewState) -> list[dict[str, Any]]:
-    events: list[dict[str, Any]] = []
-    for candidate in state.events:
-        if candidate.decision != "confirmed":
-            continue
-        event = _runtime._confirmed_event(candidate.model_dump(mode="json"))
-        if event is not None:
-            events.append(event)
-    return events
+def _confirmed_event(candidate: _review.EventCandidate) -> dict[str, Any]:
+    """Convert one operator-confirmed candidate without applying crawler gates.
 
-
-def _merge_runtime(
-    payload: dict[str, Any],
-    confirmed: list[dict[str, Any]],
-) -> dict[str, Any]:
-    """Replace only rows previously published from review state.
-
-    A review decision must not re-normalize, expire, validate, or otherwise mutate
-    unrelated system-collected rows. Those rows are copied exactly as persisted.
+    Membership was already decided by the operator. Missing detail fields remain
+    visible as missing fields; they must not cause a second rejection here.
     """
 
-    results = [
-        dict(item)
-        for item in payload.get("results") or []
-        if isinstance(item, dict)
-        and item.get("review_publish_origin") != _REVIEW_PUBLISH_ORIGIN
+    listing_url = _review.canonical_url(candidate.listing_url)
+    detail_url = _review.canonical_url(candidate.detail_url or listing_url)
+    when = _extract.clean(candidate.when)
+    dates = _extract.label_dates(when)
+    source_name = _extract.clean(candidate.source_name or candidate.source_id)
+    listing_only = detail_url == listing_url
+
+    return {
+        "title": _published_title(candidate),
+        "when": when,
+        "where": _extract.clean(candidate.where) or source_name,
+        "host": source_name,
+        "source_name": source_name,
+        "url": detail_url,
+        "summary": _extract.clean(candidate.summary),
+        "start_date": _extract.best_start_date(when) if dates else "",
+        "end_date": max(dates).isoformat() if len(dates) >= 2 else "",
+        "kind": "event",
+        "source_type": (
+            "operator_confirmed_official_listing_card_without_detail"
+            if listing_only
+            else "operator_confirmed_official_listing_card"
+        ),
+        "candidate_policy": "official-listing-authority-v1",
+        "listing_url": listing_url,
+        "listing_card_id": candidate.candidate_id,
+        "listing_only": listing_only,
+        "detail_available": not listing_only,
+        "detail_status": candidate.detail_status,
+        "detail_error": _extract.clean(candidate.detail_error),
+        "operator_review_decision": "confirmed",
+        "review_publish_origin": _REVIEW_PUBLISH_ORIGIN,
+        "review_candidate_id": candidate.candidate_id,
+        "reviewed_at": candidate.reviewed_at or "",
+        "collected_at": candidate.collected_at,
+    }
+
+
+def _published_payload(
+    store: _review.EventReviewStore,
+    state: _review.ReviewState,
+    previous: dict[str, Any],
+) -> dict[str, Any]:
+    inventory = store.inventory()
+    source_order = {
+        str(source.get("id") or ""): index
+        for index, source in enumerate(inventory)
+    }
+    confirmed = [
+        (index, candidate)
+        for index, candidate in enumerate(state.events)
+        if candidate.decision == "confirmed"
     ]
-    identities = {
-        _event_identity(item)
-        for item in results
-        if _runtime._canonical_url(item.get("url"))
-    }
-
-    added = 0
-    already_present = 0
-    for event in confirmed:
-        identity = _event_identity(event)
-        if identity in identities:
-            already_present += 1
-            continue
-        identities.add(identity)
-        published_event = dict(event)
-        published_event["review_publish_origin"] = _REVIEW_PUBLISH_ORIGIN
-        published_event["review_candidate_id"] = str(
-            event.get("listing_card_id") or ""
+    confirmed.sort(
+        key=lambda item: (
+            source_order.get(item[1].source_id, 10_000),
+            item[0],
         )
-        results.append(published_event)
-        added += 1
+    )
 
-    published = dict(payload)
-    published["ok"] = True
-    published["results"] = results
-    published["count"] = len(results)
-    published["updated_at"] = _review.utc_now()
-    published["review_publish"] = {
-        "published_at": published["updated_at"],
-        "confirmed_count": len(confirmed),
-        "added": added,
-        "already_present": already_present,
-        "mode": "event_decision",
+    results: list[dict[str, Any]] = []
+    for result_order, (_, candidate) in enumerate(confirmed):
+        event = _confirmed_event(candidate)
+        event["source_order"] = source_order.get(candidate.source_id, 10_000)
+        event["result_order"] = result_order
+        results.append(event)
+
+    updated_at = _review.utc_now()
+    return {
+        "ok": True,
+        "version": 53,
+        "extractor": "operator-confirmed-review-state-v1",
+        "text_normalizer": "plain-text-v1",
+        "updated_at": updated_at,
+        "location": str(previous.get("location") or "Punggol Singapore"),
+        "event_source_config": store.config_path.name,
+        "source_count": len(inventory),
+        "sources": [
+            {
+                "title": str(source.get("name") or source.get("id") or ""),
+                "url": str(source.get("official_home") or ""),
+            }
+            for source in inventory
+        ],
+        "count": len(results),
+        "results": results,
+        "partial": False,
+        "write_policy": "review_state_authoritative",
+        "review_authority": {
+            "confirmed_in_state": len(results),
+            "state_path": str(store.state_path),
+            "published_at": updated_at,
+        },
+        "runtime": {
+            "writer": "surface.local_events_runtime.review_publish_authority",
+            "state_path": str(store.state_path),
+        },
     }
-    return published
 
 
 def _atomic_write(path: Path, payload: dict[str, Any]) -> None:
@@ -118,12 +163,11 @@ def publish_review_state(
     store: _review.EventReviewStore,
     state: _review.ReviewState | None = None,
 ) -> dict[str, Any]:
-    """Publish current Event decisions without running any website collector."""
+    """Replace the display runtime with the current confirmed review state."""
 
-    _listing_runtime.apply()
     current = state or store.load()
     runtime_path = store.root.parent / "local_event_search_results.json"
-    payload = _merge_runtime(_read_payload(runtime_path), _confirmed_events(current))
+    payload = _published_payload(store, current, _read_payload(runtime_path))
     _atomic_write(runtime_path, payload)
     return payload
 
@@ -133,7 +177,7 @@ def set_event_decision(
     candidate_id: str,
     decision: _review.Decision,
 ) -> _review.ReviewState:
-    """Persist one decision and immediately publish the resulting Event set."""
+    """Persist one decision and immediately rebuild the display runtime."""
 
     state = _BASE_SET_EVENT_DECISION(store, candidate_id, decision)
     publish_review_state(store, state)
@@ -167,12 +211,11 @@ def _publish_existing_state() -> None:
 
 
 def apply() -> None:
-    """Install immediate runtime publication for every Event review decision."""
+    """Make confirmed review state authoritative for the Surface runtime."""
 
     global _APPLIED, _BASE_SET_EVENT_DECISION
     if _APPLIED:
         return
-    _listing_runtime.apply()
     _BASE_SET_EVENT_DECISION = _review.EventReviewStore.set_event_decision
     _review.EventReviewStore.set_event_decision = set_event_decision
     _APPLIED = True
