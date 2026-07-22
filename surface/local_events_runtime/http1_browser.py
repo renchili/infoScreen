@@ -12,9 +12,10 @@ def apply() -> None:
 
     The Surface has observed Chromium navigation failures with
     ERR_HTTP2_PROTOCOL_ERROR on official Event sites. Collection starts in
-    HTTP/1.1 mode directly. Coverage, source, date, dynamic-listing, card, and link
-    authorities are applied sequentially before the review collector imports and
-    binds their functions.
+    HTTP/1.1 mode directly. Navigation accepts a readable rendered document even
+    when analytics or consent requests prevent lifecycle events from settling.
+    Coverage, source, date, dynamic-listing, card, and link authorities are applied
+    sequentially before the review collector imports and binds their functions.
     """
 
     global _APPLIED
@@ -24,6 +25,12 @@ def apply() -> None:
     original_find = _browser.find_browser_executable
 
     def launch_chromium_http1(playwright: Any):
+        # Playwright is guaranteed to be importable at this point. Install the
+        # shared Page.goto wrapper before any browser page can be created.
+        from .resilient_navigation_authority import apply as apply_navigation
+
+        apply_navigation()
+
         args = [
             "--no-sandbox",
             "--disable-dev-shm-usage",
