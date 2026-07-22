@@ -41,8 +41,8 @@ def apply() -> None:
     ERR_HTTP2_PROTOCOL_ERROR on official Event sites. Collection starts in
     HTTP/1.1 mode directly. Navigation accepts a readable rendered document even
     when analytics or consent requests prevent lifecycle events from settling.
-    Coverage, source, date, dynamic-listing, card, and link authorities are applied
-    sequentially before their final values are bound into the review collector.
+    Coverage, source, date, dynamic-listing, card, link, and listing-provenance
+    authorities are applied before their final values are bound into Review Studio.
     """
 
     global _APPLIED
@@ -52,8 +52,6 @@ def apply() -> None:
     original_find = _browser.find_browser_executable
 
     def launch_chromium_http1(playwright: Any):
-        # Playwright is guaranteed to be importable at this point. Install the
-        # shared Page.goto wrapper before any browser page can be created.
         from .resilient_navigation_authority import apply as apply_navigation
 
         apply_navigation()
@@ -86,9 +84,6 @@ def apply() -> None:
 
     _browser.launch_chromium = launch_chromium_http1
 
-    # The runtime package is already imported by the time this bootstrap runs.
-    # Apply live coverage floors before importing modules that bind browser and
-    # extraction constants.
     from .complete_collection_authority import apply as apply_complete_collection
 
     apply_complete_collection()
@@ -116,6 +111,10 @@ def apply() -> None:
     from .structural_link_authority import apply as apply_structural_link_authority
 
     apply_structural_link_authority()
+
+    from .listing_provenance_authority import apply as apply_listing_provenance_authority
+
+    apply_listing_provenance_authority()
 
     # event_review was imported by detail_date_authority before the dynamic and
     # structural JavaScript rewrites above. Rebind only after the final versions are
