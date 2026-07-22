@@ -12,9 +12,9 @@ def apply() -> None:
 
     The Surface has observed Chromium navigation failures with
     ERR_HTTP2_PROTOCOL_ERROR on official Event sites. Collection starts in
-    HTTP/1.1 mode directly. Coverage, source, date, card, and link authorities are
-    applied sequentially before the review collector imports and binds their
-    functions.
+    HTTP/1.1 mode directly. Coverage, source, date, dynamic-listing, card, and link
+    authorities are applied sequentially before the review collector imports and
+    binds their functions.
     """
 
     global _APPLIED
@@ -64,6 +64,10 @@ def apply() -> None:
     from .detail_date_authority import apply as apply_detail_date_authority
 
     apply_detail_date_authority()
+
+    from .dynamic_listing_authority import apply as apply_dynamic_listing_authority
+
+    apply_dynamic_listing_authority()
 
     from .open_ended_date_authority import apply as apply_open_ended_date_authority
 
