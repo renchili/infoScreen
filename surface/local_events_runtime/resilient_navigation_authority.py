@@ -61,7 +61,7 @@ def _goto_with_readable_document(
     This wrapper changes only callers that requested ``networkidle`` or
     ``domcontentloaded``. It waits for the response to commit, gives the normal DOM
     event a bounded opportunity, then treats a usable rendered document as success.
-    A page with no readable DOM still raises the original timeout.
+    A page with no readable DOM still raises the original navigation error.
     """
 
     if _ORIGINAL_GOTO is None:
@@ -71,6 +71,7 @@ def _goto_with_readable_document(
     if requested_state not in {"networkidle", "domcontentloaded"}:
         return _ORIGINAL_GOTO(page, url, *args, **kwargs)
 
+    from playwright.sync_api import Error as PlaywrightError
     from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
     total_timeout_ms = _timeout_ms(kwargs.get("timeout"))
@@ -80,9 +81,9 @@ def _goto_with_readable_document(
 
     try:
         response = _ORIGINAL_GOTO(page, url, *args, **commit_kwargs)
-    except PlaywrightTimeoutError:
-        # A browser may have committed and rendered content immediately before the
-        # timeout was delivered. Preserve that document instead of navigating twice.
+    except PlaywrightError:
+        # Redirect races and lifecycle timeouts can arrive immediately after the
+        # browser has already committed and rendered the intended document.
         if _document_readable(page):
             return None
         raise
@@ -93,13 +94,14 @@ def _goto_with_readable_document(
     )
     try:
         page.wait_for_load_state("domcontentloaded", timeout=dom_wait_ms)
-    except PlaywrightTimeoutError:
+    except PlaywrightError:
+        # DOMContentLoaded is advisory here. Readability remains the hard condition.
         pass
 
     readable_wait_ms = _remaining_ms(started, total_timeout_ms)
     try:
         page.wait_for_function(READABLE_DOCUMENT_JS, timeout=readable_wait_ms)
-    except PlaywrightTimeoutError:
+    except PlaywrightError:
         if not _document_readable(page):
             raise
 
@@ -115,7 +117,7 @@ def _goto_with_readable_document(
                     _remaining_ms(started, total_timeout_ms),
                 ),
             )
-        except PlaywrightTimeoutError:
+        except (PlaywrightTimeoutError, PlaywrightError):
             pass
 
     return response
