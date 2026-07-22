@@ -8,6 +8,7 @@ from . import detail_authority
 from . import event_review as _review
 from . import extract as _extract
 from .extract import clean
+from .listing_provenance_authority import listing_detail_url
 from .source_overrides import (
     AUTHORITATIVE_DETAIL_JS,
     _merge_detail,
@@ -30,14 +31,13 @@ def _official_detail_url(
     payload: dict[str, Any],
     browser_url: str,
 ) -> str:
-    """Return the official public detail URL reported by the detail page.
+    """Return a public detail URL backed by the confirmed official listing.
 
-    The browser URL is only a fallback. A same-domain canonical URL from the detail
-    document is preferred, then source-configured public-path rewrites are applied.
-    The result must remain outside the originating listing page.
+    A detail document may publish a canonical URL on another official associated
+    site. The provenance comes from the listing card that linked to it, not from a
+    requirement that the destination share the listing hostname.
     """
 
-    listing = _review.canonical_url(listing_url)
     candidates = [payload.get("canonical"), browser_url]
     errors: list[str] = []
 
@@ -45,18 +45,10 @@ def _official_detail_url(
         value = detail_authority.public_detail_url(source, raw)
         if not value:
             continue
-        try:
-            canonical = _review.canonical_url(value)
-        except ValueError as exc:
-            errors.append(str(exc))
-            continue
-        if not _review._host_allowed(canonical, source):
-            errors.append("detail URL is outside the source allow-list")
-            continue
-        if canonical == listing:
-            errors.append("detail URL resolves to the listing page")
-            continue
-        return canonical
+        canonical = listing_detail_url(listing_url, value)
+        if canonical:
+            return canonical
+        errors.append("detail URL is not a safe HTTP(S) target from the listing")
 
     raise ValueError(errors[0] if errors else "official detail URL not found")
 
@@ -102,7 +94,6 @@ def _listing_summary(card: dict[str, Any], title: str, when: str, where: str) ->
         if _PAGE_CHROME_RE.search(line):
             continue
         return line
-
     summary = clean(_extract.pick_summary(card, title, when, where))
     if not summary or summary == _DEFAULT_SUMMARY or _PAGE_CHROME_RE.search(summary):
         return ""
@@ -145,7 +136,7 @@ def _detail_candidate(
     raw_url: str,
     card: dict[str, Any],
 ) -> dict[str, str]:
-    """Collect review fields through the authoritative detail parser."""
+    """Collect review fields from a link backed by the official listing card."""
 
     if "#nhb-" in raw_url or "#nhb-json-" in raw_url:
         return {
@@ -159,11 +150,9 @@ def _detail_candidate(
             "detail_page_title": "",
         }
 
-    requested_url = _review.canonical_url(raw_url)
-    if not _review._host_allowed(requested_url, source):
-        raise ValueError("detail URL is outside the source allow-list")
-    if requested_url == _review.canonical_url(listing_url):
-        raise ValueError("detail URL resolves to the listing page")
+    requested_url = listing_detail_url(listing_url, raw_url)
+    if not requested_url:
+        raise ValueError("detail URL is not a safe HTTP(S) target from the listing")
 
     detail = context.new_page()
     try:
@@ -176,9 +165,9 @@ def _detail_candidate(
         if response is not None and response.status >= 400:
             raise ValueError(f"detail_http_status_{response.status}")
 
-        browser_url = _review.canonical_url(str(detail.url))
-        if not _review._host_allowed(browser_url, source):
-            raise ValueError("detail page redirected outside the source allow-list")
+        browser_url = listing_detail_url(listing_url, str(detail.url))
+        if not browser_url:
+            raise ValueError("detail redirect is not a safe HTTP(S) target from the listing")
 
         payload = detail.evaluate(AUTHORITATIVE_DETAIL_JS) or {}
         if not isinstance(payload, dict):
