@@ -1,6 +1,6 @@
 {
-  "version": 6,
-  "purpose": "Verified official activity-list entrypoints. A rendered listing card is authoritative for membership; structured and detail data may only enrich an admitted card.",
+  "version": 7,
+  "purpose": "Verified official activity-list entrypoints. A rendered listing card is authoritative for membership; structured and detail data may only enrich an admitted card. allowed_domains is the explicit source-level allow-list for official listing and associated detail sites.",
   "policy": {
     "no_recursive_site_crawl": true,
     "no_sitemap_primary_flow": true,
@@ -175,6 +175,8 @@
       "official_home": "https://www.sentosa.com.sg/",
       "allowed_domains": ["sentosa.com.sg"],
       "default_venue": "Sentosa",
+      "load_more_rounds": 80,
+      "card_selectors": ["a[href*='/en/things-to-do/events/']"],
       "listing_urls": ["https://www.sentosa.com.sg/en/things-to-do/events/"]
     },
     {
@@ -182,8 +184,12 @@
       "name": "Resorts World Sentosa",
       "adapter": "nhb",
       "official_home": "https://www.rwsentosa.com/",
-      "allowed_domains": ["rwsentosa.com"],
+      "allowed_domains": ["rwsentosa.com", "singaporeoceanarium.com"],
       "default_venue": "Resorts World Sentosa",
+      "card_selectors": [
+        "a[href*='/en/events/']",
+        "a[href*='/en/visit/events/']"
+      ],
       "listing_urls": ["https://www.rwsentosa.com/en/events"]
     },
     {
