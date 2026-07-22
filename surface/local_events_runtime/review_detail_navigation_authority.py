@@ -30,6 +30,92 @@ DETAIL_READY_JS = r"""
 }
 """
 
+FALLBACK_DETAIL_FIELDS_JS = r"""
+() => {
+  const clean = value => String(value || "").replace(/\s+/g, " ").trim();
+  const visible = element => {
+    if (!element) return false;
+    const style = getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    return style.display !== "none" && style.visibility !== "hidden" &&
+      Number(style.opacity || 1) !== 0 && rect.width >= 1 && rect.height >= 1;
+  };
+  const rejected = value => /\b(last updated|updated on|page updated|copyright|privacy|cookie|newsletter|previous programme|next programme|previous event|next event|presale|pre-sale|ticket sale|registration opens?)\b/i.test(clean(value));
+  const dateLike = value => /\b20\d{2}-\d{1,2}-\d{1,2}\b|\b\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+20\d{2}\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{1,2}(?:st|nd|rd|th)?(?:,)?\s+20\d{2}\b/i.test(clean(value));
+  const root = document.querySelector("main") || document.querySelector("article") || document.body;
+  const add = (rows, value) => {
+    const text = clean(value);
+    if (text && !rows.includes(text)) rows.push(text);
+  };
+  const values = element => {
+    const output = [];
+    for (const attribute of [
+      "datetime", "content", "data-date", "data-start-date", "data-end-date",
+      "data-location", "data-venue", "aria-label"
+    ]) {
+      add(output, element.getAttribute && element.getAttribute(attribute));
+    }
+    add(output, element.innerText || element.textContent || "");
+    return output;
+  };
+  const rejectedElement = element => {
+    const own = values(element).join(" ");
+    if (rejected(own)) return true;
+    const parentText = clean(element.parentElement?.innerText || element.parentElement?.textContent || "");
+    return parentText.length <= 260 && rejected(parentText);
+  };
+
+  const dates = [];
+  for (const element of root.querySelectorAll(
+    "time[datetime],time,[itemprop='startDate'],[itemprop='endDate']," +
+    "[data-date],[data-start-date],[data-end-date]," +
+    "[class*='date' i],[id*='date' i]"
+  )) {
+    if (!visible(element) || rejectedElement(element)) continue;
+    for (const value of values(element)) {
+      if (dateLike(value)) add(dates, value);
+    }
+  }
+
+  const venues = [];
+  for (const element of root.querySelectorAll(
+    "address,[itemprop='location'],[data-location],[data-venue]," +
+    "[class*='location' i],[id*='location' i]," +
+    "[class*='venue' i],[id*='venue' i]"
+  )) {
+    if (!visible(element) || rejectedElement(element)) continue;
+    for (const value of values(element)) {
+      if (value && value.length <= 220 && !dateLike(value)) add(venues, value);
+    }
+  }
+
+  const summary = clean(document.querySelector('meta[name="description"]')?.content) ||
+    clean(document.querySelector('meta[property="og:description"]')?.content);
+  return {dates, venues, summary};
+}
+"""
+
+
+def _merge_fallback_fields(
+    payload: dict[str, Any],
+    fallback: dict[str, Any],
+) -> dict[str, Any]:
+    merged = dict(payload)
+    for key in ("dates", "venues"):
+        current = [
+            " ".join(str(value or "").split())
+            for value in merged.get(key) or []
+            if " ".join(str(value or "").split())
+        ]
+        for value in fallback.get(key) or []:
+            text = " ".join(str(value or "").split())
+            if text and text not in current:
+                current.append(text)
+        merged[key] = current
+    if not str(merged.get("summary") or "").strip():
+        merged["summary"] = str(fallback.get("summary") or "").strip()
+    return merged
+
 
 def _detail_candidate(
     context: Any,
@@ -88,6 +174,11 @@ def _detail_candidate(
         payload = detail.evaluate(_browser.DETAIL_CARD_JS) or {}
         if not isinstance(payload, dict):
             payload = {}
+        if not payload.get("dates") or not payload.get("venues") or not payload.get("summary"):
+            fallback = detail.evaluate(FALLBACK_DETAIL_FIELDS_JS) or {}
+            if isinstance(fallback, dict):
+                payload = _merge_fallback_fields(payload, fallback)
+
         merged = _browser.merge_detail_payload(
             {
                 **card,
@@ -160,5 +251,6 @@ __all__ = [
     "DETAIL_COMMIT_TIMEOUT_MS",
     "DETAIL_CONTENT_WAIT_MS",
     "DETAIL_READY_JS",
+    "FALLBACK_DETAIL_FIELDS_JS",
     "apply",
 ]
