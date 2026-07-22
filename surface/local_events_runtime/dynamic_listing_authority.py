@@ -5,10 +5,9 @@ from . import browser as _browser
 _APPLIED = False
 
 # Dynamic official listings often render only the first batch, then append more
-# cards after a "Load more" control is clicked. The old loop waited a fixed 850 ms
-# and could declare the document stable before the asynchronous response arrived.
-# This implementation waits for an observable document change after every click and
-# supports button, link, role, input, and load-more container implementations.
+# cards after a "Load more" control is clicked. The expansion loop must never treat
+# ordinary activity links such as "View More" as pagination controls: clicking one
+# destroys the current Playwright execution context by navigating to a detail page.
 DYNAMIC_LISTING_PREPARE_JS = r"""
 async (args) => {
   const maxRounds = Math.max(Number(args.maxRounds || 0), 80);
@@ -32,11 +31,60 @@ async (args) => {
     element.getAttribute("aria-label"),
     element.getAttribute("title")
   ].join(" "));
-  const loadMoreLabel = value => /^(?:load more|show more|view more|more events?|more programmes?|more programs?|see more)\s*(?:\+|›|»|→)?$/i.test(clean(value));
+  const marker = element => clean([
+    element.id,
+    element.className,
+    element.getAttribute("data-testid"),
+    element.getAttribute("data-test"),
+    element.getAttribute("data-action"),
+    element.getAttribute("data-load-more")
+  ].join(" ")).toLowerCase();
+  const loadMoreLabel = value => /^(?:load more|show more|more events?|more programmes?|more programs?)\s*(?:\+|›|»|→)?$/i.test(clean(value));
+  const explicitLoadMoreMarker = element => /(?:^|[\s_-])(?:load|show)[\s_-]*more(?:$|[\s_-])/i.test(marker(element));
+
+  const safeAnchor = anchor => {
+    const href = clean(anchor.getAttribute("href"));
+    if (!href || href === "#" || /^javascript:/i.test(href)) return true;
+    let target;
+    let current;
+    try {
+      target = new URL(href, location.href);
+      current = new URL(location.href);
+    } catch {
+      return false;
+    }
+    // A load-more anchor may update the current listing query or fragment. It may
+    // not change origin or path, which would be a detail/listing navigation.
+    return target.origin === current.origin && target.pathname === current.pathname;
+  };
+
+  const safeControl = element => {
+    const textMatches = loadMoreLabel(label(element));
+    const markerMatches = explicitLoadMoreMarker(element);
+    if (!textMatches && !markerMatches) return false;
+
+    const enclosingAnchor = element.closest("a[href]");
+    if (enclosingAnchor && !safeAnchor(enclosingAnchor)) return false;
+    if (element.matches("a[href]") && !safeAnchor(element)) return false;
+
+    // Generic links are never admitted merely because their label says "more".
+    // An anchor must also carry an explicit load-more marker or stay on the exact
+    // listing path through a query/fragment update.
+    if (element.matches("a[href]") && !markerMatches) {
+      const href = clean(element.getAttribute("href"));
+      if (!href || href === "#" || /^javascript:/i.test(href)) return true;
+      return safeAnchor(element);
+    }
+    return true;
+  };
+
   const controls = () => Array.from(document.querySelectorAll(
-    "button, a[href], [role='button'], input[type='button'], input[type='submit'], " +
-    "[class*='load-more' i], [class*='loadmore' i], [data-testid*='load-more' i]"
-  )).filter(visible).filter(element => !disabled(element)).filter(element => loadMoreLabel(label(element)));
+    "button, [role='button'], input[type='button'], input[type='submit'], " +
+    "a[class*='load-more' i], a[class*='loadmore' i], " +
+    "[class*='load-more' i], [class*='loadmore' i], " +
+    "[data-testid*='load-more' i], [data-action*='load-more' i]"
+  )).filter(visible).filter(element => !disabled(element)).filter(safeControl);
+
   const state = () => {
     const body = document.body;
     const links = Array.from(document.querySelectorAll("a[href]"))
@@ -67,6 +115,7 @@ async (args) => {
     if (candidates.length) {
       const control = candidates[0];
       const before = state();
+      const beforeUrl = location.href;
       try {
         control.scrollIntoView({block: "center"});
         await sleep(150);
@@ -74,6 +123,18 @@ async (args) => {
         clicks += 1;
         for (let poll = 0; poll < 20; poll += 1) {
           await sleep(500);
+          // A real in-page expansion must not navigate. Stop before attempting any
+          // further DOM work if a site unexpectedly changed the URL.
+          if (location.href !== beforeUrl) {
+            return {
+              clicks,
+              rounds,
+              stableRounds,
+              failedClicks,
+              navigationDetected: true,
+              finalUrl: location.href
+            };
+          }
           if (state() !== before) {
             changedAfterClick = true;
             break;
@@ -102,6 +163,7 @@ async (args) => {
     rounds,
     stableRounds,
     failedClicks,
+    navigationDetected: false,
     finalState: state(),
     remainingControls: controls().length,
     height: document.body ? document.body.scrollHeight : 0
