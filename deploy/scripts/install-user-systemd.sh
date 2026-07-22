@@ -209,7 +209,9 @@ systemctl --user enable --now infoscreen-local-events.timer 2>/dev/null || true
 systemctl --user restart infoscreen-http.service
 systemctl --user start infoscreen-live-data.service 2>/dev/null || true
 systemctl --user start infoscreen-event-stream.service 2>/dev/null || true
-systemctl --user start infoscreen-local-events.service 2>/dev/null || true
+# A complete Local Events producer run can legitimately take much longer than the
+# installer. Start it asynchronously; systemd owns progress and failure reporting.
+systemctl --user start --no-block infoscreen-local-events.service 2>/dev/null || true
 
 printf '\n[CHECK] root Python files:\n'
 find "$REPO_DIR" -maxdepth 1 -type f -name '*.py' -print || true
