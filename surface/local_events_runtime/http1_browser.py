@@ -7,6 +7,33 @@ from . import browser as _browser
 _APPLIED = False
 
 
+def _bind_final_browser_runtime_to_review() -> None:
+    """Make Studio use the final browser rules, not import-time snapshots.
+
+    ``event_review`` imports browser constants with ``from .browser import ...``.
+    Several authorities intentionally rewrite the browser JavaScript after that
+    module has already been imported, so its local names otherwise remain stale.
+    This binding is the single final handoff after every browser authority has run.
+    """
+
+    from . import event_review as review
+
+    for name in (
+        "CARD_JS",
+        "CLICK_NEXT_PAGE_JS",
+        "DETAIL_CARD_JS",
+        "DOM_TIMEOUT_MS",
+        "LOAD_MORE_ROUNDS",
+        "MAX_LISTING_PAGES",
+        "NAV_TIMEOUT_MS",
+        "NEXT_WAIT_MS",
+        "PREPARE_PAGE_JS",
+        "launch_chromium",
+        "merge_detail_payload",
+    ):
+        setattr(review, name, getattr(_browser, name))
+
+
 def apply() -> None:
     """Install the shared Local Events browser and review-backend bootstrap.
 
@@ -15,7 +42,7 @@ def apply() -> None:
     HTTP/1.1 mode directly. Navigation accepts a readable rendered document even
     when analytics or consent requests prevent lifecycle events from settling.
     Coverage, source, date, dynamic-listing, card, and link authorities are applied
-    sequentially before the review collector imports and binds their functions.
+    sequentially before their final values are bound into the review collector.
     """
 
     global _APPLIED
@@ -66,8 +93,6 @@ def apply() -> None:
 
     apply_complete_collection()
 
-    # Import and apply sequentially. Importing structural/diagnostic modules also
-    # imports event_review, so every parser and CARD_JS patch must already be active.
     from .detail_date_authority import apply as apply_detail_date_authority
 
     apply_detail_date_authority()
@@ -91,6 +116,11 @@ def apply() -> None:
     from .structural_link_authority import apply as apply_structural_link_authority
 
     apply_structural_link_authority()
+
+    # event_review was imported by detail_date_authority before the dynamic and
+    # structural JavaScript rewrites above. Rebind only after the final versions are
+    # complete, otherwise Studio keeps its stale pre-selector CARD_JS snapshot.
+    _bind_final_browser_runtime_to_review()
 
     from .event_review_diagnostics import apply as apply_event_review_diagnostics
 
