@@ -26,17 +26,29 @@ def candidate(
     title: str,
     when: str,
     decision: str,
+    *,
+    source_id: str = "mandai",
+    source_name: str = "Mandai Wildlife Group",
+    listing_url: str = MANDAI_LISTING,
+    detail_url: str = MANDAI_LISTING,
+    where: str = "Singapore Zoo",
+    summary: str | None = None,
+    evidence_text: str | None = None,
 ) -> EventCandidate:
     return EventCandidate(
         candidate_id=candidate_id,
-        source_id="mandai",
-        source_name="Mandai Wildlife Group",
-        listing_url=MANDAI_LISTING,
-        detail_url=MANDAI_LISTING,
+        source_id=source_id,
+        source_name=source_name,
+        listing_url=listing_url,
+        detail_url=detail_url,
         title=title,
         when=when,
-        where="Singapore Zoo",
-        summary=f"Official listing description for {title}.",
+        where=where,
+        summary=(
+            summary
+            if summary is not None
+            else f"Official listing description for {title}."
+        ),
         detail_status="collected",
         evidence=EventEvidence(
             selector="article.event-card",
@@ -45,8 +57,8 @@ def candidate(
             document_position={"x": 100, "y": 500, "width": 800, "height": 300},
             viewport_position={"x": 100, "y": 200, "width": 800, "height": 300},
             page_index=0,
-            page_url=MANDAI_LISTING,
-            text=title,
+            page_url=listing_url,
+            text=evidence_text if evidence_text is not None else title,
         ),
         decision=decision,
         collected_at="2026-07-22T00:00:00+00:00",
@@ -56,7 +68,30 @@ def candidate(
 def store_at(tmp_path) -> EventReviewStore:
     env_dir = tmp_path / "env"
     config = tmp_path / "event_sources.json"
-    config.write_text(json.dumps({"sources": []}), encoding="utf-8")
+    config.write_text(
+        json.dumps(
+            {
+                "sources": [
+                    {
+                        "id": "childrensmuseum",
+                        "name": "Children's Museum Singapore",
+                        "official_home": "https://www.childrensmuseum.sg/",
+                    },
+                    {
+                        "id": "nationalgallery",
+                        "name": "National Gallery Singapore",
+                        "official_home": "https://www.nationalgallery.sg/",
+                    },
+                    {
+                        "id": "mandai",
+                        "name": "Mandai Wildlife Group",
+                        "official_home": "https://www.mandai.com/",
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
     return EventReviewStore(env_dir / "local_event_review", config)
 
 
@@ -85,64 +120,26 @@ def test_two_confirmed_listing_only_cards_with_one_url_are_both_published(tmp_pa
     )
 
 
-def test_rejected_decision_removes_only_previously_published_review_row(tmp_path) -> None:
+def test_rejected_decision_removes_only_that_confirmed_candidate(tmp_path) -> None:
     store = store_at(tmp_path)
-    confirmed = ReviewState(
-        events=[candidate("keeper-talk", "Keeper Talk", "Daily · 10:30am", "confirmed")]
-    )
-    store.save(confirmed)
-    first = publish_review_state(store, confirmed)
-    assert first["count"] == 1
-    assert first["results"][0]["review_publish_origin"] == "review_state"
-
-    rejected = ReviewState(
-        events=[candidate("keeper-talk", "Keeper Talk", "Daily · 10:30am", "rejected")]
-    )
-    store.save(rejected)
-    second = publish_review_state(store, rejected)
-
-    assert second["count"] == 0
-    persisted = json.loads(
-        (store.root.parent / "local_event_search_results.json").read_text(
-            encoding="utf-8"
-        )
-    )
-    assert persisted["results"] == []
-    assert persisted["review_publish"]["confirmed_count"] == 0
-
-
-def test_publish_does_not_revalidate_or_delete_unrelated_runtime_rows(tmp_path) -> None:
-    store = store_at(tmp_path)
-    runtime_path = store.root.parent / "local_event_search_results.json"
-    runtime_path.parent.mkdir(parents=True, exist_ok=True)
-    unrelated = {
-        "title": "Existing correct activity",
-        "when": "Ongoing",
-        "where": "Gallery 2",
-        "host": "Existing source",
-        "source_name": "Existing source",
-        "url": "https://example.org/events.html",
-        "summary": "<strong>Preserve this exact system row.</strong>",
-        "operator_review_decision": "confirmed",
-        "source_type": "official_listing_card",
-    }
-    runtime_path.write_text(
-        json.dumps({"ok": True, "results": [unrelated]}),
-        encoding="utf-8",
-    )
     state = ReviewState(
-        events=[candidate("keeper-talk", "Keeper Talk", "Daily · 10:30am", "confirmed")]
+        events=[
+            candidate("keeper-talk", "Keeper Talk", "Daily · 10:30am", "confirmed"),
+            candidate("feeding-session", "Feeding Session", "Daily · 2:00pm", "confirmed"),
+        ]
     )
     store.save(state)
+    assert publish_review_state(store, state)["count"] == 2
 
+    state.events[0].decision = "rejected"
+    store.save(state)
     payload = publish_review_state(store, state)
 
-    assert payload["count"] == 2
-    assert payload["results"][0] == unrelated
-    assert payload["results"][1]["title"] == "Keeper Talk"
+    assert payload["count"] == 1
+    assert payload["results"][0]["review_candidate_id"] == "feeding-session"
 
 
-def test_existing_system_event_is_not_overwritten_or_removed(tmp_path) -> None:
+def test_confirmed_state_replaces_partial_crawler_results(tmp_path) -> None:
     store = store_at(tmp_path)
     runtime_path = store.root.parent / "local_event_search_results.json"
     runtime_path.parent.mkdir(parents=True, exist_ok=True)
@@ -150,46 +147,82 @@ def test_existing_system_event_is_not_overwritten_or_removed(tmp_path) -> None:
         json.dumps(
             {
                 "ok": True,
+                "count": 6,
+                "partial": True,
                 "results": [
                     {
-                        "title": "Keeper Talk",
-                        "when": "Daily · 10:30am",
-                        "where": "Singapore Zoo",
-                        "host": "Mandai Wildlife Group",
-                        "source_name": "Mandai Wildlife Group",
-                        "url": MANDAI_LISTING,
-                        "summary": "System-collected description.",
-                        "start_date": "2026-07-22",
-                        "kind": "event",
-                        "source_type": "official_listing_card_without_detail",
-                        "candidate_policy": "official-listing-authority-v1",
-                        "listing_url": MANDAI_LISTING,
-                        "listing_only": True,
-                        "detail_available": False,
+                        "title": f"Children's Museum activity {index}",
+                        "source_name": "Children's Museum Singapore",
+                        "url": f"https://www.childrensmuseum.sg/activity-{index}",
                     }
+                    for index in range(6)
                 ],
             }
         ),
         encoding="utf-8",
     )
     state = ReviewState(
-        events=[candidate("keeper-talk", "Keeper Talk", "Daily · 10:30am", "confirmed")]
+        events=[
+            candidate("keeper-talk", "Keeper Talk", "Daily · 10:30am", "confirmed"),
+            candidate(
+                "singapore-stories",
+                "Singapore Stories",
+                "Ongoing",
+                "confirmed",
+                source_id="nationalgallery",
+                source_name="National Gallery Singapore",
+                listing_url="https://www.nationalgallery.sg/sg/en/whats-on.html",
+                detail_url="https://www.nationalgallery.sg/sg/en/exhibitions/singapore-stories.html",
+                where="City Hall Wing, Level 2",
+            ),
+        ]
     )
     store.save(state)
 
-    confirmed = publish_review_state(store, state)
-    assert confirmed["count"] == 1
-    assert confirmed["results"][0]["summary"] == "System-collected description."
-    assert confirmed["review_publish"]["already_present"] == 1
+    payload = publish_review_state(store, state)
 
-    state.events[0].decision = "rejected"
+    assert payload["write_policy"] == "review_state_authoritative"
+    assert payload["partial"] is False
+    assert payload["count"] == 2
+    assert {item["source_name"] for item in payload["results"]} == {
+        "Mandai Wildlife Group",
+        "National Gallery Singapore",
+    }
+    assert all(
+        item["source_name"] != "Children's Museum Singapore"
+        for item in payload["results"]
+    )
+
+
+def test_confirmed_candidate_with_missing_detail_fields_is_still_published(tmp_path) -> None:
+    store = store_at(tmp_path)
+    state = ReviewState(
+        events=[
+            candidate(
+                "listing-only",
+                "",
+                "",
+                "confirmed",
+                where="",
+                summary="",
+                evidence_text="Animal Feeding Session\nLocation\nSingapore Zoo",
+            )
+        ]
+    )
     store.save(state)
-    rejected = publish_review_state(store, state)
-    assert rejected["count"] == 1
-    assert rejected["results"][0]["source_type"] == "official_listing_card_without_detail"
+
+    payload = publish_review_state(store, state)
+    event = payload["results"][0]
+
+    assert payload["count"] == 1
+    assert event["title"] == "Animal Feeding Session"
+    assert event["when"] == ""
+    assert event["where"] == "Mandai Wildlife Group"
+    assert event["url"] == MANDAI_LISTING
+    assert event["listing_only"] is True
 
 
-def test_http_bootstrap_installs_immediate_review_publication() -> None:
+def test_http_bootstrap_installs_authoritative_review_publication() -> None:
     bootstrap = read_text("surface/local_events_runtime/http1_browser.py")
 
     assert "review_publish_authority" in bootstrap
