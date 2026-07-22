@@ -6,37 +6,22 @@ import json
 import os
 from pathlib import Path
 
-os.environ.setdefault("LOCAL_EVENTS_MAX_SECONDS", "900")
-os.environ.setdefault("LOCAL_EVENTS_SOURCE_CONCURRENCY", "4")
-os.environ.setdefault("LOCAL_EVENTS_SOURCE_TIMEOUT_SECONDS", "780")
-os.environ.setdefault("LOCAL_EVENTS_MAX_LISTING_PAGES", "2")
-os.environ.setdefault("LOCAL_EVENTS_LOAD_MORE_ROUNDS", "24")
-os.environ.setdefault("LOCAL_EVENTS_MAX_TOTAL_EVENTS", "180")
-os.environ.setdefault("LOCAL_EVENTS_NAV_TIMEOUT_MS", "25000")
-os.environ.setdefault("LOCAL_EVENTS_DOM_TIMEOUT_MS", "25000")
-# The listing-authority pipeline performs the only supported detail pass.
-# Disable the legacy NHB pre-enrichment to avoid reading every detail twice.
-os.environ.setdefault("LOCAL_EVENTS_NHB_DETAIL_LIMIT", "0")
-os.environ.setdefault("LOCAL_EVENTS_NHB_DETAIL_TIMEOUT_MS", "8000")
-# Every admitted card may require its detail page for date and venue fields.
-# Do not impose a smaller arbitrary detail limit than the run's Event budget.
-os.environ.setdefault(
-    "LOCAL_EVENTS_DETAIL_LIMIT",
-    os.environ["LOCAL_EVENTS_MAX_TOTAL_EVENTS"],
-)
-os.environ.setdefault("LOCAL_EVENTS_DETAIL_TIMEOUT_MS", "60000")
-os.environ.setdefault("LOCAL_EVENTS_PAGE_SCREENSHOTS", "0")
-os.environ.setdefault("LOCAL_EVENTS_CARD_SCREENSHOTS", "0")
-
 import local_events_runtime as _local_events_runtime  # noqa: E402
+from local_events_runtime import complete_collection_authority  # noqa: E402
 from local_events_runtime import detail_date_authority  # noqa: E402
 from local_events_runtime import gardens_field_authority  # noqa: E402
 from local_events_runtime import listing_only_output_authority  # noqa: E402
 from local_events_runtime import listing_url_authority  # noqa: E402
 from local_events_runtime import mandai_listing_authority  # noqa: E402
 from local_events_runtime import open_ended_date_authority  # noqa: E402
+from local_events_runtime.event_review import EventReviewStore  # noqa: E402
 from local_events_runtime.output import normalize_payload  # noqa: E402
+from local_events_runtime.review_publish_authority import (  # noqa: E402
+    atomic_write,
+    merge_review_state,
+)
 
+complete_collection_authority.apply()
 detail_date_authority.apply()
 open_ended_date_authority.apply()
 gardens_field_authority.apply()
@@ -51,10 +36,36 @@ ENV_DIR = Path(
 ).expanduser().resolve()
 CONF_DIR = SURFACE_DIR / "conf"
 CONFIG = CONF_DIR / "event_sources.json"
-COLLECTOR_OUT = ENV_DIR / "local_event_search_results.partial.json"
+OUT = ENV_DIR / "local_event_search_results.json"
+PARTIAL_OUT = ENV_DIR / "local_event_search_results.partial.json"
+REVIEW_ROOT = ENV_DIR / "local_event_review"
 DEBUG_DIR = ENV_DIR / "local_event_debug_cards"
 DEFAULT_LOCATION = "Punggol Singapore"
+VERIFIED_POLICY = "official-listing-authority-v1"
+REVIEW_PUBLISH_ORIGIN = "review_state"
 TIMEOUT_REASON_MARKERS = ("deadline", "budget_exhausted", "timeout")
+
+
+def read_json(path: Path) -> dict:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def result_count(payload: dict) -> int:
+    results = payload.get("results")
+    return len(results) if isinstance(results, list) else int(payload.get("count") or 0)
+
+
+def system_result_count(payload: dict) -> int:
+    return sum(
+        1
+        for item in payload.get("results") or []
+        if isinstance(item, dict)
+        and item.get("review_publish_origin") != REVIEW_PUBLISH_ORIGIN
+    )
 
 
 def source_completion(debug: dict) -> tuple[str, bool]:
@@ -69,7 +80,10 @@ def source_completion(debug: dict) -> tuple[str, bool]:
         return "complete", True
 
     reason_counts = debug.get("reason_counts")
-    reasons = [str(value).lower() for value in reason_counts] if isinstance(reason_counts, dict) else []
+    reasons = [
+        str(value).lower()
+        for value in reason_counts
+    ] if isinstance(reason_counts, dict) else []
     previews = debug.get("not_output_preview")
     if isinstance(previews, list):
         reasons.extend(
@@ -119,18 +133,82 @@ def annotate_source_completion(payload: dict) -> dict:
     return annotated
 
 
-def write_collector_snapshot(payload: dict) -> dict:
-    """Persist crawler output as diagnostics without touching the display runtime."""
+def verified_previous_payload(payload: dict) -> dict:
+    """Keep previously verified rows exactly as persisted.
 
-    snapshot = annotate_source_completion(normalize_payload(payload))
-    snapshot["write_policy"] = "collector_diagnostics_only"
-    snapshot["display_runtime_unchanged"] = True
-    snapshot["display_runtime"] = "local_event_search_results.json"
-    COLLECTOR_OUT.write_text(
-        json.dumps(snapshot, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
+    Re-normalizing an existing runtime during partial protection can expire or
+    reject unrelated correct rows. New collector output is normalized before this
+    comparison; retained rows are therefore copied without another admission pass.
+    """
+
+    verified = dict(payload)
+    results = payload.get("results")
+    if not isinstance(results, list):
+        return verified
+    verified_results = [
+        dict(item)
+        for item in results
+        if isinstance(item, dict)
+        and item.get("candidate_policy") == VERIFIED_POLICY
+    ]
+    verified["results"] = verified_results
+    verified["count"] = len(verified_results)
+    verified["legacy_unverified_removed"] = len(results) - len(verified_results)
+    return verified
+
+
+def review_store() -> EventReviewStore:
+    return EventReviewStore(root=REVIEW_ROOT, config_path=CONFIG)
+
+
+def write_payload(
+    payload: dict,
+    store: EventReviewStore | None = None,
+) -> dict:
+    """Publish collector output plus current operator-confirmed activities.
+
+    A smaller incomplete crawl is retained only as partial evidence and cannot
+    replace a larger verified system result. Review decisions are overlaid in both
+    paths so automated and operator-confirmed activities remain visible together.
+    """
+
+    collector = annotate_source_completion(normalize_payload(payload))
+    previous = verified_previous_payload(read_json(OUT))
+    previous_system_count = system_result_count(previous)
+    new_system_count = result_count(collector)
+    active_store = store or review_store()
+
+    if collector["partial"]:
+        partial = {
+            **collector,
+            "ok": False,
+            "write_policy": "partial_collector_evidence",
+            "display_runtime": str(OUT),
+        }
+        atomic_write(PARTIAL_OUT, partial)
+
+    if collector["partial"] and previous_system_count > new_system_count:
+        display = merge_review_state(previous, active_store)
+        display["write_policy"] = "kept_previous_verified_result_with_review"
+        display["previous_system_count"] = previous_system_count
+        display["partial_collector_count"] = new_system_count
+        atomic_write(OUT, display)
+
+        partial = read_json(PARTIAL_OUT)
+        partial["write_policy"] = "kept_previous_verified_result"
+        partial["previous_system_count"] = previous_system_count
+        partial["display_count"] = result_count(display)
+        atomic_write(PARTIAL_OUT, partial)
+        return display
+
+    display = merge_review_state(collector, active_store)
+    display["write_policy"] = (
+        "collector_partial_with_review"
+        if collector["partial"]
+        else "collector_complete_with_review"
     )
-    return snapshot
+    atomic_write(OUT, display)
+    return display
 
 
 def self_test() -> int:
@@ -143,7 +221,7 @@ def self_test() -> int:
     assert isinstance(payload.get("results"), list)
     assert isinstance(payload.get("debug_by_source"), list)
     assert isinstance(payload.get("partial"), bool)
-    print("local-event collector diagnostic self-test passed")
+    print("local-event listing-authoritative self-test passed")
     return 0
 
 
@@ -159,10 +237,8 @@ def main(argv: list[str] | None = None) -> int:
     location = " ".join(args.location).strip() or DEFAULT_LOCATION
     ENV_DIR.mkdir(exist_ok=True)
     DEBUG_DIR.mkdir(parents=True, exist_ok=True)
-    payload = write_collector_snapshot(
-        collect_events(CONFIG, location, DEBUG_DIR)
-    )
-    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    display = write_payload(collect_events(CONFIG, location, DEBUG_DIR))
+    print(json.dumps(display, ensure_ascii=False, indent=2))
     return 0
 
 
