@@ -12,8 +12,9 @@ def apply() -> None:
 
     The Surface has observed Chromium navigation failures with
     ERR_HTTP2_PROTOCOL_ERROR on official Event sites. Collection starts in
-    HTTP/1.1 mode directly. Source, date, card, and link authorities are applied
-    sequentially before the review collector imports and binds their functions.
+    HTTP/1.1 mode directly. Coverage, source, date, card, and link authorities are
+    applied sequentially before the review collector imports and binds their
+    functions.
     """
 
     global _APPLIED
@@ -50,6 +51,13 @@ def apply() -> None:
             ) from exc
 
     _browser.launch_chromium = launch_chromium_http1
+
+    # The runtime package is already imported by the time this bootstrap runs.
+    # Apply live coverage floors before importing modules that bind browser and
+    # extraction constants.
+    from .complete_collection_authority import apply as apply_complete_collection
+
+    apply_complete_collection()
 
     # Import and apply sequentially. Importing structural/diagnostic modules also
     # imports event_review, so every parser and CARD_JS patch must already be active.
