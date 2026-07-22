@@ -9,6 +9,7 @@ from . import official_feeds as _official_feeds
 from . import source_overrides
 
 _applied = False
+_BASE_LABEL_DATES = _extract.label_dates
 _BASE_DETAIL_CANDIDATE = None
 _BASE_REVIEW_LOAD = None
 _BASE_REPLACE_EVENTS = None
@@ -117,6 +118,22 @@ ACTIVITY_DETAIL_JS = r"""
   };
 }
 """
+
+
+def _activity_label_dates(label: str):
+    """Expand all supported Event date forms into concrete dates."""
+
+    dates = list(_BASE_LABEL_DATES(label))
+    text = _extract.clean(label)
+    years = [int(value) for value in re.findall(r"\b(20\d{2})\b", text)]
+    inherited_year = years[-1] if years else _extract.TODAY.year
+    for first_day, second_day, month_name, explicit_year in MULTI_DAY_SAME_MONTH_RE.findall(text):
+        year = explicit_year or inherited_year
+        for day in (first_day, second_day):
+            parsed = _extract.parse_date(day, month_name, year)
+            if parsed and parsed not in dates:
+                dates.append(parsed)
+    return sorted(dates)
 
 
 def _activity_date_fragments(text: str) -> list[str]:
@@ -310,6 +327,7 @@ def apply() -> None:
     # decides whether the Event is still active.
     _extract.MULTI_DAY_SAME_MONTH_RE = MULTI_DAY_SAME_MONTH_RE
     _extract.ISO_RANGE_RE = ISO_RANGE_RE
+    _extract.label_dates = _activity_label_dates
     _extract.date_fragments = _activity_date_fragments
 
     # Import after parser and DETAIL_CARD_JS changes so Event Review binds the same
@@ -332,6 +350,7 @@ __all__ = [
     "MULTI_DAY_SAME_MONTH_RE",
     "apply",
     "_activity_date_fragments",
+    "_activity_label_dates",
     "_candidate_expired",
     "_listing_card_without_listing_date",
     "_merge_detail_fields",
