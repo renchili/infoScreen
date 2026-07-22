@@ -12,7 +12,9 @@ _BASE_RENDER = None
 # The configured inventory contains 18 institutions and some official pages expose
 # many cards whose detail pages may each take close to a minute. These are coverage
 # floors, not performance targets: runtime configuration may raise them but must not
-# silently reduce the supported collection scope.
+# silently reduce the supported collection scope. Navigation timeouts are maximum
+# waits, so fast pages still return immediately; slow official pages are not rejected
+# merely because their DOM takes longer than 25 seconds to become ready.
 MIN_TOTAL_SECONDS = 7200.0
 MIN_SOURCE_SECONDS = 1200.0
 MIN_SOURCE_CONCURRENCY = 4
@@ -20,9 +22,10 @@ MIN_EVENTS_PER_SOURCE = 180
 MIN_TOTAL_EVENTS = 180
 MIN_LISTING_PAGES = 20
 MIN_LOAD_MORE_ROUNDS = 24
-MIN_NAV_TIMEOUT_MS = 25000
-MIN_DOM_TIMEOUT_MS = 25000
-MIN_DETAIL_TIMEOUT_MS = 60000
+MIN_NAV_TIMEOUT_MS = 180000
+MIN_DOM_TIMEOUT_MS = 180000
+MIN_LOAD_WAIT_MS = 5000
+MIN_DETAIL_TIMEOUT_MS = 180000
 MIN_DETAIL_LIMIT = 180
 
 
@@ -74,6 +77,10 @@ def apply() -> None:
     _browser.DOM_TIMEOUT_MS = max(
         int(_browser.DOM_TIMEOUT_MS),
         MIN_DOM_TIMEOUT_MS,
+    )
+    _browser.LOAD_WAIT_MS = max(
+        int(_browser.LOAD_WAIT_MS),
+        MIN_LOAD_WAIT_MS,
     )
 
     _source_overrides.DETAIL_LIMIT = max(
