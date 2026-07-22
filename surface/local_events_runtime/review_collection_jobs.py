@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import sys
 import threading
 import time
 import uuid
@@ -12,6 +13,17 @@ from .event_review import EventReviewStore, ReviewState
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _http_mutation_lock():
+    """Return the live server's existing Review mutation lock when available."""
+
+    for module_name in ("surface.serve_infoscreen", "serve_infoscreen", "__main__"):
+        module = sys.modules.get(module_name)
+        lock = getattr(module, "REVIEW_MUTATION_LOCK", None) if module else None
+        if lock is not None:
+            return lock
+    return None
 
 
 class CollectionAlreadyRunning(RuntimeError):
@@ -72,8 +84,16 @@ class CollectionStoreView:
         candidates,
         collection: dict[str, Any],
     ) -> ReviewState:
-        with self._mutation_lock:
-            return self._store.replace_events(candidates, collection)
+        # HTTP mutations already hold REVIEW_MUTATION_LOCK across their complete
+        # load-modify-save cycle. Join that same lock only for the final background
+        # replacement; Chromium collection itself stays outside every state lock.
+        server_lock = _http_mutation_lock()
+        if server_lock is None or server_lock is self._mutation_lock:
+            with self._mutation_lock:
+                return self._store.replace_events(candidates, collection)
+        with server_lock:
+            with self._mutation_lock:
+                return self._store.replace_events(candidates, collection)
 
 
 class EventCollectionJobManager:
