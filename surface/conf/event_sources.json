@@ -1,5 +1,5 @@
 {
-  "version": 7,
+  "version": 8,
   "purpose": "Verified official activity-list entrypoints. A rendered listing card is authoritative for membership; structured and detail data may only enrich an admitted card. allowed_domains is the explicit source-level allow-list for official listing and associated detail sites.",
   "policy": {
     "no_recursive_site_crawl": true,
@@ -58,7 +58,9 @@
       "official_home": "https://www.acm.nhb.gov.sg/",
       "allowed_domains": ["acm.nhb.gov.sg", "acm.org.sg"],
       "default_venue": "Asian Civilisations Museum",
+      "card_selectors": ["a.a-listing-content__anchor-card[href]"],
       "listing_urls": [
+        "https://www.acm.nhb.gov.sg/whats-on/overview",
         "https://www.acm.nhb.gov.sg/whats-on/overview?category=Exhibitions%2CLectures%2CProgrammes%2CGuided+Tours&time=Today%2CUpcoming",
         "https://www.acm.nhb.gov.sg/whats-on/overview?category=Programmes&time=Today%2CUpcoming"
       ]
