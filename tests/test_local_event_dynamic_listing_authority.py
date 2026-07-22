@@ -25,19 +25,38 @@ def test_dynamic_listing_authority_is_applied_before_card_discovery() -> None:
 
     dynamic = bootstrap.index("apply_dynamic_listing_authority()")
     structural = bootstrap.index("apply_structural_link_authority()")
+    binding = bootstrap.index("_bind_final_browser_runtime_to_review()")
     diagnostics = bootstrap.index("apply_event_review_diagnostics()")
 
-    assert dynamic < structural < diagnostics
+    assert dynamic < structural < binding < diagnostics
 
 
-def test_sentosa_and_rws_source_configuration_preserves_full_official_coverage() -> None:
+def test_studio_review_receives_final_browser_scripts_not_import_snapshots() -> None:
+    bootstrap = read_text("surface/local_events_runtime/http1_browser.py")
+
+    assert "def _bind_final_browser_runtime_to_review()" in bootstrap
+    for name in (
+        '"CARD_JS"',
+        '"PREPARE_PAGE_JS"',
+        '"DETAIL_CARD_JS"',
+        '"CLICK_NEXT_PAGE_JS"',
+        '"launch_chromium"',
+    ):
+        assert name in bootstrap
+    assert "setattr(review, name, getattr(_browser, name))" in bootstrap
+
+
+def test_reported_source_configuration_preserves_full_official_coverage() -> None:
     payload = json.loads(
         (SURFACE / "conf" / "event_sources.json").read_text(encoding="utf-8")
     )
+    acm = next(source for source in payload["sources"] if source["id"] == "acm")
     sentosa = next(source for source in payload["sources"] if source["id"] == "sentosa")
     rws = next(source for source in payload["sources"] if source["id"] == "rws")
     kallang = next(source for source in payload["sources"] if source["id"] == "thekallang")
 
+    assert "https://www.acm.nhb.gov.sg/whats-on/overview" in acm["listing_urls"]
+    assert "a.a-listing-content__anchor-card[href]" in acm["card_selectors"]
     assert sentosa["load_more_rounds"] >= 80
     assert "a[href*='/en/things-to-do/events/']" in sentosa["card_selectors"]
     assert "singaporeoceanarium.com" in rws["allowed_domains"]
