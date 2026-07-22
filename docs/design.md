@@ -1,10 +1,10 @@
 # InfoScreen system architecture
 
-This document explains system boundaries, data ownership, refresh behavior, Local Event collection, operator review, and the current interaction limits. Deployment and recovery commands belong in `README.md`.
+This document explains system boundaries, data ownership, refresh behaviour, Local Event collection, operator review, and current interaction limits. Deployment and recovery commands belong in `README.md`.
 
 ## 1. Product shape
 
-InfoScreen is an always-on, local-first information screen. Its design priorities are readable distance viewing, compact information density, stable layout, predictable long-running behavior, local ownership of personal data, and visible freshness/failure state.
+InfoScreen is an always-on, local-first information screen. Its priorities are readable distance viewing, compact information density, stable layout, predictable long-running behaviour, local ownership of personal data, and visible freshness or failure state.
 
 The frontend is plain HTML, CSS, and JavaScript. The backend is a Python standard-library HTTP server plus short-lived producer jobs. Runtime persistence is local JSON rather than a database.
 
@@ -30,14 +30,14 @@ The Surface is the runtime host for HTTP, Market, Weather, News, Local Events, P
 
 | Component | Responsibility |
 | --- | --- |
-| `surface/serve_infoscreen.py` | Serve frontend, runtime JSON, photos, OpenAPI, and local mutation/refresh endpoints |
+| `surface/serve_infoscreen.py` | Serve frontend, runtime JSON, photos, OpenAPI, and local mutation or refresh endpoints |
 | `surface/fetch_live_data.py` | Fetch Weather and Market and write runtime files |
-| `surface/fetch_event_stream.py` | Fetch RSS, build aligned EN/FR/ZH rows, write `event_stream.json` |
-| `surface/search_local_events.py` | Supported Local Events command wrapper |
-| `surface/jobs/local_event_search.py` | Configure crawl budgets, run collector, normalize output, protect verified results |
-| `surface/local_events_runtime/` | Canonical Local Events collection, extraction, review, diagnostics, and persistence library |
+| `surface/fetch_event_stream.py` | Fetch RSS, build aligned EN/FR/ZH rows, and write `event_stream.json` |
+| `surface/search_local_events.py` | Supported Local Events compatibility command |
+| `surface/jobs/local_event_search.py` | Run the complete official-source collector, normalize new producer rows, protect partial output, overlay Review decisions, and write runtime JSON |
+| `surface/local_events_runtime/` | Canonical collection, extraction, browser, source authority, review, diagnostics, and persistence library |
 | `surface/web/local-events/studio/` | Operator review, filtering, manual list-page entry, explicit collection, and diagnostics |
-| `surface/build_photos_json.py` | Normalize/copy photos and build manifest |
+| `surface/build_photos_json.py` | Normalize or copy photos and build the photo manifest |
 | `mac/export.py`, `mac/sync_schedule.sh` | Export EventKit and push `schedule.json` |
 
 Runtime state belongs under `surface/.env/`. It is device state or personal data and is not source code.
@@ -46,15 +46,15 @@ Runtime state belongs under `surface/.env/`. It is device state or personal data
 
 Producer refresh, browser data reload, visual rotation, and review-state refresh are independent.
 
-The Local Event Studio reloads review state on initial load, explicit operations, manual `RELOAD`, and tab return. It does not continuously clear and rebuild all cards every three seconds.
+The Local Event Studio reloads review state on initial load, explicit operations, manual `RELOAD`, and tab return. It does not continuously clear and rebuild all cards.
+
+The kiosk Local Events card reads the current primary runtime and periodically reloads it without redrawing unchanged content.
 
 ## 5. UI ownership
 
-Each visible mount has one renderer owner. Producer jobs write authoritative runtime files. Browser scripts render those files and send explicit mutations. Asynchronous scripts must not overwrite another owner’s final DOM.
+Each visible mount has one renderer owner. Producer jobs write runtime files. Browser scripts render those files and send explicit mutations. Asynchronous scripts must not overwrite another owner’s final DOM.
 
-## 6. Source-specific Local Events architecture
-
-### 6.1 Source inventory
+## 6. Local Events source inventory
 
 The authoritative institution inventory is:
 
@@ -62,107 +62,101 @@ The authoritative institution inventory is:
 surface/conf/event_sources.json
 ```
 
-It defines source ID, display name, official home, allowed domains, configured list URLs, default venue, adapter, and order.
+It defines source ID, display name, official home, allowed domains, configured list URLs, default venue, adapter, and source order.
 
-### 6.2 Collection pipeline
+## 7. Complete Local Events collection
+
+### 7.1 Pipeline
 
 ```text
-source configuration or confirmed review-state list page
+configured official source and list URLs
+  -> apply complete collection coverage floors
   -> launch Chromium with --disable-http2
-  -> open official list URL
-  -> deep-scroll and operate expansion/pagination controls
+  -> open every configured official list URL
+  -> deep-scroll and operate expansion or pagination controls
   -> identify rendered card boundaries
-  -> require a usable title and one canonical official detail URL
-  -> do not require a date on the list card
-  -> mark the card with listing evidence
-  -> optionally match XHR/embedded structured data to the admitted card
-  -> discard unmatched structured records
-  -> open the admitted official detail page
-  -> extract/normalize title, date/time, venue, summary, public URL
-  -> record admission, rejection, detail, and failure evidence
+  -> admit official activity cards
+  -> preserve official listing evidence
+  -> enrich from matched structured data only
+  -> open an official detail page when the card has one
+  -> retain complete listing-only cards when no detail page exists
+  -> normalize new producer rows
+  -> record per-source and per-listing evidence
 ```
 
-The official list proves activity membership. The detail page is authoritative for fields the list omits, especially date/time and specific venue.
+The official list proves activity membership. A detail page is authoritative for fields omitted by the list, but absence or failure of a detail page does not erase valid list membership.
 
-### 6.3 HTTP protocol policy
+### 7.2 Coverage authority
 
-The Surface observed `ERR_HTTP2_PROTOCOL_ERROR` while Chromium opened official Event sites. The supported collection entrypoints apply:
+Local Events modules read many limits at import time. The HTTP server and compatibility command can import those modules before the job module, so job-level environment defaults alone are not authoritative.
+
+`surface/local_events_runtime/complete_collection_authority.py` updates the live runtime globals used by the collector. The coverage floors allow all configured sources to receive execution time across all concurrency batches and align list-card and detail limits with the supported Event budget.
+
+Runtime configuration may raise these values. It must not silently lower supported source coverage.
+
+### 7.3 HTTP protocol policy
+
+The supported browser bootstrap is:
 
 ```text
 surface/local_events_runtime/http1_browser.py
 ```
 
-before importing collector code. The patched Chromium launch always includes:
+It applies complete collection authority and source-specific parser authorities, and every patched Chromium launch includes:
 
 ```text
 --disable-http2
 ```
 
-There is no initial HTTP/2 navigation and no retry that switches browser instances or protocols. This applies to:
+There is no HTTP/2-first navigation or protocol retry loop.
 
-- Local Event Studio discovery and Event collection through `surface/serve_infoscreen.py`;
-- scheduled and HTTP-triggered kiosk collection through `surface/search_local_events.py`.
+### 7.4 Positive Event intent
 
-### 6.4 Positive Event intent
+Positive Event intent means membership in the correct official activity list. A title, date range, explicit Event type, or Event-looking route is insufficient by itself. Structured XHR, embedded JSON, and detail-page JSON can enrich an admitted list card only after matching it.
 
-Positive Event intent means membership in the correct official activity list. A title, date range, explicit `Event` type, or event-looking route is insufficient by itself. Structured XHR, embedded JSON, and detail-page JSON can improve an admitted item only after matching the rendered list card.
+### 7.5 Cards without detail pages
 
-### 6.5 Detail-page authority
+Some official activity lists contain all required fields directly and provide no independent detail page. These listing-only cards remain separate Events even when several cards share one official list URL. Card identity and semantic identity prevent URL-only deduplication from collapsing them.
 
-A correct listing card may omit date and venue. After admission, the collector follows only that card’s official detail URL. Detail failure does not erase the list evidence; review candidates remain visible with exact detail status/error.
+## 8. Operator review state
 
-## 7. Operator review state
-
-Operator review is separate from kiosk output:
+Review state is stored separately at:
 
 ```text
 surface/.env/local_event_review/state.json
 ```
 
-It contains candidate list pages and decisions, Event candidates and decisions, collection metadata, per-listing recognition diagnostics, and previously submitted DOM positions.
+It contains candidate list pages and decisions, Event candidates and decisions, collection metadata, recognition diagnostics, and submitted DOM positions.
 
-### 7.1 System-discovered flow
+### 8.1 Review flow
 
 ```text
-discover candidate list pages
-  -> preview Events for a page
-  -> confirm/reject/reset list page
+discover or manually add candidate list page
+  -> preview Events
+  -> confirm, reject, or reset list page
   -> collect from confirmed pages
-  -> inspect detail data and DOM evidence
-  -> confirm/reject/reset Event candidate
+  -> inspect listing evidence and detail status
+  -> mark Event as RELATED ACTIVITY, NOT RELATED, or RESET
 ```
 
-### 7.2 Manual correct-list-page flow
+### 8.2 Review publication
 
-Some institutions do not expose a discoverable dedicated list URL, or the automated discovery result is wrong. The Studio therefore provides an explicit manual input tied to the global institution selection.
+Review state is separate storage, but confirmed decisions contribute to the kiosk output.
 
 ```text
-select one global institution
-  -> enter official Event list URL
-  -> POST /api/local-events/review/listing-page
-  -> validate configured institution
-  -> validate hostname against that institution's allowed_domains
-  -> save or reset the page as pending review state
-  -> display it immediately in the left-side list-page cards
-  -> preview
-  -> confirm/reject/reset
+current producer rows
+  + current Review Events with decision=confirmed
+  -> local_event_search_results.json
 ```
 
-Manual addition does not edit committed `event_sources.json` and does not automatically collect Events. It creates a review candidate only. The user must preview and confirm it before normal confirmed-page collection.
+`review_publish_authority.py` applies the same overlay in two places:
 
-When the same institution/URL already exists, manual addition resets it to `pending`, allowing the operator to reconsider a previously rejected or stale decision.
+- immediately after an Event decision;
+- after the producer has normalized and protected a new collector payload.
 
-### 7.3 Zero-result diagnostics
+Review publication removes and rebuilds only rows carrying `review_publish_origin: review_state`. It copies unrelated producer rows unchanged. A confirmed Event is not subjected to a second crawler-admission pass; unavailable fields can remain blank, and listing-only Events use their official list URL.
 
-Each attempted list page records stage counts for page access, visible links, allowed-domain links, possible detail links, extracted cards, admitted cards, DOM evidence, selectors, candidates, and detail result counts. The first failed stage produces a stable `reason_code`. The browser renders the backend diagnostic rather than guessing.
-
-## 8. Interactive browser feedback status
-
-The previously introduced downloadable Chrome Helper, generated ZIP, unpacked extension files, and remote `feedback:` transport were removed because they were not part of the requested product/deployment boundary.
-
-The current branch does not expose a replacement interactive browser-feedback action. Ability 2 remains visibly marked `NOT IMPLEMENTED`; it must not pretend a browser opened or ask the operator to download/install generated artifacts.
-
-Existing submitted positions remain readable from review state.
+A producer Event and confirmed Event are not duplicated when they identify the same detail URL or semantic listing card.
 
 ## 9. Local Events output protection
 
@@ -184,9 +178,20 @@ Debug evidence:
 surface/.env/local_event_debug_cards/
 ```
 
-Accepted rows carry `candidate_policy: official-listing-authority-v1`. A smaller partial run does not replace a larger verified result.
+New producer rows are normalized before publication. Previously verified rows retained during partial protection are copied without another normalization or admission pass. This prevents a later incomplete run or unrelated Review decision from deleting correct rows.
 
-## 10. Calendar pipeline
+The final primary runtime contains protected producer rows plus the current confirmed Review overlay.
+
+## 10. Service duration boundary
+
+The complete collection budget is longer than the previous default HTTP and systemd oneshot limits. Deployment units therefore allow the full producer duration:
+
+- `infoscreen-local-events.service` has a start timeout longer than the complete collection budget;
+- `infoscreen-http.service` gives `POST /api/local-events/search` a matching subprocess timeout.
+
+The timer remains a producer trigger; it is not a diagnostics-only task.
+
+## 11. Calendar pipeline
 
 ```text
 macOS Calendar/EventKit
@@ -195,11 +200,10 @@ macOS Calendar/EventKit
   -> mac/sync_schedule.sh
   -> SSH/SCP
   -> surface/.env/schedule.json
-  -> /schedule.json
-  -> calendar_board.js
+  -> browser
 ```
 
-## 11. Photo pipeline
+## 12. Photo pipeline
 
 ```text
 surface/.env/photos/
@@ -209,23 +213,24 @@ surface/.env/photos/
   -> browser photo wall
 ```
 
-## 12. Freshness observation
+## 13. Freshness observation
 
 The Sync ticker is an observer, not a scheduler. It performs `HEAD` requests and calculates age from the browser clock and `Last-Modified`.
 
-## 13. Failure isolation
+## 14. Failure isolation
 
 - HTTP service failure affects every panel.
 - One producer failure affects only its outputs.
 - One Local Event source failure is recorded under that source.
-- A partial Local Event run does not replace a larger verified result.
+- Queue waiting must not classify a configured source as skipped before it starts.
+- A partial Local Event run cannot delete protected producer rows or current confirmed Review rows.
 - A zero-result review page records the first failed recognition stage.
 - A manually supplied list page outside the configured institution allow-list is rejected before persistence.
-- HTTP/2 is disabled before Chromium collection begins, so `ERR_HTTP2_PROTOCOL_ERROR` is not handled by a second retry flow.
+- HTTP/2 is disabled before Chromium collection begins.
 
-## 14. Documentation boundaries
+## 15. Documentation boundaries
 
-- `README.md`: overview, operation, interaction, deployment, troubleshooting.
-- `docs/design.md`: architecture, ownership, data flow, implementation boundaries.
+- `README.md`: overview, operation, interaction, deployment, and troubleshooting.
+- `docs/design.md`: architecture, ownership, data flow, and implementation boundaries.
 - `docs/api-spec.md`: HTTP interaction contract and side effects.
 - `docs/questions.md`: clarified requirements and acceptance evidence.
