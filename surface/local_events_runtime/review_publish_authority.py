@@ -19,8 +19,15 @@ def _read_payload(path: Path) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return {}
-    return payload if isinstance(payload, dict) else {}
+        return {"ok": True, "results": []}
+    return payload if isinstance(payload, dict) else {"ok": True, "results": []}
+
+
+def _canonical_url(value: object) -> str:
+    try:
+        return _review.canonical_url(value)
+    except (TypeError, ValueError):
+        return ""
 
 
 def _published_title(candidate: _review.EventCandidate) -> str:
@@ -35,18 +42,19 @@ def _published_title(candidate: _review.EventCandidate) -> str:
 
 
 def _confirmed_event(candidate: _review.EventCandidate) -> dict[str, Any]:
-    """Convert one operator-confirmed candidate without applying crawler gates.
+    """Convert one operator-confirmed candidate without crawler re-admission.
 
-    Membership was already decided by the operator. Missing detail fields remain
-    visible as missing fields; they must not cause a second rejection here.
+    The operator has already decided that the listing card is a related activity.
+    Missing detail-page fields remain visible as missing data and must not cause a
+    second rejection during publication.
     """
 
-    listing_url = _review.canonical_url(candidate.listing_url)
-    detail_url = _review.canonical_url(candidate.detail_url or listing_url)
+    listing_url = _canonical_url(candidate.listing_url)
+    detail_url = _canonical_url(candidate.detail_url) or listing_url
     when = _extract.clean(candidate.when)
     dates = _extract.label_dates(when)
     source_name = _extract.clean(candidate.source_name or candidate.source_id)
-    listing_only = detail_url == listing_url
+    listing_only = not detail_url or detail_url == listing_url
 
     return {
         "title": _published_title(candidate),
@@ -54,7 +62,7 @@ def _confirmed_event(candidate: _review.EventCandidate) -> dict[str, Any]:
         "where": _extract.clean(candidate.where) or source_name,
         "host": source_name,
         "source_name": source_name,
-        "url": detail_url,
+        "url": detail_url or listing_url,
         "summary": _extract.clean(candidate.summary),
         "start_date": _extract.best_start_date(when) if dates else "",
         "end_date": max(dates).isoformat() if len(dates) >= 2 else "",
@@ -79,69 +87,106 @@ def _confirmed_event(candidate: _review.EventCandidate) -> dict[str, Any]:
     }
 
 
-def _published_payload(
+def _semantic_identity(event: dict[str, Any]) -> str:
+    return _extract.semantic_key(event)
+
+
+def _confirmed_candidates(
     store: _review.EventReviewStore,
     state: _review.ReviewState,
-    previous: dict[str, Any],
-) -> dict[str, Any]:
-    inventory = store.inventory()
+) -> list[_review.EventCandidate]:
     source_order = {
         str(source.get("id") or ""): index
-        for index, source in enumerate(inventory)
+        for index, source in enumerate(store.inventory())
     }
-    confirmed = [
+    rows = [
         (index, candidate)
         for index, candidate in enumerate(state.events)
         if candidate.decision == "confirmed"
     ]
-    confirmed.sort(
+    rows.sort(
         key=lambda item: (
             source_order.get(item[1].source_id, 10_000),
             item[0],
         )
     )
+    return [candidate for _, candidate in rows]
 
-    results: list[dict[str, Any]] = []
-    for result_order, (_, candidate) in enumerate(confirmed):
-        event = _confirmed_event(candidate)
-        event["source_order"] = source_order.get(candidate.source_id, 10_000)
-        event["result_order"] = result_order
-        results.append(event)
 
-    updated_at = _review.utc_now()
-    return {
-        "ok": True,
-        "version": 53,
-        "extractor": "operator-confirmed-review-state-v1",
-        "text_normalizer": "plain-text-v1",
-        "updated_at": updated_at,
-        "location": str(previous.get("location") or "Punggol Singapore"),
-        "event_source_config": store.config_path.name,
-        "source_count": len(inventory),
-        "sources": [
-            {
-                "title": str(source.get("name") or source.get("id") or ""),
-                "url": str(source.get("official_home") or ""),
-            }
-            for source in inventory
-        ],
-        "count": len(results),
-        "results": results,
-        "partial": False,
-        "write_policy": "review_state_authoritative",
-        "review_authority": {
-            "confirmed_in_state": len(results),
-            "state_path": str(store.state_path),
-            "published_at": updated_at,
-        },
-        "runtime": {
-            "writer": "surface.local_events_runtime.review_publish_authority",
-            "state_path": str(store.state_path),
-        },
+def merge_review_state(
+    payload: dict[str, Any],
+    store: _review.EventReviewStore,
+    state: _review.ReviewState | None = None,
+) -> dict[str, Any]:
+    """Overlay current confirmed review rows without mutating collector rows.
+
+    Every previous row created by this publisher is rebuilt from current review
+    state. System-collected rows are copied exactly as supplied. A confirmed
+    detail-page Event is considered already present when its canonical URL exists;
+    a listing-only Event is matched semantically so multiple distinct cards may
+    share the same official list URL.
+    """
+
+    current = state or store.load()
+    system_results = [
+        dict(item)
+        for item in payload.get("results") or []
+        if isinstance(item, dict)
+        and item.get("review_publish_origin") != _REVIEW_PUBLISH_ORIGIN
+    ]
+
+    urls = {
+        _canonical_url(item.get("url"))
+        for item in system_results
+        if _canonical_url(item.get("url"))
+    }
+    semantic_keys = {
+        _semantic_identity(item)
+        for item in system_results
+        if _semantic_identity(item)
     }
 
+    added = 0
+    already_present = 0
+    review_results: list[dict[str, Any]] = []
+    for candidate in _confirmed_candidates(store, current):
+        event = _confirmed_event(candidate)
+        event_url = _canonical_url(event.get("url"))
+        semantic_key = _semantic_identity(event)
+        duplicate = (
+            semantic_key in semantic_keys
+            if event.get("listing_only") is True
+            else bool(event_url and event_url in urls) or semantic_key in semantic_keys
+        )
+        if duplicate:
+            already_present += 1
+            continue
 
-def _atomic_write(path: Path, payload: dict[str, Any]) -> None:
+        if event_url:
+            urls.add(event_url)
+        if semantic_key:
+            semantic_keys.add(semantic_key)
+        review_results.append(event)
+        added += 1
+
+    results = [*system_results, *review_results]
+    merged = dict(payload)
+    merged["ok"] = bool(payload.get("ok", True))
+    merged["results"] = results
+    merged["count"] = len(results)
+    merged["updated_at"] = _review.utc_now()
+    merged["review_publish"] = {
+        "published_at": merged["updated_at"],
+        "confirmed_count": len(_confirmed_candidates(store, current)),
+        "added": added,
+        "already_present": already_present,
+        "mode": "overlay_on_collector_results",
+        "state_path": str(store.state_path),
+    }
+    return merged
+
+
+def atomic_write(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(
         f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp"
@@ -163,12 +208,11 @@ def publish_review_state(
     store: _review.EventReviewStore,
     state: _review.ReviewState | None = None,
 ) -> dict[str, Any]:
-    """Replace the display runtime with the current confirmed review state."""
+    """Immediately apply current Event decisions to the existing display runtime."""
 
-    current = state or store.load()
     runtime_path = store.root.parent / "local_event_search_results.json"
-    payload = _published_payload(store, current, _read_payload(runtime_path))
-    _atomic_write(runtime_path, payload)
+    payload = merge_review_state(_read_payload(runtime_path), store, state)
+    atomic_write(runtime_path, payload)
     return payload
 
 
@@ -177,7 +221,7 @@ def set_event_decision(
     candidate_id: str,
     decision: _review.Decision,
 ) -> _review.ReviewState:
-    """Persist one decision and immediately rebuild the display runtime."""
+    """Persist one decision and immediately overlay the current confirmed set."""
 
     state = _BASE_SET_EVENT_DECISION(store, candidate_id, decision)
     publish_review_state(store, state)
@@ -211,7 +255,7 @@ def _publish_existing_state() -> None:
 
 
 def apply() -> None:
-    """Make confirmed review state authoritative for the Surface runtime."""
+    """Install immediate, non-destructive publication of Event review decisions."""
 
     global _APPLIED, _BASE_SET_EVENT_DECISION
     if _APPLIED:
@@ -222,4 +266,10 @@ def apply() -> None:
     _publish_existing_state()
 
 
-__all__ = ["apply", "publish_review_state", "set_event_decision"]
+__all__ = [
+    "apply",
+    "atomic_write",
+    "merge_review_state",
+    "publish_review_state",
+    "set_event_decision",
+]
