@@ -14,7 +14,12 @@ def test_complete_collection_authority_lifts_all_coverage_limits() -> None:
     assert "MIN_EVENTS_PER_SOURCE = 180" in authority
     assert "MIN_TOTAL_EVENTS = 180" in authority
     assert "MIN_LISTING_PAGES = 20" in authority
-    assert "MIN_DETAIL_TIMEOUT_MS = 60000" in authority
+    assert "MIN_NAV_TIMEOUT_MS = 180000" in authority
+    assert "MIN_DOM_TIMEOUT_MS = 180000" in authority
+    assert "MIN_LOAD_WAIT_MS = 5000" in authority
+    assert "MIN_DETAIL_TIMEOUT_MS = 180000" in authority
+    assert "MIN_NAV_TIMEOUT_MS = 25000" not in authority
+    assert "MIN_DOM_TIMEOUT_MS = 25000" not in authority
     assert "max_cards=max(int(max_cards), int(_extract.MAX_EVENTS_PER_SOURCE))" in authority
 
 
