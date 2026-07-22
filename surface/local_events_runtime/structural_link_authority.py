@@ -1,34 +1,57 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from . import browser as _browser
 from . import event_review_diagnostics as _diagnostics
 from . import listing_url_authority
 
 _APPLIED = False
+_CONFIG_PATH = Path(__file__).resolve().parents[1] / "conf" / "event_sources.json"
 
 _OLD_ANCHOR_DECLARATION = (
     '  const anchors = Array.from(document.querySelectorAll("a[href]")).filter(a => visible(a));'
 )
 
-_CARD_FIRST_ANCHOR_DECLARATION = r'''  const allAnchors = Array.from(document.querySelectorAll("a[href]")).filter(a => visible(a));
 
-  // Use a verified source-specific card boundary when the official listing has
-  // one. Gardens by the Bay renders each activity as one repeated anchor; this
-  // selector intentionally excludes header, footer, ticketing, and navigation
-  // links from Event candidate discovery.
-  const sourceCardSelectors = {
-    gardensbythebay: ["a.programme-title.row-listing-title[href]"]
-  };
+def _configured_selectors() -> dict[str, list[str]]:
+    """Return explicit activity-card selectors keyed by source id."""
+
+    payload = json.loads(_CONFIG_PATH.read_text(encoding="utf-8"))
+    output: dict[str, list[str]] = {}
+    for source in payload.get("sources") or []:
+        if not isinstance(source, dict):
+            continue
+        source_id = str(source.get("id") or "").strip().lower()
+        selectors = [
+            str(value).strip()
+            for value in source.get("card_selectors") or []
+            if str(value).strip()
+        ]
+        if source_id and selectors:
+            output[source_id] = selectors
+    return output
+
+
+def _card_first_anchor_declaration() -> str:
+    selector_map = json.dumps(_configured_selectors(), ensure_ascii=False, sort_keys=True)
+    return rf'''  const allAnchors = Array.from(document.querySelectorAll("a[href]")).filter(a => visible(a));
+
+  // Source-specific selectors are configuration, not Event enumeration. They define
+  // the repeated official card boundary for sites whose anchors use generic classes
+  // such as "learn-more" or whose page also contains many unrelated repeated links.
+  const sourceCardSelectors = {selector_map};
   const configuredSelectors = sourceCardSelectors[String(sourceId || "").toLowerCase()] || [];
-  const configuredCardAnchors = [...new Set(configuredSelectors.flatMap(selector => {
-    try { return Array.from(document.querySelectorAll(selector)); } catch { return []; }
-  }))].filter(anchor => visible(anchor));
+  const configuredCardAnchors = [...new Set(configuredSelectors.flatMap(selector => {{
+    try {{ return Array.from(document.querySelectorAll(selector)); }} catch {{ return []; }}
+  }}))].filter(anchor => visible(anchor));
 
   // For sources without an explicit selector, locate repeated rendered activity
   // cards before considering their links. A listing page may contain dozens of
   // official-domain navigation links, while real activity cards repeat one
   // semantic anchor structure.
-  const cardAnchorSignature = anchor => {
+  const cardAnchorSignature = anchor => {{
     const classes = Array.from(anchor.classList || [])
       .map(value => String(value || "").toLowerCase())
       .filter(value => /(^|[-_])(card|tile|item|event|programme|program|exhibition|activity|listing|result)([-_]|$)/.test(value))
@@ -37,37 +60,34 @@ _CARD_FIRST_ANCHOR_DECLARATION = r'''  const allAnchors = Array.from(document.qu
     const rect = anchor.getBoundingClientRect();
     if (rect.width < 80 || rect.height < 30 || rect.height > 1400) return "";
     return anchor.tagName + ":" + classes.join(".");
-  };
+  }};
 
   const cardAnchorGroups = new Map();
-  for (const anchor of allAnchors) {
+  for (const anchor of allAnchors) {{
     const signature = cardAnchorSignature(anchor);
     if (!signature) continue;
     const group = cardAnchorGroups.get(signature) || [];
     group.push(anchor);
     cardAnchorGroups.set(signature, group);
-  }
+  }}
 
   const repeatedCardAnchors = [];
-  for (const group of cardAnchorGroups.values()) {
+  for (const group of cardAnchorGroups.values()) {{
     if (group.length < 2) continue;
     repeatedCardAnchors.push(...group);
-  }
+  }}
 
   const anchors = configuredCardAnchors.length
     ? configuredCardAnchors
     : (repeatedCardAnchors.length ? repeatedCardAnchors : allAnchors);'''
+
 
 _OLD_DIAGNOSTIC_FILTER = (
     '  const detailAnchors = sameDomainAnchors.filter(anchor => '
     'pathRole(anchor.getAttribute("href") || "") === "detail");'
 )
 
-_CARD_FIRST_DIAGNOSTIC_FILTER = r'''  const configuredCardAnchors = /(^|\.)gardensbythebay\.com\.sg$/i.test(location.hostname)
-    ? Array.from(document.querySelectorAll("a.programme-title.row-listing-title[href]")).filter(visible)
-    : [];
-
-  const cardAnchorSignature = anchor => {
+_CARD_FIRST_DIAGNOSTIC_FILTER = r'''  const cardAnchorSignature = anchor => {
     const classes = Array.from(anchor.classList || [])
       .map(value => String(value || "").toLowerCase())
       .filter(value => /(^|[-_])(card|tile|item|event|programme|program|exhibition|activity|listing|result)([-_]|$)/.test(value))
@@ -111,20 +131,19 @@ _CARD_FIRST_DIAGNOSTIC_FILTER = r'''  const configuredCardAnchors = /(^|\.)garde
     return Boolean(listingStem && targetPath.startsWith(listingStem + "/"));
   });
 
-  const detailAnchors = configuredCardAnchors.length
-    ? configuredCardAnchors
-    : (repeatedCardAnchors.length ? repeatedCardAnchors : routeDetailAnchors);'''
+  const detailAnchors = repeatedCardAnchors.length ? repeatedCardAnchors : routeDetailAnchors;'''
 
 
 def _patch_card_locator() -> None:
     card_js = _browser.CARD_JS
+    declaration = _card_first_anchor_declaration()
     if _OLD_ANCHOR_DECLARATION in card_js:
         card_js = card_js.replace(
             _OLD_ANCHOR_DECLARATION,
-            _CARD_FIRST_ANCHOR_DECLARATION,
+            declaration,
             1,
         )
-    elif _CARD_FIRST_ANCHOR_DECLARATION not in card_js:
+    elif "const sourceCardSelectors =" not in card_js:
         raise RuntimeError("activity_card_anchor_declaration_missing")
     _browser.CARD_JS = card_js
 
@@ -143,7 +162,7 @@ def _patch_diagnostics() -> None:
 
 
 def apply() -> None:
-    """Locate official activity cards first, then read one link from each card."""
+    """Locate official activity cards first, then read one allowed official link."""
 
     global _APPLIED
     if _APPLIED:
@@ -155,4 +174,4 @@ def apply() -> None:
     _APPLIED = True
 
 
-__all__ = ["apply"]
+__all__ = ["apply", "_configured_selectors"]
