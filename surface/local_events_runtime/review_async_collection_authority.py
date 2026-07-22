@@ -27,11 +27,11 @@ def _locked_save(store: _review.EventReviewStore, state: _review.ReviewState):
 
 def _confirmed_listing_ids(store: _review.EventReviewStore) -> list[str]:
     state = store.load()
-    return [
+    return sorted(
         item.candidate_id
         for item in state.listing_pages
         if item.decision == "confirmed"
-    ]
+    )
 
 
 def _response_state(
@@ -74,6 +74,11 @@ def collect_event_candidates(
             listing_candidate_ids=listing_ids,
         )
     except CollectionAlreadyRunning as exc:
+        running_scope = sorted(exc.job.get("listing_candidate_ids") or [])
+        if running_scope != listing_ids:
+            raise ValueError(
+                "a different Event Preview collection is already running"
+            ) from exc
         job = exc.job
 
     return _response_state(store, job)
