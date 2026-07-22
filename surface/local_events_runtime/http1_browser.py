@@ -41,8 +41,9 @@ def apply() -> None:
     ERR_HTTP2_PROTOCOL_ERROR on official Event sites. Collection starts in
     HTTP/1.1 mode directly. Navigation accepts a readable rendered document even
     when analytics or consent requests prevent lifecycle events from settling.
-    Coverage, source, date, dynamic-listing, card, link, and listing-provenance
-    authorities are applied before their final values are bound into Review Studio.
+    Coverage, source, date, detail-payload, dynamic-listing, card, link, and
+    listing-provenance authorities are applied before their final values are bound
+    into Review Studio.
     """
 
     global _APPLIED
@@ -92,6 +93,10 @@ def apply() -> None:
 
     apply_detail_date_authority()
 
+    from .detail_payload_authority import apply as apply_detail_payload_authority
+
+    apply_detail_payload_authority()
+
     from .dynamic_listing_authority import apply as apply_dynamic_listing_authority
 
     apply_dynamic_listing_authority()
@@ -118,7 +123,7 @@ def apply() -> None:
 
     # event_review was imported by detail_date_authority before the dynamic and
     # structural JavaScript rewrites above. Rebind only after the final versions are
-    # complete, otherwise Studio keeps its stale pre-selector CARD_JS snapshot.
+    # complete, otherwise Studio keeps stale parser and CARD_JS snapshots.
     _bind_final_browser_runtime_to_review()
 
     from .event_review_diagnostics import apply as apply_event_review_diagnostics
