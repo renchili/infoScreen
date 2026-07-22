@@ -14,11 +14,12 @@ from local_events_runtime.event_review import (  # noqa: E402
     ReviewState,
 )
 from local_events_runtime.review_publish_authority import (  # noqa: E402
+    merge_review_state,
     publish_review_state,
 )
 
-
 MANDAI_LISTING = "https://www.mandai.com/en/discover-mandai/events.html"
+VERIFIED_POLICY = "official-listing-authority-v1"
 
 
 def candidate(
@@ -95,6 +96,20 @@ def store_at(tmp_path) -> EventReviewStore:
     return EventReviewStore(env_dir / "local_event_review", config)
 
 
+def system_event(index: int = 1) -> dict:
+    return {
+        "title": f"Children's Museum activity {index}",
+        "when": "Ongoing",
+        "where": "Children's Museum Singapore",
+        "host": "Children's Museum Singapore",
+        "source_name": "Children's Museum Singapore",
+        "url": f"https://www.childrensmuseum.sg/activity-{index}",
+        "summary": "System-collected activity.",
+        "candidate_policy": VERIFIED_POLICY,
+        "source_type": "official_listing_card",
+    }
+
+
 def test_two_confirmed_listing_only_cards_with_one_url_are_both_published(tmp_path) -> None:
     store = store_at(tmp_path)
     state = ReviewState(
@@ -114,51 +129,14 @@ def test_two_confirmed_listing_only_cards_with_one_url_are_both_published(tmp_pa
     ]
     assert {item["url"] for item in payload["results"]} == {MANDAI_LISTING}
     assert all(item["listing_only"] is True for item in payload["results"])
-    assert all(
-        item["review_publish_origin"] == "review_state"
-        for item in payload["results"]
-    )
 
 
-def test_rejected_decision_removes_only_that_confirmed_candidate(tmp_path) -> None:
-    store = store_at(tmp_path)
-    state = ReviewState(
-        events=[
-            candidate("keeper-talk", "Keeper Talk", "Daily · 10:30am", "confirmed"),
-            candidate("feeding-session", "Feeding Session", "Daily · 2:00pm", "confirmed"),
-        ]
-    )
-    store.save(state)
-    assert publish_review_state(store, state)["count"] == 2
-
-    state.events[0].decision = "rejected"
-    store.save(state)
-    payload = publish_review_state(store, state)
-
-    assert payload["count"] == 1
-    assert payload["results"][0]["review_candidate_id"] == "feeding-session"
-
-
-def test_confirmed_state_replaces_partial_crawler_results(tmp_path) -> None:
+def test_confirmed_events_are_added_without_replacing_collector_rows(tmp_path) -> None:
     store = store_at(tmp_path)
     runtime_path = store.root.parent / "local_event_search_results.json"
     runtime_path.parent.mkdir(parents=True, exist_ok=True)
     runtime_path.write_text(
-        json.dumps(
-            {
-                "ok": True,
-                "count": 6,
-                "partial": True,
-                "results": [
-                    {
-                        "title": f"Children's Museum activity {index}",
-                        "source_name": "Children's Museum Singapore",
-                        "url": f"https://www.childrensmuseum.sg/activity-{index}",
-                    }
-                    for index in range(6)
-                ],
-            }
-        ),
+        json.dumps({"ok": True, "partial": True, "results": [system_event(i) for i in range(6)]}),
         encoding="utf-8",
     )
     state = ReviewState(
@@ -181,17 +159,68 @@ def test_confirmed_state_replaces_partial_crawler_results(tmp_path) -> None:
 
     payload = publish_review_state(store, state)
 
-    assert payload["write_policy"] == "review_state_authoritative"
-    assert payload["partial"] is False
-    assert payload["count"] == 2
-    assert {item["source_name"] for item in payload["results"]} == {
+    assert payload["count"] == 8
+    assert payload["results"][:6] == [system_event(i) for i in range(6)]
+    assert {item["source_name"] for item in payload["results"][6:]} == {
         "Mandai Wildlife Group",
         "National Gallery Singapore",
     }
-    assert all(
-        item["source_name"] != "Children's Museum Singapore"
-        for item in payload["results"]
+    assert payload["review_publish"]["mode"] == "overlay_on_collector_results"
+
+
+def test_rejected_decision_removes_only_review_row(tmp_path) -> None:
+    store = store_at(tmp_path)
+    runtime_path = store.root.parent / "local_event_search_results.json"
+    runtime_path.parent.mkdir(parents=True, exist_ok=True)
+    runtime_path.write_text(
+        json.dumps({"ok": True, "results": [system_event()]}),
+        encoding="utf-8",
     )
+    state = ReviewState(
+        events=[candidate("keeper-talk", "Keeper Talk", "Daily · 10:30am", "confirmed")]
+    )
+    store.save(state)
+    assert publish_review_state(store, state)["count"] == 2
+
+    state.events[0].decision = "rejected"
+    store.save(state)
+    payload = publish_review_state(store, state)
+
+    assert payload["count"] == 1
+    assert payload["results"] == [system_event()]
+
+
+def test_system_event_with_same_detail_url_is_not_duplicated(tmp_path) -> None:
+    store = store_at(tmp_path)
+    detail_url = "https://www.nationalgallery.sg/sg/en/exhibitions/singapore-stories.html"
+    system = {
+        "title": "Singapore Stories",
+        "when": "Ongoing",
+        "where": "City Hall Wing, Level 2",
+        "source_name": "National Gallery Singapore",
+        "url": detail_url,
+        "candidate_policy": VERIFIED_POLICY,
+    }
+    state = ReviewState(
+        events=[
+            candidate(
+                "singapore-stories",
+                "Singapore Stories",
+                "Ongoing",
+                "confirmed",
+                source_id="nationalgallery",
+                source_name="National Gallery Singapore",
+                listing_url="https://www.nationalgallery.sg/sg/en/whats-on.html",
+                detail_url=detail_url,
+                where="City Hall Wing, Level 2",
+            )
+        ]
+    )
+
+    payload = merge_review_state({"results": [system]}, store, state)
+
+    assert payload["results"] == [system]
+    assert payload["review_publish"]["already_present"] == 1
 
 
 def test_confirmed_candidate_with_missing_detail_fields_is_still_published(tmp_path) -> None:
@@ -211,10 +240,8 @@ def test_confirmed_candidate_with_missing_detail_fields_is_still_published(tmp_p
     )
     store.save(state)
 
-    payload = publish_review_state(store, state)
-    event = payload["results"][0]
+    event = publish_review_state(store, state)["results"][0]
 
-    assert payload["count"] == 1
     assert event["title"] == "Animal Feeding Session"
     assert event["when"] == ""
     assert event["where"] == "Mandai Wildlife Group"
@@ -222,9 +249,11 @@ def test_confirmed_candidate_with_missing_detail_fields_is_still_published(tmp_p
     assert event["listing_only"] is True
 
 
-def test_http_bootstrap_installs_authoritative_review_publication() -> None:
+def test_http_bootstrap_installs_coverage_and_review_authorities() -> None:
     bootstrap = read_text("surface/local_events_runtime/http1_browser.py")
 
+    assert "complete_collection_authority" in bootstrap
+    assert "apply_complete_collection()" in bootstrap
     assert "review_publish_authority" in bootstrap
     assert "apply_review_publish_authority()" in bootstrap
 
