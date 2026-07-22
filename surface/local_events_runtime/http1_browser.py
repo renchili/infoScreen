@@ -43,6 +43,8 @@ def apply() -> None:
     when analytics or consent requests prevent lifecycle events from settling.
     Coverage, source, date, dynamic-listing, card, link, and listing-provenance
     authorities are applied before their final values are bound into Review Studio.
+    The final diagnostic collector is then wrapped by a non-blocking background job
+    authority so HTTP requests and the Review page never wait for Chromium to finish.
     """
 
     global _APPLIED
@@ -128,6 +130,12 @@ def apply() -> None:
     from .review_publish_authority import apply as apply_review_publish_authority
 
     apply_review_publish_authority()
+
+    # This must be last: it snapshots the final diagnostic collector and turns the
+    # existing synchronous POST handler into a background-job starter.
+    from .review_async_collection_authority import apply as apply_async_collection
+
+    apply_async_collection()
     _APPLIED = True
 
 
