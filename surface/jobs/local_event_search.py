@@ -32,11 +32,9 @@ import local_events_runtime as _local_events_runtime  # noqa: E402
 from local_events_runtime import detail_date_authority  # noqa: E402
 from local_events_runtime import gardens_field_authority  # noqa: E402
 from local_events_runtime import listing_only_output_authority  # noqa: E402
-from local_events_runtime import listing_only_runtime_authority  # noqa: E402
 from local_events_runtime import listing_url_authority  # noqa: E402
 from local_events_runtime import mandai_listing_authority  # noqa: E402
 from local_events_runtime import open_ended_date_authority  # noqa: E402
-from local_events_runtime import review_runtime_authority  # noqa: E402
 from local_events_runtime.output import normalize_payload  # noqa: E402
 
 detail_date_authority.apply()
@@ -45,8 +43,6 @@ gardens_field_authority.apply()
 mandai_listing_authority.apply()
 listing_url_authority.apply()
 listing_only_output_authority.apply()
-listing_only_runtime_authority.apply()
-review_runtime_authority.apply()
 collect_events = _local_events_runtime.collect_events
 
 SURFACE_DIR = Path(__file__).resolve().parents[1]
@@ -55,24 +51,10 @@ ENV_DIR = Path(
 ).expanduser().resolve()
 CONF_DIR = SURFACE_DIR / "conf"
 CONFIG = CONF_DIR / "event_sources.json"
-OUT = ENV_DIR / "local_event_search_results.json"
-PARTIAL_OUT = ENV_DIR / "local_event_search_results.partial.json"
+COLLECTOR_OUT = ENV_DIR / "local_event_search_results.partial.json"
 DEBUG_DIR = ENV_DIR / "local_event_debug_cards"
 DEFAULT_LOCATION = "Punggol Singapore"
-VERIFIED_POLICY = "official-listing-authority-v1"
 TIMEOUT_REASON_MARKERS = ("deadline", "budget_exhausted", "timeout")
-
-
-def read_json(path: Path) -> dict:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-
-
-def result_count(payload: dict) -> int:
-    results = payload.get("results")
-    return len(results) if isinstance(results, list) else int(payload.get("count") or 0)
 
 
 def source_completion(debug: dict) -> tuple[str, bool]:
@@ -137,55 +119,31 @@ def annotate_source_completion(payload: dict) -> dict:
     return annotated
 
 
-def is_partial(payload: dict) -> bool:
-    return bool(annotate_source_completion(payload).get("partial"))
+def write_collector_snapshot(payload: dict) -> dict:
+    """Persist crawler output as diagnostics without touching the display runtime."""
 
-
-def verified_previous_payload(payload: dict) -> dict:
-    verified = dict(payload)
-    results = payload.get("results")
-    if not isinstance(results, list):
-        return verified
-    verified_results = [
-        item for item in results
-        if isinstance(item, dict) and item.get("candidate_policy") == VERIFIED_POLICY
-    ]
-    verified["results"] = verified_results
-    verified["count"] = len(verified_results)
-    verified["legacy_unverified_removed"] = len(results) - len(verified_results)
-    return verified
-
-
-def write_payload(payload: dict) -> None:
-    payload = annotate_source_completion(normalize_payload(payload))
-    old = verified_previous_payload(normalize_payload(read_json(OUT)))
-    new_count = result_count(payload)
-    old_count = result_count(old)
-
-    if payload["partial"] and old_count > new_count:
-        OUT.write_text(json.dumps(old, ensure_ascii=False, indent=2), encoding="utf-8")
-        payload = {
-            **payload,
-            "ok": False,
-            "write_policy": "kept_previous_verified_result",
-            "previous_count": old_count,
-        }
-        PARTIAL_OUT.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        return
-
-    OUT.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    snapshot = annotate_source_completion(normalize_payload(payload))
+    snapshot["write_policy"] = "collector_diagnostics_only"
+    snapshot["display_runtime_unchanged"] = True
+    snapshot["display_runtime"] = "local_event_search_results.json"
+    COLLECTOR_OUT.write_text(
+        json.dumps(snapshot, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return snapshot
 
 
 def self_test() -> int:
-    payload = annotate_source_completion(normalize_payload(collect_events(CONFIG, DEFAULT_LOCATION, DEBUG_DIR)))
+    payload = annotate_source_completion(
+        normalize_payload(collect_events(CONFIG, DEFAULT_LOCATION, DEBUG_DIR))
+    )
     assert payload["extractor"] == "listing-authoritative-v52"
     assert payload["version"] == 52
     assert payload["text_normalizer"] == "plain-text-v1"
     assert isinstance(payload.get("results"), list)
     assert isinstance(payload.get("debug_by_source"), list)
     assert isinstance(payload.get("partial"), bool)
-    assert isinstance(payload.get("review_authority"), dict)
-    print("local-event listing-authoritative self-test passed")
+    print("local-event collector diagnostic self-test passed")
     return 0
 
 
@@ -201,8 +159,9 @@ def main(argv: list[str] | None = None) -> int:
     location = " ".join(args.location).strip() or DEFAULT_LOCATION
     ENV_DIR.mkdir(exist_ok=True)
     DEBUG_DIR.mkdir(parents=True, exist_ok=True)
-    payload = annotate_source_completion(normalize_payload(collect_events(CONFIG, location, DEBUG_DIR)))
-    write_payload(payload)
+    payload = write_collector_snapshot(
+        collect_events(CONFIG, location, DEBUG_DIR)
+    )
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0
 
