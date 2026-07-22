@@ -1,13 +1,23 @@
 from __future__ import annotations
 
+import re
+from datetime import date
 from typing import Any
 
 from . import browser as _browser
 from . import detail_date_authority as _detail_dates
+from . import extract as _extract
 from . import source_overrides as _source_overrides
 
 _APPLIED = False
 _BASE_DETAIL_JS = _detail_dates.ACTIVITY_DETAIL_JS
+_BASE_PICK_WHEN = None
+_BASE_PICK_VENUE = None
+_SUBVENUE_RE = re.compile(
+    r"\b(?:gallery|galleries|level|room|hall|theatre|theater|foyer|atrium|"
+    r"concourse|stadium|arena|auditorium|lawn|green)\b",
+    re.I,
+)
 
 # The base detail extractor already identifies the primary activity and excludes
 # page metadata. This wrapper supplements it with semantic DOM fields used by NHB
@@ -61,7 +71,9 @@ ENRICHED_DETAIL_JS = rf"""
     "[data-start-date]", "[data-end-date]", "[data-date]",
     "[class*='event-date' i]", "[class*='event_date' i]",
     "[class*='date-range' i]", "[class*='daterange' i]",
-    "[class*='start-date' i]", "[class*='end-date' i]"
+    "[class*='start-date' i]", "[class*='end-date' i]",
+    "[class*='event-info' i] [class*='date' i]",
+    "[class*='programme-info' i] [class*='date' i]"
   ].join(",");
   for (const element of document.querySelectorAll(dateSelectors)) {{
     if (!visible(element) || contextRejected(element)) continue;
@@ -73,7 +85,10 @@ ENRICHED_DETAIL_JS = rf"""
     "address", "[itemprop='location']", "[data-location]", "[data-venue]",
     "[class*='event-location' i]", "[class*='event_location' i]",
     "[class*='event-venue' i]", "[class*='event_venue' i]",
-    "[class*='venue-name' i]", "[class*='location-name' i]"
+    "[class*='venue-name' i]", "[class*='location-name' i]",
+    "[class*='event-info' i] [class*='location' i]",
+    "[class*='event-info' i] [class*='venue' i]",
+    "[class*='programme-info' i] [class*='location' i]"
   ].join(",");
   for (const element of document.querySelectorAll(venueSelectors)) {{
     if (!visible(element) || contextRejected(element)) continue;
@@ -112,7 +127,9 @@ ENRICHED_DETAIL_JS = rf"""
     : (Array.isArray(base.text_lines) ? base.text_lines : []);
   const lines = [];
   add(lines, title);
+  if (dates.length) add(lines, "Date");
   dates.forEach(value => add(lines, value));
+  if (venues.length) add(lines, "Location");
   venues.forEach(value => add(lines, value));
   add(lines, summary);
   originalLines.forEach(value => add(lines, value));
@@ -141,6 +158,83 @@ def _clean_rows(raw: object) -> list[str]:
     return output
 
 
+def _detail_rows(card: dict[str, Any], key: str, evidence_key: str) -> list[str]:
+    direct = _clean_rows(card.get(key))
+    evidence = card.get("detail_evidence")
+    if isinstance(evidence, dict):
+        for value in _clean_rows(evidence.get(evidence_key)):
+            if value not in direct:
+                direct.append(value)
+    return direct
+
+
+def _format_date(value: date) -> str:
+    return f"{value.day} {value.strftime('%b')} {value.year}"
+
+
+def _authoritative_when(card: dict[str, Any]) -> str:
+    rows = _detail_rows(card, "detail_dates", "date_candidates")
+    if not rows:
+        return ""
+
+    dated: list[tuple[str, list[date]]] = []
+    all_dates: list[date] = []
+    for row in rows:
+        parsed = _extract.label_dates(row)
+        if not parsed:
+            continue
+        dated.append((row, parsed))
+        for item in parsed:
+            if item not in all_dates:
+                all_dates.append(item)
+
+    ranges = [item for item in dated if len(item[1]) >= 2]
+    if ranges:
+        ranges.sort(key=lambda item: (-len(item[1]), len(item[0])))
+        return ranges[0][0]
+    if len(all_dates) >= 2:
+        start, end = min(all_dates), max(all_dates)
+        return f"{_format_date(start)} – {_format_date(end)}"
+    return dated[0][0] if dated else ""
+
+
+def _authoritative_venue(card: dict[str, Any]) -> str:
+    rows = _detail_rows(card, "detail_venues", "venue_candidates")
+    valid = [
+        row
+        for row in rows
+        if _detail_dates._valid_labeled_venue(row)
+    ]
+    if not valid:
+        return ""
+    valid.sort(
+        key=lambda value: (
+            0 if _SUBVENUE_RE.search(value) else 1,
+            len(value),
+        )
+    )
+    return valid[0]
+
+
+def _pick_when(card: dict[str, Any]) -> tuple[str, str]:
+    value = _authoritative_when(card)
+    if value:
+        return _extract.short(value, 180), value
+    return _BASE_PICK_WHEN(card)
+
+
+def _pick_venue(
+    source: dict[str, Any],
+    card: dict[str, Any],
+    when: str,
+    when_line: str,
+) -> str:
+    value = _authoritative_venue(card)
+    if value:
+        return value
+    return _BASE_PICK_VENUE(source, card, when, when_line)
+
+
 def merge_detail_payload(
     card: dict[str, Any],
     detail: dict[str, Any],
@@ -164,7 +258,13 @@ def merge_detail_payload(
         ]
 
     ordered: list[str] = []
-    for value in [title, *dates, *venues, summary, *detail_lines]:
+    field_values = [title]
+    if dates:
+        field_values.extend(["Date", *dates])
+    if venues:
+        field_values.extend(["Location", *venues])
+    field_values.extend([summary, *detail_lines])
+    for value in field_values:
         text = " ".join(str(value or "").split())
         if text and text not in ordered:
             ordered.append(text)
@@ -203,14 +303,20 @@ def merge_detail_payload(
 def apply() -> None:
     """Install field-preserving detail extraction for Review and formal collection."""
 
-    global _APPLIED
+    global _APPLIED, _BASE_PICK_WHEN, _BASE_PICK_VENUE
     if _APPLIED:
         return
+
+    _detail_dates.apply()
+    _BASE_PICK_WHEN = _extract.pick_when
+    _BASE_PICK_VENUE = _extract.pick_venue
 
     _detail_dates.ACTIVITY_DETAIL_JS = ENRICHED_DETAIL_JS
     _browser.DETAIL_CARD_JS = ENRICHED_DETAIL_JS
     _browser.merge_detail_payload = merge_detail_payload
     _source_overrides.AUTHORITATIVE_DETAIL_JS = ENRICHED_DETAIL_JS
+    _extract.pick_when = _pick_when
+    _extract.pick_venue = _pick_venue
 
     try:
         from . import event_review as review
@@ -223,4 +329,10 @@ def apply() -> None:
     _APPLIED = True
 
 
-__all__ = ["ENRICHED_DETAIL_JS", "apply", "merge_detail_payload"]
+__all__ = [
+    "ENRICHED_DETAIL_JS",
+    "apply",
+    "merge_detail_payload",
+    "_authoritative_venue",
+    "_authoritative_when",
+]
