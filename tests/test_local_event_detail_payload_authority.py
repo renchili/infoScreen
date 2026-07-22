@@ -58,7 +58,7 @@ def test_acm_detail_payload_produces_date_venue_and_description() -> None:
     merged = authority.merge_detail_payload(card, payload)
     event, reason = extract.event_from_card(source, merged)
 
-    assert reason == ""
+    assert reason == "accepted"
     assert event is not None
     assert event["when"] == "19 Jun 2026 – 24 Jan 2027"
     assert extract.label_dates(event["when"]) == [
