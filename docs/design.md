@@ -34,8 +34,8 @@ The Surface is the runtime host for HTTP, Market, Weather, News, Local Events, P
 | `surface/fetch_live_data.py` | Fetch Weather and Market and write runtime files |
 | `surface/fetch_event_stream.py` | Fetch RSS, build aligned EN/FR/ZH rows, write `event_stream.json` |
 | `surface/search_local_events.py` | Supported Local Events command wrapper |
-| `surface/jobs/local_event_search.py` | Configure crawl budgets, run collector, normalize output, protect verified results |
-| `surface/local_events_runtime/` | Canonical Local Events collection, extraction, review, diagnostics, and persistence library |
+| `surface/jobs/local_event_search.py` | Configure crawl budgets, run collector, normalize output, protect verified results, persist the collector snapshot, and publish the kiosk projection |
+| `surface/local_events_runtime/` | Canonical Local Events collection, extraction, review, diagnostics, projection, and persistence library |
 | `surface/web/local-events/studio/` | Operator review, filtering, manual list-page entry, explicit collection, and diagnostics |
 | `surface/build_photos_json.py` | Normalize/copy photos and build manifest |
 | `mac/export.py`, `mac/sync_schedule.sh` | Export EventKit and push `schedule.json` |
@@ -115,15 +115,17 @@ Positive Event intent means membership in the correct official activity list. A 
 
 A correct listing card may omit date and venue. After admission, the collector follows only that card’s official detail URL. Detail failure does not erase the list evidence; review candidates remain visible with exact detail status/error.
 
-## 7. Operator review state
+## 7. Operator review state and kiosk projection
 
-Operator review is separate from kiosk output:
+Operator review persistence is separate from the collector snapshot and kiosk output:
 
 ```text
 surface/.env/local_event_review/state.json
 ```
 
 It contains candidate list pages and decisions, Event candidates and decisions, collection metadata, per-listing recognition diagnostics, and previously submitted DOM positions.
+
+The persistence files are separate, but confirmed and rejected Event decisions are authoritative inputs to the kiosk projection. The homepage must not independently choose stale collector fields when the same canonical detail URL has a reviewed decision.
 
 ### 7.1 System-discovered flow
 
@@ -134,7 +136,28 @@ discover candidate list pages
   -> collect from confirmed pages
   -> inspect detail data and DOM evidence
   -> confirm/reject/reset Event candidate
+  -> rebuild local_event_search_results.json from collector snapshot + Review state
 ```
+
+Decision projection rules are:
+
+```text
+confirmed + matching collector URL
+  -> keep one row
+  -> Review title/date/venue/summary override non-empty matching fields
+  -> collector order and evidence metadata remain
+
+confirmed + no collector match
+  -> append one Review-owned row
+
+rejected + matching collector URL
+  -> suppress that collector row from the kiosk projection
+
+pending/reset
+  -> leave or restore the collector row
+```
+
+The projection is deterministic and is rebuilt from the private collector snapshot on every Event decision and after each producer run. The public event row must not embed a second copy of the original collector row.
 
 ### 7.2 Manual correct-list-page flow
 
@@ -170,7 +193,13 @@ Existing submitted positions remain readable from review state.
 
 ## 9. Local Events output protection
 
-Primary runtime:
+Producer-owned collector snapshot:
+
+```text
+surface/.env/local_event_collector_results.json
+```
+
+Kiosk primary projection:
 
 ```text
 surface/.env/local_event_search_results.json
@@ -188,7 +217,9 @@ Debug evidence:
 surface/.env/local_event_debug_cards/
 ```
 
-Accepted rows carry `candidate_policy: official-listing-authority-v1`. A smaller partial run does not replace a larger verified result.
+Accepted collector rows carry `candidate_policy: official-listing-authority-v1`. A smaller partial run does not replace a larger verified collector snapshot. The kiosk primary is rebuilt from the retained or newly accepted collector snapshot plus current Review decisions, so scheduled collection cannot silently discard confirmed corrections.
+
+On first startup after migration, the current primary is cleaned into a collector snapshot. Legacy Review-only rows are re-created from review state, and legacy rows containing `review_overlay_base` restore that embedded collector base once; new primary rows never contain `review_overlay_base`.
 
 ## 10. Calendar pipeline
 
@@ -222,11 +253,12 @@ The Sync ticker is an observer, not a scheduler. It performs `HEAD` requests and
 - HTTP service failure affects every panel.
 - One producer failure affects only its outputs.
 - One Local Event source failure is recorded under that source.
-- A partial Local Event run does not replace a larger verified result.
+- A partial Local Event run does not replace a larger verified collector snapshot.
 - A zero-result review page records the first failed recognition stage.
 - A manually supplied list page outside the configured institution allow-list is rejected before persistence.
 - HTTP/2 is disabled before Chromium collection begins, so `ERR_HTTP2_PROTOCOL_ERROR` is not handled by a second retry flow.
 - A dashboard filter with no matches displays an empty filtered state without changing or deleting the underlying runtime events.
+- A Review projection failure must leave the previous kiosk primary intact because both collector and display writes are atomic.
 
 ## 14. Documentation boundaries
 
