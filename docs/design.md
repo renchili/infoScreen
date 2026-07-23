@@ -44,13 +44,17 @@ Runtime state belongs under `surface/.env/`. It is device state or personal data
 
 ## 4. Refresh layers
 
-Producer refresh, browser data reload, visual rotation, and review-state refresh are independent.
+Producer refresh, browser data reload, visual rotation, dashboard filtering, and review-state refresh are independent.
+
+The kiosk Local Events card periodically performs `GET /api/local-events/search` to read the current runtime payload. Its institution and text controls filter that in-memory payload only. Applying a dashboard filter does not run Chromium, start a producer, or write runtime JSON. A later GET refresh re-applies the active browser filter to the new payload.
 
 The Local Event Studio reloads review state on initial load, explicit operations, manual `RELOAD`, and tab return. It does not continuously clear and rebuild all cards every three seconds.
 
 ## 5. UI ownership
 
 Each visible mount has one renderer owner. Producer jobs write authoritative runtime files. Browser scripts render those files and send explicit mutations. Asynchronous scripts must not overwrite another owner’s final DOM.
+
+`surface/web/assets/js/local_event_card.js` owns both rendering the kiosk Local Events card and filtering its already-loaded rows. Collection remains owned by the producer job and explicit collection API, not by the dashboard filter dialog.
 
 ## 6. Source-specific Local Events architecture
 
@@ -101,7 +105,7 @@ before importing collector code. The patched Chromium launch always includes:
 There is no initial HTTP/2 navigation and no retry that switches browser instances or protocols. This applies to:
 
 - Local Event Studio discovery and Event collection through `surface/serve_infoscreen.py`;
-- scheduled and HTTP-triggered kiosk collection through `surface/search_local_events.py`.
+- scheduled and HTTP-triggered Local Events through `surface/search_local_events.py`.
 
 ### 6.4 Positive Event intent
 
@@ -222,6 +226,7 @@ The Sync ticker is an observer, not a scheduler. It performs `HEAD` requests and
 - A zero-result review page records the first failed recognition stage.
 - A manually supplied list page outside the configured institution allow-list is rejected before persistence.
 - HTTP/2 is disabled before Chromium collection begins, so `ERR_HTTP2_PROTOCOL_ERROR` is not handled by a second retry flow.
+- A dashboard filter with no matches displays an empty filtered state without changing or deleting the underlying runtime events.
 
 ## 14. Documentation boundaries
 
