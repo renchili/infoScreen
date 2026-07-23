@@ -17,8 +17,11 @@ from local_events_runtime import open_ended_date_authority  # noqa: E402
 from local_events_runtime.event_review import EventReviewStore  # noqa: E402
 from local_events_runtime.output import normalize_payload  # noqa: E402
 from local_events_runtime.review_publish_authority import (  # noqa: E402
+    COLLECTOR_RUNTIME_FILENAME,
     atomic_write,
+    load_collector_snapshot,
     merge_review_state,
+    write_collector_snapshot,
 )
 
 complete_collection_authority.apply()
@@ -37,12 +40,12 @@ ENV_DIR = Path(
 CONF_DIR = SURFACE_DIR / "conf"
 CONFIG = CONF_DIR / "event_sources.json"
 OUT = ENV_DIR / "local_event_search_results.json"
+COLLECTOR_OUT = ENV_DIR / COLLECTOR_RUNTIME_FILENAME
 PARTIAL_OUT = ENV_DIR / "local_event_search_results.partial.json"
 REVIEW_ROOT = ENV_DIR / "local_event_review"
 DEBUG_DIR = ENV_DIR / "local_event_debug_cards"
 DEFAULT_LOCATION = "Punggol Singapore"
 VERIFIED_POLICY = "official-listing-authority-v1"
-REVIEW_PUBLISH_ORIGIN = "review_state"
 TIMEOUT_REASON_MARKERS = ("deadline", "budget_exhausted", "timeout")
 
 
@@ -57,15 +60,6 @@ def read_json(path: Path) -> dict:
 def result_count(payload: dict) -> int:
     results = payload.get("results")
     return len(results) if isinstance(results, list) else int(payload.get("count") or 0)
-
-
-def system_result_count(payload: dict) -> int:
-    return sum(
-        1
-        for item in payload.get("results") or []
-        if isinstance(item, dict)
-        and item.get("review_publish_origin") != REVIEW_PUBLISH_ORIGIN
-    )
 
 
 def source_completion(debug: dict) -> tuple[str, bool]:
@@ -134,12 +128,7 @@ def annotate_source_completion(payload: dict) -> dict:
 
 
 def verified_previous_payload(payload: dict) -> dict:
-    """Keep previously verified rows exactly as persisted.
-
-    Re-normalizing an existing runtime during partial protection can expire or
-    reject unrelated correct rows. New collector output is normalized before this
-    comparison; retained rows are therefore copied without another admission pass.
-    """
+    """Keep previously verified collector rows exactly as persisted."""
 
     verified = dict(payload)
     results = payload.get("results")
@@ -165,18 +154,19 @@ def write_payload(
     payload: dict,
     store: EventReviewStore | None = None,
 ) -> dict:
-    """Publish collector output plus current operator-confirmed activities.
+    """Persist producer output, then publish one deterministic Review projection.
 
-    A smaller incomplete crawl is retained only as partial evidence and cannot
-    replace a larger verified system result. Review decisions are overlaid in both
-    paths so automated and operator-confirmed activities remain visible together.
+    ``local_event_collector_results.json`` is the producer-owned base. The kiosk
+    primary is always rebuilt from that snapshot plus current Review decisions.
+    A smaller incomplete crawl remains partial evidence and cannot replace a larger
+    verified collector snapshot.
     """
 
     collector = annotate_source_completion(normalize_payload(payload))
-    previous = verified_previous_payload(read_json(OUT))
-    previous_system_count = system_result_count(previous)
-    new_system_count = result_count(collector)
     active_store = store or review_store()
+    previous = verified_previous_payload(load_collector_snapshot(active_store))
+    previous_system_count = result_count(previous)
+    new_system_count = result_count(collector)
 
     if collector["partial"]:
         partial = {
@@ -184,6 +174,7 @@ def write_payload(
             "ok": False,
             "write_policy": "partial_collector_evidence",
             "display_runtime": str(OUT),
+            "collector_runtime": str(COLLECTOR_OUT),
         }
         atomic_write(PARTIAL_OUT, partial)
 
@@ -201,7 +192,8 @@ def write_payload(
         atomic_write(PARTIAL_OUT, partial)
         return display
 
-    display = merge_review_state(collector, active_store)
+    persisted_collector = write_collector_snapshot(active_store, collector)
+    display = merge_review_state(persisted_collector, active_store)
     display["write_policy"] = (
         "collector_partial_with_review"
         if collector["partial"]
