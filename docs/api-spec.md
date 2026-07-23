@@ -168,7 +168,7 @@ serve_infoscreen.py
 
 The subprocess timeout is 60 seconds. HTTP status is `200` when the subprocess exits successfully and `500` otherwise.
 
-## 7. Local Events read interaction
+## 7. Local Events read and dashboard-filter interaction
 
 ```http
 GET /api/local-events/search
@@ -176,7 +176,17 @@ GET /api/local-events/search
 
 This endpoint does not run a crawl. It returns the current normalized `local_event_search_results.json` payload.
 
-## 8. Local Events search interaction
+The kiosk Local Events card calls this GET endpoint and keeps the returned rows in browser memory. Its filter dialog:
+
+- builds the institution options from the current rows’ `source_name`, `institution`, or equivalent source field;
+- filters by exact selected institution;
+- applies all typed terms across title, institution/source, date/time, venue/place, and summary/description;
+- stores only the selected browser filter in `localStorage`;
+- does not send a POST request, run Chromium, execute a producer, or write runtime JSON.
+
+The periodic GET reload applies the active filter to the newly read payload.
+
+## 8. Explicit Local Events collection interaction
 
 ```http
 POST /api/local-events/search
@@ -208,6 +218,8 @@ The supported wrapper applies `surface/local_events_runtime/http1_browser.py` be
 ```
 
 There is no HTTP/2-first attempt and no protocol retry loop.
+
+This POST endpoint remains an explicit producer trigger for operator or direct API use. The dashboard institution/keyword filter does not call it.
 
 ## 9. Local Event review interaction
 
@@ -320,7 +332,8 @@ The downloadable Chrome Helper, extension files, ZIP generation, and remote `fee
 | Open page | `GET /`, then runtime GETs | None | Render current runtime state |
 | Market `SAVE` | `POST /api/market-config`, then `POST /api/market-refresh` | Write config; run live-data producer | Reload Market |
 | Market `REFRESH` | `POST /api/market-refresh` | Run live-data producer | Reload Market |
-| Local Event location search | `POST /api/local-events/search` | Run source-specific collector with HTTP/2 disabled | Render returned results |
+| Local Event dashboard filter | Existing `GET /api/local-events/search` payload only | None | Filter rows by institution and text in browser memory |
+| Explicit Local Event collection | `POST /api/local-events/search` | Run source-specific collector with HTTP/2 disabled | Return and render refreshed runtime results to the direct caller |
 | Review page load or return to tab | `GET /api/local-events/review/state` | None | Render review state once |
 | Add list page | `POST /api/local-events/review/listing-page` | Persist one pending page for the selected institution | Reload left-side list cards |
 | Review list/Event decision | Review decision POST | Persist review state | Refresh affected cards |
