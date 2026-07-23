@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>InfoScreen · Local Event Review</title>
+  <link rel="stylesheet" href="/assets/css/local_event_studio.css" />
+  <link rel="stylesheet" href="/assets/css/local_event_review_manual_listing.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <div class="brand">INFOSCREEN / LOCAL EVENT REVIEW</div>
+      <div class="subtitle">Review system-collected pages and events. Separately browse a real listing page and point out activity locations.</div>
+    </div>
+    <a class="button secondary" href="/">DASHBOARD</a>
+  </header>
+
+  <main class="shell">
+    <section class="panel">
+      <div class="heading">
+        <div>
+          <div class="eyebrow">ABILITY 1</div>
+          <h1>System collection and user review</h1>
+        </div>
+        <span id="global-status" class="status">LOADING</span>
+      </div>
+
+      <div class="toolbar">
+        <button id="collect-listings" class="button primary" type="button">COLLECT LIST PAGES</button>
+        <button id="collect-events" class="button warning" type="button">COLLECT EVENTS FROM CONFIRMED PAGES</button>
+        <button id="reload-state" class="button secondary" type="button">RELOAD</button>
+      </div>
+
+      <div class="manual-listing-form">
+        <label>
+          <span>Add an official Event list page to the selected global institution</span>
+          <input id="manual-listing-url" type="url" inputmode="url" autocomplete="url" placeholder="https://official.example/events" />
+        </label>
+        <button id="add-listing-page" class="button primary" type="button">ADD LIST PAGE</button>
+        <span id="manual-listing-status" class="status">READY</span>
+      </div>
+
+      <div class="split">
+        <section>
+          <div class="section-title">
+            <h2>Event list pages</h2>
+            <span id="listing-count" class="counter">0</span>
+          </div>
+          <p class="hint">Use PREVIEW EVENTS before confirming. Listing cards only need a title and one official detail link; date and venue are read from the detail page.</p>
+          <div id="listing-pages" class="cards"></div>
+        </section>
+
+        <section>
+          <div class="section-title">
+            <h2>Collected event candidates</h2>
+            <span id="event-count" class="counter">0</span>
+          </div>
+          <p class="hint">Every candidate shows its source element, match index, document position, and detail-page result.</p>
+          <div id="event-candidates" class="cards"></div>
+        </section>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="heading">
+        <div>
+          <div class="eyebrow">ABILITY 2 · INDEPENDENT</div>
+          <h2>Browse a listing page and point out where an activity exists</h2>
+        </div>
+        <span id="feedback-status" class="status error">NOT IMPLEMENTED</span>
+      </div>
+
+      <div class="feedback-controls">
+        <label>
+          <span>Institution</span>
+          <select id="feedback-source"></select>
+        </label>
+        <label>
+          <span>Listing page</span>
+          <select id="feedback-listing"></select>
+        </label>
+        <button id="open-feedback-browser" class="button primary" type="button" hidden disabled>NOT AVAILABLE</button>
+      </div>
+
+      <div id="feedback-message" class="message">
+        The downloadable Chrome Helper and ZIP generation have been removed. No replacement interaction flow is enabled in this branch.
+      </div>
+
+      <div class="section-title">
+        <h3>Submitted positions</h3>
+        <span id="feedback-count" class="counter">0</span>
+      </div>
+      <div id="feedback-list" class="cards feedback-list"></div>
+    </section>
+  </main>
+
+  <script src="/assets/js/local_event_review_blocking.js"></script>
+  <script src="/assets/js/local_event_review_scroll_guard.js"></script>
+  <script src="/assets/js/local_event_studio.js" defer></script>
+  <script src="/assets/js/local_event_review_filters.js" defer></script>
+  <script src="/assets/js/local_event_review_manual_listing.js" defer></script>
+  <script src="/assets/js/local_event_review_previews.js" defer></script>
+  <script src="/assets/js/local_event_review_diagnostics.js" defer></script>
+</body>
+</html>

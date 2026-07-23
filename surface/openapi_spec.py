@@ -70,19 +70,45 @@ def request_body(schema: dict[str, Any], required: bool = True) -> dict[str, Any
 def build_openapi() -> dict[str, Any]:
     schedule_list_schema = list_schema_for(ScheduleItem)
     object_schema = {"type": "object", "additionalProperties": True}
+    decision_schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["candidate_id", "decision"],
+        "properties": {
+            "candidate_id": {"type": "string"},
+            "decision": {"type": "string", "enum": ["pending", "confirmed", "rejected"]},
+        },
+    }
+    manual_listing_schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["source_id", "url"],
+        "properties": {
+            "source_id": {
+                "type": "string",
+                "description": "Configured institution ID selected by the global institution control.",
+            },
+            "url": {
+                "type": "string",
+                "format": "uri",
+                "description": "Official HTTP/HTTPS Event listing page on the institution allow-list.",
+            },
+        },
+    }
 
     return {
         "openapi": OPENAPI_VERSION,
         "info": {
             "title": "InfoScreen Local API",
-            "version": "0.1.0",
-            "description": "Local kiosk API for runtime dashboard JSON, refresh actions, market config, and local event search.",
+            "version": "0.2.0",
+            "description": "Local kiosk API for runtime dashboard JSON, refresh actions, market config, local event search, and Local Event operator review.",
         },
-        "servers": [{"url": "http://127.0.0.1:8765", "description": "Local Surface kiosk server"}],
+        "servers": [{"url": "http://127.0.0.1:8765", "description": "Surface kiosk server; replace 127.0.0.1 with the Surface LAN address when using another device"}],
         "tags": [
             {"name": "dashboard", "description": "Static dashboard and runtime JSON"},
             {"name": "market", "description": "Market config and refresh APIs"},
             {"name": "local-events", "description": "Rendered DOM local event search APIs"},
+            {"name": "local-event-review", "description": "Operator review and diagnostics APIs"},
             {"name": "media", "description": "Photo wall media endpoints"},
         ],
         "paths": {
@@ -105,7 +131,25 @@ def build_openapi() -> dict[str, Any]:
             "/api/market-refresh": {"post": {"tags": ["market"], "summary": "Refresh market runtime data", "description": "Runs surface/fetch_live_data.py.", "responses": {"200": json_response(ref("MarketRefreshResponse")), "500": json_response(ref("ErrorResponse"), "Refresh failed")}}},
             "/api/local-events/search": {
                 "get": {"tags": ["local-events"], "summary": "Read latest local event search results", "description": "Returns runtime JSON without running a new search.", "responses": {"200": json_response(ref("LocalEventSearchResponse")), "404": json_response(ref("RuntimeMissingResponse"), "Runtime JSON missing")}},
-                "post": {"tags": ["local-events"], "summary": "Run local event search for a location", "description": "Runs surface/search_local_events.py.", "requestBody": request_body(ref("LocalEventSearchRequest")), "responses": {"200": json_response(ref("LocalEventSearchResponse")), "500": json_response(ref("ErrorResponse"), "Search failed")}},
+                "post": {"tags": ["local-events"], "summary": "Run local event search for a location", "description": "Runs surface/search_local_events.py. The supported entrypoint forces Chromium to start with --disable-http2.", "requestBody": request_body(ref("LocalEventSearchRequest")), "responses": {"200": json_response(ref("LocalEventSearchResponse")), "500": json_response(ref("ErrorResponse"), "Search failed")}},
+            },
+            "/api/local-events/review/state": {
+                "get": {"tags": ["local-event-review"], "summary": "Read Local Event review state", "description": "Returns configured institutions, list-page decisions, Event candidates, diagnostics, and submitted positions from surface/.env/local_event_review/state.json.", "responses": {"200": json_response(object_schema), "500": json_response(ref("ErrorResponse"), "State read failed")}},
+            },
+            "/api/local-events/review/discover-listings": {
+                "post": {"tags": ["local-event-review"], "summary": "Discover candidate official list pages", "description": "Runs Playwright against configured institution home pages. Chromium starts with --disable-http2 and performs no HTTP/2-first retry.", "responses": {"200": json_response(object_schema), "500": json_response(ref("ErrorResponse"), "Discovery failed")}},
+            },
+            "/api/local-events/review/listing-page": {
+                "post": {"tags": ["local-event-review"], "summary": "Add one operator-supplied official Event list page", "description": "Validates the selected institution and allowed official domain, saves the page as pending review state, and does not collect Events until it is confirmed.", "requestBody": request_body(manual_listing_schema), "responses": {"200": json_response(object_schema), "400": json_response(ref("ErrorResponse"), "Invalid institution or listing URL")}},
+            },
+            "/api/local-events/review/listing-decision": {
+                "post": {"tags": ["local-event-review"], "summary": "Save a list-page review decision", "requestBody": request_body(decision_schema), "responses": {"200": json_response(object_schema), "400": json_response(ref("ErrorResponse"), "Invalid decision")}},
+            },
+            "/api/local-events/review/collect-events": {
+                "post": {"tags": ["local-event-review"], "summary": "Collect Event candidates from confirmed pages", "description": "Reads confirmed list pages with Chromium forced to --disable-http2, follows official detail links, writes per-listing recognition diagnostics, and persists Event candidates.", "responses": {"200": json_response(object_schema), "500": json_response(ref("ErrorResponse"), "Collection failed")}},
+            },
+            "/api/local-events/review/event-decision": {
+                "post": {"tags": ["local-event-review"], "summary": "Save an Event candidate review decision", "requestBody": request_body(decision_schema), "responses": {"200": json_response(object_schema), "400": json_response(ref("ErrorResponse"), "Invalid decision")}},
             },
             "/public_photos/{path}": {
                 "get": {"tags": ["media"], "summary": "Serve a public photo file", "parameters": [{"name": "path", "in": "path", "required": True, "schema": {"type": "string"}, "description": "Relative path under surface/.env/public_photos/."}], "responses": {"200": {"description": "Photo bytes"}, "404": {"description": "Not found"}}},

@@ -22,11 +22,22 @@ OFFICIAL_DETAIL_HELPER = r'''
     } catch {
       return false;
     }
-    if (!sameDomain(target.href)) return false;
-    const cleanPath = value => decodeURIComponent(String(value || "")).replace(/\/+$/, "");
+
+    // The configured or operator-confirmed listing page is the official authority.
+    // A link rendered inside one of its Event cards may legitimately lead to an
+    // associated institution site, ticketing site, or independently hosted Event
+    // page. The target therefore does not need to share the listing hostname.
+    if (!/^https?:$/i.test(target.protocol)) return false;
+    if (target.username || target.password) return false;
+
+    const cleanPath = value => decodeURIComponent(String(value || "")).replace(/\/+$/, "") || "/";
     const targetPath = cleanPath(target.pathname);
     const listingPath = cleanPath(listing.pathname);
-    if (!targetPath || targetPath === listingPath) return false;
+    if (
+      target.origin === listing.origin &&
+      targetPath === listingPath &&
+      target.search === listing.search
+    ) return false;
     if (/\.(?:jpg|jpeg|png|gif|webp|svg|pdf)$/i.test(targetPath)) return false;
     return true;
   }
@@ -40,7 +51,13 @@ def _replace_required(text: str, old: str, new: str, label: str) -> str:
 
 
 def apply() -> None:
-    """Use structural official-detail URLs instead of enumerated route words."""
+    """Trust safe activity links rendered by an authoritative official listing.
+
+    ``allowed_domains`` continues to validate listing-page provenance. It is not a
+    restriction on the destination of an activity link that the confirmed listing
+    itself explicitly renders.
+    """
+
     global _applied
     if _applied:
         return
