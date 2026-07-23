@@ -28,9 +28,10 @@ def test_supported_bootstrap_applies_coverage_before_review_modules() -> None:
 
     coverage = bootstrap.index("apply_complete_collection()")
     detail = bootstrap.index("apply_detail_date_authority()")
+    summary = bootstrap.index("apply_review_summary_authority()")
     review = bootstrap.index("apply_review_publish_authority()")
 
-    assert coverage < detail < review
+    assert coverage < detail < summary < review
 
 
 def test_job_writes_collector_primary_and_partial_outputs() -> None:
@@ -42,6 +43,7 @@ def test_job_writes_collector_primary_and_partial_outputs() -> None:
     assert "load_collector_snapshot" in script
     assert "write_collector_snapshot" in script
     assert "merge_review_state" in script
+    assert "review_summary_authority.apply()" in script
     assert "collector_complete_with_review" in script
     assert "kept_previous_verified_result_with_review" in script
     assert "review_runtime_authority.apply()" not in script
