@@ -3,10 +3,31 @@ from __future__ import annotations
 import sys
 from typing import Any
 
+from . import browser as _browser
 from . import extract as _extract
 from . import source_overrides as _source_overrides
 
 _APPLIED = False
+_LISTING_DATE_GATE = '    if (!hasDateText(textLines(card).join(" "))) continue;\n'
+_LISTING_CARD_MARKER = "    const listingDetailUrls = detailUrls(card);"
+
+
+def _patch_browser_membership() -> None:
+    """Let an isolated official-list card reach detail enrichment without a date.
+
+    ``source_overrides`` historically inserted a list-card date gate into the
+    rendered anchor loop. That gate runs before the detail page is opened, so an
+    official ACM card whose date exists only on the detail page disappears entirely.
+    Membership comes from the configured/confirmed official list plus one isolated
+    detail link; date and venue are enrichment fields.
+    """
+
+    script = _browser.CARD_JS
+    if _LISTING_DATE_GATE in script:
+        script = script.replace(_LISTING_DATE_GATE, "", 1)
+    elif _LISTING_CARD_MARKER not in script:
+        raise RuntimeError("listing_membership_card_patch_missing")
+    _browser.CARD_JS = script
 
 
 def _explicit_venue(card: dict[str, Any]) -> str:
@@ -169,6 +190,7 @@ def apply() -> None:
         return
 
     _source_overrides.apply()
+    _patch_browser_membership()
     _source_overrides._dom_event = dom_event
     _source_overrides._event = event_from_card
     _extract.event_from_card = event_from_card
@@ -179,4 +201,9 @@ def apply() -> None:
     _APPLIED = True
 
 
-__all__ = ["apply", "dom_event", "event_from_card"]
+__all__ = [
+    "apply",
+    "dom_event",
+    "event_from_card",
+    "_patch_browser_membership",
+]
