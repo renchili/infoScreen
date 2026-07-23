@@ -253,7 +253,7 @@
 }
 
 .local-event-modal-card {
-  width: min(420px, calc(100vw - 28px)) !important;
+  width: min(460px, calc(100vw - 28px)) !important;
   background: var(--panel2) !important;
   border: 1px solid var(--line) !important;
   padding: 16px !important;
@@ -266,26 +266,55 @@
   font-weight: 950 !important;
   letter-spacing: 0.08em !important;
   text-transform: uppercase !important;
-  margin-bottom: 10px !important;
+  margin-bottom: 12px !important;
 }
 
-#localEventLocationInput {
+.local-event-filter-fields {
+  display: grid !important;
+  gap: 10px !important;
+}
+
+.local-event-filter-fields label {
+  display: grid !important;
+  gap: 5px !important;
+  color: var(--muted) !important;
+  font-size: 10px !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+}
+
+#localEventFilterInput,
+#localEventInstitutionSelect {
   width: 100% !important;
-  height: 34px !important;
+  min-width: 0 !important;
+  height: 36px !important;
   background: #050606 !important;
   color: var(--text) !important;
   border: 1px solid var(--line) !important;
   padding: 0 10px !important;
   font: 900 13px/1 inherit !important;
   outline: none !important;
+  box-sizing: border-box !important;
+}
+
+#localEventFilterInput:focus,
+#localEventInstitutionSelect:focus {
+  border-color: var(--cyan) !important;
+}
+
+#localEventInstitutionSelect option {
+  background: #050606 !important;
+  color: var(--text) !important;
 }
 
 #localEventModalError {
   min-height: 18px !important;
-  color: var(--red) !important;
-  font-size: 12px !important;
+  color: var(--cyan) !important;
+  font-size: 11px !important;
   font-weight: 800 !important;
   margin-top: 8px !important;
+  text-transform: uppercase !important;
 }
 
 .local-event-modal-actions {

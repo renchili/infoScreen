@@ -1,22 +1,48 @@
 from __future__ import annotations
 
 import json
+import sys
+from datetime import date, timedelta
 
 from .conftest import SURFACE, read_text
 
+sys.path.insert(0, str(SURFACE))
 
-def test_listing_authority_runtime_contract_is_active() -> None:
+from local_events_runtime.output import normalize_payload  # noqa: E402
+
+
+def test_structured_first_runtime_contract_is_active() -> None:
     job = read_text("surface/jobs/local_event_search.py")
     output = read_text("surface/local_events_runtime/output.py")
-    config = json.loads((SURFACE / "conf" / "event_sources.json").read_text(encoding="utf-8"))
 
-    assert job.index("apply_source_overrides()") < job.index("from local_events_runtime import collect_events")
-    assert 'payload["extractor"] == "listing-authoritative-v52"' in job
-    assert 'payload["version"] == 52' in job
-    assert 'VERIFIED_POLICY = "official-listing-authority-v1"' in job
-    assert 'VERIFIED_POLICY = "official-listing-authority-v1"' in output
-    assert config["policy"]["listing_card_is_authoritative"] is True
-    assert config["policy"]["unmatched_structured_records_are_rejected"] is True
+    assert "apply_source_overrides()" not in job
+    assert "apply_listing_url_authority()" not in job
+    assert "apply_detail_authority()" not in job
+    assert 'payload["extractor"] == "structured-first-v49-source-order"' in job
+    assert 'payload["version"] == 49' in job
+    assert 'extractor.startswith("structured-first")' in output
+
+
+def test_structured_first_result_without_listing_policy_survives_output() -> None:
+    tomorrow = date.today() + timedelta(days=1)
+    payload = normalize_payload(
+        {
+            "extractor": "structured-first-v49-source-order",
+            "results": [
+                {
+                    "title": "Current Official Event",
+                    "when": tomorrow.isoformat(),
+                    "start_date": tomorrow.isoformat(),
+                    "end_date": tomorrow.isoformat(),
+                    "where": "Official Venue",
+                    "url": "https://example.org/events/current-official-event",
+                }
+            ],
+        }
+    )
+
+    assert [item["title"] for item in payload["results"]] == ["Current Official Event"]
+    assert payload["invalid_events_removed"] == 0
 
 
 def test_reported_dynamic_sources_remain_in_official_inventory() -> None:

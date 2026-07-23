@@ -68,6 +68,9 @@ def test_index_contains_required_dashboard_mount_points() -> None:
         "localEventPrevButton",
         "localEventNextButton",
         "localEventLocationButton",
+        "localEventInstitutionSelect",
+        "localEventFilterInput",
+        "localEventSearchButton",
         "leftSyncTapeTrack",
         "newsTickerTrackEN",
         "newsTickerTrackFR",
@@ -96,6 +99,23 @@ def test_local_event_frontend_uses_official_link_and_escape_contract() -> None:
     assert "function esc" in js
     assert "items_by_lang" in js
     assert 'method: "HEAD"' in js
+
+
+def test_dashboard_local_event_search_filters_current_runtime_only() -> None:
+    html = read_text("surface/web/index.html")
+    js = read_text("surface/web/assets/js/local_event_card.js")
+
+    assert "Filter local events" in html
+    assert "All institutions" in html
+    assert "Keyword, date or place" in html
+    assert "function populateInstitutionFilter()" in js
+    assert "function applyFilters(preserveCurrent)" in js
+    assert 'localStorage.getItem("local_events_filter_source")' in js
+    assert 'localStorage.getItem("local_events_filter_query")' in js
+    assert 'pick(row, ["source_name", "institution"' in js
+    assert 'fetch(API, { method: "POST"' not in js
+    assert 'body: JSON.stringify({ location:' not in js
+    assert 'fetch(API, { cache: "no-store" })' in js
 
 
 def test_market_rendering_has_one_owner() -> None:

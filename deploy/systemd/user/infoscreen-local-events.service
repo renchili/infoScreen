@@ -5,3 +5,4 @@ Description=Fetch local events for InfoScreen
 Type=oneshot
 WorkingDirectory=%h/infoscreen
 ExecStart=/usr/bin/python3 %h/infoscreen/surface/search_local_events.py Punggol Singapore
+TimeoutStartSec=7500
