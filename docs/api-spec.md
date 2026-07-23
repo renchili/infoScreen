@@ -45,9 +45,11 @@ Static frontend assets are served from `surface/web/` through `SimpleHTTPRequest
 | `GET`, `HEAD` | `/market.json` | `market.json` | `dashboard.js`, Sync ticker | `fetch_live_data.py` |
 | `GET`, `HEAD` | `/market_config.json` | `market_config.json` | Direct operator/debug read | Market config API |
 | `GET`, `HEAD` | `/event_stream.json` | `event_stream.json` | `local_event_card.js`, Sync ticker | `fetch_event_stream.py` |
-| `GET`, `HEAD` | `/local_event_search_results.json` | `local_event_search_results.json` | Direct operator/debug read | Local-event job |
+| `GET`, `HEAD` | `/local_event_search_results.json` | `local_event_search_results.json` | Direct operator/debug read | Local-event collector plus Review projection |
 | `GET`, `HEAD` | `/photos.json` | `photos.json` | `local_event_card.js` | Photo builder |
 | `GET`, `HEAD` | `/sync_status.json` | `sync_status.json` | Reserved/direct read | No active producer documented |
+
+`local_event_collector_results.json` is an internal producer snapshot under the runtime directory. It is not the kiosk API response. `local_event_search_results.json` is the public projection created from that collector snapshot plus current Review decisions.
 
 ### Missing runtime behaviour
 
@@ -174,7 +176,7 @@ The subprocess timeout is 60 seconds. HTTP status is `200` when the subprocess e
 GET /api/local-events/search
 ```
 
-This endpoint does not run a crawl. It returns the current normalized `local_event_search_results.json` payload.
+This endpoint does not run a crawl. It returns the current normalized `local_event_search_results.json` projection.
 
 The kiosk Local Events card calls this GET endpoint and keeps the returned rows in browser memory. Its filter dialog:
 
@@ -185,6 +187,14 @@ The kiosk Local Events card calls this GET endpoint and keeps the returned rows 
 - does not send a POST request, run Chromium, execute a producer, or write runtime JSON.
 
 The periodic GET reload applies the active filter to the newly read payload.
+
+The returned Event rows obey Review projection rules:
+
+- a confirmed candidate with the same canonical detail URL replaces non-empty title/date/venue/summary fields on that collector row;
+- collector ordering and evidence fields remain on the projected row;
+- a confirmed candidate without a collector match is appended;
+- a rejected candidate suppresses its matching collector row;
+- a pending/reset candidate leaves or restores the collector row.
 
 ## 8. Explicit Local Events collection interaction
 
@@ -208,6 +218,8 @@ serve_infoscreen.py
   -> subprocess: python surface/search_local_events.py <location>
   -> surface/jobs/local_event_search.py
   -> source-specific official collector
+  -> surface/.env/local_event_collector_results.json
+  -> Review-state projection
   -> surface/.env/local_event_search_results.json
 ```
 
@@ -220,6 +232,8 @@ The supported wrapper applies `surface/local_events_runtime/http1_browser.py` be
 There is no HTTP/2-first attempt and no protocol retry loop.
 
 This POST endpoint remains an explicit producer trigger for operator or direct API use. The dashboard institution/keyword filter does not call it.
+
+A smaller incomplete collection is written to `local_event_search_results.partial.json` and cannot replace a larger verified collector snapshot. When the previous collector snapshot is retained, the kiosk primary is still rebuilt with current Review decisions.
 
 ## 9. Local Event review interaction
 
@@ -321,6 +335,18 @@ Content-Type: application/json
 }
 ```
 
+Success persists `local_event_review/state.json` and atomically rebuilds `local_event_search_results.json` from `local_event_collector_results.json` plus the updated decisions. It does not start a new collection.
+
+Decision effects:
+
+```text
+confirmed -> replace matching collector fields or append a Review-only row
+rejected  -> suppress a matching collector row
+pending   -> leave or restore the collector row
+```
+
+Empty Review date, venue, or summary fields do not erase a non-empty collector field. A non-empty Review date replaces the complete `when/start_date/end_date` tuple so stale range endpoints cannot remain.
+
 ### Interactive browser feedback status
 
 The downloadable Chrome Helper, extension files, ZIP generation, and remote `feedback:` transport were removed. The operator page does not expose a replacement interactive browser-feedback action in this branch. `/api/local-events/review/open-feedback` is not part of the active API contract.
@@ -333,10 +359,11 @@ The downloadable Chrome Helper, extension files, ZIP generation, and remote `fee
 | Market `SAVE` | `POST /api/market-config`, then `POST /api/market-refresh` | Write config; run live-data producer | Reload Market |
 | Market `REFRESH` | `POST /api/market-refresh` | Run live-data producer | Reload Market |
 | Local Event dashboard filter | Existing `GET /api/local-events/search` payload only | None | Filter rows by institution and text in browser memory |
-| Explicit Local Event collection | `POST /api/local-events/search` | Run source-specific collector with HTTP/2 disabled | Return and render refreshed runtime results to the direct caller |
+| Explicit Local Event collection | `POST /api/local-events/search` | Run source-specific collector, write collector snapshot, project Review state | Return refreshed kiosk primary to the direct caller |
 | Review page load or return to tab | `GET /api/local-events/review/state` | None | Render review state once |
 | Add list page | `POST /api/local-events/review/listing-page` | Persist one pending page for the selected institution | Reload left-side list cards |
-| Review list/Event decision | Review decision POST | Persist review state | Refresh affected cards |
+| Review list decision | Review decision POST | Persist list-page review state | Refresh affected cards |
+| Review Event decision | `POST /api/local-events/review/event-decision` | Persist Event decision and rebuild kiosk primary | Refresh affected Review cards; kiosk sees projected data on next GET |
 | Review Event collection | `POST /api/local-events/review/collect-events` | Persist Events and diagnostics | Render Event candidates and exact zero-result reason |
 | Sync observation | `HEAD` four runtime paths | None | Compute `AGE` and status |
 
