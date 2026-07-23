@@ -136,7 +136,7 @@ def event_from_card(
     source: dict[str, Any],
     card: dict[str, Any],
 ) -> tuple[dict[str, Any] | None, str]:
-    """Apply membership first and expiration only when a real date was parsed."""
+    """Apply membership first and expiration only when a real end was parsed."""
 
     if card.get("listing_evidence") != _source_overrides.LISTING_EVIDENCE:
         return None, "missing_official_listing_evidence"
@@ -153,13 +153,18 @@ def event_from_card(
         return None, "listing_card_title_not_found"
     event["url"] = url
 
-    # Unknown dates are incomplete, not expired. Only concrete parsed dates can
-    # prove that an official listed activity has already ended.
-    dates = _extract.label_dates(_extract.clean(event.get("when")))
+    # Unknown and explicit start-only schedules are not expired. Only a concrete
+    # end date may prove that an official listed activity has already ended.
+    when = _extract.clean(event.get("when"))
+    dates = _extract.label_dates(when)
     effective_end = _source_overrides._event_end(event) or (
         max(dates) if dates else None
     )
-    if effective_end and effective_end < _extract.TODAY:
+    if (
+        effective_end
+        and effective_end < _extract.TODAY
+        and not _extract.current_date_label(when)
+    ):
         return None, "past_date"
 
     evidence = (
