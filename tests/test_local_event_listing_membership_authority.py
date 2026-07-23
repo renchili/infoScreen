@@ -37,22 +37,26 @@ def source() -> dict:
     }
 
 
-def listed_card(*lines: str) -> dict:
-    title = "Official ACM Exhibition"
+def listed_card(
+    *lines: str,
+    index: int = 1,
+    title: str = "Official ACM Exhibition",
+) -> dict:
+    detail_url = f"{DETAIL_URL}-{index}"
     rows = [title, *lines]
     return {
-        "id": "acm-card-1",
-        "url": DETAIL_URL,
-        "page_url": DETAIL_URL,
+        "id": f"acm-card-{index}",
+        "url": detail_url,
+        "page_url": detail_url,
         "listing_url": LISTING_URL,
         "listing_evidence": source_overrides.LISTING_EVIDENCE,
-        "listing_card_id": "acm-card-1",
+        "listing_card_id": f"acm-card-{index}",
         "link_text": title,
         "headings": [title],
         "image_alts": [],
         "text": "\n".join(rows),
         "text_lines": rows,
-        "detail_urls": [DETAIL_URL],
+        "detail_urls": [detail_url],
         "detail_url_count": 1,
         "detail_enriched": True,
         "detail_evidence": {
@@ -79,7 +83,44 @@ def test_missing_date_and_venue_do_not_remove_official_list_activity() -> None:
     assert event["detail_status"] == "incomplete"
     assert event["detail_error"] == "detail_date_and_venue_not_found"
     assert event["candidate_policy"] == "official-listing-authority-v1"
-    assert event["url"] == DETAIL_URL
+    assert event["url"] == f"{DETAIL_URL}-1"
+
+
+def test_acm_six_list_cards_do_not_collapse_to_two_complete_details() -> None:
+    future = (date.today() + timedelta(days=30)).isoformat()
+    cards = [
+        listed_card(
+            "Date",
+            future,
+            "Location",
+            "Design Gallery, Level 3",
+            index=index,
+            title=f"ACM Activity {index}",
+        )
+        if index <= 2
+        else listed_card(
+            "Official description available on the activity detail page.",
+            index=index,
+            title=f"ACM Activity {index}",
+        )
+        for index in range(1, 7)
+    ]
+    for card in cards[:2]:
+        card["detail_evidence"] = {
+            "title": card["link_text"],
+            "date_candidates": [future],
+            "venue_candidates": ["Design Gallery, Level 3"],
+        }
+
+    results = [
+        listing_membership_authority.event_from_card(source(), card)
+        for card in cards
+    ]
+    events = [event for event, reason in results if event is not None and reason == "accepted"]
+
+    assert len(events) == 6
+    assert sum(event["detail_status"] == "collected" for event in events) == 2
+    assert sum(event["detail_status"] == "incomplete" for event in events) == 4
 
 
 def test_incomplete_verified_activity_survives_output_normalization() -> None:
