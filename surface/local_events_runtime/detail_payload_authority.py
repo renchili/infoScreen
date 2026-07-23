@@ -13,16 +13,29 @@ _APPLIED = False
 _BASE_DETAIL_JS = _detail_dates.ACTIVITY_DETAIL_JS
 _BASE_PICK_WHEN = None
 _BASE_PICK_VENUE = None
+_BASE_PICK_SUMMARY = None
 _SUBVENUE_RE = re.compile(
     r"\b(?:gallery|galleries|level|room|hall|theatre|theater|foyer|atrium|"
     r"concourse|stadium|arena|auditorium|lawn|green)\b",
     re.I,
 )
+_SUMMARY_CTA_RE = re.compile(
+    r"\b(?:book\s+(?:your\s+)?tickets?|buy\s+tickets?|book\s+now|"
+    r"visit\s+.{0,100}?\s+today|plan\s+your\s+visit|find\s+out\s+more|"
+    r"learn\s+more|read\s+more|explore\s+more|register\s+now|sign\s+up|"
+    r"get\s+your\s+tickets?|ticket\s+information)\b",
+    re.I,
+)
+_SUMMARY_SHELL_RE = re.compile(
+    r"\b(?:privacy|cookie|newsletter|copyright|breadcrumb|navigation|"
+    r"previous\s+(?:event|programme)|next\s+(?:event|programme))\b",
+    re.I,
+)
 
-# The base detail extractor already identifies the primary activity and excludes
-# page metadata. This wrapper supplements it with semantic DOM fields used by NHB
-# pages, then puts dates, venue, and description into the same ordered text payload
-# consumed by event_from_card().
+# The base detail extractor identifies the primary activity boundary. This wrapper
+# supplements semantic date/venue fields and selects an activity description from
+# structured Event data or visible content paragraphs. Site-wide metadata and CTA
+# blocks are only fallbacks after structural candidates have been rejected.
 ENRICHED_DETAIL_JS = rf"""
 () => {{
   const base = ({_BASE_DETAIL_JS})();
@@ -36,6 +49,8 @@ ENRICHED_DETAIL_JS = rf"""
   }};
   const rejected = value => /\b(last updated|updated on|page updated|copyright|privacy|cookie|newsletter|previous programme|next programme|previous event|next event|presale|ticket sale|registration opens?)\b/i.test(clean(value));
   const dateLike = value => /\b20\d{{2}}-\d{{1,2}}-\d{{1,2}}\b|\b\d{{1,2}}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+20\d{{2}}\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{{1,2}}(?:st|nd|rd|th)?(?:,)?\s+20\d{{2}}\b/i.test(clean(value));
+  const summaryCta = value => /\b(book\s+(?:your\s+)?tickets?|buy\s+tickets?|book\s+now|visit\s+.{0,100}?\s+today|plan\s+your\s+visit|find\s+out\s+more|learn\s+more|read\s+more|explore\s+more|register\s+now|sign\s+up|get\s+your\s+tickets?|ticket\s+information)\b/i.test(clean(value));
+  const shellText = value => /\b(privacy|cookie|newsletter|copyright|breadcrumb|navigation|previous\s+(?:event|programme)|next\s+(?:event|programme))\b/i.test(clean(value));
   const add = (rows, value) => {{
     const text = clean(value);
     if (text && !rows.includes(text)) rows.push(text);
@@ -61,6 +76,17 @@ ENRICHED_DETAIL_JS = rf"""
     const parent = element.parentElement;
     const parentText = clean(parent ? (parent.innerText || parent.textContent || "") : "");
     return parentText.length <= 240 && rejected(parentText);
+  }};
+  const summaryUseful = value => {{
+    const text = clean(value);
+    if (text.length < 40 || text.length > 1800) return false;
+    if (rejected(text) || shellText(text)) return false;
+    const words = text.split(/\s+/).filter(Boolean);
+    if (summaryCta(text) && (text.length < 360 || words.length < 45)) return false;
+    const letters = text.replace(/[^A-Za-z]/g, "");
+    const uppercase = letters.replace(/[^A-Z]/g, "").length;
+    if (letters.length >= 20 && uppercase / letters.length > 0.82 && words.length < 24) return false;
+    return true;
   }};
 
   const dates = [...(Array.isArray(base.dates) ? base.dates : [])];
@@ -121,7 +147,57 @@ ENRICHED_DETAIL_JS = rf"""
   }}
 
   const title = clean(base.title);
-  const summary = clean(base.summary);
+  const primaryHeading = Array.from(document.querySelectorAll("main h1, article h1, h1"))
+    .find(visible) || null;
+  const summaryRoot = primaryHeading && primaryHeading.closest(
+    "article, [class*='event-detail' i], [class*='eventDetail' i], " +
+    "[class*='detail-page' i], [class*='content-detail' i], main"
+  ) || document.querySelector("main") || document.querySelector("article") || document.body;
+  const summaryRows = [];
+  const pushSummary = (value, score, origin) => {{
+    const text = clean(value);
+    if (!summaryUseful(text) || text === title) return;
+    const existing = summaryRows.find(row => row.text === text);
+    if (existing) {{ existing.score = Math.max(existing.score, score); return; }}
+    summaryRows.push({{text, score, origin}});
+  }};
+
+  const structuredEvent = Array.isArray(base.eventObjects) ? base.eventObjects[0] : null;
+  if (structuredEvent && typeof structuredEvent === "object") {{
+    pushSummary(structuredEvent.description || structuredEvent.summary, 1000, "structured_event");
+  }}
+
+  const summarySelector = [
+    "[itemprop='description']", "p",
+    "[class*='event-description' i]", "[class*='event_description' i]",
+    "[class*='programme-description' i]", "[class*='description' i]",
+    "[class*='intro' i]", "[class*='rich-text' i]", "[class*='richtext' i]"
+  ].join(",");
+  for (const element of Array.from(summaryRoot.querySelectorAll(summarySelector))) {{
+    if (!visible(element)) continue;
+    if (element.closest(
+      "nav,header,footer,aside,form,dialog," +
+      "[class*='breadcrumb' i],[class*='navigation' i],[class*='footer' i]," +
+      "[class*='cta' i],[class*='ticket' i],[class*='booking' i]," +
+      "[class*='banner' i],[class*='promo' i],[class*='share' i]"
+    )) continue;
+    const text = clean(element.innerText || element.textContent || "");
+    let score = element.matches("[itemprop='description']") ? 900 : 600;
+    if (element.tagName === "P") score += 80;
+    if (/\b(?:description|intro|rich-text|richtext)\b/i.test(String(element.className || ""))) score += 50;
+    if (text.length >= 80 && text.length <= 700) score += 80;
+    if (/[.!?](?:\s|$)/.test(text)) score += 20;
+    pushSummary(text, score, "detail_dom");
+  }}
+
+  pushSummary(base.summary, 150, "page_metadata");
+  const metadataSummary = clean(document.querySelector('meta[name="description"]')?.content) ||
+    clean(document.querySelector('meta[property="og:description"]')?.content);
+  pushSummary(metadataSummary, 100, "page_metadata");
+  summaryRows.sort((left, right) => right.score - left.score || left.text.length - right.text.length);
+  const summaryCandidates = summaryRows.map(row => row.text);
+  const summary = summaryCandidates[0] || "";
+
   const originalLines = Array.isArray(base.lines)
     ? base.lines
     : (Array.isArray(base.text_lines) ? base.text_lines : []);
@@ -139,6 +215,7 @@ ENRICHED_DETAIL_JS = rf"""
     dates,
     venues,
     summary,
+    summary_candidates: summaryCandidates,
     lines,
     text_lines: lines,
     text: lines.join("\n")
@@ -156,6 +233,25 @@ def _clean_rows(raw: object) -> list[str]:
         if text and text not in output:
             output.append(text)
     return output
+
+
+def useful_event_summary(value: object) -> str:
+    """Return a narrative activity description, never a site CTA or shell label."""
+
+    text = _extract.clean(value)
+    if len(text) < 40 or len(text) > 1800:
+        return ""
+    if _SUMMARY_SHELL_RE.search(text):
+        return ""
+    words = text.split()
+    if _SUMMARY_CTA_RE.search(text) and (len(text) < 360 or len(words) < 45):
+        return ""
+    letters = "".join(character for character in text if character.isalpha())
+    if letters:
+        uppercase = sum(1 for character in letters if character.isupper())
+        if uppercase / len(letters) > 0.82 and len(words) < 24:
+            return ""
+    return text
 
 
 def _detail_rows(card: dict[str, Any], key: str, evidence_key: str) -> list[str]:
@@ -216,6 +312,22 @@ def _authoritative_venue(card: dict[str, Any]) -> str:
     return valid[0]
 
 
+def _authoritative_summary(card: dict[str, Any]) -> str:
+    candidates = [
+        *_clean_rows(card.get("detail_summary_candidates")),
+        _extract.clean(card.get("detail_summary")),
+    ]
+    evidence = card.get("detail_evidence")
+    if isinstance(evidence, dict):
+        candidates.extend(_clean_rows(evidence.get("summary_candidates")))
+        candidates.append(_extract.clean(evidence.get("summary")))
+    for candidate in candidates:
+        summary = useful_event_summary(candidate)
+        if summary:
+            return summary
+    return ""
+
+
 def _pick_when(card: dict[str, Any]) -> tuple[str, str]:
     value = _authoritative_when(card)
     if value:
@@ -235,11 +347,24 @@ def _pick_venue(
     return _BASE_PICK_VENUE(source, card, when, when_line)
 
 
+def _pick_summary(
+    card: dict[str, Any],
+    title: str,
+    when: str,
+    where: str,
+) -> str:
+    value = _authoritative_summary(card)
+    if value:
+        return _extract.short(value, 260)
+    fallback = useful_event_summary(_BASE_PICK_SUMMARY(card, title, when, where))
+    return _extract.short(fallback, 260) if fallback else "Open the official page for details."
+
+
 def merge_detail_payload(
     card: dict[str, Any],
     detail: dict[str, Any],
 ) -> dict[str, Any]:
-    """Merge every authoritative detail field into the parser's ordered evidence."""
+    """Merge authoritative detail fields into the parser's ordered evidence."""
 
     if not isinstance(detail, dict):
         return dict(card)
@@ -248,7 +373,15 @@ def merge_detail_payload(
     title = " ".join(str(detail.get("title") or "").split())
     dates = _clean_rows(detail.get("dates"))
     venues = _clean_rows(detail.get("venues"))
-    summary = " ".join(str(detail.get("summary") or "").split())
+    summary_candidates = _clean_rows(detail.get("summary_candidates"))
+    summary = useful_event_summary(detail.get("summary"))
+    if summary and summary not in summary_candidates:
+        summary_candidates.insert(0, summary)
+    if not summary:
+        summary = next(
+            (value for value in summary_candidates if useful_event_summary(value)),
+            "",
+        )
     detail_lines = _clean_rows(detail.get("lines") or detail.get("text_lines"))
     if not detail_lines:
         detail_lines = [
@@ -291,6 +424,7 @@ def merge_detail_payload(
     merged["detail_dates"] = dates
     merged["detail_venues"] = venues
     merged["detail_summary"] = summary
+    merged["detail_summary_candidates"] = summary_candidates
     merged["detail_event_objects"] = detail.get("eventObjects") or []
     merged["detail_canonical"] = str(detail.get("canonical") or "")
     merged["detail_enriched"] = True
@@ -303,13 +437,14 @@ def merge_detail_payload(
 def apply() -> None:
     """Install field-preserving detail extraction for Review and formal collection."""
 
-    global _APPLIED, _BASE_PICK_WHEN, _BASE_PICK_VENUE
+    global _APPLIED, _BASE_PICK_WHEN, _BASE_PICK_VENUE, _BASE_PICK_SUMMARY
     if _APPLIED:
         return
 
     _detail_dates.apply()
     _BASE_PICK_WHEN = _extract.pick_when
     _BASE_PICK_VENUE = _extract.pick_venue
+    _BASE_PICK_SUMMARY = _extract.pick_summary
 
     _detail_dates.ACTIVITY_DETAIL_JS = ENRICHED_DETAIL_JS
     _browser.DETAIL_CARD_JS = ENRICHED_DETAIL_JS
@@ -317,6 +452,7 @@ def apply() -> None:
     _source_overrides.AUTHORITATIVE_DETAIL_JS = ENRICHED_DETAIL_JS
     _extract.pick_when = _pick_when
     _extract.pick_venue = _pick_venue
+    _extract.pick_summary = _pick_summary
 
     try:
         from . import event_review as review
@@ -333,6 +469,8 @@ __all__ = [
     "ENRICHED_DETAIL_JS",
     "apply",
     "merge_detail_payload",
+    "useful_event_summary",
+    "_authoritative_summary",
     "_authoritative_venue",
     "_authoritative_when",
 ]
