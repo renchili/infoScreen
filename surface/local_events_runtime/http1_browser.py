@@ -42,9 +42,9 @@ def apply() -> None:
     HTTP/1.1 mode directly. Listing navigation accepts a readable rendered document
     even when lifecycle events do not settle. Review detail pages remain part of the
     blocking Preview request, but stop waiting after response commit and readable
-    activity content. Coverage, source, date, detail-payload, dynamic-listing, card,
-    link, and listing-provenance authorities are applied before their final values
-    are bound into Review Studio.
+    activity content. Coverage, source, date, detail-field, section-aware summary,
+    dynamic-listing, card, link, and listing-provenance authorities are applied
+    before their final values are bound into Review Studio.
     """
 
     global _APPLIED
@@ -97,6 +97,10 @@ def apply() -> None:
     from .detail_payload_authority import apply as apply_detail_payload_authority
 
     apply_detail_payload_authority()
+
+    from .detail_summary_authority import apply as apply_detail_summary_authority
+
+    apply_detail_summary_authority()
 
     from .review_detail_navigation_authority import (
         apply as apply_review_detail_navigation_authority,
