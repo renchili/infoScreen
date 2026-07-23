@@ -14,6 +14,7 @@ from local_events_runtime import listing_only_output_authority  # noqa: E402
 from local_events_runtime import listing_url_authority  # noqa: E402
 from local_events_runtime import mandai_listing_authority  # noqa: E402
 from local_events_runtime import open_ended_date_authority  # noqa: E402
+from local_events_runtime import review_summary_authority  # noqa: E402
 from local_events_runtime.event_review import EventReviewStore  # noqa: E402
 from local_events_runtime.output import normalize_payload  # noqa: E402
 from local_events_runtime.review_publish_authority import (  # noqa: E402
@@ -31,6 +32,7 @@ gardens_field_authority.apply()
 mandai_listing_authority.apply()
 listing_url_authority.apply()
 listing_only_output_authority.apply()
+review_summary_authority.apply()
 collect_events = _local_events_runtime.collect_events
 
 SURFACE_DIR = Path(__file__).resolve().parents[1]
