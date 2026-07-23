@@ -10,15 +10,36 @@ _APPLIED = False
 
 
 def _explicit_venue(card: dict[str, Any]) -> str:
-    """Return a venue read from detail evidence rather than the source fallback."""
+    """Return a venue read from official card/detail evidence, not a fallback label."""
 
     evidence = card.get("detail_evidence")
-    if not isinstance(evidence, dict):
-        return ""
-    for value in evidence.get("venue_candidates") or []:
-        venue = _extract.clean(value)
-        if venue:
-            return venue
+    if isinstance(evidence, dict):
+        for value in evidence.get("venue_candidates") or []:
+            venue = _extract.clean(value)
+            if venue:
+                return venue
+
+    raw_lines = card.get("text_lines")
+    lines = (
+        [_extract.clean(value) for value in raw_lines if _extract.clean(value)]
+        if isinstance(raw_lines, list)
+        else _extract.lines(card.get("text") or "")
+    )
+    for index, line in enumerate(lines):
+        if line.casefold().rstrip(":") not in {"location", "venue", "where"}:
+            continue
+        for candidate in lines[index + 1:index + 4]:
+            if candidate.casefold().rstrip(":") in {
+                "date",
+                "dates",
+                "when",
+                "location",
+                "venue",
+                "where",
+            }:
+                break
+            if candidate:
+                return candidate
     return ""
 
 
@@ -102,7 +123,11 @@ def event_from_card(
     if not url:
         return None, "official_detail_url_not_found"
 
-    event = _source_overrides._structured_event(source, card) or dom_event(source, card)
+    # Resolve through the live source override so source-specific adapters such as
+    # Mandai retain their own complete-card parser after this authority is installed.
+    event = _source_overrides._structured_event(source, card)
+    if event is None:
+        event = _source_overrides._dom_event(source, card)
     if not event:
         return None, "listing_card_title_not_found"
     event["url"] = url
@@ -110,10 +135,10 @@ def event_from_card(
     # Unknown dates are incomplete, not expired. Only concrete parsed dates can
     # prove that an official listed activity has already ended.
     dates = _extract.label_dates(_extract.clean(event.get("when")))
-    end = _source_overrides._event_end(event)
-    if (end or (max(dates) if dates else None)) and (
-        end or max(dates)
-    ) < _extract.TODAY:
+    effective_end = _source_overrides._event_end(event) or (
+        max(dates) if dates else None
+    )
+    if effective_end and effective_end < _extract.TODAY:
         return None, "past_date"
 
     evidence = (
