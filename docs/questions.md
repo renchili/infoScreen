@@ -236,15 +236,37 @@ Failure can occur at page access, expansion, card discovery, detail enrichment, 
 
 ### Correct requirement interpretation
 
-Runtime output includes per-source evidence. A smaller partial run does not replace a larger verified result.
+Runtime output includes per-source evidence. A smaller partial run does not replace a larger verified collector snapshot.
 
 ### Required implementation
 
-Record per-source evidence, calculate partial coverage, preserve verified primary rows when required, and retain a partial payload.
+Record per-source evidence, calculate partial coverage, preserve the producer-owned `local_event_collector_results.json` snapshot when required, retain a partial payload, and rebuild the kiosk primary from the retained collector snapshot plus current Review decisions.
 
 ### Acceptance evidence
 
-Tests and runtime evidence must cover verified-to-partial transitions and retained debug data.
+Tests and runtime evidence must cover verified-to-partial transitions, retained debug data, retained collector rows, and reapplication of confirmed/rejected Review decisions.
+
+## Local Events Review publication and kiosk authority
+
+### Easy-to-make interpretation
+
+The Studio can display corrected date, venue, and description fields while the kiosk continues rendering a separate collector row for the same detail URL, or a duplicate detector can skip the reviewed candidate because that URL is already present.
+
+### Why it fails
+
+That creates two visible truths for one activity. The operator may confirm corrected fields, but the homepage still shows stale collector values. Embedding the entire original collector row inside each public Event also leaks an internal recovery structure into the kiosk payload and makes later collection protection ambiguous.
+
+### Correct requirement interpretation
+
+Review state and collector output may be stored separately, but the kiosk primary is one deterministic projection. For the same canonical detail URL, a confirmed Review candidate is authoritative for its non-empty title, date, venue, and description fields. A rejected candidate suppresses that collector row. Reset/pending restores the collector row.
+
+### Required implementation
+
+Persist producer output to `local_event_collector_results.json`. Build `local_event_search_results.json` from that clean snapshot plus current Review decisions after every accepted producer run, Event decision, and HTTP-service startup migration. Preserve collector order/evidence metadata on matching confirmed rows. Do not replace a non-empty collector field with an empty Review field. Do not place `review_overlay_base` inside public Event rows.
+
+### Acceptance evidence
+
+A fixture with stale collector fields and a confirmed candidate sharing the same canonical URL must produce exactly one kiosk row with the confirmed fields and preserved collector ordering metadata. `NOT RELATED` must remove the matching row, `RESET` must restore the clean collector row, a later producer run must reapply the decision, and the public primary must contain no nested collector-base copy.
 
 ## Dashboard Local Events filtering and collection boundary
 
