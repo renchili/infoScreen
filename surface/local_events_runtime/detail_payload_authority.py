@@ -49,7 +49,7 @@ ENRICHED_DETAIL_JS = rf"""
   }};
   const rejected = value => /\b(last updated|updated on|page updated|copyright|privacy|cookie|newsletter|previous programme|next programme|previous event|next event|presale|ticket sale|registration opens?)\b/i.test(clean(value));
   const dateLike = value => /\b20\d{{2}}-\d{{1,2}}-\d{{1,2}}\b|\b\d{{1,2}}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+20\d{{2}}\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{{1,2}}(?:st|nd|rd|th)?(?:,)?\s+20\d{{2}}\b/i.test(clean(value));
-  const summaryCta = value => /\b(book\s+(?:your\s+)?tickets?|buy\s+tickets?|book\s+now|visit\s+.{0,100}?\s+today|plan\s+your\s+visit|find\s+out\s+more|learn\s+more|read\s+more|explore\s+more|register\s+now|sign\s+up|get\s+your\s+tickets?|ticket\s+information)\b/i.test(clean(value));
+  const summaryCta = value => /\b(book\s+(?:your\s+)?tickets?|buy\s+tickets?|book\s+now|visit\s+.{{0,100}}?\s+today|plan\s+your\s+visit|find\s+out\s+more|learn\s+more|read\s+more|explore\s+more|register\s+now|sign\s+up|get\s+your\s+tickets?|ticket\s+information)\b/i.test(clean(value));
   const shellText = value => /\b(privacy|cookie|newsletter|copyright|breadcrumb|navigation|previous\s+(?:event|programme)|next\s+(?:event|programme))\b/i.test(clean(value));
   const add = (rows, value) => {{
     const text = clean(value);
