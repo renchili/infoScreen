@@ -43,8 +43,8 @@ def apply() -> None:
     even when lifecycle events do not settle. Review detail pages remain part of the
     blocking Preview request, but stop waiting after response commit and readable
     activity content. Coverage, source, date, detail-field, section-aware summary,
-    dynamic-listing, card, link, and listing-provenance authorities are applied
-    before their final values are bound into Review Studio.
+    listing-membership, dynamic-listing, card, link, and listing-provenance
+    authorities are applied before their final values are bound into Review Studio.
     """
 
     global _APPLIED
@@ -119,6 +119,10 @@ def apply() -> None:
     from .gardens_field_authority import apply as apply_gardens_field_authority
 
     apply_gardens_field_authority()
+
+    from .listing_membership_authority import apply as apply_listing_membership_authority
+
+    apply_listing_membership_authority()
 
     from .mandai_listing_authority import apply as apply_mandai_listing_authority
 
