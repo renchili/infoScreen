@@ -84,6 +84,11 @@ def store_at(tmp_path) -> EventReviewStore:
                         "official_home": "https://www.nationalgallery.sg/",
                     },
                     {
+                        "id": "acm",
+                        "name": "Asian Civilisations Museum",
+                        "official_home": "https://www.acm.nhb.gov.sg/",
+                    },
+                    {
                         "id": "mandai",
                         "name": "Mandai Wildlife Group",
                         "official_home": "https://www.mandai.com/",
@@ -131,7 +136,7 @@ def test_two_confirmed_listing_only_cards_with_one_url_are_both_published(tmp_pa
     assert all(item["listing_only"] is True for item in payload["results"])
 
 
-def test_confirmed_events_are_added_without_replacing_collector_rows(tmp_path) -> None:
+def test_confirmed_events_are_added_without_replacing_unrelated_collector_rows(tmp_path) -> None:
     store = store_at(tmp_path)
     runtime_path = store.root.parent / "local_event_search_results.json"
     runtime_path.parent.mkdir(parents=True, exist_ok=True)
@@ -165,10 +170,12 @@ def test_confirmed_events_are_added_without_replacing_collector_rows(tmp_path) -
         "Mandai Wildlife Group",
         "National Gallery Singapore",
     }
-    assert payload["review_publish"]["mode"] == "overlay_on_collector_results"
+    assert payload["review_publish"]["mode"] == (
+        "confirmed_review_fields_override_matching_collector_rows"
+    )
 
 
-def test_rejected_decision_removes_only_review_row(tmp_path) -> None:
+def test_rejected_decision_removes_only_review_only_row(tmp_path) -> None:
     store = store_at(tmp_path)
     runtime_path = store.root.parent / "local_event_search_results.json"
     runtime_path.parent.mkdir(parents=True, exist_ok=True)
@@ -190,18 +197,75 @@ def test_rejected_decision_removes_only_review_row(tmp_path) -> None:
     assert payload["results"] == [system_event()]
 
 
-def test_system_event_with_same_detail_url_is_not_duplicated(tmp_path) -> None:
+def test_confirmed_acm_candidate_replaces_stale_system_fields_for_same_url(tmp_path) -> None:
+    store = store_at(tmp_path)
+    detail_url = (
+        "https://www.acm.nhb.gov.sg/whats-on/exhibitions/"
+        "crosscurrents-masterpieces-of-mughal-safavid-and-ottoman-art-"
+        "from-the-musee-du-louvre"
+    )
+    system = {
+        "title": "Crosscurrents",
+        "when": "Check official page",
+        "where": "Asian Civilisations Museum",
+        "source_name": "Asian Civilisations Museum",
+        "url": detail_url,
+        "summary": "EXHIBITIONS IN-MUSEUM ADMISSION TO PERMANENT GALLERIES",
+        "candidate_policy": VERIFIED_POLICY,
+        "source_type": "official_listing_card",
+        "source_order": 5,
+        "result_order": 3,
+        "listing_evidence": {"selector": "div.a-listing-content__content"},
+    }
+    state = ReviewState(
+        events=[
+            candidate(
+                "acm-crosscurrents",
+                "Crosscurrents: Masterpieces of Mughal, Safavid and Ottoman Art from the Musée du Louvre",
+                "19 June 2026 – 24 January 2027",
+                "confirmed",
+                source_id="acm",
+                source_name="Asian Civilisations Museum",
+                listing_url="https://www.acm.nhb.gov.sg/whats-on/overview",
+                detail_url=detail_url,
+                where="Design Gallery on Level 3",
+                summary="Masterpieces from the Mughal, Safavid and Ottoman worlds.",
+            )
+        ]
+    )
+
+    payload = merge_review_state({"results": [system]}, store, state)
+
+    assert payload["count"] == 1
+    event = payload["results"][0]
+    assert event["title"].startswith("Crosscurrents: Masterpieces")
+    assert event["when"] == "19 June 2026 – 24 January 2027"
+    assert event["where"] == "Design Gallery on Level 3"
+    assert event["summary"] == (
+        "Masterpieces from the Mughal, Safavid and Ottoman worlds."
+    )
+    assert event["source_order"] == 5
+    assert event["result_order"] == 3
+    assert event["listing_evidence"] == system["listing_evidence"]
+    assert event["review_overlay_base"] == system
+    assert payload["review_publish"]["replaced"] == 1
+    assert payload["review_publish"]["added"] == 0
+
+
+def test_reset_restores_collector_row_after_review_overlay(tmp_path) -> None:
     store = store_at(tmp_path)
     detail_url = "https://www.nationalgallery.sg/sg/en/exhibitions/singapore-stories.html"
     system = {
-        "title": "Singapore Stories",
-        "when": "Ongoing",
-        "where": "City Hall Wing, Level 2",
+        "title": "Singapore Stories old title",
+        "when": "Check official page",
+        "where": "National Gallery Singapore",
         "source_name": "National Gallery Singapore",
         "url": detail_url,
+        "summary": "Old system summary",
         "candidate_policy": VERIFIED_POLICY,
+        "source_order": 4,
     }
-    state = ReviewState(
+    confirmed = ReviewState(
         events=[
             candidate(
                 "singapore-stories",
@@ -213,14 +277,18 @@ def test_system_event_with_same_detail_url_is_not_duplicated(tmp_path) -> None:
                 listing_url="https://www.nationalgallery.sg/sg/en/whats-on.html",
                 detail_url=detail_url,
                 where="City Hall Wing, Level 2",
+                summary="Correct reviewed summary",
             )
         ]
     )
 
-    payload = merge_review_state({"results": [system]}, store, state)
+    overlaid = merge_review_state({"results": [system]}, store, confirmed)
+    reset = ReviewState(events=[confirmed.events[0].model_copy(update={"decision": "pending"})])
+    restored = merge_review_state(overlaid, store, reset)
 
-    assert payload["results"] == [system]
-    assert payload["review_publish"]["already_present"] == 1
+    assert restored["count"] == 1
+    assert restored["results"] == [system]
+    assert restored["review_publish"]["replaced"] == 0
 
 
 def test_confirmed_candidate_with_missing_detail_fields_is_still_published(tmp_path) -> None:
@@ -261,8 +329,8 @@ def test_http_bootstrap_installs_coverage_and_review_authorities() -> None:
 def test_surface_refreshes_runtime_without_redrawing_unchanged_content() -> None:
     script = read_text("surface/web/assets/js/local_event_card.js")
 
-    assert "var dataSignature = null" in script
-    assert "if (nextSignature === dataSignature) return false" in script
+    assert "var rawSignature = null" in script
+    assert "if (nextSignature === rawSignature) return false" in script
     assert "apply(data, true)" in script
     assert "setInterval(load, 15000)" in script
     assert "var currentKey = preserveCurrent" in script
