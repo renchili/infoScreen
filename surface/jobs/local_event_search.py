@@ -9,8 +9,12 @@ from pathlib import Path
 import local_events_runtime as _local_events_runtime  # noqa: E402
 from local_events_runtime import complete_collection_authority  # noqa: E402
 from local_events_runtime import detail_date_authority  # noqa: E402
+from local_events_runtime import detail_payload_authority  # noqa: E402
+from local_events_runtime import detail_summary_authority  # noqa: E402
 from local_events_runtime import gardens_field_authority  # noqa: E402
+from local_events_runtime import listing_membership_authority  # noqa: E402
 from local_events_runtime import listing_only_output_authority  # noqa: E402
+from local_events_runtime import listing_provenance_authority  # noqa: E402
 from local_events_runtime import listing_url_authority  # noqa: E402
 from local_events_runtime import mandai_listing_authority  # noqa: E402
 from local_events_runtime import open_ended_date_authority  # noqa: E402
@@ -27,8 +31,12 @@ from local_events_runtime.review_publish_authority import (  # noqa: E402
 
 complete_collection_authority.apply()
 detail_date_authority.apply()
+detail_payload_authority.apply()
+detail_summary_authority.apply()
 open_ended_date_authority.apply()
 gardens_field_authority.apply()
+listing_membership_authority.apply()
+listing_provenance_authority.apply()
 mandai_listing_authority.apply()
 listing_url_authority.apply()
 listing_only_output_authority.apply()
