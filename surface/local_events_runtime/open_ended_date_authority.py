@@ -6,9 +6,20 @@ from typing import Any
 
 from . import extract as _extract
 
+_MONTH = (
+    r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|"
+    r"jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|"
+    r"nov(?:ember)?|dec(?:ember)?)"
+)
 _OPEN_VALUE_RE = re.compile(
     r"^(?:ongoing|permanent|daily|selected dates?|weekends?|public holidays?)"
     r"(?:\s*[·|,\-–—]\s*.+)?$",
+    re.I,
+)
+_OPEN_FROM_RE = re.compile(
+    rf"^from\s+(?:\d{{1,2}}\s+{_MONTH}\s+\d{{4}}|"
+    rf"{_MONTH}\s+\d{{1,2}}(?:st|nd|rd|th)?(?:,)?\s+\d{{4}})"
+    r"(?:\s*[·|,]\s*.+)?$",
     re.I,
 )
 _WHEN_INLINE_RE = re.compile(r"^(?:when|date)\s*:?\s*(.+)$", re.I)
@@ -23,7 +34,7 @@ def open_ended_value(value: object) -> str:
     """Return an explicit non-expiring schedule label, otherwise an empty string."""
 
     text = _extract.clean(value)
-    return text if _OPEN_VALUE_RE.fullmatch(text) else ""
+    return text if (_OPEN_VALUE_RE.fullmatch(text) or _OPEN_FROM_RE.fullmatch(text)) else ""
 
 
 def pick_when(card: dict[str, Any]) -> tuple[str, str]:
@@ -61,7 +72,7 @@ def pick_when(card: dict[str, Any]) -> tuple[str, str]:
 
 
 def current_date_label(label: str) -> bool:
-    """Treat explicit ongoing/recurring labels as current without inventing a date."""
+    """Treat explicit ongoing/start-only labels as current without inventing an end."""
 
     return bool(_BASE_CURRENT_DATE_LABEL(label) or open_ended_value(label))
 
