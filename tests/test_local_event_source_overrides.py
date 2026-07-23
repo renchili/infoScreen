@@ -10,18 +10,45 @@ from .conftest import SURFACE, read_text
 
 sys.path.insert(0, str(SURFACE))
 
-from local_events_runtime import browser, extract, official_feeds, source_overrides  # noqa: E402
-from local_events_runtime.output import normalize_payload  # noqa: E402
-from local_events_runtime.source_overrides import (  # noqa: E402
-    LISTING_EVIDENCE,
-    _listing_card,
-    _merge_detail,
-    _prefer_structured,
-    apply,
-    canonical_detail_url,
+from local_events_runtime import (  # noqa: E402
+    browser,
+    detail_date_authority,
+    extract,
+    listing_membership_authority,
+    listing_provenance_authority,
+    official_feeds,
+    open_ended_date_authority,
+    source_overrides,
 )
+from local_events_runtime.output import normalize_payload  # noqa: E402
+from local_events_runtime.source_overrides import LISTING_EVIDENCE  # noqa: E402
 
-apply()
+
+source_overrides.apply()
+detail_date_authority.apply()
+open_ended_date_authority.apply()
+listing_provenance_authority.apply()
+listing_membership_authority.apply()
+
+
+def _listing_card(source: dict, card: dict, listing_url: str):
+    return source_overrides._listing_card(source, card, listing_url)
+
+
+def _merge_detail(source: dict, card: dict, payload: dict, index: int):
+    return source_overrides._merge_detail(source, card, payload, index)
+
+
+def _prefer_structured(
+    structured: list[dict],
+    dom: list[dict],
+    limit: int,
+):
+    return source_overrides._prefer_structured(structured, dom, limit)
+
+
+def canonical_detail_url(source: dict, value: object) -> bool:
+    return source_overrides.canonical_detail_url(source, value)
 
 
 def source() -> dict:
@@ -76,10 +103,10 @@ def prefer_with_context(
         source_overrides._listing_context.reset(token)
 
 
-def test_browser_discovers_only_isolated_dated_listing_cards() -> None:
+def test_browser_discovers_isolated_listing_cards_without_a_date_gate() -> None:
     assert 'el.matches && el.matches("a[href]")' in browser.CARD_JS
     assert "listingDetailUrls.length !== 1" in browser.CARD_JS
-    assert 'hasDateText(textLines(card).join(" "))' in browser.CARD_JS
+    assert 'if (!hasDateText(textLines(card).join(" "))) continue;' not in browser.CARD_JS
     assert "#nhb-" not in browser.CARD_JS.split(
         'push(out, seen, el, url, "", "nhb_dom_card")', 1
     )[0].split("function pushNhbCards", 1)[-1]
@@ -92,24 +119,28 @@ def test_deep_scroll_stops_only_after_the_listing_is_stable() -> None:
     assert "Math.max(Number(args.maxRounds || 0), 24)" in browser.PREPARE_PAGE_JS
 
 
-def test_detail_url_validation_is_structural_not_a_named_blocklist() -> None:
+def test_detail_url_validation_uses_listing_provenance_not_target_domain() -> None:
     policy_source = source()
     assert canonical_detail_url(policy_source, "https://example.org/whats-on/family-sports-day")
     assert canonical_detail_url(policy_source, "https://example.org/whats-on/plan-your-itinerary")
+    assert canonical_detail_url(policy_source, "https://tickets.example/events/family-sports-day")
     assert not canonical_detail_url(policy_source, "https://example.org/whats-on")
     assert not canonical_detail_url(policy_source, "https://example.org/#nhb-generated")
-    assert not canonical_detail_url(policy_source, "https://other.example/events/item")
     assert not canonical_detail_url(policy_source, "https://example.org/media/card.jpg")
 
 
-def test_information_page_is_rejected_without_positive_listing_date_evidence() -> None:
+def test_official_listing_card_without_date_is_admitted_for_detail_enrichment() -> None:
     card = dom_card(
-        "Plan Your Itinerary",
-        "https://example.org/whats-on/plan-your-itinerary",
-        "Open daily",
+        "Family Sports Day",
+        "https://example.org/whats-on/family-sports-day",
+        "Details available on the official page",
     )
 
-    assert _listing_card(source(), card, "https://example.org/whats-on") is None
+    admitted = _listing_card(source(), card, "https://example.org/whats-on")
+
+    assert admitted is not None
+    assert admitted["listing_evidence"] == LISTING_EVIDENCE
+    assert admitted["url"] == "https://example.org/whats-on/family-sports-day"
 
 
 def test_real_listing_card_is_positive_activity_membership_evidence() -> None:
@@ -268,7 +299,7 @@ def test_event_shaped_card_without_listing_evidence_is_rejected() -> None:
     assert reason == "missing_official_listing_evidence"
 
 
-def test_output_keeps_only_verified_current_events() -> None:
+def test_output_keeps_verified_current_and_incomplete_events() -> None:
     yesterday = date.today() - timedelta(days=1)
     tomorrow = date.today() + timedelta(days=1)
     payload = normalize_payload(
@@ -297,11 +328,22 @@ def test_output_keeps_only_verified_current_events() -> None:
                     "url": "https://example.org/events/current",
                     "candidate_policy": "official-listing-authority-v1",
                 },
+                {
+                    "title": "Incomplete Official Event",
+                    "when": "",
+                    "where": "Official Venue",
+                    "url": "https://example.org/events/incomplete",
+                    "candidate_policy": "official-listing-authority-v1",
+                    "detail_status": "incomplete",
+                },
             ]
         }
     )
 
-    assert [item["title"] for item in payload["results"]] == ["Current Event"]
+    assert [item["title"] for item in payload["results"]] == [
+        "Current Event",
+        "Incomplete Official Event",
+    ]
     assert payload["expired_events_removed"] == 1
     assert payload["invalid_events_removed"] == 1
 
