@@ -246,6 +246,28 @@ Record per-source evidence, calculate partial coverage, preserve verified primar
 
 Tests and runtime evidence must cover verified-to-partial transitions and retained debug data.
 
+## Dashboard Local Events filtering and collection boundary
+
+### Easy-to-make interpretation
+
+The kiosk card’s `SEARCH` control should submit the displayed text as a new collection location and call `POST /api/local-events/search` every time the user wants to narrow the visible events.
+
+### Why it fails
+
+Collection is an expensive producer operation that opens many official pages and rewrites runtime state. It does not provide an immediate or predictable filter over the events already displayed, so a search control can appear to do nothing while unnecessarily starting another crawl.
+
+### Correct requirement interpretation
+
+The dashboard filter operates only on the current `local_event_search_results.json` payload. The institution dropdown is populated from the current event rows, and typed text filters title, institution/source, date/time, venue/place, and description. Collection remains a timer-driven or explicit API operation outside the kiosk filter.
+
+### Required implementation
+
+Load current rows with `GET /api/local-events/search`, retain the unfiltered row set in browser memory, populate `ALL INSTITUTIONS` plus the distinct current institutions, and apply institution and text filters locally. Persist only the browser filter choices. Do not send a POST, launch Chromium, or write runtime JSON when the filter button is pressed. Reapply active filters after periodic GET reloads.
+
+### Acceptance evidence
+
+Browser network evidence must show that pressing `FILTER` causes no `POST /api/local-events/search`. Selecting one institution must display only that institution’s rows; text terms must match across the documented fields; clearing both controls must restore all current rows; and a later GET refresh must keep the active filter applied.
+
 ## Validation boundaries
 
 ### Easy-to-make interpretation
