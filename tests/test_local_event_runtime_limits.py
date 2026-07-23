@@ -33,11 +33,14 @@ def test_supported_bootstrap_applies_coverage_before_review_modules() -> None:
     assert coverage < detail < review
 
 
-def test_job_writes_primary_and_partial_outputs_with_review_overlay() -> None:
+def test_job_writes_collector_primary_and_partial_outputs() -> None:
     script = read_text("surface/jobs/local_event_search.py")
 
     assert 'OUT = ENV_DIR / "local_event_search_results.json"' in script
+    assert "COLLECTOR_OUT = ENV_DIR / COLLECTOR_RUNTIME_FILENAME" in script
     assert 'PARTIAL_OUT = ENV_DIR / "local_event_search_results.partial.json"' in script
+    assert "load_collector_snapshot" in script
+    assert "write_collector_snapshot" in script
     assert "merge_review_state" in script
     assert "collector_complete_with_review" in script
     assert "kept_previous_verified_result_with_review" in script
@@ -55,13 +58,15 @@ def test_deployed_services_allow_complete_collection_duration() -> None:
     assert "Environment=LOCAL_EVENT_SEARCH_TIMEOUT_SECONDS=7500" in http
 
 
-def test_review_publisher_overlays_without_normalizing_collector_rows() -> None:
+def test_review_publisher_projects_without_normalizing_collector_rows() -> None:
     publisher = read_text(
         "surface/local_events_runtime/review_publish_authority.py"
     )
 
-    assert "overlay_on_collector_results" in publisher
-    assert "system_results" in publisher
-    assert 'item.get("review_publish_origin") != _REVIEW_PUBLISH_ORIGIN' in publisher
+    assert "review_projection_over_collector_snapshot" in publisher
+    assert "clean_collector_payload" in publisher
+    assert "write_collector_snapshot" in publisher
+    assert "suppresses a matching collector row" in publisher
     assert "normalize_payload" not in publisher
-    assert "candidate.decision == \"confirmed\"" in publisher
+    assert 'candidate.decision in accepted' in publisher
+    assert 'merged[_REVIEW_OVERLAY_BASE]' not in publisher
