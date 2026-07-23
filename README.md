@@ -105,7 +105,7 @@ Surface or Ubuntu device
 | --- | --- | --- | --- |
 | Market and Weather | `infoscreen-live-data.timer` or Market refresh | `market.json`, `weather.json` | `dashboard.js` |
 | Multilingual News | `infoscreen-event-stream.timer` | `event_stream.json` | `local_event_card.js` |
-| Local Events | `infoscreen-local-events.timer` or location search | `local_event_search_results.json`, `/api/local-events/search` | `local_event_card.js` |
+| Local Events | `infoscreen-local-events.timer` or explicit collection API | `local_event_search_results.json`, `/api/local-events/search` | `local_event_card.js` |
 | Local Event review | Operator actions | `/api/local-events/review/*`, `local_event_review/state.json` | Local Event Studio scripts |
 | Calendar | Mac LaunchAgent | `schedule.json` | `calendar_board.js` |
 | Photos | Manual photo builder | `photos.json`, `/public_photos/*` | `local_event_card.js` |
@@ -120,11 +120,16 @@ Each visible DOM mount has one renderer owner. Producers write runtime data; bro
 - A Market refresh runs `surface/fetch_live_data.py`, so it refreshes both Market and Weather.
 - At most 12 unique symbols are stored.
 
-## Local-event location
+## Local-event dashboard filter
 
-- The last location is stored in browser `localStorage` as `local_events_location`.
-- Search sends `POST /api/local-events/search`.
-- The server runs the source-specific collector and returns the resulting runtime payload.
+- The kiosk card reads the current results with `GET /api/local-events/search`; opening or applying its filter does not run a collection.
+- The institution dropdown is built from the institutions present in the current event rows and includes `ALL INSTITUTIONS`.
+- The text field filters title, institution/source, date/time, venue/place, and description. Multiple typed terms must all match the same event.
+- The selected institution and text are stored in browser `localStorage` as `local_events_filter_source` and `local_events_filter_query`.
+- Pressing `FILTER` only filters the already-loaded rows in browser memory. It does not send `POST /api/local-events/search`, launch Chromium, or rewrite runtime JSON.
+- Periodic GET reloads keep the current filter applied to newly loaded results.
+
+`POST /api/local-events/search` remains an explicit producer trigger for direct operator/API use; it is not the kiosk filter action.
 
 ## Local Event Studio
 
