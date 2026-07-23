@@ -69,7 +69,7 @@ def _review_event(candidate: _review.EventCandidate) -> dict[str, Any]:
     return {
         "title": _published_title(candidate),
         "when": when,
-        "where": _extract.clean(candidate.where) or source_name,
+        "where": _extract.clean(candidate.where),
         "host": source_name,
         "source_name": source_name,
         "url": detail_url or listing_url,
@@ -226,12 +226,39 @@ def _overlay_confirmed_fields(
     collector_row: dict[str, Any],
     review_event: dict[str, Any],
 ) -> dict[str, Any]:
-    """Use confirmed fields while retaining collector order and evidence metadata."""
+    """Use non-empty confirmed fields while retaining collector evidence metadata."""
 
     merged = dict(collector_row)
-    merged.update(review_event)
+    protected_if_empty = {"title", "where", "summary"}
+    date_fields = {"when", "start_date", "end_date"}
+
+    for key, value in review_event.items():
+        if key in protected_if_empty:
+            if _extract.clean(value):
+                merged[key] = value
+            continue
+        if key in date_fields:
+            continue
+        merged[key] = value
+
+    if _extract.clean(review_event.get("when")):
+        merged["when"] = review_event["when"]
+        merged["start_date"] = review_event.get("start_date") or ""
+        merged["end_date"] = review_event.get("end_date") or ""
+
     merged["review_publish_origin"] = _REVIEW_PUBLISH_ORIGIN
     return merged
+
+
+def _complete_review_only_event(event: dict[str, Any]) -> dict[str, Any]:
+    """Fill only the minimum display fallback for a Review-only activity."""
+
+    completed = dict(event)
+    if not _extract.clean(completed.get("where")):
+        completed["where"] = _extract.clean(
+            completed.get("source_name") or completed.get("host")
+        )
+    return completed
 
 
 def merge_review_state(
@@ -295,7 +322,7 @@ def merge_review_state(
             published_urls.add(event_url)
         if semantic_key:
             published_semantic_keys.add(semantic_key)
-        review_only_results.append(event)
+        review_only_results.append(_complete_review_only_event(event))
         added += 1
 
     for candidate in _ordered_candidates(store, current, {"rejected"}):
