@@ -2,7 +2,7 @@ name: InfoScreen acceptance
 
 on:
   push:
-    branches: [main]
+    branches: [main, ci/local-events-acm-membership-1a3c54]
   pull_request:
     branches: [main]
   workflow_dispatch:
