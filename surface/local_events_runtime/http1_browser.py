@@ -43,7 +43,7 @@ def apply() -> None:
     even when lifecycle events do not settle. Review detail pages remain part of the
     blocking Preview request, but stop waiting after response commit and readable
     activity content. Coverage, source, date, detail-field, section-aware summary,
-    listing-membership, dynamic-listing, card, link, and listing-provenance
+    listing-provenance, listing-membership, dynamic-listing, card, and link
     authorities are applied before their final values are bound into Review Studio.
     """
 
@@ -120,10 +120,16 @@ def apply() -> None:
 
     apply_gardens_field_authority()
 
+    from .listing_provenance_authority import apply as apply_listing_provenance_authority
+
+    apply_listing_provenance_authority()
+
     from .listing_membership_authority import apply as apply_listing_membership_authority
 
     apply_listing_membership_authority()
 
+    # Mandai wraps the final provenance and membership functions so its legitimate
+    # listing-only activities retain their separate card identities.
     from .mandai_listing_authority import apply as apply_mandai_listing_authority
 
     apply_mandai_listing_authority()
@@ -132,9 +138,9 @@ def apply() -> None:
 
     apply_structural_link_authority()
 
-    from .listing_provenance_authority import apply as apply_listing_provenance_authority
+    from .listing_url_authority import apply as apply_listing_url_authority
 
-    apply_listing_provenance_authority()
+    apply_listing_url_authority()
 
     # event_review was imported by detail_date_authority before the dynamic and
     # structural JavaScript rewrites above. Rebind only after the final versions are
