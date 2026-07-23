@@ -121,7 +121,8 @@ def test_detail_dom_extractor_reads_structural_fields_and_rejects_metadata_cta()
     assert "itemprop='description'" in script
     assert "summary_candidates" in script
     assert "structured_event" in script
-    assert "book\\s+(?:your\\s+)?tickets" in script
+    assert "visit\\s+.{0,100}?\\s+today" in script
+    assert "(0, 100)" not in script
     assert 'add(lines, "date")' in script
     assert 'add(lines, "location")' in script
 
