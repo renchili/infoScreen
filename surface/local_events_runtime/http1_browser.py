@@ -138,6 +138,12 @@ def apply() -> None:
 
     apply_event_review_diagnostics()
 
+    # Review summary sanitisation must patch the publisher before its apply() call,
+    # because publisher startup immediately projects existing confirmed state.
+    from .review_summary_authority import apply as apply_review_summary_authority
+
+    apply_review_summary_authority()
+
     from .review_publish_authority import apply as apply_review_publish_authority
 
     apply_review_publish_authority()
