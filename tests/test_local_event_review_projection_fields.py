@@ -124,6 +124,28 @@ def test_review_cta_does_not_replace_collector_activity_description(tmp_path) ->
     assert "BOOK YOUR TICKET" not in event["summary"]
 
 
+def test_review_terms_do_not_replace_collector_activity_description(tmp_path) -> None:
+    store = store_at(tmp_path)
+    detail_url = "https://www.heritage.sg/childrensmuseum/whatson/activities/example"
+    collector = {"results": [collector_event(detail_url)]}
+    reviewed = candidate(
+        detail_url,
+        summary=(
+            "This programme is based on a first-come-first-served basis. "
+            "For further enquiries, please email cmsg_prg@heritage.sg. "
+            "Terms & Conditions: This programme is free, but donations are encouraged. "
+            "No pre-registration is required. For safety, children must be accompanied."
+        ),
+    )
+
+    payload = merge_review_state(collector, store, ReviewState(events=[reviewed]))
+    event = payload["results"][0]
+
+    assert event["summary"] == collector["results"][0]["summary"]
+    assert "Terms & Conditions" not in event["summary"]
+    assert "cmsg_prg@heritage.sg" not in event["summary"]
+
+
 def test_non_empty_review_date_replaces_complete_collector_date_tuple(tmp_path) -> None:
     store = store_at(tmp_path)
     detail_url = "https://www.acm.nhb.gov.sg/whats-on/exhibitions/example"
