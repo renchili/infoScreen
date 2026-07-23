@@ -42,6 +42,7 @@ def test_acm_detail_payload_produces_date_venue_and_description() -> None:
             "Asian Civilisations Museum, 1 Empress Place, Singapore 179555",
         ],
         "summary": summary,
+        "summary_candidates": [summary],
         "lines": [
             "Crosscurrents: Masterpieces of Mughal, Safavid, and Ottoman Art from the Musée du Louvre",
             "Last Updated",
@@ -70,6 +71,38 @@ def test_acm_detail_payload_produces_date_venue_and_description() -> None:
     assert event["when"] != "30 Jun 2026"
 
 
+def test_site_metadata_cta_is_not_an_event_summary() -> None:
+    cta = "Visit Asian Civilisations Museum today BOOK YOUR TICKET NOW"
+    narrative = (
+        "From the 16th to 18th century, three great empires shaped a vast and "
+        "interconnected world across Asia through art, trade, and diplomacy."
+    )
+
+    assert authority.useful_event_summary(cta) == ""
+    assert authority.useful_event_summary(narrative) == narrative
+
+
+def test_narrative_candidate_wins_when_payload_summary_is_cta() -> None:
+    narrative = (
+        "This exhibition presents one hundred masterpieces from the Louvre, drawn "
+        "from royal collections and later acquisitions across several centuries."
+    )
+    merged = authority.merge_detail_payload(
+        {"text": "Listing card", "extraction_mode": "detail_link"},
+        {
+            "title": "Crosscurrents",
+            "summary": "Visit Asian Civilisations Museum today BOOK YOUR TICKET NOW",
+            "summary_candidates": [narrative],
+            "dates": [],
+            "venues": [],
+            "lines": [],
+        },
+    )
+
+    assert merged["detail_summary"] == narrative
+    assert merged["detail_summary_candidates"] == [narrative]
+
+
 def test_separate_structured_start_and_end_dates_become_one_range() -> None:
     card = {
         "detail_dates": ["2026-06-19", "2027-01-24"],
@@ -78,14 +111,17 @@ def test_separate_structured_start_and_end_dates_become_one_range() -> None:
     assert authority._authoritative_when(card) == "19 Jun 2026 – 24 Jan 2027"
 
 
-def test_detail_dom_extractor_reads_semantic_nhb_fields_and_rejects_metadata() -> None:
+def test_detail_dom_extractor_reads_structural_fields_and_rejects_metadata_cta() -> None:
     script = authority.ENRICHED_DETAIL_JS.lower()
 
     assert "itemprop='startdate'" in script
     assert "itemprop='enddate'" in script
     assert "event-location" in script
     assert "event-venue" in script
-    assert "last updated" in script
+    assert "itemprop='description'" in script
+    assert "summary_candidates" in script
+    assert "structured_event" in script
+    assert "book\\s+(?:your\\s+)?tickets" in script
     assert 'add(lines, "date")' in script
     assert 'add(lines, "location")' in script
 
