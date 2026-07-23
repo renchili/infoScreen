@@ -57,7 +57,7 @@ def _published_title(candidate: _review.EventCandidate) -> str:
 
 
 def _review_event(candidate: _review.EventCandidate) -> dict[str, Any]:
-    """Convert one admitted review candidate without re-running crawler admission."""
+    """Convert one reviewed candidate without re-running crawler admission."""
 
     listing_url = _canonical_url(candidate.listing_url)
     detail_url = _canonical_url(candidate.detail_url) or listing_url
@@ -65,11 +65,6 @@ def _review_event(candidate: _review.EventCandidate) -> dict[str, Any]:
     dates = _extract.label_dates(when)
     source_name = _extract.clean(candidate.source_name or candidate.source_id)
     listing_only = not detail_url or detail_url == listing_url
-    decision_prefix = (
-        "operator_confirmed"
-        if candidate.decision == "confirmed"
-        else "review_pending"
-    )
 
     return {
         "title": _published_title(candidate),
@@ -83,9 +78,9 @@ def _review_event(candidate: _review.EventCandidate) -> dict[str, Any]:
         "end_date": max(dates).isoformat() if len(dates) >= 2 else "",
         "kind": "event",
         "source_type": (
-            f"{decision_prefix}_official_listing_card_without_detail"
+            "operator_confirmed_official_listing_card_without_detail"
             if listing_only
-            else f"{decision_prefix}_official_listing_card"
+            else "operator_confirmed_official_listing_card"
         ),
         "candidate_policy": "official-listing-authority-v1",
         "listing_url": listing_url,
@@ -266,46 +261,18 @@ def _complete_review_only_event(event: dict[str, Any]) -> dict[str, Any]:
     return completed
 
 
-def _register_identity(
-    event: dict[str, Any],
-    published_urls: set[str],
-    published_semantic_keys: set[str],
-) -> None:
-    event_url = _canonical_url(event.get("url"))
-    semantic_key = _semantic_identity(event)
-    if event_url:
-        published_urls.add(event_url)
-    if semantic_key:
-        published_semantic_keys.add(semantic_key)
-
-
-def _review_duplicate(
-    event: dict[str, Any],
-    published_urls: set[str],
-    published_semantic_keys: set[str],
-) -> bool:
-    event_url = _canonical_url(event.get("url"))
-    semantic_key = _semantic_identity(event)
-    if event.get("listing_only") is True:
-        return bool(semantic_key and semantic_key in published_semantic_keys)
-    return bool(
-        (event_url and event_url in published_urls)
-        or (semantic_key and semantic_key in published_semantic_keys)
-    )
-
-
 def merge_review_state(
     payload: dict[str, Any],
     store: _review.EventReviewStore,
     state: _review.ReviewState | None = None,
 ) -> dict[str, Any]:
-    """Project official-list Review candidates over a clean collector snapshot.
+    """Project Review decisions over a clean collector snapshot.
 
-    ``confirmed`` candidates replace matching collector fields or append a Review row.
-    ``pending`` candidates already have official-list membership, so unmatched rows are
-    also published; when a collector row already exists, pending leaves that row
-    unchanged. ``rejected`` suppresses a matching collector row. The projection is
-    rebuilt from the producer snapshot every time, so decisions never mutate the base.
+    ``confirmed`` replaces matching collector fields or appends a Review-only row.
+    ``rejected`` suppresses a matching collector row. ``pending`` leaves the collector
+    row unchanged. The projection is rebuilt from the producer snapshot every time,
+    so RESET restores collector output without embedding a second row inside the
+    public kiosk payload.
     """
 
     current = state or store.load()
@@ -316,21 +283,16 @@ def merge_review_state(
     published_urls: set[str] = set()
     published_semantic_keys: set[str] = set()
 
-    confirmed_candidates = _ordered_candidates(store, current, {"confirmed"})
-    pending_candidates = _ordered_candidates(store, current, {"pending"})
-    rejected_candidates = _ordered_candidates(store, current, {"rejected"})
-
     added = 0
     replaced = 0
     rejected = 0
     already_present = 0
-    pending_added = 0
-    pending_existing = 0
     review_only_results: list[dict[str, Any]] = []
 
-    # Confirmed candidates have the strongest field authority and therefore run first.
-    for candidate in confirmed_candidates:
+    for candidate in _ordered_candidates(store, current, {"confirmed"}):
         event = _review_event(candidate)
+        event_url = _canonical_url(event.get("url"))
+        semantic_key = _semantic_identity(event)
         system_index = _matching_collector_index(system_results, event, consumed)
 
         if system_index is not None:
@@ -339,42 +301,31 @@ def merge_review_state(
                 event,
             )
             consumed.add(system_index)
-            _register_identity(event, published_urls, published_semantic_keys)
+            if event_url:
+                published_urls.add(event_url)
+            if semantic_key:
+                published_semantic_keys.add(semantic_key)
             replaced += 1
             continue
 
-        if _review_duplicate(event, published_urls, published_semantic_keys):
+        duplicate_review = (
+            semantic_key in published_semantic_keys
+            if event.get("listing_only") is True
+            else bool(event_url and event_url in published_urls)
+            or semantic_key in published_semantic_keys
+        )
+        if duplicate_review:
             already_present += 1
             continue
 
-        _register_identity(event, published_urls, published_semantic_keys)
+        if event_url:
+            published_urls.add(event_url)
+        if semantic_key:
+            published_semantic_keys.add(semantic_key)
         review_only_results.append(_complete_review_only_event(event))
         added += 1
 
-    # Pending still means admitted by an official Event List. It is not a publication
-    # veto. Existing collector rows remain untouched until the operator confirms them;
-    # unmatched pending rows are appended so source coverage cannot collapse to the
-    # small subset that has already been reviewed.
-    for candidate in pending_candidates:
-        event = _review_event(candidate)
-        system_index = _matching_collector_index(system_results, event, consumed)
-
-        if system_index is not None:
-            consumed.add(system_index)
-            _register_identity(event, published_urls, published_semantic_keys)
-            pending_existing += 1
-            continue
-
-        if _review_duplicate(event, published_urls, published_semantic_keys):
-            already_present += 1
-            continue
-
-        _register_identity(event, published_urls, published_semantic_keys)
-        review_only_results.append(_complete_review_only_event(event))
-        added += 1
-        pending_added += 1
-
-    for candidate in rejected_candidates:
+    for candidate in _ordered_candidates(store, current, {"rejected"}):
         event = _review_event(candidate)
         system_index = _matching_collector_index(
             system_results,
@@ -400,16 +351,13 @@ def merge_review_state(
     merged["updated_at"] = _review.utc_now()
     merged["review_publish"] = {
         "published_at": merged["updated_at"],
-        "confirmed_count": len(confirmed_candidates),
-        "pending_count": len(pending_candidates),
-        "rejected_count": len(rejected_candidates),
+        "confirmed_count": len(_ordered_candidates(store, current, {"confirmed"})),
+        "rejected_count": len(_ordered_candidates(store, current, {"rejected"})),
         "added": added,
-        "pending_added": pending_added,
-        "pending_existing": pending_existing,
         "replaced": replaced,
         "suppressed": rejected,
         "already_present": already_present,
-        "mode": "official_listing_review_projection_over_collector_snapshot",
+        "mode": "review_projection_over_collector_snapshot",
         "collector_snapshot": str(collector_runtime_path(store)),
         "state_path": str(store.state_path),
     }
