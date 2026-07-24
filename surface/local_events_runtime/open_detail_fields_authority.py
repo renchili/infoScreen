@@ -18,7 +18,8 @@ _BASE_PICK_VENUE = None
 _EXPLICIT_YEAR_RE = re.compile(r"\b20\d{2}\b")
 _VENUE_HINT_RE = re.compile(
     r"\b(?:museum|gallery|galleries|level|room|hall|theatre|theater|"
-    r"auditorium|atrium|foyer|lobby|library|centre|center|park|gardens?|zoo)\b",
+    r"auditorium|atrium|foyer|lobby|library|centre|center|park|gardens?|zoo|"
+    r"green|hardcourt|courtyard|plaza|studio|basement|meeting point)\b",
     re.I,
 )
 _NON_VENUE_RE = re.compile(
@@ -96,7 +97,7 @@ def pick_when(card: dict[str, Any]) -> tuple[str, str]:
     return _BASE_PICK_WHEN(card)
 
 
-def _valid_venue(value: object) -> bool:
+def _valid_venue(value: object, *, require_hint: bool = False) -> bool:
     text = _extract.clean(value)
     if not text or len(text) > 180 or len(text.split()) > 24:
         return False
@@ -104,7 +105,7 @@ def _valid_venue(value: object) -> bool:
         return False
     if _extract.DATE_LINE_RE.search(text) or _extract.TIME_RE.fullmatch(text):
         return False
-    return bool(_VENUE_HINT_RE.search(text))
+    return not require_hint or bool(_VENUE_HINT_RE.search(text))
 
 
 def pick_venue(
@@ -113,7 +114,7 @@ def pick_venue(
     when: str,
     when_line: str,
 ) -> str:
-    """Reject programme taxonomy such as ``In-gallery`` as a physical venue."""
+    """Reject programme taxonomy while preserving explicit short venue names."""
 
     venue = _extract.clean(_BASE_PICK_VENUE(source, card, when, when_line))
     if _valid_venue(venue):
@@ -130,7 +131,7 @@ def explicit_venue(card: dict[str, Any]) -> str:
 
     candidates: list[tuple[int, int, str]] = []
     for index, line in enumerate(_card_lines(card)):
-        if not _valid_venue(line):
+        if not _valid_venue(line, require_hint=True):
             continue
 
         score = 0
