@@ -207,7 +207,7 @@ def test_valid_review_narrative_is_not_replaced_by_runtime(tmp_path) -> None:
     assert store.state_payload()["events"][0]["summary"] == review_narrative
 
 
-def test_past_detail_result_keeps_parsed_date_and_venue(monkeypatch) -> None:
+def test_past_detail_result_keeps_fields_until_lifecycle_filter(monkeypatch) -> None:
     install_play_on_field_stubs(monkeypatch)
     monkeypatch.setattr(
         authority,
@@ -241,17 +241,45 @@ def test_past_detail_result_keeps_parsed_date_and_venue(monkeypatch) -> None:
     assert result["detail_error"] == "past_date"
 
 
-def test_existing_past_candidate_exposes_recovered_fields(tmp_path, monkeypatch) -> None:
+def test_existing_past_candidate_is_removed_after_field_recovery(
+    tmp_path,
+    monkeypatch,
+) -> None:
     install_play_on_field_stubs(monkeypatch)
+    monkeypatch.setattr(
+        authority._detail_dates,
+        "_candidate_expired",
+        lambda row: "30–31 MAY 2026" in row.when,
+    )
     store = store_at(tmp_path)
-    store.save(ReviewState(events=[past_candidate()]))
+    store.save(
+        ReviewState(
+            events=[past_candidate()],
+            event_collection={"candidate_count": 1},
+        )
+    )
 
-    event = store.state_payload()["events"][0]
+    payload = store.state_payload()
 
-    assert event["when"] == "30–31 MAY 2026 · 10AM–5PM"
-    assert event["where"] == "Asian Civilisations Museum"
-    assert event["detail_error"] == "past_date"
-    assert event["summary"] == PLAY_ON_DETAIL
+    assert payload["events"] == []
+    assert payload["event_collection"]["candidate_count"] == 0
+    assert payload["event_collection"]["expired_candidate_count"] >= 1
+
+
+def test_fresh_past_candidate_is_not_persisted(tmp_path, monkeypatch) -> None:
+    install_play_on_field_stubs(monkeypatch)
+    monkeypatch.setattr(
+        authority._detail_dates,
+        "_candidate_expired",
+        lambda row: "30–31 MAY 2026" in row.when,
+    )
+    store = store_at(tmp_path)
+
+    state = store.replace_events([past_candidate()], {"candidate_count": 1})
+
+    assert state.events == []
+    assert state.event_collection["candidate_count"] == 0
+    assert state.event_collection["expired_candidate_count"] >= 1
 
 
 def test_review_uses_final_formal_event_parser() -> None:
