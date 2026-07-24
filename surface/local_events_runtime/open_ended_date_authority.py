@@ -37,25 +37,31 @@ def open_ended_value(value: object) -> str:
     return text if (_OPEN_VALUE_RE.fullmatch(text) or _OPEN_FROM_RE.fullmatch(text)) else ""
 
 
-def pick_when(card: dict[str, Any]) -> tuple[str, str]:
-    """Fall back to explicit open-ended labels when no calendar date is present."""
-
-    when, source_line = _BASE_PICK_WHEN(card)
-    if when:
-        return when, source_line
-
+def _card_lines(card: dict[str, Any]) -> list[str]:
     raw_lines = card.get("text_lines")
-    lines = (
+    return (
         [_extract.clean(item) for item in raw_lines if _extract.clean(item)]
         if isinstance(raw_lines, list)
         else _extract.lines(card.get("text") or "")
     )
+
+
+def _explicit_open_label(card: dict[str, Any]) -> tuple[str, str]:
+    """Read a complete ongoing/start-only label before generic date parsing.
+
+    Generic parsers extract the calendar fragment from ``From 23 May 2025`` and
+    return ``23 May 2025``. That loses the start-only meaning and makes an ongoing
+    exhibition look like a past one-day Event. The complete label is authoritative.
+    """
+
+    lines = _card_lines(card)
     for index, line in enumerate(lines):
         inline = _WHEN_INLINE_RE.fullmatch(line)
         if inline:
             value = open_ended_value(inline.group(1))
             if value:
                 return value, line
+
         if _WHEN_LABEL_RE.fullmatch(line):
             for candidate in lines[index + 1:index + 4]:
                 if _WHEN_LABEL_RE.fullmatch(candidate):
@@ -65,9 +71,23 @@ def pick_when(card: dict[str, Any]) -> tuple[str, str]:
                     return value, line
                 if _extract.DATE_LINE_RE.search(candidate):
                     break
+
         value = open_ended_value(line)
         if value:
             return value, line
+    return "", ""
+
+
+def pick_when(card: dict[str, Any]) -> tuple[str, str]:
+    """Preserve explicit open-ended labels before generic calendar extraction."""
+
+    open_value, source_line = _explicit_open_label(card)
+    if open_value:
+        return open_value, source_line
+
+    when, source_line = _BASE_PICK_WHEN(card)
+    if when:
+        return when, source_line
     return "", ""
 
 
@@ -98,4 +118,10 @@ def apply() -> None:
     _APPLIED = True
 
 
-__all__ = ["apply", "current_date_label", "open_ended_value", "pick_when"]
+__all__ = [
+    "apply",
+    "current_date_label",
+    "open_ended_value",
+    "pick_when",
+    "_explicit_open_label",
+]
