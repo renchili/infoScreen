@@ -39,10 +39,12 @@ def apply() -> None:
 
     The Surface has observed Chromium navigation failures with
     ERR_HTTP2_PROTOCOL_ERROR on official Event sites. Collection starts in
-    HTTP/1.1 mode directly. Listing navigation accepts a readable rendered document
-    even when lifecycle events do not settle. Review detail pages remain part of the
-    blocking Preview request, but stop waiting after response commit and readable
-    activity content. Coverage, source, date, detail-field, section-aware summary,
+    HTTP/1.1 mode directly. Browser operations are clamped to the active source and
+    global collection deadlines so timed-out workers close before systemd's outer
+    service limit. Listing navigation accepts a readable rendered document even when
+    lifecycle events do not settle. Review detail pages remain part of the blocking
+    Preview request, but stop waiting after response commit and readable activity
+    content. Coverage, source, date, detail-field, section-aware summary,
     listing-provenance, listing-membership, dynamic-listing, card, and link
     authorities are applied before their final values are bound into Review Studio.
     """
@@ -85,6 +87,13 @@ def apply() -> None:
             ) from exc
 
     _browser.launch_chromium = launch_chromium_http1
+
+    # This must wrap the final HTTP/1 launcher before source/detail authorities capture
+    # browser functions. It propagates collect_source's deadline through ContextVar and
+    # clamps every long Playwright wait to the remaining source budget.
+    from .deadline_authority import apply as apply_deadline_authority
+
+    apply_deadline_authority()
 
     from .complete_collection_authority import apply as apply_complete_collection
 
