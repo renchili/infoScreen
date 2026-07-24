@@ -6,6 +6,7 @@ from . import browser as _browser
 from . import detail_date_authority as _detail_dates
 from . import extract as _extract
 from . import listing_provenance_authority as _provenance
+from .detail_summary_authority import useful_event_summary
 
 _APPLIED = False
 DETAIL_COMMIT_TIMEOUT_MS = 60_000
@@ -94,6 +95,48 @@ FALLBACK_DETAIL_FIELDS_JS = r"""
   return {dates, venues, summary};
 }
 """
+
+
+def _clean_rows(raw: object) -> list[str]:
+    if not isinstance(raw, list):
+        return []
+    output: list[str] = []
+    for value in raw:
+        text = _extract.clean(value)
+        if text and text not in output:
+            output.append(text)
+    return output
+
+
+def _best_summary(
+    payload: dict[str, Any],
+    merged: dict[str, Any],
+    event: dict[str, Any] | None = None,
+    listing_summary: object = "",
+) -> str:
+    """Choose real narrative detail text before parser fallback labels.
+
+    ``event_from_card`` intentionally returns a non-empty generic fallback when no
+    summary survives its parser. Review previously preferred that fallback over the
+    detail payload's real narrative, producing ``Open the official page for details.``
+    while the kiosk displayed the same URL's extracted description.
+    """
+
+    candidates = [
+        *_clean_rows(payload.get("summary_candidates")),
+        payload.get("summary"),
+        *_clean_rows(merged.get("detail_summary_candidates")),
+        merged.get("detail_summary"),
+    ]
+    if isinstance(event, dict):
+        candidates.append(event.get("summary"))
+    candidates.append(listing_summary)
+
+    for candidate in candidates:
+        summary = useful_event_summary(candidate)
+        if summary:
+            return _extract.short(summary, 500)
+    return ""
 
 
 def _merge_fallback_fields(
@@ -191,18 +234,13 @@ def _detail_candidate(
         )
         event, reason = _extract.event_from_card(source, merged)
         page_title = _extract.clean(payload.get("title") or detail.title() or "")
+        listing = _detail_dates._listing_fields(source, card)
 
         if event is None:
-            listing = _detail_dates._listing_fields(source, card)
             title = (
                 _extract.clean(payload.get("title"))
                 or listing["title"]
                 or _extract.title_from_url(final_url)
-            )
-            summary = (
-                _extract.clean(payload.get("summary"))
-                or _extract.clean(merged.get("detail_summary"))
-                or listing["summary"]
             )
             return {
                 "detail_url": final_url,
@@ -214,7 +252,11 @@ def _detail_candidate(
                     "",
                     "",
                 ) or listing["where"],
-                "summary": summary,
+                "summary": _best_summary(
+                    payload,
+                    merged,
+                    listing_summary=listing["summary"],
+                ),
                 "detail_status": "incomplete",
                 "detail_error": reason,
                 "detail_page_title": page_title,
@@ -225,7 +267,12 @@ def _detail_candidate(
             "title": str(event.get("title") or payload.get("title") or ""),
             "when": str(event.get("when") or ""),
             "where": str(event.get("where") or ""),
-            "summary": str(event.get("summary") or payload.get("summary") or ""),
+            "summary": _best_summary(
+                payload,
+                merged,
+                event,
+                listing["summary"],
+            ),
             "detail_status": "collected",
             "detail_error": "",
             "detail_page_title": page_title,
@@ -252,5 +299,6 @@ __all__ = [
     "DETAIL_CONTENT_WAIT_MS",
     "DETAIL_READY_JS",
     "FALLBACK_DETAIL_FIELDS_JS",
+    "_best_summary",
     "apply",
 ]
