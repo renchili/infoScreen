@@ -6,7 +6,12 @@ from .conftest import SURFACE
 
 sys.path.insert(0, str(SURFACE))
 
+from local_events_runtime import detail_payload_authority  # noqa: E402
 from local_events_runtime import open_detail_fields_authority as authority  # noqa: E402
+
+
+detail_payload_authority.apply()
+authority.apply()
 
 
 def test_parent_activity_date_wins_over_larger_child_schedule(monkeypatch) -> None:
