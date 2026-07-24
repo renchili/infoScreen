@@ -1,13 +1,8 @@
 (function () {
   var CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  var ROTATE_INTERVAL_MS = 7000;
-  var RELOAD_INTERVAL_MS = 60000;
   var items = [];
   var offset = 0;
-  var rotateTimer = null;
-  var reloadTimer = null;
-  var loading = false;
-  var loaded = false;
+  var timer = null;
   var empty = true;
   var spinHandles = [];
 
@@ -79,14 +74,14 @@
     var raw = normalize(text);
     var n = slotCount();
     if (raw.length > n) raw = raw.slice(0, n);
-
+    
     var html = "";
     for (var i = 0; i < raw.length; i++) {
       var ch = raw[i];
       if (ch === " ") {
         html += '<span class="calendar-board-cell blank">&nbsp;</span>';
       } else {
-        html += '<span class="calendar-board-cell" data-final="' + esc(ch) + '">' + esc(ch) + "</span>";
+        html += '<span class="calendar-board-cell" data-final="' + esc(ch) + '">' + esc(ch) + '</span>';
       }
     }
     return html;
@@ -94,9 +89,9 @@
 
   function rowHtml(item) {
     return '<div class="calendar-board-row">' +
-      '<div class="calendar-board-time">' + cells(item.time || "", false) + "</div>" +
-      '<div class="calendar-board-event">' + cells(item.title || item.text || "NO SCHEDULE EVENTS", false) + "</div>" +
-      "</div>";
+      '<div class="calendar-board-time">' + cells(item.time || "", false) + '</div>' +
+      '<div class="calendar-board-event">' + cells(item.title || item.text || "NO SCHEDULE EVENTS", false) + '</div>' +
+      '</div>';
   }
 
   function animateBoard(rows) {
@@ -164,61 +159,39 @@
     render(true);
   }
 
-  function sameItems(nextItems) {
-    if (!loaded || nextItems.length !== items.length) return false;
-    return nextItems.every(function (item, index) {
-      return item.time === items[index].time && item.title === items[index].title;
-    });
-  }
-
   async function load() {
-    if (loading) return;
-    loading = true;
-
     try {
       var res = await fetch("schedule.json?_=" + Date.now(), { cache: "no-store" });
       var data = await res.json();
       var events = Array.isArray(data) ? data : (data.events || []);
-      var nextItems = events.map(function (e) {
+
+      items = events.map(function (e) {
         return {
           time: e.time || e.start || e.start_time || e.date || "",
           title: e.text || e.title || e.summary || "Untitled"
         };
       });
-      var changed = !sameItems(nextItems);
 
-      items = nextItems;
       empty = items.length === 0;
-      loaded = true;
+      offset = 0;
+      render(true);
 
-      if (changed) {
-        offset = 0;
-        render(true);
-      }
+      if (timer) clearInterval(timer);
+      timer = setInterval(rotate, 7000);
     } catch (err) {
-      if (!loaded) {
-        items = [{ time: "", title: "SCHEDULE ERROR" }];
-        empty = true;
-        render(true);
-      }
-    } finally {
-      loading = false;
+      items = [{ time: "", title: "SCHEDULE ERROR" }];
+      empty = true;
+      render(true);
     }
-  }
-
-  function start() {
-    load();
-    if (!rotateTimer) rotateTimer = setInterval(rotate, ROTATE_INTERVAL_MS);
-    if (!reloadTimer) reloadTimer = setInterval(load, RELOAD_INTERVAL_MS);
   }
 
   window.__calendarBoardLoad = load;
   window.loadAgenda = load;
 
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", start);
+    document.addEventListener("DOMContentLoaded", load);
   } else {
-    start();
+    load();
   }
 
   if (window.ResizeObserver) {
