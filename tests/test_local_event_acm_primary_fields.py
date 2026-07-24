@@ -74,6 +74,26 @@ def test_in_gallery_taxonomy_is_not_a_venue(monkeypatch) -> None:
     assert venue == "Asian Civilisations Museum"
 
 
+def test_explicit_short_venue_is_preserved(monkeypatch) -> None:
+    monkeypatch.setattr(
+        authority,
+        "_BASE_PICK_VENUE",
+        lambda source, card, when, when_line: "ACM Green",
+    )
+
+    venue = authority.pick_venue(
+        {
+            "name": "Asian Civilisations Museum",
+            "default_venue": "Asian Civilisations Museum",
+        },
+        {},
+        "7–9 March 2025",
+        "7–9 March 2025",
+    )
+
+    assert venue == "ACM Green"
+
+
 def test_explicit_venue_skips_category_and_finds_physical_place(monkeypatch) -> None:
     monkeypatch.setattr(authority, "_BASE_EXPLICIT_VENUE", lambda card: "In-gallery")
     card = {
