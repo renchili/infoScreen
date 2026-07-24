@@ -157,6 +157,16 @@ def apply() -> None:
     # detail-candidate function itself remains the bounded blocking implementation.
     _bind_final_browser_runtime_to_review()
 
+    # Existing Review state may contain the old generic summary while the kiosk
+    # already has a narrative for the same canonical detail URL. Apply this before
+    # diagnostics and publication so both GET state and fresh Preview use one
+    # effective summary contract.
+    from .review_effective_fields_authority import (
+        apply as apply_review_effective_fields_authority,
+    )
+
+    apply_review_effective_fields_authority()
+
     from .event_review_diagnostics import apply as apply_event_review_diagnostics
 
     apply_event_review_diagnostics()
