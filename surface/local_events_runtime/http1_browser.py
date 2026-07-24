@@ -125,6 +125,12 @@ def apply() -> None:
 
     apply_open_ended_date_authority()
 
+    # Preserve explicit start-only schedules and recognise unlabelled NHB venue lines
+    # before membership and Review lifecycle filters consume the extracted fields.
+    from .open_detail_fields_authority import apply as apply_open_detail_fields_authority
+
+    apply_open_detail_fields_authority()
+
     from .gardens_field_authority import apply as apply_gardens_field_authority
 
     apply_gardens_field_authority()
