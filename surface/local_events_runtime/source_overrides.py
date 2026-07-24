@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+from contextvars import ContextVar
 from datetime import date
 from typing import Any
 from urllib.parse import unquote, urlparse
@@ -107,6 +108,10 @@ AUTHORITATIVE_DETAIL_JS = r"""
 _applied = False
 _base_render = None
 _base_collect = None
+_listing_context: ContextVar[tuple[dict[str, Any], str] | None] = ContextVar(
+    "local_event_listing_context",
+    default=None,
+)
 
 
 def _host(value: str) -> str:
@@ -223,8 +228,8 @@ def _same_candidate(structured: dict[str, Any], listing: dict[str, Any]) -> bool
 
 def _prefer_structured(structured: list[dict[str, Any]], dom: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
     """Use structured data only when a rendered official-list card proves membership."""
-    source = getattr(_prefer_structured, "source", {})
-    listing_url = str(getattr(_prefer_structured, "listing_url", ""))
+    context = _listing_context.get()
+    source, listing_url = context if context is not None else ({}, "")
     listing_cards = [item for card in dom if (item := _listing_card(source, card, listing_url))]
     unused = set(range(len(structured)))
     output: list[dict[str, Any]] = []
@@ -338,9 +343,18 @@ def _enrich(source: dict[str, Any], cards: list[dict[str, Any]]) -> tuple[list[d
 
 
 def _render(source: dict[str, Any], url: str, debug_dir, max_cards: int = 60):
-    _prefer_structured.source = source
-    _prefer_structured.listing_url = url
-    rendered = dict(_base_render(source, url, debug_dir, max_cards=max(max_cards, int(source.get("max_cards", max_cards)))))
+    token = _listing_context.set((source, url))
+    try:
+        rendered = dict(
+            _base_render(
+                source,
+                url,
+                debug_dir,
+                max_cards=max(max_cards, int(source.get("max_cards", max_cards))),
+            )
+        )
+    finally:
+        _listing_context.reset(token)
     cards, debug = _enrich(source, [card for card in rendered.get("cards") or [] if isinstance(card, dict)])
     rendered["cards"] = cards
     rendered["listing_authority"] = {

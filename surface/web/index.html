@@ -24,7 +24,39 @@
     <section class="col left">
       <div class="box" data-title="market"><div class="inner"><div class="market-list" id="marketList"><div class="market-row"><span class="ticker">LOAD</span><span class="price flat"><span class="market-arrow">◆</span> market.json</span><span class="chg flat">WAIT</span></div></div></div></div>
 
-      <div class="box local-event-static" data-title="local event" id="localEventBox"><div class="inner"><div class="local-event-toolbar"><span id="localEventCounter"></span><button id="localEventPrevButton" class="local-event-icon-button" type="button" title="Previous page" aria-label="Previous page">‹</button><button id="localEventNextButton" class="local-event-icon-button" type="button" title="Next page" aria-label="Next page">›</button><button id="localEventLocationButton" class="local-event-icon-button" type="button" title="Search another place" aria-label="Search another place">⌕</button></div><div class="local-event-list" id="localEventList"><div class="local-event-empty">LOADING LOCAL EVENTS</div></div><div id="localEventModal" class="local-event-modal" hidden><div class="local-event-modal-card" role="dialog" aria-modal="true" aria-label="Search local events"><div class="local-event-modal-title">Search local events</div><input id="localEventLocationInput" type="text" placeholder="Punggol Singapore" autocomplete="off" spellcheck="false" /><div id="localEventModalError"></div><div class="local-event-modal-actions"><button id="localEventCancelButton" type="button">Cancel</button><button id="localEventSearchButton" type="button">Search</button></div></div></div></div></div>
+      <div class="box local-event-static" data-title="local event" id="localEventBox">
+        <div class="inner">
+          <div class="local-event-toolbar">
+            <span id="localEventCounter"></span>
+            <button id="localEventPrevButton" class="local-event-icon-button" type="button" title="Previous event" aria-label="Previous event">‹</button>
+            <button id="localEventNextButton" class="local-event-icon-button" type="button" title="Next event" aria-label="Next event">›</button>
+            <button id="localEventLocationButton" class="local-event-icon-button" type="button" title="Filter local events" aria-label="Filter local events">⌕</button>
+          </div>
+          <div class="local-event-list" id="localEventList"><div class="local-event-empty">LOADING LOCAL EVENTS</div></div>
+          <div id="localEventModal" class="local-event-modal" hidden>
+            <div class="local-event-modal-card" role="dialog" aria-modal="true" aria-labelledby="localEventModalTitle">
+              <div class="local-event-modal-title" id="localEventModalTitle">Filter local events</div>
+              <div class="local-event-filter-fields">
+                <label for="localEventInstitutionSelect">
+                  <span>Institution</span>
+                  <select id="localEventInstitutionSelect">
+                    <option value="">All institutions</option>
+                  </select>
+                </label>
+                <label for="localEventFilterInput">
+                  <span>Keyword, date or place</span>
+                  <input id="localEventFilterInput" type="search" placeholder="Title, venue, date or keyword" autocomplete="off" spellcheck="false" />
+                </label>
+              </div>
+              <div id="localEventModalError" role="status" aria-live="polite"></div>
+              <div class="local-event-modal-actions">
+                <button id="localEventCancelButton" type="button">Cancel</button>
+                <button id="localEventSearchButton" type="button">Filter</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <div class="box left-ticker-tape" data-title="ticker tape"><div class="left-ticker-mask"><div class="left-ticker-track" id="leftSyncTapeTrack"><span class="sync-muted">CHECKING SYNC STATUS</span><span class="sync-muted">SCHEDULE / WEATHER / MARKET / NEWS</span><span class="sync-muted">CHECKING SYNC STATUS</span><span class="sync-muted">SCHEDULE / WEATHER / MARKET / NEWS</span></div></div></div>
     </section>
