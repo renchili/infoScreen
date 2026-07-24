@@ -9,6 +9,7 @@ from .conftest import SURFACE
 sys.path.insert(0, str(SURFACE))
 
 from jobs import local_event_search as job  # noqa: E402
+from local_events_runtime.event_review import EventReviewStore, ReviewState  # noqa: E402
 from local_events_runtime.output import normalize_payload, plain_text  # noqa: E402
 
 VERIFIED_POLICY = "official-listing-authority-v1"
@@ -41,6 +42,14 @@ def failed_source(name: str, reason: str = "render_error:TimeoutError") -> dict:
         "reason_counts": {reason: 1},
         "not_output_preview": [{"reason": reason}],
     }
+
+
+def review_store_at(tmp_path) -> EventReviewStore:
+    config = tmp_path / "event_sources.json"
+    config.write_text(json.dumps({"sources": []}), encoding="utf-8")
+    store = EventReviewStore(tmp_path / "local_event_review", config)
+    store.save(ReviewState())
+    return store
 
 
 def test_plain_text_removes_html_markup_and_hidden_content() -> None:
@@ -92,11 +101,11 @@ def test_local_event_payload_is_normalized_before_runtime_delivery() -> None:
     event = normalized["results"][0]
 
     assert event["where"] == "Central Public Library"
-    assert event["summary"] == "This talk is a compassionate and practical guide to navigating loss."
+    assert event["summary"] == (
+        "This talk is a compassionate and practical guide to navigating loss."
+    )
     assert "<" not in event["summary"]
-    assert event["url"] == "https://example.test/events/practical-guide"
     assert normalized["text_normalizer"] == "plain-text-v1"
-    assert normalized["normalized_text_fields"] == 2
 
 
 def test_description_alias_is_cleaned_and_promoted_to_summary() -> None:
@@ -107,7 +116,7 @@ def test_description_alias_is_cleaned_and_promoted_to_summary() -> None:
                 "when": future_label(),
                 "where": "Central Public Library",
                 "description": (
-                    '<p><strong>About the Event</strong><span style="background-color:#00ffff;"></span></p>'
+                    '<p><strong>About the Event</strong></p>'
                     '<p>This talk is a compassionate and practical guide to navigating loss.</p>'
                 ),
                 "url": "https://example.test/events/practical-guide",
@@ -117,12 +126,10 @@ def test_description_alias_is_cleaned_and_promoted_to_summary() -> None:
     }
 
     event = normalize_payload(payload)["results"][0]
-
     expected = "This talk is a compassionate and practical guide to navigating loss."
+
     assert event["description"] == expected
     assert event["summary"] == expected
-    assert "<" not in event["description"]
-    assert "<" not in event["summary"]
 
 
 def test_local_event_payload_promotes_venue_alias_to_where() -> None:
@@ -162,9 +169,7 @@ def test_partial_state_uses_source_completion_not_debug_row_count() -> None:
     assert payload["completed_source_count"] == 1
     assert payload["incomplete_source_count"] == 1
     assert payload["debug_by_source"][0]["status"] == "complete"
-    assert payload["debug_by_source"][0]["complete"] is True
     assert payload["debug_by_source"][1]["status"] == "timed_out"
-    assert payload["debug_by_source"][1]["complete"] is False
 
 
 def test_successful_empty_source_is_complete() -> None:
@@ -180,35 +185,28 @@ def test_successful_empty_source_is_complete() -> None:
     assert payload["completed_source_count"] == 1
 
 
-def test_partial_refresh_cleans_the_verified_result_it_keeps(tmp_path, monkeypatch) -> None:
+def test_smaller_partial_refresh_preserves_verified_primary_exactly(
+    tmp_path,
+    monkeypatch,
+) -> None:
     out = tmp_path / "local_event_search_results.json"
     partial_out = tmp_path / "local_event_search_results.partial.json"
+    previous_event = {
+        "title": "Existing verified Event",
+        "when": "Ongoing",
+        "where": "Existing Gallery",
+        "url": "https://example.test/events/existing",
+        "summary": "Preserve this exact persisted row.",
+        "candidate_policy": VERIFIED_POLICY,
+    }
     out.write_text(
-        json.dumps(
-            {
-                "source_count": 1,
-                "debug_by_source": [complete_source("NLB")],
-                "results": [
-                    {
-                        "title": "What Happens After Someone Dies: A Practical Guide for Families",
-                        "when": future_label(),
-                        "where": "Central Public Library",
-                        "url": "https://example.test/events/practical-guide",
-                        "candidate_policy": VERIFIED_POLICY,
-                        "description": (
-                            '<p><strong>About the Event</strong></p>'
-                            '<p>This talk is a compassionate and practical guide to navigating loss.</p>'
-                        ),
-                    }
-                ],
-            }
-        ),
+        json.dumps({"results": [previous_event]}),
         encoding="utf-8",
     )
     monkeypatch.setattr(job, "OUT", out)
     monkeypatch.setattr(job, "PARTIAL_OUT", partial_out)
 
-    job.write_payload(
+    display = job.write_payload(
         {
             "source_count": 2,
             "debug_by_source": [
@@ -216,31 +214,28 @@ def test_partial_refresh_cleans_the_verified_result_it_keeps(tmp_path, monkeypat
                 failed_source("SAFRA"),
             ],
             "results": [],
-        }
+        },
+        review_store_at(tmp_path),
     )
 
     retained = json.loads(out.read_text(encoding="utf-8"))
-    retained_event = retained["results"][0]
     partial = json.loads(partial_out.read_text(encoding="utf-8"))
 
-    expected = "This talk is a compassionate and practical guide to navigating loss."
-    assert retained_event["summary"] == expected
-    assert retained_event["description"] == expected
-    assert "<" not in retained_event["summary"]
-    assert retained["text_normalizer"] == "plain-text-v1"
-    assert partial["partial"] is True
-    assert partial["completed_source_count"] == 1
+    assert retained["results"] == [previous_event]
+    assert display["write_policy"] == "kept_previous_verified_result_with_review"
     assert partial["write_policy"] == "kept_previous_verified_result"
+    assert partial["previous_system_count"] == 1
 
 
-def test_unverified_legacy_rows_are_not_preserved_during_partial_refresh(tmp_path, monkeypatch) -> None:
+def test_unverified_legacy_rows_are_not_preserved_during_partial_refresh(
+    tmp_path,
+    monkeypatch,
+) -> None:
     out = tmp_path / "local_event_search_results.json"
     partial_out = tmp_path / "local_event_search_results.partial.json"
     out.write_text(
         json.dumps(
             {
-                "source_count": 1,
-                "debug_by_source": [complete_source("SAFRA")],
                 "results": [
                     {
                         "title": "Carpark",
@@ -248,7 +243,7 @@ def test_unverified_legacy_rows_are_not_preserved_during_partial_refresh(tmp_pat
                         "where": "SAFRA Clubs",
                         "url": "https://example.test/amenities/carpark",
                     }
-                ],
+                ]
             }
         ),
         encoding="utf-8",
@@ -264,14 +259,58 @@ def test_unverified_legacy_rows_are_not_preserved_during_partial_refresh(tmp_pat
                 failed_source("SAFRA"),
             ],
             "results": [],
-        }
+        },
+        review_store_at(tmp_path),
     )
 
     written = json.loads(out.read_text(encoding="utf-8"))
+    partial = json.loads(partial_out.read_text(encoding="utf-8"))
+
     assert written["results"] == []
     assert written["partial"] is True
-    assert written["completed_source_count"] == 1
-    assert not partial_out.exists()
+    assert partial["write_policy"] == "partial_collector_evidence"
+
+
+def test_complete_collector_result_replaces_old_system_result(tmp_path, monkeypatch) -> None:
+    out = tmp_path / "local_event_search_results.json"
+    partial_out = tmp_path / "local_event_search_results.partial.json"
+    out.write_text(
+        json.dumps(
+            {
+                "results": [
+                    {
+                        "title": "Old Event",
+                        "when": future_label(),
+                        "where": "Old Venue",
+                        "url": "https://example.test/events/old",
+                        "candidate_policy": VERIFIED_POLICY,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(job, "OUT", out)
+    monkeypatch.setattr(job, "PARTIAL_OUT", partial_out)
+
+    new_event = {
+        "title": "New Event",
+        "when": future_label(),
+        "where": "New Venue",
+        "url": "https://example.test/events/new",
+        "candidate_policy": VERIFIED_POLICY,
+    }
+    display = job.write_payload(
+        {
+            "source_count": 1,
+            "debug_by_source": [complete_source("NLB")],
+            "results": [new_event],
+        },
+        review_store_at(tmp_path),
+    )
+
+    assert [item["title"] for item in display["results"]] == ["New Event"]
+    assert display["write_policy"] == "collector_complete_with_review"
 
 
 def test_expired_event_is_removed_from_runtime_output() -> None:

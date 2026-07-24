@@ -8,14 +8,29 @@ from .conftest import SURFACE
 
 sys.path.insert(0, str(SURFACE))
 
-from local_events_runtime import browser  # noqa: E402
-from local_events_runtime.source_overrides import (  # noqa: E402
-    _listing_card,
-    _merge_detail,
-    apply,
+from local_events_runtime import (  # noqa: E402
+    browser,
+    detail_date_authority,
+    listing_membership_authority,
+    listing_provenance_authority,
+    open_ended_date_authority,
+    source_overrides,
 )
 
-apply()
+
+source_overrides.apply()
+detail_date_authority.apply()
+open_ended_date_authority.apply()
+listing_provenance_authority.apply()
+listing_membership_authority.apply()
+
+
+def _listing_card(source: dict, card: dict, listing_url: str):
+    return source_overrides._listing_card(source, card, listing_url)
+
+
+def _merge_detail(source: dict, card: dict, payload: dict, index: int):
+    return source_overrides._merge_detail(source, card, payload, index)
 
 
 def source(
@@ -51,7 +66,7 @@ def listing_card(title: str, when: str, url: str, listing_url: str) -> dict:
     }
 
 
-def test_national_museum_itinerary_page_has_no_positive_event_membership() -> None:
+def test_national_museum_itinerary_page_without_distinct_detail_url_is_not_a_card() -> None:
     listing_url = "https://www.nationalmuseum.nhb.gov.sg/whats-on/view-all"
     museum = source(
         "nationalmuseum",
@@ -63,7 +78,7 @@ def test_national_museum_itinerary_page_has_no_positive_event_membership() -> No
     card = listing_card(
         "Plan Your Itinerary",
         "Open daily",
-        "https://www.nationalmuseum.nhb.gov.sg/whats-on/plan-your-itinerary",
+        listing_url,
         listing_url,
     )
 
@@ -193,7 +208,7 @@ def test_gardens_detail_keeps_canonical_url_and_real_location() -> None:
     assert event["where"] == "IMBA Theatre (West Lawn, beside Bayfront Plaza)"
 
 
-def test_expired_rows_are_removed_but_active_ranges_are_retained() -> None:
+def test_expired_rows_are_removed_but_active_and_unknown_dates_are_retained() -> None:
     from local_events_runtime.output import normalize_payload
 
     yesterday = date.today() - timedelta(days=1)
@@ -219,9 +234,20 @@ def test_expired_rows_are_removed_but_active_ranges_are_retained() -> None:
                     "url": "https://example.org/events/active-exhibition",
                     "candidate_policy": "official-listing-authority-v1",
                 },
+                {
+                    "title": "Official Activity With Unknown Date",
+                    "when": "",
+                    "where": "Official Venue",
+                    "url": "https://example.org/events/unknown-date",
+                    "candidate_policy": "official-listing-authority-v1",
+                    "detail_status": "incomplete",
+                },
             ]
         }
     )
 
-    assert [item["title"] for item in payload["results"]] == ["Active Exhibition"]
+    assert [item["title"] for item in payload["results"]] == [
+        "Active Exhibition",
+        "Official Activity With Unknown Date",
+    ]
     assert payload["expired_events_removed"] == 1

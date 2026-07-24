@@ -116,7 +116,7 @@ def _iso_date(value: object) -> date | None:
         return None
 
 
-def _invalid_event(event: dict[str, Any]) -> bool:
+def _invalid_event(event: dict[str, Any], *, allow_unverified: bool = False) -> bool:
     url = _collapse(event.get("url"))
     if not url.startswith(("http://", "https://")):
         return True
@@ -129,7 +129,10 @@ def _invalid_event(event: dict[str, Any]) -> bool:
     leaf = path.rsplit("/", 1)[-1].removesuffix(".html")
     if not leaf or GENERIC_LEAF_RE.fullmatch(leaf):
         return True
-    return _collapse(event.get("candidate_policy")) != VERIFIED_POLICY
+    policy = _collapse(event.get("candidate_policy"))
+    if allow_unverified and not policy:
+        return False
+    return policy != VERIFIED_POLICY
 
 
 def _expired_event(event: dict[str, Any]) -> bool:
@@ -185,6 +188,8 @@ def normalize_payload(payload: dict[str, Any]) -> dict[str, Any]:
         normalized["invalid_events_removed"] = 0
         return normalized
 
+    extractor = _collapse(payload.get("extractor"))
+    allow_unverified = extractor.startswith("structured-first")
     output: list[Any] = []
     changed = 0
     expired_removed = 0
@@ -192,7 +197,7 @@ def normalize_payload(payload: dict[str, Any]) -> dict[str, Any]:
     for item in results:
         if isinstance(item, dict):
             clean_item, item_changed = normalize_event(item)
-            if _invalid_event(clean_item):
+            if _invalid_event(clean_item, allow_unverified=allow_unverified):
                 invalid_removed += 1
                 continue
             if _expired_event(clean_item):

@@ -3,6 +3,7 @@ Description=InfoScreen HTTP server
 
 [Service]
 WorkingDirectory=%h/infoscreen/surface
+Environment=LOCAL_EVENT_SEARCH_TIMEOUT_SECONDS=7500
 ExecStart=/usr/bin/python3 %h/infoscreen/surface/serve_infoscreen.py
 Restart=always
 RestartSec=2

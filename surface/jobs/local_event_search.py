@@ -6,38 +6,55 @@ import json
 import os
 from pathlib import Path
 
-os.environ.setdefault("LOCAL_EVENTS_MAX_SECONDS", "520")
-os.environ.setdefault("LOCAL_EVENTS_SOURCE_CONCURRENCY", "3")
-os.environ.setdefault("LOCAL_EVENTS_SOURCE_TIMEOUT_SECONDS", "160")
-os.environ.setdefault("LOCAL_EVENTS_MAX_LISTING_PAGES", "2")
-os.environ.setdefault("LOCAL_EVENTS_LOAD_MORE_ROUNDS", "24")
-os.environ.setdefault("LOCAL_EVENTS_MAX_TOTAL_EVENTS", "180")
-os.environ.setdefault("LOCAL_EVENTS_NAV_TIMEOUT_MS", "25000")
-os.environ.setdefault("LOCAL_EVENTS_DOM_TIMEOUT_MS", "25000")
-os.environ.setdefault("LOCAL_EVENTS_NHB_DETAIL_LIMIT", "18")
-os.environ.setdefault("LOCAL_EVENTS_NHB_DETAIL_TIMEOUT_MS", "16000")
-os.environ.setdefault("LOCAL_EVENTS_DETAIL_LIMIT", "24")
-os.environ.setdefault("LOCAL_EVENTS_DETAIL_TIMEOUT_MS", "16000")
-os.environ.setdefault("LOCAL_EVENTS_PAGE_SCREENSHOTS", "0")
-os.environ.setdefault("LOCAL_EVENTS_CARD_SCREENSHOTS", "0")
-
-from local_events_runtime.detail_authority import apply as apply_detail_authority  # noqa: E402
-from local_events_runtime.listing_url_authority import apply as apply_listing_url_authority  # noqa: E402
-from local_events_runtime.source_overrides import apply as apply_source_overrides  # noqa: E402
-
-apply_source_overrides()
-apply_listing_url_authority()
-apply_detail_authority()
-
-from local_events_runtime import collect_events  # noqa: E402
+import local_events_runtime as _local_events_runtime  # noqa: E402
+from local_events_runtime import complete_collection_authority  # noqa: E402
+from local_events_runtime import detail_date_authority  # noqa: E402
+from local_events_runtime import detail_payload_authority  # noqa: E402
+from local_events_runtime import detail_summary_authority  # noqa: E402
+from local_events_runtime import gardens_field_authority  # noqa: E402
+from local_events_runtime import listing_membership_authority  # noqa: E402
+from local_events_runtime import listing_only_output_authority  # noqa: E402
+from local_events_runtime import listing_provenance_authority  # noqa: E402
+from local_events_runtime import listing_url_authority  # noqa: E402
+from local_events_runtime import mandai_listing_authority  # noqa: E402
+from local_events_runtime import open_detail_fields_authority  # noqa: E402
+from local_events_runtime import open_ended_date_authority  # noqa: E402
+from local_events_runtime import review_summary_authority  # noqa: E402
+from local_events_runtime.event_review import EventReviewStore  # noqa: E402
 from local_events_runtime.output import normalize_payload  # noqa: E402
+from local_events_runtime.review_publish_authority import (  # noqa: E402
+    COLLECTOR_RUNTIME_FILENAME,
+    atomic_write,
+    load_collector_snapshot,
+    merge_review_state,
+    write_collector_snapshot,
+)
+
+complete_collection_authority.apply()
+detail_date_authority.apply()
+detail_payload_authority.apply()
+detail_summary_authority.apply()
+open_ended_date_authority.apply()
+open_detail_fields_authority.apply()
+gardens_field_authority.apply()
+listing_provenance_authority.apply()
+listing_membership_authority.apply()
+mandai_listing_authority.apply()
+listing_url_authority.apply()
+listing_only_output_authority.apply()
+review_summary_authority.apply()
+collect_events = _local_events_runtime.collect_events
 
 SURFACE_DIR = Path(__file__).resolve().parents[1]
-ENV_DIR = SURFACE_DIR / ".env"
+ENV_DIR = Path(
+    os.environ.get("INFOSCREEN_ENV_DIR", str(SURFACE_DIR / ".env"))
+).expanduser().resolve()
 CONF_DIR = SURFACE_DIR / "conf"
 CONFIG = CONF_DIR / "event_sources.json"
 OUT = ENV_DIR / "local_event_search_results.json"
+COLLECTOR_OUT = ENV_DIR / COLLECTOR_RUNTIME_FILENAME
 PARTIAL_OUT = ENV_DIR / "local_event_search_results.partial.json"
+REVIEW_ROOT = ENV_DIR / "local_event_review"
 DEBUG_DIR = ENV_DIR / "local_event_debug_cards"
 DEFAULT_LOCATION = "Punggol Singapore"
 VERIFIED_POLICY = "official-listing-authority-v1"
@@ -46,9 +63,10 @@ TIMEOUT_REASON_MARKERS = ("deadline", "budget_exhausted", "timeout")
 
 def read_json(path: Path) -> dict:
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
         return {}
+    return payload if isinstance(payload, dict) else {}
 
 
 def result_count(payload: dict) -> int:
@@ -68,7 +86,10 @@ def source_completion(debug: dict) -> tuple[str, bool]:
         return "complete", True
 
     reason_counts = debug.get("reason_counts")
-    reasons = [str(value).lower() for value in reason_counts] if isinstance(reason_counts, dict) else []
+    reasons = [
+        str(value).lower()
+        for value in reason_counts
+    ] if isinstance(reason_counts, dict) else []
     previews = debug.get("not_output_preview")
     if isinstance(previews, list):
         reasons.extend(
@@ -118,18 +139,18 @@ def annotate_source_completion(payload: dict) -> dict:
     return annotated
 
 
-def is_partial(payload: dict) -> bool:
-    return bool(annotate_source_completion(payload).get("partial"))
-
-
 def verified_previous_payload(payload: dict) -> dict:
+    """Keep previously verified collector rows exactly as persisted."""
+
     verified = dict(payload)
     results = payload.get("results")
     if not isinstance(results, list):
         return verified
     verified_results = [
-        item for item in results
-        if isinstance(item, dict) and item.get("candidate_policy") == VERIFIED_POLICY
+        dict(item)
+        for item in results
+        if isinstance(item, dict)
+        and item.get("candidate_policy") == VERIFIED_POLICY
     ]
     verified["results"] = verified_results
     verified["count"] = len(verified_results)
@@ -137,35 +158,74 @@ def verified_previous_payload(payload: dict) -> dict:
     return verified
 
 
-def write_payload(payload: dict) -> None:
-    payload = annotate_source_completion(normalize_payload(payload))
-    old = verified_previous_payload(normalize_payload(read_json(OUT)))
-    new_count = result_count(payload)
-    old_count = result_count(old)
+def review_store() -> EventReviewStore:
+    return EventReviewStore(root=REVIEW_ROOT, config_path=CONFIG)
 
-    if payload["partial"] and old_count > new_count:
-        OUT.write_text(json.dumps(old, ensure_ascii=False, indent=2), encoding="utf-8")
-        payload = {
-            **payload,
+
+def write_payload(
+    payload: dict,
+    store: EventReviewStore | None = None,
+) -> dict:
+    """Persist producer output, then publish one deterministic Review projection.
+
+    ``local_event_collector_results.json`` is the producer-owned base. The kiosk
+    primary is always rebuilt from that snapshot plus current Review decisions.
+    A smaller incomplete crawl remains partial evidence and cannot replace a larger
+    verified collector snapshot.
+    """
+
+    collector = annotate_source_completion(normalize_payload(payload))
+    active_store = store or review_store()
+    previous = verified_previous_payload(load_collector_snapshot(active_store))
+    previous_system_count = result_count(previous)
+    new_system_count = result_count(collector)
+
+    if collector["partial"]:
+        partial = {
+            **collector,
             "ok": False,
-            "write_policy": "kept_previous_verified_result",
-            "previous_count": old_count,
+            "write_policy": "partial_collector_evidence",
+            "display_runtime": str(OUT),
+            "collector_runtime": str(COLLECTOR_OUT),
         }
-        PARTIAL_OUT.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        return
+        atomic_write(PARTIAL_OUT, partial)
 
-    OUT.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    if collector["partial"] and previous_system_count > new_system_count:
+        display = merge_review_state(previous, active_store)
+        display["write_policy"] = "kept_previous_verified_result_with_review"
+        display["previous_system_count"] = previous_system_count
+        display["partial_collector_count"] = new_system_count
+        atomic_write(OUT, display)
+
+        partial = read_json(PARTIAL_OUT)
+        partial["write_policy"] = "kept_previous_verified_result"
+        partial["previous_system_count"] = previous_system_count
+        partial["display_count"] = result_count(display)
+        atomic_write(PARTIAL_OUT, partial)
+        return display
+
+    persisted_collector = write_collector_snapshot(active_store, collector)
+    display = merge_review_state(persisted_collector, active_store)
+    display["write_policy"] = (
+        "collector_partial_with_review"
+        if collector["partial"]
+        else "collector_complete_with_review"
+    )
+    atomic_write(OUT, display)
+    return display
 
 
 def self_test() -> int:
-    payload = annotate_source_completion(normalize_payload(collect_events(CONFIG, DEFAULT_LOCATION, DEBUG_DIR)))
+    payload = annotate_source_completion(
+        normalize_payload(collect_events(CONFIG, DEFAULT_LOCATION, DEBUG_DIR))
+    )
     assert payload["extractor"] == "listing-authoritative-v52"
     assert payload["version"] == 52
     assert payload["text_normalizer"] == "plain-text-v1"
     assert isinstance(payload.get("results"), list)
     assert isinstance(payload.get("debug_by_source"), list)
     assert isinstance(payload.get("partial"), bool)
-    print("local-event listing-authority self-test passed")
+    print("local-event listing-authoritative self-test passed")
     return 0
 
 
@@ -181,9 +241,8 @@ def main(argv: list[str] | None = None) -> int:
     location = " ".join(args.location).strip() or DEFAULT_LOCATION
     ENV_DIR.mkdir(exist_ok=True)
     DEBUG_DIR.mkdir(parents=True, exist_ok=True)
-    payload = annotate_source_completion(normalize_payload(collect_events(CONFIG, location, DEBUG_DIR)))
-    write_payload(payload)
-    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    display = write_payload(collect_events(CONFIG, location, DEBUG_DIR))
+    print(json.dumps(display, ensure_ascii=False, indent=2))
     return 0
 
 

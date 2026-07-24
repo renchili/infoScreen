@@ -1,0 +1,240 @@
+from __future__ import annotations
+
+import re
+from typing import Any
+
+from . import _apply_gardens_card_fields
+from . import detail_authority
+from . import event_review as _review
+from . import extract as _extract
+from .extract import clean
+from .listing_provenance_authority import listing_detail_url
+from .source_overrides import (
+    AUTHORITATIVE_DETAIL_JS,
+    _merge_detail,
+    _valid_title,
+)
+
+_APPLIED = False
+_GARDENS_SOURCE_ID = "gardensbythebay"
+_DEFAULT_SUMMARY = "Open the official page for details."
+_PAGE_CHROME_RE = re.compile(
+    r"\b(?:home|things to do|learn with us|for schools|buy tickets|membership|"
+    r"contact us|privacy|terms of use)\b",
+    re.I,
+)
+
+
+def _official_detail_url(
+    source: dict[str, Any],
+    listing_url: str,
+    payload: dict[str, Any],
+    browser_url: str,
+) -> str:
+    """Return a public detail URL backed by the confirmed official listing.
+
+    A detail document may publish a canonical URL on another official associated
+    site. The provenance comes from the listing card that linked to it, not from a
+    requirement that the destination share the listing hostname.
+    """
+
+    candidates = [payload.get("canonical"), browser_url]
+    errors: list[str] = []
+
+    for raw in candidates:
+        value = detail_authority.public_detail_url(source, raw)
+        if not value:
+            continue
+        canonical = listing_detail_url(listing_url, value)
+        if canonical:
+            return canonical
+        errors.append("detail URL is not a safe HTTP(S) target from the listing")
+
+    raise ValueError(errors[0] if errors else "official detail URL not found")
+
+
+def _authoritative_title(
+    payload: dict[str, Any],
+    event: dict[str, Any] | None,
+    merged: dict[str, Any],
+) -> str:
+    """Prefer the detail-page H1/OG title over list-card headings."""
+
+    for value in [
+        payload.get("title"),
+        (event or {}).get("title"),
+        *((merged.get("headings") or [])[:2]),
+        merged.get("link_text"),
+    ]:
+        title = _valid_title(value)
+        if title:
+            return title
+    return _review._listing_title(merged)
+
+
+def _listing_summary(card: dict[str, Any], title: str, when: str, where: str) -> str:
+    """Return one narrative line from the admitted list card, never page chrome."""
+
+    title_key = _extract.norm_key(title)
+    where_key = _extract.norm_key(where)
+    for raw in card.get("text_lines") or _extract.lines(card.get("text") or ""):
+        line = clean(raw)
+        if not line or len(line) < 30 or len(line) > 500 or len(line.split()) > 90:
+            continue
+        if title_key and _extract.norm_key(line) == title_key:
+            continue
+        if where_key and _extract.norm_key(line) == where_key:
+            continue
+        if when and clean(when).casefold() in line.casefold():
+            continue
+        if _extract.DATE_LINE_RE.search(line) or _extract.TIME_RE.search(line):
+            continue
+        if _extract.GENERIC_TITLE_RE.match(line) or _extract.FAKE_TITLE_RE.match(line):
+            continue
+        if _PAGE_CHROME_RE.search(line):
+            continue
+        return line
+    summary = clean(_extract.pick_summary(card, title, when, where))
+    if not summary or summary == _DEFAULT_SUMMARY or _PAGE_CHROME_RE.search(summary):
+        return ""
+    if len(summary) > 500 or len(summary.split()) > 90:
+        return ""
+    return summary
+
+
+def _repair_from_listing(
+    source: dict[str, Any],
+    card: dict[str, Any],
+    event: dict[str, Any],
+) -> dict[str, Any]:
+    """Keep source-card fields authoritative when a detail page contains UI noise.
+
+    Gardens by the Bay renders the date, time, venue, and description inside the
+    admitted ``a.programme-title`` list card. Its detail page also contains ticket
+    audience labels such as ``Non-Resident`` and broad navigation text; those values
+    must not replace the card's activity fields.
+    """
+
+    repaired = dict(event)
+    if clean(source.get("id")).lower() != _GARDENS_SOURCE_ID:
+        return repaired
+
+    repaired = _apply_gardens_card_fields(source, card, repaired)
+    title = _valid_title(repaired.get("title")) or _review._listing_title(card)
+    when = clean(repaired.get("when"))
+    where = clean(repaired.get("where"))
+    summary = _listing_summary(card, title, when, where)
+    if summary:
+        repaired["summary"] = summary
+    return repaired
+
+
+def _detail_candidate(
+    context: Any,
+    source: dict[str, Any],
+    listing_url: str,
+    raw_url: str,
+    card: dict[str, Any],
+) -> dict[str, str]:
+    """Collect review fields from a link backed by the official listing card."""
+
+    if "#nhb-" in raw_url or "#nhb-json-" in raw_url:
+        return {
+            "detail_url": raw_url,
+            "title": _review._listing_title(card),
+            "when": "",
+            "where": "",
+            "summary": "",
+            "detail_status": "incomplete",
+            "detail_error": "public_detail_url_not_found",
+            "detail_page_title": "",
+        }
+
+    requested_url = listing_detail_url(listing_url, raw_url)
+    if not requested_url:
+        raise ValueError("detail URL is not a safe HTTP(S) target from the listing")
+
+    detail = context.new_page()
+    try:
+        response = detail.goto(
+            requested_url,
+            wait_until="domcontentloaded",
+            timeout=_review.DOM_TIMEOUT_MS,
+        )
+        detail.wait_for_timeout(250)
+        if response is not None and response.status >= 400:
+            raise ValueError(f"detail_http_status_{response.status}")
+
+        browser_url = listing_detail_url(listing_url, str(detail.url))
+        if not browser_url:
+            raise ValueError("detail redirect is not a safe HTTP(S) target from the listing")
+
+        payload = detail.evaluate(AUTHORITATIVE_DETAIL_JS) or {}
+        if not isinstance(payload, dict):
+            payload = {}
+        detail_url = _official_detail_url(
+            source,
+            listing_url,
+            payload,
+            browser_url,
+        )
+
+        detail_card = {
+            **card,
+            "url": detail_url,
+            "page_url": detail_url,
+            "detail_urls": [detail_url],
+            "detail_url_count": 1,
+        }
+        merged = _merge_detail(source, detail_card, payload, 0)
+        merged.update(
+            url=detail_url,
+            page_url=detail_url,
+            detail_urls=[detail_url],
+            detail_url_count=1,
+        )
+
+        event, reason = detail_authority.event_from_card(source, merged)
+        title = _authoritative_title(payload, event, merged)
+        page_title = _valid_title(payload.get("title")) or clean(detail.title() or "")
+
+        if event is None:
+            summary = _listing_summary(card, title, "", "")
+            return {
+                "detail_url": detail_url,
+                "title": title,
+                "when": "",
+                "where": "",
+                "summary": summary or clean(card.get("text") or "")[:500],
+                "detail_status": "incomplete",
+                "detail_error": reason,
+                "detail_page_title": page_title,
+            }
+
+        event = _repair_from_listing(source, card, event)
+        return {
+            "detail_url": detail_url,
+            "title": title,
+            "when": str(event.get("when") or ""),
+            "where": str(event.get("where") or ""),
+            "summary": str(event.get("summary") or ""),
+            "detail_status": "collected",
+            "detail_error": "",
+            "detail_page_title": page_title,
+        }
+    finally:
+        detail.close()
+
+
+def apply() -> None:
+    """Install authoritative detail title, URL, and listing-field handling."""
+
+    global _APPLIED
+    if _APPLIED:
+        return
+    detail_authority.apply()
+    _review._detail_candidate = _detail_candidate
+    _APPLIED = True
+
+
+__all__ = ["apply"]
