@@ -118,6 +118,19 @@ def test_dashboard_local_event_search_filters_current_runtime_only() -> None:
     assert 'fetch(API, { cache: "no-store" })' in js
 
 
+def test_calendar_board_reloads_schedule_without_page_reload() -> None:
+    js = read_text("surface/web/assets/js/calendar_board.js")
+
+    assert "var ROTATE_INTERVAL_MS = 7000;" in js
+    assert "var RELOAD_INTERVAL_MS = 60000;" in js
+    assert "rotateTimer = setInterval(rotate, ROTATE_INTERVAL_MS)" in js
+    assert "reloadTimer = setInterval(load, RELOAD_INTERVAL_MS)" in js
+    assert "if (loading) return;" in js
+    assert "function sameItems(nextItems)" in js
+    assert 'fetch("schedule.json?_=" + Date.now(), { cache: "no-store" })' in js
+    assert "window.location.reload" not in js
+
+
 def test_market_rendering_has_one_owner() -> None:
     dashboard = read_text("surface/web/assets/js/dashboard.js")
     local_event = read_text("surface/web/assets/js/local_event_card.js")
