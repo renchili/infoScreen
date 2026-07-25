@@ -26,7 +26,7 @@ def test_png_is_not_renamed_to_jpg_without_a_real_converter(
 
 def test_native_output_names_do_not_collide_across_formats() -> None:
     assert build_photos_json.normalized_output_name(Path("photo.jpg")) == "photo.jpg"
-    assert build_photos_json.normalized_output_name(Path("photo.jpeg")) == "photo.jpg"
+    assert build_photos_json.normalized_output_name(Path("photo.jpeg")) == "photo-jpeg.jpg"
     assert build_photos_json.normalized_output_name(Path("photo.png")) == "photo-png.jpg"
     assert build_photos_json.normalized_output_name(Path("photo.webp")) == "photo-webp.jpg"
 
