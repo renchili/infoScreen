@@ -11,23 +11,23 @@ sys.path.insert(0, str(SURFACE))
 from local_events_runtime.output import normalize_payload  # noqa: E402
 
 
-def test_structured_first_runtime_contract_is_active() -> None:
+def test_listing_authoritative_runtime_contract_is_active() -> None:
     job = read_text("surface/jobs/local_event_search.py")
     output = read_text("surface/local_events_runtime/output.py")
 
     assert "apply_source_overrides()" not in job
     assert "apply_listing_url_authority()" not in job
     assert "apply_detail_authority()" not in job
-    assert 'payload["extractor"] == "structured-first-v49-source-order"' in job
-    assert 'payload["version"] == 49' in job
-    assert 'extractor.startswith("structured-first")' in output
+    assert 'payload["extractor"] == "listing-authoritative-v52"' in job
+    assert 'payload["version"] == 52' in job
+    assert 'extractor.startswith(("structured-first", "listing-authoritative"))' in output
 
 
-def test_structured_first_result_without_listing_policy_survives_output() -> None:
+def test_listing_authoritative_result_without_legacy_policy_survives_output() -> None:
     tomorrow = date.today() + timedelta(days=1)
     payload = normalize_payload(
         {
-            "extractor": "structured-first-v49-source-order",
+            "extractor": "listing-authoritative-v52",
             "results": [
                 {
                     "title": "Current Official Event",
