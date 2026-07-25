@@ -12,7 +12,7 @@ def test_dashboard_left_column_allocates_all_three_panels() -> None:
     layout = read_text("surface/web/assets/css/dashboard_layout.css")
 
     left_start = html.index('<section class="col left">')
-    left_end = html.index("</section>", left_start)
+    left_end = html.index('<section class="col center">', left_start)
     left = html[left_start:left_end]
     assert left.count('class="box') == 3
     assert "assets/css/dashboard_layout.css" in html
