@@ -9,23 +9,25 @@ pytestmark = pytest.mark.style
 
 def test_dashboard_left_column_allocates_all_three_panels() -> None:
     html = read_text("surface/web/index.html")
-    css = read_text("surface/web/assets/css/app.css")
+    overrides = read_text("surface/web/assets/css/dashboard_acceptance_fixes.css")
 
     left_start = html.index('<section class="col left">')
     left_end = html.index("</section>", left_start)
     left = html[left_start:left_end]
     assert left.count('class="box') == 3
+    assert "assets/css/dashboard_acceptance_fixes.css" in html
     assert (
         "grid-template-rows: minmax(0, 1fr) minmax(0, 1.25fr) 46px"
-        in css
+        in overrides
     )
 
 
-def test_dashboard_has_quiet_background_without_scanline_overlay() -> None:
-    css = read_text("surface/web/assets/css/app.css")
+def test_dashboard_quiet_background_override_disables_scanline_overlay() -> None:
+    overrides = read_text("surface/web/assets/css/dashboard_acceptance_fixes.css")
 
-    assert "body::before" not in css
-    assert "repeating-linear-gradient" not in css
+    assert "body::before" in overrides
+    assert "display: none !important" in overrides
+    assert "repeating-linear-gradient" not in overrides
 
 
 def test_local_event_card_preserves_one_card_column_layout() -> None:
