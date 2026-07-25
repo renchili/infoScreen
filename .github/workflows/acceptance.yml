@@ -7,8 +7,42 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
+  run-policy:
+    name: acceptance-run-policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Reject repeated attempts
+        shell: bash
+        run: |
+          if [ "${{ github.run_attempt }}" != "1" ]; then
+            echo "::error::This run already failed once. Re-runs are blocked; push a corrective commit to create a new run."
+            exit 1
+          fi
+
+  debounce:
+    name: acceptance-debounce
+    needs: run-policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Wait for the PR branch to settle
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            sleep 90
+          fi
+
   acceptance:
+    needs: debounce
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
