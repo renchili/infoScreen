@@ -45,8 +45,9 @@ def apply() -> None:
     lifecycle events do not settle. Review remains a blocking operation, but visible
     detail-page navigations are started together so network waits do not accumulate
     one activity at a time. Coverage, source, date, detail-field, section-aware
-    summary, listing-provenance, listing-membership, dynamic-listing, card, and link
-    authorities are applied before their final values are bound into Review Studio.
+    summary, listing-provenance, listing-membership, dynamic-listing, pagination,
+    card, and link authorities are applied before their final values are bound into
+    Review Studio.
     """
 
     global _APPLIED
@@ -129,6 +130,12 @@ def apply() -> None:
 
     apply_dynamic_listing_authority()
 
+    # A visible "2" or "Next" is not sufficient pagination evidence. Require the
+    # listing URL or canonical detail inventory to change before page_index advances.
+    from .listing_pagination_authority import apply as apply_listing_pagination_authority
+
+    apply_listing_pagination_authority()
+
     from .open_ended_date_authority import apply as apply_open_ended_date_authority
 
     apply_open_ended_date_authority()
@@ -165,11 +172,19 @@ def apply() -> None:
 
     apply_listing_url_authority()
 
-    # event_review was imported by detail_date_authority before the dynamic and
-    # structural JavaScript rewrites above. Rebind only after the final versions are
-    # complete, otherwise Studio keeps stale parser and CARD_JS snapshots. The
-    # detail-candidate function itself remains the bounded blocking implementation.
+    # event_review was imported by detail_date_authority before the dynamic,
+    # pagination, and structural JavaScript rewrites above. Rebind only after the
+    # final versions are complete, otherwise Studio keeps stale parser snapshots.
     _bind_final_browser_runtime_to_review()
+
+    # Scoped Studio collection must preserve candidates owned by listing pages that
+    # did not participate in this run. Install before effective-field wrapping so the
+    # final lifecycle filter sees the correctly combined candidate set.
+    from .review_collection_scope_authority import (
+        apply as apply_review_collection_scope_authority,
+    )
+
+    apply_review_collection_scope_authority()
 
     # Existing Review state may contain the old generic summary while the kiosk
     # already has a narrative for the same canonical detail URL. Apply this before
