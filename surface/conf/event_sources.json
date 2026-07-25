@@ -1,5 +1,5 @@
 {
-  "version": 8,
+  "version": 6,
   "purpose": "Verified official activity-list entrypoints. A rendered listing card is authoritative for membership; structured and detail data may only enrich an admitted card. allowed_domains is the explicit source-level allow-list for official listing and associated detail sites.",
   "policy": {
     "no_recursive_site_crawl": true,
@@ -201,6 +201,7 @@
       "official_home": "https://www.gardensbythebay.com.sg/",
       "allowed_domains": ["gardensbythebay.com.sg"],
       "default_venue": "Gardens by the Bay",
+      "card_selectors": ["a.programme-title.row-listing-title[href]"],
       "listing_urls": ["https://www.gardensbythebay.com.sg/en/things-to-do/calendar-of-events.html"]
     },
     {
