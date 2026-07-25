@@ -45,9 +45,9 @@ def apply() -> None:
     lifecycle events do not settle. Review remains a blocking operation, but visible
     detail-page navigations are started together so network waits do not accumulate
     one activity at a time. Coverage, source, date, detail-field, section-aware
-    summary, listing-provenance, listing-membership, dynamic-listing, pagination,
-    card, and link authorities are applied before their final values are bound into
-    Review Studio.
+    summary, ACM parent-fact grouping, listing-provenance, listing-membership,
+    dynamic-listing, pagination, card, and link authorities are applied before their
+    final values are bound into Review Studio.
     """
 
     global _APPLIED
@@ -154,6 +154,15 @@ def apply() -> None:
 
     apply_open_detail_fields_authority()
 
+    # ACM presents the parent activity facts as four visually ordered rows. Read that
+    # group by screen position, preserve Date/Time/Location/Admission separately, and
+    # derive the compatibility `when` value only after the exact rows are retained.
+    from .acm_primary_fact_sequence_authority import (
+        apply as apply_acm_primary_fact_sequence_authority,
+    )
+
+    apply_acm_primary_fact_sequence_authority()
+
     from .gardens_field_authority import apply as apply_gardens_field_authority
 
     apply_gardens_field_authority()
@@ -181,8 +190,8 @@ def apply() -> None:
     apply_listing_url_authority()
 
     # event_review was imported by detail_date_authority before the dynamic,
-    # pagination, and structural JavaScript rewrites above. Rebind only after the
-    # final versions are complete, otherwise Studio keeps stale parser snapshots.
+    # pagination, fact-group, and structural JavaScript rewrites above. Rebind only
+    # after the final versions are complete, otherwise Studio keeps stale snapshots.
     _bind_final_browser_runtime_to_review()
 
     # Scoped Studio collection must preserve candidates owned by listing pages that
