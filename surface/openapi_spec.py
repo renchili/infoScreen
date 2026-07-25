@@ -56,6 +56,10 @@ def ref(name: str) -> dict[str, str]:
     return {"$ref": f"#/components/schemas/{name}"}
 
 
+def one_of(*schemas: dict[str, Any]) -> dict[str, Any]:
+    return {"oneOf": list(schemas)}
+
+
 def json_response(schema: dict[str, Any] | None = None, description: str = "OK") -> dict[str, Any]:
     content: dict[str, Any] = {"application/json": {}}
     if schema is not None:
@@ -70,6 +74,10 @@ def request_body(schema: dict[str, Any], required: bool = True) -> dict[str, Any
 def build_openapi() -> dict[str, Any]:
     schedule_list_schema = list_schema_for(ScheduleItem)
     object_schema = {"type": "object", "additionalProperties": True}
+    local_event_read_schema = one_of(
+        ref("LocalEventSearchResponse"),
+        ref("RuntimeMissingResponse"),
+    )
     decision_schema = {
         "type": "object",
         "additionalProperties": False,
@@ -100,10 +108,10 @@ def build_openapi() -> dict[str, Any]:
         "openapi": OPENAPI_VERSION,
         "info": {
             "title": "InfoScreen Local API",
-            "version": "0.2.0",
+            "version": "0.2.1",
             "description": "Local kiosk API for runtime dashboard JSON, refresh actions, market config, local event search, and Local Event operator review.",
         },
-        "servers": [{"url": "http://127.0.0.1:8765", "description": "Surface kiosk server; replace 127.0.0.1 with the Surface LAN address when using another device"}],
+        "servers": [{"url": "http://127.0.0.1:8765", "description": "Surface kiosk server; replace 127.0.0.1 with the Surface LAN address when using another trusted device"}],
         "tags": [
             {"name": "dashboard", "description": "Static dashboard and runtime JSON"},
             {"name": "market", "description": "Market config and refresh APIs"},
@@ -112,7 +120,7 @@ def build_openapi() -> dict[str, Any]:
             {"name": "media", "description": "Photo wall media endpoints"},
         ],
         "paths": {
-            "/": {"get": {"tags": ["dashboard"], "summary": "Serve dashboard HTML", "description": "Returns sanitized dashboard HTML.", "responses": {"200": {"description": "HTML dashboard"}}}},
+            "/": {"get": {"tags": ["dashboard"], "summary": "Serve dashboard HTML", "description": "Returns the committed dashboard HTML.", "responses": {"200": {"description": "HTML dashboard"}}}},
             "/index.html": {"get": {"tags": ["dashboard"], "summary": "Serve dashboard HTML", "description": "Same as GET /.", "responses": {"200": {"description": "HTML dashboard"}}}},
             "/openapi.json": {"get": {"tags": ["dashboard"], "summary": "Return OpenAPI specification", "responses": {"200": json_response(None)}}},
             "/docs": {"get": {"tags": ["dashboard"], "summary": "Serve Swagger UI", "responses": {"200": {"description": "Swagger UI HTML"}}}},
@@ -123,15 +131,15 @@ def build_openapi() -> dict[str, Any]:
             "/event_stream.json": {"get": {"tags": ["dashboard"], "summary": "Read event stream runtime JSON", "responses": {"200": json_response(ref("EventStreamResponse"))}}},
             "/photos.json": {"get": {"tags": ["media"], "summary": "Read photo wall runtime JSON", "responses": {"200": json_response(ref("PhotosResponse"))}}},
             "/sync_status.json": {"get": {"tags": ["dashboard"], "summary": "Read sync status runtime JSON", "responses": {"200": json_response(object_schema)}}},
-            "/local_event_search_results.json": {"get": {"tags": ["local-events"], "summary": "Read local event runtime JSON", "responses": {"200": json_response(ref("LocalEventSearchResponse")), "404": json_response(ref("RuntimeMissingResponse"), "Runtime JSON missing")}}},
+            "/local_event_search_results.json": {"get": {"tags": ["local-events"], "summary": "Read local event runtime JSON", "description": "Missing runtime data is returned as a 200 JSON error/default shape; HEAD uses 404 for freshness checks.", "responses": {"200": json_response(local_event_read_schema)}}},
             "/api/market-config": {
                 "get": {"tags": ["market"], "summary": "Read active market symbol config", "responses": {"200": json_response(ref("MarketConfigResponse"))}},
                 "post": {"tags": ["market"], "summary": "Update active market symbol config", "requestBody": request_body(ref("MarketConfigRequest")), "responses": {"200": json_response(ref("MarketConfigResponse")), "400": json_response(ref("ErrorResponse"), "Invalid request")}},
             },
-            "/api/market-refresh": {"post": {"tags": ["market"], "summary": "Refresh market runtime data", "description": "Runs surface/fetch_live_data.py.", "responses": {"200": json_response(ref("MarketRefreshResponse")), "500": json_response(ref("ErrorResponse"), "Refresh failed")}}},
+            "/api/market-refresh": {"post": {"tags": ["market"], "summary": "Refresh Market and Weather runtime data", "description": "Runs surface/fetch_live_data.py and returns both runtime payloads.", "responses": {"200": json_response(ref("MarketRefreshResponse")), "500": json_response(one_of(ref("MarketRefreshResponse"), ref("ErrorResponse")), "Producer failed or could not start")}}},
             "/api/local-events/search": {
-                "get": {"tags": ["local-events"], "summary": "Read latest local event search results", "description": "Returns runtime JSON without running a new search.", "responses": {"200": json_response(ref("LocalEventSearchResponse")), "404": json_response(ref("RuntimeMissingResponse"), "Runtime JSON missing")}},
-                "post": {"tags": ["local-events"], "summary": "Run local event search for a location", "description": "Runs surface/search_local_events.py. The supported entrypoint forces Chromium to start with --disable-http2.", "requestBody": request_body(ref("LocalEventSearchRequest")), "responses": {"200": json_response(ref("LocalEventSearchResponse")), "500": json_response(ref("ErrorResponse"), "Search failed")}},
+                "get": {"tags": ["local-events"], "summary": "Read latest local event search results", "description": "Returns runtime JSON without running a new search. Missing data is represented in a 200 JSON payload.", "responses": {"200": json_response(local_event_read_schema)}},
+                "post": {"tags": ["local-events"], "summary": "Run local event search for a location", "description": "Runs surface/search_local_events.py. The supported entrypoint forces Chromium to start with --disable-http2.", "requestBody": request_body(ref("LocalEventSearchRequest")), "responses": {"200": json_response(ref("LocalEventSearchResponse")), "500": json_response(one_of(ref("LocalEventSearchResponse"), ref("ErrorResponse")), "Search failed"), "504": json_response(ref("LocalEventSearchResponse"), "Search exceeded the HTTP timeout")}},
             },
             "/api/local-events/review/state": {
                 "get": {"tags": ["local-event-review"], "summary": "Read Local Event review state", "description": "Returns configured institutions, list-page decisions, Event candidates, diagnostics, and submitted positions from surface/.env/local_event_review/state.json.", "responses": {"200": json_response(object_schema), "500": json_response(ref("ErrorResponse"), "State read failed")}},
