@@ -59,6 +59,21 @@ def _detail_date_rows(card: dict[str, Any]) -> list[str]:
     return rows
 
 
+def _detail_venue_rows(card: dict[str, Any]) -> list[str]:
+    rows: list[str] = []
+    for value in card.get("detail_venues") or []:
+        text = _extract.clean(value)
+        if text and text not in rows:
+            rows.append(text)
+    evidence = card.get("detail_evidence")
+    if isinstance(evidence, dict):
+        for value in evidence.get("venue_candidates") or []:
+            text = _extract.clean(value)
+            if text and text not in rows:
+                rows.append(text)
+    return rows
+
+
 def _primary_detail_date(card: dict[str, Any]) -> str:
     """Choose the first explicit-year activity range, never the busiest child row."""
 
@@ -78,7 +93,10 @@ def _primary_detail_date(card: dict[str, Any]) -> str:
         if second[0] == first[0] + 1:
             start = min(first[2][0], second[2][0])
             end = max(first[2][0], second[2][0])
-            return f"{start.day} {start.strftime('%b')} {start.year} – {end.day} {end.strftime('%b')} {end.year}"
+            return (
+                f"{start.day} {start.strftime('%b')} {start.year} – "
+                f"{end.day} {end.strftime('%b')} {end.year}"
+            )
     if explicit_singles:
         return explicit_singles[0][1]
 
@@ -108,13 +126,26 @@ def _valid_venue(value: object, *, require_hint: bool = False) -> bool:
     return not require_hint or bool(_VENUE_HINT_RE.search(text))
 
 
+def _primary_detail_venue(card: dict[str, Any]) -> str:
+    """Choose the first valid parent venue before later child-activity rooms."""
+
+    for row in _detail_venue_rows(card):
+        if _valid_venue(row):
+            return row
+    return ""
+
+
 def pick_venue(
     source: dict[str, Any],
     card: dict[str, Any],
     when: str,
     when_line: str,
 ) -> str:
-    """Reject programme taxonomy while preserving explicit short venue names."""
+    """Prefer the parent venue and reject programme taxonomy."""
+
+    primary = _primary_detail_venue(card)
+    if primary:
+        return primary
 
     venue = _extract.clean(_BASE_PICK_VENUE(source, card, when, when_line))
     if _valid_venue(venue):
@@ -210,4 +241,5 @@ __all__ = [
     "pick_when",
     "_patch_detail_summary_order",
     "_primary_detail_date",
+    "_primary_detail_venue",
 ]
