@@ -22,12 +22,16 @@ def test_dashboard_left_column_allocates_all_three_panels() -> None:
     )
 
 
-def test_dashboard_quiet_background_override_disables_scanline_overlay() -> None:
+def test_dashboard_quiet_background_disables_scanline_and_dot_matrix() -> None:
     layout = read_text("surface/web/assets/css/dashboard_layout.css")
 
     assert "body::before" in layout
     assert "display: none !important" in layout
+    assert ".news-ticker-panel" in layout
+    assert "background: #050606 !important" in layout
+    assert "background-size: auto !important" in layout
     assert "repeating-linear-gradient" not in layout
+    assert "radial-gradient" not in layout
 
 
 def test_local_event_card_preserves_one_card_column_layout() -> None:
