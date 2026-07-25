@@ -1,20 +1,40 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from . import review_publish_authority as _publisher
 
 _APPLIED = False
 _BASE_REVIEW_EVENT = None
+_OPERATIONAL_RE = re.compile(
+    r"\b(?:terms?|conditions?|registration|ticketing|admission|refund|"
+    r"cancellation|safety|enquir(?:y|ies)|contact|privacy|cookie)\b|@",
+    re.I,
+)
+_CTA_RE = re.compile(
+    r"\b(?:book now|buy tickets?|register now|sign up|learn more|read more|"
+    r"find out more|plan your visit)\b",
+    re.I,
+)
 
 
 def _review_event(candidate: Any) -> dict[str, Any]:
-    """Remove CTA, terms, contact, registration, and safety text before publish."""
+    """Remove operational copy while preserving concise real activity summaries."""
 
     from .detail_summary_authority import useful_event_summary
 
     event = dict(_BASE_REVIEW_EVENT(candidate))
-    event["summary"] = useful_event_summary(event.get("summary"))
+    raw = " ".join(str(event.get("summary") or "").split())
+    summary = useful_event_summary(raw)
+    if (
+        not summary
+        and len(raw) >= 20
+        and not _OPERATIONAL_RE.search(raw)
+        and not _CTA_RE.search(raw)
+    ):
+        summary = raw
+    event["summary"] = summary
     return event
 
 
