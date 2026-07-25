@@ -46,7 +46,9 @@ def test_javascript_syntax_checker_uses_tracked_html_pages() -> None:
     script = read_text("scripts/ci/check_javascript_syntax.sh")
 
     assert "git ls-files -z -- '*.html'" in script
-    assert 'extract_inline_js.py \\\n    "$html"' in script
+    assert "scripts/ci/extract_inline_js.py" in script
+    assert '"$html"' in script
+    assert '"$TEMP_DIR/inline-js-$html_index"' in script
     assert "extract_inline_js.py index.html" not in script
 
 
