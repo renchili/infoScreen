@@ -32,7 +32,7 @@ The Surface can act as a second Calendar client, any Python runtime can export E
 
 ### Why it fails
 
-macOS Calendar owns accounts, permissions, and authoritative event state. A Python runtime without `import EventKit` cannot export Calendar data. Direct replacement during transfer can expose a partially written JSON file.
+macOS Calendar/EventKit owns accounts, permissions, and authoritative event state. A Python runtime without `import EventKit` cannot export Calendar data. Direct replacement during transfer can expose a partially written JSON file.
 
 ### Correct requirement interpretation
 
