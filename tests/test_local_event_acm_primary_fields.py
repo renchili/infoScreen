@@ -181,3 +181,33 @@ def test_now_till_past_candidate_expires(monkeypatch) -> None:
 
     assert open_dates.current_date_label(candidate.when) is False
     assert authority.candidate_expired(candidate) is True
+
+
+def test_acm_parent_fact_component_wraps_every_detail_extractor() -> None:
+    scripts = (
+        authority._detail_dates.ACTIVITY_DETAIL_JS,
+        authority._browser.DETAIL_CARD_JS,
+        authority._source_overrides.AUTHORITATIVE_DETAIL_JS,
+    )
+
+    for script in scripts:
+        assert authority._ACM_PRIMARY_FACTS_MARKER in script
+        assert "facts.dateRow.text" in script
+        assert "facts.timeRow.text" in script
+        assert "facts.venueRow.text" in script
+        assert "dates: when ? [when] : []" in script
+        assert "venues: venue ? [venue] : []" in script
+        assert "drop-in activities" in script
+
+
+def test_acm_parent_date_and_time_stay_in_one_when_value() -> None:
+    value = (
+        "10–12 April 2026 · "
+        "Daily - Friday, 5–9.30pm / Sat & Sun, 2–9.30pm"
+    )
+
+    assert authority._primary_detail_date({"detail_dates": [value]}) == value
+
+
+def test_acm_parent_venue_is_not_selected_from_a_global_venue_list() -> None:
+    assert not hasattr(authority, "_primary_detail_venue")
