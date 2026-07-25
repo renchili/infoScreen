@@ -132,7 +132,7 @@ def test_review_terms_do_not_replace_collector_activity_description(tmp_path) ->
         detail_url,
         summary=(
             "This programme is based on a first-come-first-served basis. "
-            "For further enquiries, please email cmsg_prg@heritage.sg. "
+            "For further enquiries, please use the museum contact form. "
             "Terms & Conditions: This programme is free, but donations are encouraged. "
             "No pre-registration is required. For safety, children must be accompanied."
         ),
@@ -143,7 +143,7 @@ def test_review_terms_do_not_replace_collector_activity_description(tmp_path) ->
 
     assert event["summary"] == collector["results"][0]["summary"]
     assert "Terms & Conditions" not in event["summary"]
-    assert "cmsg_prg@heritage.sg" not in event["summary"]
+    assert "museum contact form" not in event["summary"]
 
 
 def test_non_empty_review_date_replaces_complete_collector_date_tuple(tmp_path) -> None:
