@@ -18,7 +18,7 @@ ACTIVITY_INTRO = (
 )
 TERMS_TEXT = (
     "This programme is based on a first-come-first-served basis. "
-    "For further enquiries, please email cmsg_prg@heritage.sg. "
+    "For further enquiries, please use the museum contact form. "
     "Terms & Conditions: This programme is free, but donations are encouraged. "
     "No pre-registration is required. For safety, children must be accompanied."
 )
@@ -37,7 +37,7 @@ def test_activity_intro_is_preserved_before_terms_and_contact_details() -> None:
 def test_contact_and_first_come_text_cannot_win_by_being_longer() -> None:
     long_operational = (
         "This programme is based on a first-come-first-served basis. "
-        + "For further enquiries, please email cmsg_prg@heritage.sg. " * 8
+        + "For further enquiries, please use the museum contact form. " * 8
     )
 
     assert authority.useful_event_summary(long_operational) == ""
@@ -62,7 +62,7 @@ def test_summary_authority_is_applied_before_final_review_binding() -> None:
 
     detail_payload = bootstrap.index("apply_detail_payload_authority()")
     detail_summary = bootstrap.index("apply_detail_summary_authority()")
-    binding = bootstrap.index("_bind_final_browser_runtime_to_review()")
+    binding = bootstrap.index("    _bind_final_browser_runtime_to_review()")
 
     assert detail_payload < detail_summary < binding
 
