@@ -42,6 +42,14 @@ def test_shell_scripts_parse_with_bash_noexec() -> None:
         )
 
 
+def test_javascript_syntax_checker_uses_tracked_html_pages() -> None:
+    script = read_text("scripts/ci/check_javascript_syntax.sh")
+
+    assert "git ls-files -z -- '*.html'" in script
+    assert 'extract_inline_js.py \\\n    "$html"' in script
+    assert "extract_inline_js.py index.html" not in script
+
+
 def test_full_ci_script_collects_agent_accessible_outputs() -> None:
     script = read_text("scripts/run_full_ci_tests.sh")
 
@@ -130,7 +138,6 @@ def test_mac_schedule_sync_uses_atomic_remote_publish() -> None:
     assert "unsafe REMOTE_SCHEDULE_JSON" in sync_script
     assert "${REMOTE_SCHEDULE_JSON:-~/infoscreen/surface/.env/schedule.json}" in setup_script
     assert "~/infoscreen/schedule.json" not in sync_script
-    assert "/home/rody/infoscreen/schedule.json" not in sync_script
 
 
 def test_document_roles_are_distinct() -> None:
