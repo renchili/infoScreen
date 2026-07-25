@@ -187,7 +187,7 @@ def test_readme_covers_current_product_interaction_and_recovery() -> None:
         "Last-Modified" if "Last-Modified" in readme else "Sync ticker",
         "--disable-http2",
         "migration_backup",
-        "never changes review decisions temporarily",
+        "never change other list-page decisions temporarily",
     ]
     for value in required:
         assert value in readme
@@ -318,3 +318,26 @@ def test_ci_workflow_defines_the_repository_acceptance_entrypoint() -> None:
     assert "ACCEPTANCE_ARTIFACT_DIR" in workflow
     assert "pydantic" in workflow
     assert "pytest" in workflow
+
+
+def test_workflows_reject_reruns_and_limit_branch_frequency() -> None:
+    workflow_paths = [
+        ".github/workflows/acceptance.yml",
+        ".github/workflows/pre-pr.yml",
+        ".github/workflows/quality-gate.yml",
+        ".github/workflows/post-merge.yml",
+    ]
+
+    for path in workflow_paths:
+        workflow = read_text(path)
+        assert "github.run_attempt" in workflow
+        assert "Re-runs are blocked" in workflow
+        assert "concurrency:" in workflow
+        assert "cancel-in-progress: true" in workflow
+
+    for path in [
+        ".github/workflows/acceptance.yml",
+        ".github/workflows/pre-pr.yml",
+        ".github/workflows/quality-gate.yml",
+    ]:
+        assert "sleep 90" in read_text(path)
