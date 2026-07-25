@@ -158,6 +158,6 @@ def test_http_bootstrap_installs_prefetch_after_detail_reader() -> None:
 
     navigation = bootstrap.index("apply_review_detail_navigation_authority()")
     prefetch_apply = bootstrap.index("apply_review_detail_prefetch_authority()")
-    binding = bootstrap.index("_bind_final_browser_runtime_to_review()")
+    binding = bootstrap.index("    _bind_final_browser_runtime_to_review()")
 
     assert navigation < prefetch_apply < binding
