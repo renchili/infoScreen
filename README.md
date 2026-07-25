@@ -47,8 +47,11 @@ For the full Surface deployment:
 - Chromium and the Python Playwright package for system-collected Local Events;
 - Pydantic 2;
 - outbound network access for Market, Weather, News, and official Local Event sources;
-- `ffmpeg` for HEIC/HEIF conversion and ImageMagick `magick` for optional photo normalization;
+- `ffmpeg` for HEIC/HEIF conversion;
+- ImageMagick `magick` for PNG/WebP-to-JPEG normalization;
 - a Mac with an EventKit-capable Python runtime only when Calendar sync is required.
+
+Without ImageMagick, existing JPEG files can still be copied safely, but PNG and WebP inputs are skipped rather than renamed to a false `.jpg` format.
 
 ## Runtime and configuration
 
@@ -73,8 +76,8 @@ The dashboard includes:
 
 - current time, date, page refresh time, and page-session uptime;
 - a Market card and global Market tape with configurable symbols;
-- current Singapore weather;
-- aligned English, French, and Chinese news rows;
+- current Singapore weather with a visible retained-data error state when live retrieval fails;
+- aligned English, French, and Chinese news rows, with Singapore sources selected before the random remainder;
 - a Local Events card built from curated official organisation sources;
 - a Calendar board supplied by macOS Calendar/EventKit;
 - a local Photo wall;
@@ -145,26 +148,26 @@ From another computer on the same trusted LAN:
 http://<surface-lan-address>:8765/local-events/studio/
 ```
 
-Update and restart:
+Update and restart the canonical branch:
 
 ```bash
 cd ~/infoscreen
 git fetch origin
-git switch develop/surface-local-events-coverage
-git pull --ff-only origin develop/surface-local-events-coverage
+git switch main
+git pull --ff-only origin main
 systemctl --user restart infoscreen-http.service
 ```
 
 ### Review system-collected list pages and Events
 
-1. Select the global institution when work should be scoped to one organisation.
+1. Select the global institution used to filter the visible Review cards.
 2. Click `COLLECT LIST PAGES`.
-3. Inspect candidate URLs and use `PREVIEW EVENTS`.
-4. Choose `CONFIRM LIST PAGE`, `REJECT`, or `RESET`.
-5. Click `COLLECT EVENTS FROM CONFIRMED PAGES`.
+3. Inspect the candidate URL and choose `CONFIRM LIST PAGE`, `REJECT`, or `RESET`.
+4. For a confirmed page, use `PREVIEW EVENTS` when a page-specific preview is needed.
+5. Click `COLLECT EVENTS FROM CONFIRMED PAGES` to refresh all confirmed pages.
 6. Review each Event and choose `RELATED ACTIVITY`, `NOT RELATED`, or `RESET`.
 
-A listing card needs a usable title and one official detail link. The list card itself does not need to repeat date or venue. The collector follows detail pages for title, date/time, location, summary, and detail status.
+Preview and collection never change other list-page decisions temporarily. A listing card needs a usable title and one official detail link. The list card itself does not need to repeat date or venue. The collector follows detail pages for title, date/time, location, summary, and detail status.
 
 Every Event candidate shows its originating list URL, DOM selector, selector match number, listing page index, document position, detail URL, and detail result.
 
@@ -176,8 +179,8 @@ The manual input is directly below the top collection toolbar.
 2. Paste the correct official Event list URL into `Add an official Event list page to the selected global institution`.
 3. Click `ADD LIST PAGE`.
 4. The page is saved as `pending` and appears in the left-side Event list pages.
-5. Use `PREVIEW EVENTS`.
-6. Confirm or reject it through the same review flow.
+5. Confirm the page.
+6. Use `PREVIEW EVENTS` or collect all confirmed pages.
 
 The backend validates that:
 
@@ -269,7 +272,7 @@ surface/.env/local_event_debug_cards/
 | Calendar | Mac LaunchAgent | 120 seconds |
 | Photos | Manual builder | No timer |
 
-The Local Event Studio reloads on initial load, explicit operations, manual `RELOAD`, and tab return. It does not rebuild all cards every three seconds.
+The Local Event Studio loads on initial entry, explicit operations, manual `RELOAD`, and return to the browser tab. It does not register an idle polling interval. Full-card rendering emits one completion event, and the scroll guard restores the previous card anchor or scroll position after that completed render.
 
 ## Project structure
 
@@ -296,7 +299,7 @@ Install dependencies:
 
 ```bash
 sudo apt update
-sudo apt install -y python3 python3-pip curl ca-certificates chromium
+sudo apt install -y python3 python3-pip curl ca-certificates chromium imagemagick ffmpeg
 python3 -m pip install --user playwright pydantic
 ```
 
@@ -306,6 +309,8 @@ Install or update user services:
 cd ~/infoscreen
 bash deploy/scripts/install-user-systemd.sh
 ```
+
+The installer never deletes conflicting legacy runtime directories. When both the legacy root path and `surface/.env/` destination exist, it preserves the legacy path under `surface/.env/migration_backup/` and stops rather than overwriting an existing backup.
 
 When dependencies and unit files are already installed:
 
@@ -375,6 +380,8 @@ Then rebuild:
 ```bash
 python3 surface/build_photos_json.py
 ```
+
+The public `photos.json` contains only browser URLs, captions, and output types; it does not expose original absolute filesystem paths. JPEG inputs can be copied safely without ImageMagick. PNG and WebP require ImageMagick, while HEIC and HEIF require `ffmpeg`.
 
 ## Development and validation
 
