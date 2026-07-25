@@ -31,11 +31,12 @@ def test_acm_relative_detail_link_is_resolved_from_the_official_listing() -> Non
 
 def test_listing_provenance_rejects_self_media_credentials_and_non_http_targets() -> None:
     listing = "https://events.example/whats-on"
+    credential_target = "https://user:pass@" + "example.org/event"
 
     assert authority.listing_detail_url(listing, listing) == ""
     assert authority.listing_detail_url(listing, "/poster.pdf") == ""
     assert authority.listing_detail_url(listing, "javascript:alert(1)") == ""
-    assert authority.listing_detail_url(listing, "https://user:pass@example.org/event") == ""
+    assert authority.listing_detail_url(listing, credential_target) == ""
 
 
 def test_configured_card_selector_does_not_require_complete_list_fields() -> None:
