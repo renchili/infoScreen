@@ -52,7 +52,7 @@ def cache_url(path: Path, web_path: str) -> str:
 
 def normalized_output_name(path: Path) -> str:
     ext = path.suffix.lower()
-    if ext in {".jpg", ".jpeg"}:
+    if ext == ".jpg":
         return f"{path.stem}.jpg"
     return f"{path.stem}-{ext.removeprefix('.').lower()}.jpg"
 
