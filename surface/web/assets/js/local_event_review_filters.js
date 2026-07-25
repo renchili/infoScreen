@@ -5,8 +5,6 @@
   const FILTER_STATUS_KEY = "infoscreen.review.filter.status";
   const REVIEW_STATE_PATH = "/api/local-events/review/state";
 
-  let restoreScrollY = null;
-  let restoreTimer = null;
   let sourcesById = new Map();
   let sourceIdByName = new Map();
   let syncingSource = false;
@@ -190,7 +188,7 @@
       syncFeedbackSource(selectedSourceId());
       publishSourceChange();
     } catch {
-      // Main page status already reports review-state failures.
+      // The Studio's main status owns review-state error presentation.
     }
   }
 
@@ -209,28 +207,14 @@
     });
   }
 
-  function captureScrollForAction(event) {
-    const button = event.target.closest("#listing-pages button, #event-candidates button");
-    if (!button) return;
-    restoreScrollY = window.scrollY;
-  }
-
-  function scheduleRefresh() {
+  function refreshAfterRender() {
     applyFilters();
     syncFeedbackSource(selectedSourceId());
-    if (restoreScrollY === null) return;
-
-    window.clearTimeout(restoreTimer);
-    restoreTimer = window.setTimeout(() => {
-      window.scrollTo({ top: restoreScrollY, left: 0, behavior: "auto" });
-      restoreScrollY = null;
-    }, 0);
   }
 
   document.addEventListener("DOMContentLoaded", () => {
     ensureFilters();
     loadInstitutions();
-    document.addEventListener("click", captureScrollForAction, true);
 
     const feedbackSource = document.getElementById("feedback-source");
     feedbackSource?.addEventListener("change", () => {
@@ -241,12 +225,7 @@
       }
     });
 
-    const observer = new MutationObserver(scheduleRefresh);
-    const listing = document.getElementById("listing-pages");
-    const events = document.getElementById("event-candidates");
-    if (listing) observer.observe(listing, { childList: true });
-    if (events) observer.observe(events, { childList: true });
-    if (feedbackSource) observer.observe(feedbackSource, { childList: true });
+    document.addEventListener("infoscreen:review-rendered", refreshAfterRender);
   });
 
   window.InfoScreenReviewContext = {
