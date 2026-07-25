@@ -31,7 +31,7 @@ def test_childrens_museum_terms_are_not_an_activity_summary() -> None:
 def test_activity_intro_is_preserved_before_terms_and_contact_details() -> None:
     combined = f"{ACTIVITY_INTRO} Terms & Conditions: {TERMS_TEXT}"
 
-    assert authority.useful_event_summary(combined) == ACTIVITY_INTRO
+    assert authority.useful_event_summary(combined) == ACTIVITY_INTRO.rstrip(".")
 
 
 def test_contact_and_first_come_text_cannot_win_by_being_longer() -> None:
