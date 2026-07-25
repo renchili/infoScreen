@@ -20,10 +20,10 @@ def test_listing_authoritative_runtime_contract_is_active() -> None:
     assert "apply_detail_authority()" not in job
     assert 'payload["extractor"] == "listing-authoritative-v52"' in job
     assert 'payload["version"] == 52' in job
-    assert 'extractor.startswith(("structured-first", "listing-authoritative"))' in output
+    assert 'allow_unverified = extractor.startswith("structured-first")' in output
 
 
-def test_listing_authoritative_result_without_legacy_policy_survives_output() -> None:
+def test_listing_authoritative_result_with_verified_policy_survives_output() -> None:
     tomorrow = date.today() + timedelta(days=1)
     payload = normalize_payload(
         {
@@ -36,6 +36,7 @@ def test_listing_authoritative_result_without_legacy_policy_survives_output() ->
                     "end_date": tomorrow.isoformat(),
                     "where": "Official Venue",
                     "url": "https://example.org/events/current-official-event",
+                    "candidate_policy": "official-listing-authority-v1",
                 }
             ],
         }
