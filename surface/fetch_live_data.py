@@ -4,9 +4,11 @@ from __future__ import annotations
 import csv
 import json
 import math
+import os
 import re
 import urllib.parse
 import urllib.request
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -47,6 +49,16 @@ def read_json(path, default):
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return default
+
+
+def atomic_write_json(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    temporary.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(temporary, path)
 
 
 def load_symbols():
@@ -267,7 +279,7 @@ def write_weather():
             "status": "ERR",
             "error": str(exc)[-500:],
         }
-    WEATHER.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    atomic_write_json(WEATHER, payload)
     print(f"weather updated status={payload.get('status')} -> {WEATHER}")
 
 
@@ -276,7 +288,7 @@ def write_market():
     items = [quote_one(symbol) for symbol in symbols]
     ok_count = sum(1 for item in items if item.get("price") != "N/A")
     payload = {"updated_at": datetime.now(timezone.utc).isoformat(), "source": "nasdaq+cnbc+stooq+yahoo", "symbols": symbols, "status": "OK" if ok_count else "ERR", "error": None if ok_count else "all quote providers failed", "items": items}
-    MARKET.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    atomic_write_json(MARKET, payload)
     print(f"market updated status={payload['status']} ok={ok_count}/{len(symbols)} symbols={','.join(symbols)} -> {MARKET}")
 
 
