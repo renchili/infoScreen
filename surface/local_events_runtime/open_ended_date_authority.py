@@ -45,13 +45,27 @@ def closed_end_value(value: object) -> str:
     return text if _CLOSED_END_RE.fullmatch(text) else ""
 
 
+def start_only_value(value: object) -> str:
+    """Return an explicit start-only schedule label, otherwise an empty string."""
+
+    text = _extract.clean(value)
+    return text if _OPEN_FROM_RE.fullmatch(text) else ""
+
+
+def recurrence_value(value: object) -> str:
+    """Return a recurrence-only schedule label, otherwise an empty string."""
+
+    text = _extract.clean(value)
+    return text if _OPEN_VALUE_RE.fullmatch(text) else ""
+
+
 def open_ended_value(value: object) -> str:
     """Return an explicit non-expiring schedule label, otherwise an empty string."""
 
     text = _extract.clean(value)
     if closed_end_value(text):
         return ""
-    return text if (_OPEN_VALUE_RE.fullmatch(text) or _OPEN_FROM_RE.fullmatch(text)) else ""
+    return start_only_value(text) or recurrence_value(text)
 
 
 def _card_lines(card: dict[str, Any]) -> list[str]:
@@ -63,14 +77,15 @@ def _card_lines(card: dict[str, Any]) -> list[str]:
     )
 
 
-def _explicit_closed_label(card: dict[str, Any]) -> tuple[str, str]:
-    """Read a complete end-bounded label before recurrence-only time text."""
-
+def _explicit_label(
+    card: dict[str, Any],
+    parser: Any,
+) -> tuple[str, str]:
     lines = _card_lines(card)
     for index, line in enumerate(lines):
         inline = _WHEN_INLINE_RE.fullmatch(line)
         if inline:
-            value = closed_end_value(inline.group(1))
+            value = parser(inline.group(1))
             if value:
                 return value, line
 
@@ -78,70 +93,58 @@ def _explicit_closed_label(card: dict[str, Any]) -> tuple[str, str]:
             for candidate in lines[index + 1:index + 4]:
                 if _WHEN_LABEL_RE.fullmatch(candidate):
                     break
-                value = closed_end_value(candidate)
+                value = parser(candidate)
                 if value:
                     return value, line
                 if _extract.DATE_LINE_RE.search(candidate):
                     break
 
-        value = closed_end_value(line)
+        value = parser(line)
         if value:
             return value, line
     return "", ""
+
+
+def _explicit_closed_label(card: dict[str, Any]) -> tuple[str, str]:
+    """Read a complete end-bounded label before any open-ended interpretation."""
+
+    return _explicit_label(card, closed_end_value)
+
+
+def _explicit_start_label(card: dict[str, Any]) -> tuple[str, str]:
+    """Preserve a complete ``From <date>`` label before generic date parsing."""
+
+    return _explicit_label(card, start_only_value)
 
 
 def _explicit_open_label(card: dict[str, Any]) -> tuple[str, str]:
-    """Read a complete ongoing/start-only label before generic date parsing.
+    """Read recurrence-only text only after concrete dates have been considered."""
 
-    Generic parsers extract the calendar fragment from ``From 23 May 2025`` and
-    return ``23 May 2025``. That loses the start-only meaning and makes an ongoing
-    exhibition look like a past one-day Event. The complete label is authoritative.
-
-    A concrete end-bounded row such as ``Now till 5 November 2023`` takes priority
-    over recurrence-only rows such as ``Daily - 10am - 7pm``.
-    """
-
-    lines = _card_lines(card)
-    if any(closed_end_value(line) for line in lines):
-        return "", ""
-
-    for index, line in enumerate(lines):
-        inline = _WHEN_INLINE_RE.fullmatch(line)
-        if inline:
-            value = open_ended_value(inline.group(1))
-            if value:
-                return value, line
-
-        if _WHEN_LABEL_RE.fullmatch(line):
-            for candidate in lines[index + 1:index + 4]:
-                if _WHEN_LABEL_RE.fullmatch(candidate):
-                    break
-                value = open_ended_value(candidate)
-                if value:
-                    return value, line
-                if _extract.DATE_LINE_RE.search(candidate):
-                    break
-
-        value = open_ended_value(line)
-        if value:
-            return value, line
-    return "", ""
+    return _explicit_label(card, recurrence_value)
 
 
 def pick_when(card: dict[str, Any]) -> tuple[str, str]:
-    """Preserve explicit closed or open labels before generic calendar extraction."""
+    """Prioritise closed dates, start-only dates, then concrete parser evidence.
+
+    Recurrence-only rows such as ``Daily - 10am - 7pm`` are a last fallback. They
+    must never override a concrete parent range such as ``10–12 April 2026``.
+    """
 
     closed_value, source_line = _explicit_closed_label(card)
     if closed_value:
         return closed_value, source_line
 
-    open_value, source_line = _explicit_open_label(card)
-    if open_value:
-        return open_value, source_line
+    start_value, source_line = _explicit_start_label(card)
+    if start_value:
+        return start_value, source_line
 
     when, source_line = _BASE_PICK_WHEN(card)
     if when:
         return when, source_line
+
+    recurrence, source_line = _explicit_open_label(card)
+    if recurrence:
+        return recurrence, source_line
     return "", ""
 
 
@@ -167,8 +170,6 @@ def apply() -> None:
 
     package = sys.modules.get(__package__)
     if package is not None:
-        # The active package-level event parser resolves this private global at
-        # call time, so patch both public and private names.
         package._current_date_label = current_date_label
         package.current_date_label = current_date_label
     _APPLIED = True
@@ -180,6 +181,9 @@ __all__ = [
     "current_date_label",
     "open_ended_value",
     "pick_when",
+    "recurrence_value",
+    "start_only_value",
     "_explicit_closed_label",
     "_explicit_open_label",
+    "_explicit_start_label",
 ]
