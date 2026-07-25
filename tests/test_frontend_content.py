@@ -129,6 +129,8 @@ def test_calendar_board_reloads_schedule_without_page_reload() -> None:
     assert "function sameItems(nextItems)" in js
     assert 'fetch("schedule.json?_=" + Date.now(), { cache: "no-store" })' in js
     assert "window.location.reload" not in js
+    assert 'function normalize(v, fallback)' in js
+    assert 'cells(item.time || "")' in js
 
 
 def test_market_rendering_has_one_owner() -> None:
@@ -153,6 +155,17 @@ def test_market_rendering_has_one_owner() -> None:
     assert 'fetch("market.json' not in market_custom
 
 
+def test_market_zero_change_is_flat_and_weather_error_is_visible() -> None:
+    dashboard = read_text("surface/web/assets/js/dashboard.js")
+
+    assert 'if (numeric < 0) return "down";' in dashboard
+    assert 'if (numeric > 0) return "up";' in dashboard
+    assert 'return "flat";' in dashboard
+    assert 'text(data.status).toUpperCase() === "ERR"' in dashboard
+    assert "WEATHER ERROR · RETAINED DATA" in dashboard
+    assert 'temp.className = "weather-temp" + (failed ? " bad" : "")' in dashboard
+
+
 def test_news_and_sync_ticker_have_one_owner() -> None:
     dashboard = read_text("surface/web/assets/js/dashboard.js")
     local_event = read_text("surface/web/assets/js/local_event_card.js")
@@ -166,6 +179,31 @@ def test_news_and_sync_ticker_have_one_owner() -> None:
     assert "function loadSyncStatus()" in local_event
     assert 'el("newsTickerTrackEN")' in local_event
     assert 'el("leftSyncTapeTrack")' in local_event
+
+
+def test_local_event_studio_has_no_idle_polling_and_one_render_restore_event() -> None:
+    studio = read_text("surface/web/assets/js/local_event_studio.js")
+    guard = read_text("surface/web/assets/js/local_event_review_scroll_guard.js")
+
+    assert "setInterval(loadState, 3000)" not in studio
+    assert "previousSetInterval" not in guard
+    assert "Number(delay) === 3000" not in guard
+    assert 'window.InfoScreenReviewStudio = {' in studio
+    assert 'infoscreen:review-rendered' in studio
+    assert 'document.addEventListener("infoscreen:review-rendered", restorePosition)' in guard
+    assert 'document.addEventListener("visibilitychange"' in guard
+    assert "MutationObserver" not in guard
+
+
+def test_local_event_preview_does_not_rewrite_review_decisions() -> None:
+    preview = read_text("surface/web/assets/js/local_event_review_previews.js")
+    html = read_text("surface/web/local-events/studio/index.html")
+
+    assert "/api/local-events/review/listing-decision" not in preview
+    assert "withExclusiveConfirmedListings" not in preview
+    assert "setListingDecision" not in preview
+    assert "Confirm this list page before previewing it" in preview
+    assert "never changes review decisions temporarily" in html
 
 
 def test_demo_metrics_are_explicit_in_source() -> None:
