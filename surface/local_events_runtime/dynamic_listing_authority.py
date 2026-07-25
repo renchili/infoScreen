@@ -217,6 +217,12 @@ def apply() -> None:
     global _APPLIED
     if _APPLIED:
         return
+
+    from .review_collection_scope_authority import (
+        apply as apply_review_collection_scope,
+    )
+
+    apply_review_collection_scope()
     _browser.PREPARE_PAGE_JS = DYNAMIC_LISTING_PREPARE_JS
     _APPLIED = True
 
