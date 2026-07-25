@@ -6,6 +6,7 @@ SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
 SURFACE_DIR="$REPO_DIR/surface"
 SURFACE_ENV_DIR="$SURFACE_DIR/.env"
 SURFACE_WEB_DIR="$SURFACE_DIR/web"
+MIGRATION_BACKUP_DIR="$SURFACE_ENV_DIR/migration_backup"
 REVIEW_URL="http://127.0.0.1:8765/local-events/studio/"
 REVIEW_STATE_URL="http://127.0.0.1:8765/api/local-events/review/state"
 
@@ -89,30 +90,61 @@ import_graphical_session_environment() {
   echo "[OK] imported graphical session environment: ${names[*]}"
 }
 
+preserve_legacy_path() {
+  local source="$1"
+  local name="$2"
+  local backup="$MIGRATION_BACKUP_DIR/$name"
+
+  mkdir -p "$MIGRATION_BACKUP_DIR"
+  if [ -e "$backup" ] || [ -L "$backup" ]; then
+    echo "[ERROR] migration conflict: both $source and $backup exist; no data was removed" >&2
+    exit 1
+  fi
+
+  mv "$source" "$backup"
+  echo "[PRESERVE] moved conflicting legacy $name -> surface/.env/migration_backup/$name"
+}
+
 move_runtime_file() {
   local name="$1"
-  if [ -f "$REPO_DIR/$name" ]; then
-    if [ ! -f "$SURFACE_ENV_DIR/$name" ]; then
-      mv "$REPO_DIR/$name" "$SURFACE_ENV_DIR/$name"
-      echo "[MIGRATE] moved $name -> surface/.env/$name"
-    else
-      rm -f "$REPO_DIR/$name"
-      echo "[CLEAN] removed duplicate root $name"
-    fi
+  local source="$REPO_DIR/$name"
+  local destination="$SURFACE_ENV_DIR/$name"
+
+  if [ ! -f "$source" ]; then
+    return
   fi
+
+  if [ ! -e "$destination" ]; then
+    mv "$source" "$destination"
+    echo "[MIGRATE] moved $name -> surface/.env/$name"
+    return
+  fi
+
+  if [ -f "$destination" ] && cmp -s "$source" "$destination"; then
+    rm -f "$source"
+    echo "[CLEAN] removed byte-identical root duplicate $name"
+    return
+  fi
+
+  preserve_legacy_path "$source" "$name"
 }
 
 move_runtime_dir() {
   local name="$1"
-  if [ -d "$REPO_DIR/$name" ]; then
-    if [ ! -e "$SURFACE_ENV_DIR/$name" ]; then
-      mv "$REPO_DIR/$name" "$SURFACE_ENV_DIR/$name"
-      echo "[MIGRATE] moved $name/ -> surface/.env/$name/"
-    else
-      rm -rf "$REPO_DIR/$name"
-      echo "[CLEAN] removed duplicate root $name/"
-    fi
+  local source="$REPO_DIR/$name"
+  local destination="$SURFACE_ENV_DIR/$name"
+
+  if [ ! -d "$source" ]; then
+    return
   fi
+
+  if [ ! -e "$destination" ]; then
+    mv "$source" "$destination"
+    echo "[MIGRATE] moved $name/ -> surface/.env/$name/"
+    return
+  fi
+
+  preserve_legacy_path "$source" "$name"
 }
 
 verify_http_service() {
@@ -167,7 +199,7 @@ for dir in photos public_photos logs; do
   move_runtime_dir "$dir"
 done
 
-# Remove old root-level Surface runtime/static leftovers after the layout move.
+# Remove old root-level Surface source/static leftovers after the layout move.
 for file in \
   serve_infoscreen.py \
   fetch_live_data.py \
@@ -186,32 +218,32 @@ for file in \
   do
     if [ -f "$REPO_DIR/$file" ]; then
       rm -f "$REPO_DIR/$file"
-      echo "[CLEAN] removed root leftover $file"
+      echo "[CLEAN] removed root source leftover $file"
     fi
   done
 
 if [ -d "$REPO_DIR/assets" ] && [ -d "$SURFACE_WEB_DIR/assets" ]; then
   rm -rf "$REPO_DIR/assets"
-  echo "[CLEAN] removed root leftover assets/"
+  echo "[CLEAN] removed root source leftover assets/"
 fi
 
-cp "$REPO_DIR"/deploy/systemd/user/*.service "$SYSTEMD_USER_DIR"/ 2>/dev/null || true
-cp "$REPO_DIR"/deploy/systemd/user/*.timer "$SYSTEMD_USER_DIR"/ 2>/dev/null || true
+cp "$REPO_DIR"/deploy/systemd/user/*.service "$SYSTEMD_USER_DIR"/
+cp "$REPO_DIR"/deploy/systemd/user/*.timer "$SYSTEMD_USER_DIR"/
 
 systemctl --user daemon-reload
 
 systemctl --user enable --now infoscreen-http.service
-systemctl --user enable --now infoscreen-live-data.timer 2>/dev/null || true
-systemctl --user enable --now infoscreen-event-stream.timer 2>/dev/null || true
-systemctl --user enable --now infoscreen-local-events.timer 2>/dev/null || true
+systemctl --user enable --now infoscreen-live-data.timer
+systemctl --user enable --now infoscreen-event-stream.timer
+systemctl --user enable --now infoscreen-local-events.timer
 
 # Unit files may have changed ExecStart paths, so restart/re-run after daemon-reload.
 systemctl --user restart infoscreen-http.service
-systemctl --user start infoscreen-live-data.service 2>/dev/null || true
-systemctl --user start infoscreen-event-stream.service 2>/dev/null || true
+systemctl --user start infoscreen-live-data.service
+systemctl --user start infoscreen-event-stream.service
 # A complete Local Events producer run can legitimately take much longer than the
 # installer. Start it asynchronously; systemd owns progress and failure reporting.
-systemctl --user start --no-block infoscreen-local-events.service 2>/dev/null || true
+systemctl --user start --no-block infoscreen-local-events.service
 
 printf '\n[CHECK] root Python files:\n'
 find "$REPO_DIR" -maxdepth 1 -type f -name '*.py' -print || true
