@@ -53,7 +53,7 @@ def test_index_loads_only_asset_directory_scripts_and_styles() -> None:
         "assets/css/calendar_board.css",
         "assets/css/local_events.css",
         "assets/css/market_custom.css",
-        "assets/css/dashboard_acceptance_fixes.css",
+        "assets/css/dashboard_layout.css",
     ]
     assert not list((ROOT / "surface" / "web").glob("*.js"))
     assert not list((ROOT / "surface" / "web").glob("*.css"))
