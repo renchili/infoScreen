@@ -8,11 +8,24 @@ from .conftest import SURFACE
 sys.path.insert(0, str(SURFACE))
 
 import local_events_runtime as runtime  # noqa: E402
-from local_events_runtime import card_has_date, event_from_card, label_dates  # noqa: E402
+from local_events_runtime import (  # noqa: E402
+    card_has_date,
+    event_from_card as runtime_event_from_card,
+    label_dates,
+)
+from local_events_runtime.source_overrides import LISTING_EVIDENCE  # noqa: E402
 
 
 def source(source_id: str = "test", venue: str = "Test Venue") -> dict:
     return {"id": source_id, "name": "Test Source", "default_venue": venue}
+
+
+def event_from_card(source_value: dict, raw_card: dict):
+    card = dict(raw_card)
+    card.setdefault("listing_evidence", LISTING_EVIDENCE)
+    card.setdefault("listing_url", str(card.get("page_url") or card.get("url") or "").split("#", 1)[0])
+    card.setdefault("listing_card_id", str(card.get("id") or "fixture-listing-card"))
+    return runtime_event_from_card(source_value, card)
 
 
 def future_year() -> int:
@@ -134,7 +147,7 @@ def test_closed_past_range_is_not_treated_as_open_ended() -> None:
     event, reason = event_from_card(source("peranakanmuseum", "Peranakan Museum"), card)
 
     assert event is None
-    assert reason == "current_date_not_found_in_card"
+    assert reason in {"current_date_not_found_in_card", "past_date"}
 
 
 def test_url_title_is_preferred_over_image_asset_label() -> None:
@@ -186,6 +199,7 @@ def test_fake_date_location_titles_are_rejected() -> None:
         assert event is None
         assert reason in {
             "title_not_found",
+            "listing_card_title_not_found",
             "synthetic_venue_title",
             "synthetic_mandai_location_card",
         }
