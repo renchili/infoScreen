@@ -126,6 +126,14 @@ def apply() -> None:
 
     apply_review_detail_prefetch_authority()
 
+    # Prefetch may only follow cards already admitted by CARD_JS. Release consumed
+    # pages from its state so a later real page cannot inherit closed tab identities.
+    from .review_prefetch_lifecycle_authority import (
+        apply as apply_review_prefetch_lifecycle_authority,
+    )
+
+    apply_review_prefetch_lifecycle_authority()
+
     from .dynamic_listing_authority import apply as apply_dynamic_listing_authority
 
     apply_dynamic_listing_authority()
