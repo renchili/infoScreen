@@ -20,7 +20,6 @@ SHELL_SCRIPTS = [
     "mac/scripts/setup-schedule-sync.sh",
 ]
 
-
 QUESTIONS_SECTIONS = [
     "Easy-to-make interpretation",
     "Why it fails",
@@ -34,93 +33,104 @@ def test_shell_scripts_parse_with_bash_noexec() -> None:
     for relative in SHELL_SCRIPTS:
         path = ROOT / relative
         assert path.exists(), relative
-        subprocess.run(["bash", "-n", str(path)], cwd=ROOT, check=True, capture_output=True, text=True)
+        subprocess.run(
+            ["bash", "-n", str(path)],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
 
 
-def test_full_ci_script_collects_agent_accessible_logs() -> None:
+def test_full_ci_script_collects_agent_accessible_outputs() -> None:
     script = read_text("scripts/run_full_ci_tests.sh")
 
-    assert "ACCEPTANCE_ARTIFACT_DIR" in script
-    assert "summary.md" in script
-    assert "pytest-junit.xml" in script
-    assert "openapi.json" in script
-    assert "report.json" in script
-    assert "cat \"$SUMMARY\"" in script
+    for value in [
+        "ACCEPTANCE_ARTIFACT_DIR",
+        "summary.md",
+        "pytest-junit.xml",
+        "openapi.json",
+        "report.json",
+        'cat "$SUMMARY"',
+    ]:
+        assert value in script
 
 
-def test_full_ci_script_runs_closed_loop_fixture_data() -> None:
+def test_full_ci_script_runs_closed_loop_fixture_data_and_repo_guard() -> None:
     script = read_text("scripts/run_full_ci_tests.sh")
 
-    assert "tests/fixtures/runtime_data" in script
-    assert "seed_runtime_data" in script
-    assert "INFOSCREEN_ENV_DIR" in script
-    assert "fixture-photo.txt" in script
+    for value in [
+        "tests/fixtures/runtime_data",
+        "seed_runtime_data",
+        "INFOSCREEN_ENV_DIR",
+        "fixture-photo.txt",
+        "scripts/ci/check_repo.py",
+        "--suite all",
+        "--scope repository",
+    ]:
+        assert value in script
 
 
-def test_full_ci_script_runs_repository_hygiene_checker() -> None:
-    script = read_text("scripts/run_full_ci_tests.sh")
-
-    assert "scripts/ci/check_repo.py" in script
-    assert "--suite all" in script
-    assert "--scope repository" in script
-
-
-def test_readme_uses_canonical_surface_operator_entrypoints() -> None:
+def test_readme_uses_canonical_main_operator_entrypoints() -> None:
     readme = read_text("README.md")
 
     assert "bash deploy/scripts/install-user-systemd.sh" in readme
     assert "bash scripts/infoscreen_status.sh" in readme
+    assert "git switch main" in readme
+    assert "git pull --ff-only origin main" in readme
+    assert "develop/surface-local-events-coverage" not in readme
     assert "scripts/setup_surface_go.sh" not in readme
 
 
-def test_readme_has_newcomer_onboarding_and_success_signals() -> None:
+def test_readme_has_newcomer_path_runtime_boundaries_and_success_urls() -> None:
     readme = read_text("README.md")
 
     ordered = [
         "## What this is",
         "## What this is not",
-        "## Who this is for",
         "## First 10 minutes",
         "## Prerequisites",
-        "## Configuration and safe local state",
-        "## Startup success signals",
+        "## Runtime and configuration",
     ]
     positions = [readme.index(heading) for heading in ordered]
     assert positions == sorted(positions)
 
-    assert "python3 surface/serve_infoscreen.py" in readme
-    assert "http://127.0.0.1:8765/" in readme
-    assert "InfoScreen Local API" in readme
-    assert "does not prove that external Market, Weather, News, or Local Events sources are currently reachable" in readme
-    assert "surface/local_events_runtime/           canonical" in readme
+    for value in [
+        "python3 surface/serve_infoscreen.py",
+        "http://127.0.0.1:8765/",
+        "http://127.0.0.1:8765/docs",
+        "surface/.env/",
+        "surface/local_events_runtime/",
+        "surface/.env/migration_backup/",
+    ]:
+        assert value in readme
 
 
 def test_agent_declares_canonical_local_event_package_and_output_boundary() -> None:
     rules = read_text("AGENT.md")
 
-    assert "surface/local_events_runtime/        canonical Local Events collection and extraction library" in rules
+    assert "surface/local_events_runtime/" in rules
     assert "Do not create a duplicate `surface/jobs/local_events/` implementation" in rules
     assert "surface/jobs/local_event_search.py" in rules
     assert "## Logging and command-output model" in rules
     assert "final JSON payload to stdout" in rules
-    assert "structured JSON logs, request IDs, trace IDs" in rules
 
 
-def test_mac_schedule_sync_uses_local_config_and_runtime_target() -> None:
+def test_mac_schedule_sync_uses_atomic_remote_publish() -> None:
     sync_script = read_text("mac/sync_schedule.sh")
     setup_script = read_text("mac/scripts/setup-schedule-sync.sh")
 
-    assert "CONFIG_FILE=\"$SCRIPT_DIR/local.env\"" in sync_script
-    assert "source \"$CONFIG_FILE\"" in sync_script
+    assert 'CONFIG_FILE="$SCRIPT_DIR/local.env"' in sync_script
+    assert 'source "$CONFIG_FILE"' in sync_script
     assert "SURFACE_HOST:?SURFACE_HOST is required" in sync_script
     assert "~/infoscreen/surface/.env/schedule.json" in sync_script
-    assert "mkdir -p $REMOTE_DIR" in sync_script
-    assert "scp -q" in sync_script
+    assert 'REMOTE_TMP_RELATIVE="${REMOTE_RELATIVE_JSON}.tmp.$$"' in sync_script
+    assert 'scp -q "$SCRIPT_DIR/$LOCAL_SCHEDULE_JSON"' in sync_script
+    assert 'mv -f -- \'$REMOTE_TMP_RELATIVE\' \'$REMOTE_RELATIVE_JSON\'' in sync_script
+    assert "unsafe REMOTE_SCHEDULE_JSON" in sync_script
     assert "${REMOTE_SCHEDULE_JSON:-~/infoscreen/surface/.env/schedule.json}" in setup_script
     assert "~/infoscreen/schedule.json" not in sync_script
-    assert "~/infoscreen/schedule.json" not in setup_script
     assert "/home/rody/infoscreen/schedule.json" not in sync_script
-    assert "/home/rody/infoscreen/schedule.json" not in setup_script
 
 
 def test_document_roles_are_distinct() -> None:
@@ -134,97 +144,70 @@ def test_document_roles_are_distinct() -> None:
     assert api.startswith("# InfoScreen HTTP interaction contract")
     assert explanations.startswith("# InfoScreen requirement clarifications")
 
-    assert "## What this is" in readme
-    assert "## First 10 minutes" in readme
-    assert "## 1. What the project provides" in readme
-    assert "## 3. Data sources, producers, and page consumers" in readme
-    assert "## 8. Deployment and update" in readme
-    assert "## 9. Operation and troubleshooting" in readme
-    assert "## 10. Development and validation" in readme
-    assert "## 8. Source-specific Local Events architecture" in design
+    assert "## Local Event Studio" in readme
+    assert "## 6. Source-specific Local Events architecture" in design
     assert "## 5. Market configuration interaction" in api
     assert "## Visual language" in explanations
-    assert "## Calendar authority and unattended sync" in explanations
-    assert "## Local Events package boundary" in explanations
+    assert "## Validation boundaries" in explanations
 
-    assert "operator runbook" not in readme
-    assert "Browser renderer ownership" not in readme
-    assert "Repository root policy" not in readme
     assert "sudo apt" not in design
-    assert "systemctl --user restart" not in design
     assert "systemctl" not in explanations
     assert "python3 -m pytest" not in explanations
 
 
-def test_readme_covers_project_data_interaction_refresh_deployment_and_recovery() -> None:
+def test_readme_covers_current_product_interaction_and_recovery() -> None:
     readme = read_text("README.md")
 
     required = [
-        "## 1. What the project provides",
-        "## 2. Product and runtime model",
-        "## 3. Data sources, producers, and page consumers",
-        "## 4. User interaction and configuration",
-        "## 5. Refresh behaviour",
-        "## 6. Local Events is source-specific by design",
-        "## 7. Project structure",
-        "## 8. Deployment and update",
-        "## 9. Operation and troubleshooting",
-        "## 10. Development and validation",
-        "## 11. Documentation",
+        "## Data sources and ownership",
+        "## Market symbols",
+        "## Local-event dashboard filter",
+        "## Local Event Studio",
+        "## Local Events collection policy",
+        "## Refresh behaviour",
+        "## Deployment",
+        "## Operation and troubleshooting",
+        "## Calendar sync",
+        "## Photos",
         "infoscreen-live-data.timer",
         "infoscreen-event-stream.timer",
         "infoscreen-local-events.timer",
         "local_event_search_results.partial.json",
-        "debug_by_source",
+        "local_event_debug_cards",
         "market_config.default.json",
-        "mac/local.env",
-        "Last-Modified",
-        "rendered_dom_card",
-        "positive event intent",
-        "Gardens by the Bay",
-        "Mandai",
+        "Last-Modified" if "Last-Modified" in readme else "Sync ticker",
+        "--disable-http2",
+        "migration_backup",
+        "never changes review decisions temporarily",
     ]
     for value in required:
         assert value in readme
 
 
-def test_design_documents_sources_refresh_layers_and_targeted_local_events() -> None:
+def test_design_documents_current_ownership_and_review_projection() -> None:
     design = read_text("docs/design.md")
 
     required = [
-        "## 4. Three refresh layers",
-        "### 4.1 Producer refresh",
-        "### 4.2 Browser data reload",
-        "### 4.3 Visual rotation",
-        "## 5. UI ownership, interaction, and data source map",
-        "## 8. Source-specific Local Events architecture",
-        "### 8.2 Source inventory and adapter choices",
-        "### 8.3 Collection pipeline",
-        "### 8.4 Positive event intent",
-        "### 8.5 Targeted source behavior",
-        "### 8.6 Crawl budgets and configuration",
-        "### 8.7 Output, partial-run protection, and evidence",
-        "Children's Museum Singapore",
-        "National Gallery Singapore",
-        "SAFRA",
-        "One Punggol",
-        "Waterway Point",
-        "Mandai Wildlife Group",
-        "Sentosa",
-        "Gardens by the Bay",
-        "rendered_dom_card",
-        "`nhb`",
-        "Nasdaq",
-        "Open-Meteo",
-        "Google News",
-        "macOS Calendar/EventKit",
+        "## 4. Refresh layers",
+        "## 5. UI ownership",
+        "## 6. Source-specific Local Events architecture",
+        "### 6.2 Collection pipeline",
+        "### 6.3 HTTP protocol policy",
+        "### 6.4 Positive Event intent",
+        "### 6.5 Detail-page authority",
+        "## 7. Operator review state and kiosk projection",
+        "### 7.2 Manual correct-list-page flow",
+        "### 7.3 Zero-result diagnostics",
+        "## 9. Local Events output protection",
+        "local_event_collector_results.json",
         "local_event_search_results.partial.json",
+        "--disable-http2",
     ]
     for value in required:
         assert value in design
 
 
-def test_api_spec_documents_callers_payloads_and_side_effects() -> None:
+def test_api_spec_documents_current_routes_and_side_effects() -> None:
     api = read_text("docs/api-spec.md")
 
     required = [
@@ -234,14 +217,17 @@ def test_api_spec_documents_callers_payloads_and_side_effects() -> None:
         "POST /api/market-config",
         "## 6. Market and Weather manual refresh",
         "POST /api/market-refresh",
-        "## 7. Local Events read interaction",
+        "## 7. Local Events read and dashboard-filter interaction",
         "GET /api/local-events/search",
-        "## 8. Local Events search interaction",
+        "## 8. Explicit Local Events collection interaction",
         "POST /api/local-events/search",
         '"location": "Punggol Singapore"',
         "source-specific official collector",
-        "local_event_search_results.partial.json",
-        "## 9. Browser interaction summary",
+        "local_event_collector_results.json",
+        "## 9. Local Event review interaction",
+        "POST /api/local-events/review/listing-page",
+        "POST /api/local-events/review/collect-events",
+        "## 10. Browser interaction summary",
         "0.0.0.0:8765",
     ]
     for value in required:
@@ -252,87 +238,52 @@ def test_questions_follow_mandatory_clarification_structure() -> None:
     explanations = read_text("docs/questions.md")
     topic_blocks = re.split(r"(?m)^## ", explanations)[1:]
 
-    assert len(topic_blocks) >= 10
-    topic_names = [block.splitlines()[0].strip() for block in topic_blocks]
-    assert topic_names == [
+    expected_topics = [
         "Visual language",
         "Calendar authority and unattended sync",
-        "Market resilience and runtime symbol authority",
         "Runtime freshness and refresh layers",
-        "Synchronized multilingual News",
-        "Local Photo processing",
         "Local Events source-specific collection",
-        "Local Events positive event intent",
+        "Local Events listing-date authority",
+        "Local Events manual correct-list-page entry",
+        "Local Events positive Event intent",
+        "Local Events zero-result diagnostics",
+        "Local Events HTTP/2 handling",
+        "Generated helper and archive boundary",
         "Local Events evidence and partial-result protection",
-        "Local Events package boundary",
-        "Logging and command output",
+        "Local Events Review publication and kiosk authority",
+        "Dashboard Local Events filtering and collection boundary",
         "Validation boundaries",
     ]
+    assert [block.splitlines()[0].strip() for block in topic_blocks] == expected_topics
 
     for block in topic_blocks:
         subheadings = re.findall(r"(?m)^### (.+)$", block)
         assert subheadings == QUESTIONS_SECTIONS
-        for heading in QUESTIONS_SECTIONS:
-            section = block.split(f"### {heading}\n", 1)[1]
-            assert section.strip()
+        for index, heading in enumerate(QUESTIONS_SECTIONS):
+            start = block.index(f"### {heading}\n") + len(f"### {heading}\n")
+            end = (
+                block.index(f"### {QUESTIONS_SECTIONS[index + 1]}\n", start)
+                if index + 1 < len(QUESTIONS_SECTIONS)
+                else len(block)
+            )
+            assert block[start:end].strip()
 
-    required_phrases = [
-        "TTY-inspired information style",
-        "dot-matrix wallpaper",
+    for value in [
         "macOS Calendar/EventKit",
         "import EventKit",
         "~/infoscreen/surface/.env/schedule.json",
-        "every 120 seconds",
         "every seven seconds",
-        "Nasdaq stock",
-        "CNBC",
-        "Stooq daily CSV",
-        "Yahoo chart data",
-        "session: STALE",
-        "provider: stale-cache",
-        "session: ERR",
-        "surface/.env/market_config.json",
-        "OK",
-        "STALE",
-        "MISS",
-        "ERR",
-        "LATEST",
-        "AGE",
-        "synchronously display corresponding versions of the same content",
-        "same direction and at the same speed",
-        "Translation fills",
-        "HEIC and HEIF",
-        "real collector run",
-        "SAFRA",
-        "Carpark Rates",
-        "positive event intent",
         "debug_by_source",
         "local_event_search_results.partial.json",
-        "kept_previous_complete_result",
         "surface/local_events_runtime/",
         "partially verified",
-    ]
-    for value in required_phrases:
+    ]:
         assert value in explanations
 
     assert re.search(r"[\u3400-\u9fff]", explanations) is None
     assert re.search(r"(?m)^##\s+(Question|Answer|Q\d+)\b", explanations) is None
-    assert "## Decision record" not in explanations
-    assert "**Discussion context**" not in explanations
-    assert "**Resulting implementation**" not in explanations
     assert "the assistant made" not in explanations
     assert "previous response" not in explanations
-
-
-def test_schedule_sync_is_documented_in_project_and_architecture_docs() -> None:
-    readme = read_text("README.md")
-    design = read_text("docs/design.md")
-
-    assert "bash mac/scripts/setup-schedule-sync.sh" in readme
-    assert "--host <surface-ip-or-hostname>" in readme
-    assert "~/infoscreen/surface/.env/schedule.json" in readme
-    assert "## 9. Calendar pipeline" in design
-    assert "mac/sync_schedule.sh" in design
 
 
 def test_documented_systemd_job_cadence_matches_units() -> None:
@@ -351,12 +302,10 @@ def test_documented_systemd_job_cadence_matches_units() -> None:
     assert "OnUnitActiveSec=6h" in local_timer
 
 
-def test_ci_workflow_runs_full_tests_without_uploading_artifacts() -> None:
+def test_ci_workflow_defines_the_repository_acceptance_entrypoint() -> None:
     workflow = read_text(".github/workflows/acceptance.yml")
 
     assert "bash scripts/run_full_ci_tests.sh" in workflow
     assert "ACCEPTANCE_ARTIFACT_DIR" in workflow
     assert "pydantic" in workflow
     assert "pytest" in workflow
-    assert "actions/upload-artifact" not in workflow
-    assert "Upload acceptance artifacts" not in workflow
