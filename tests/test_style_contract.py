@@ -7,6 +7,27 @@ from .conftest import read_text
 pytestmark = pytest.mark.style
 
 
+def test_dashboard_left_column_allocates_all_three_panels() -> None:
+    html = read_text("surface/web/index.html")
+    css = read_text("surface/web/assets/css/app.css")
+
+    left_start = html.index('<section class="col left">')
+    left_end = html.index("</section>", left_start)
+    left = html[left_start:left_end]
+    assert left.count('class="box') == 3
+    assert (
+        "grid-template-rows: minmax(0, 1fr) minmax(0, 1.25fr) 46px"
+        in css
+    )
+
+
+def test_dashboard_has_quiet_background_without_scanline_overlay() -> None:
+    css = read_text("surface/web/assets/css/app.css")
+
+    assert "body::before" not in css
+    assert "repeating-linear-gradient" not in css
+
+
 def test_local_event_card_preserves_one_card_column_layout() -> None:
     css = read_text("surface/web/assets/css/local_events.css")
 
