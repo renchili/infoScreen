@@ -98,7 +98,7 @@ FALLBACK_DETAIL_FIELDS_JS = r"""
 
 _FIELD_LABELS = {
     "date": {"date", "dates", "when"},
-    "time": {"time", "times"},
+    "time": {"time", "times", "duration"},
     "where": {"location", "venue", "where"},
 }
 _ALL_FIELD_LABELS = set().union(*_FIELD_LABELS.values(), {"admission", "ticket", "tickets"})
@@ -145,7 +145,7 @@ def _labeled_values(lines: list[str], labels: set[str]) -> list[str]:
 
 
 def _raw_when(payload: dict[str, Any]) -> str:
-    """Return exact collected Date/Time rows without parser reconstruction."""
+    """Return exact collected Date/Time/Duration rows without reconstruction."""
 
     lines = _payload_lines(payload)
     date_rows = _labeled_values(lines, _FIELD_LABELS["date"])
