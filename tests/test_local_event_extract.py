@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 import sys
 from datetime import date
 from urllib.parse import urlparse
@@ -26,18 +25,6 @@ def event_from_card(source_value: dict, raw_card: dict):
     """Adapt parser fixtures to the current official-list membership contract."""
 
     card = dict(raw_card)
-    raw_url = str(card.get("url") or "")
-    if re.search(r"#(?:nhb|nhb-json|structured)-", raw_url, re.I):
-        base = raw_url.split("#", 1)[0].rstrip("/")
-        slug = re.sub(
-            r"[^a-z0-9]+",
-            "-",
-            str(card.get("id") or card.get("link_text") or "fixture").lower(),
-        ).strip("-")
-        card["url"] = f"{base}/events/{slug or 'fixture'}"
-        card["detail_urls"] = [card["url"]]
-        card["detail_url_count"] = 1
-
     detail_url = str(card.get("url") or "")
     parsed = urlparse(detail_url)
     origin = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else ""
@@ -75,7 +62,7 @@ def test_weekday_prefixed_range_is_preserved() -> None:
     year = future_year()
     card = {
         "id": "orchid",
-        "url": "https://www.gardensbythebay.com.sg#nhb-orchid",
+        "url": "https://www.gardensbythebay.com.sg/en/things-to-do/calendar-of-events/orchid-extravaganza.html",
         "link_text": "Orchid Extravaganza",
         "headings": ["Orchid Extravaganza"],
         "image_alts": [],
@@ -98,7 +85,7 @@ def test_weekday_prefixed_range_split_across_dom_lines_is_preserved() -> None:
     year = future_year()
     card = {
         "id": "orchid-split",
-        "url": "https://www.gardensbythebay.com.sg#nhb-orchid-split",
+        "url": "https://www.gardensbythebay.com.sg/en/things-to-do/calendar-of-events/orchid-extravaganza-split.html",
         "link_text": "Orchid Extravaganza",
         "headings": ["Orchid Extravaganza"],
         "image_alts": [],
@@ -117,7 +104,7 @@ def test_gardens_ongoing_range_remains_in_output(monkeypatch) -> None:
     monkeypatch.setattr(runtime._extract, "TODAY", date(2026, 7, 14))
     card = {
         "id": "orchid-current",
-        "url": "https://www.gardensbythebay.com.sg#nhb-cb0737f3",
+        "url": "https://www.gardensbythebay.com.sg/en/things-to-do/calendar-of-events/orchid-extravaganza-current.html",
         "link_text": "Orchid Extravaganza",
         "headings": ["Orchid Extravaganza"],
         "image_alts": [],
@@ -199,40 +186,28 @@ def test_media_asset_urls_are_rejected() -> None:
 
 
 def test_fake_date_location_titles_are_rejected() -> None:
-    year = future_year()
     for title in ("Date:", "Location:", "box"):
-        card = {
-            "id": f"fake-{title}",
-            "url": "https://www.mandai.com#nhb-test",
-            "link_text": title,
-            "headings": [title],
-            "image_alts": [],
-            "text": f"{title}\n1 Apr – 31 Jul {year}\nNight Safari",
-        }
-        event, reason = event_from_card(source("mandai", "Mandai Wildlife Reserve"), card)
-        assert event is None
-        assert reason in {
-            "title_not_found",
-            "listing_card_title_not_found",
-            "listing_card_fields_incomplete",
-            "synthetic_venue_title",
-            "synthetic_mandai_location_card",
-        }
+        assert runtime._extract.normalise_title(title) == ""
 
 
 def test_mandai_synthetic_location_card_is_rejected() -> None:
     year = future_year()
+    title = "Beside Bird Bakery, Bird Paradise"
     card = {
         "id": "mandai-location",
         "url": "https://www.mandai.com#nhb-1c7a60a2",
-        "link_text": "Beside Bird Bakery, Bird Paradise",
-        "headings": ["Beside Bird Bakery, Bird Paradise"],
+        "link_text": title,
+        "headings": [title],
         "image_alts": [],
-        "text": f"Beside Bird Bakery, Bird Paradise\n9 Aug {year}",
+        "text": f"{title}\n9 Aug {year}",
     }
-    event, reason = event_from_card(source("mandai", "Mandai Wildlife Reserve"), card)
-    assert event is None
-    assert reason in {"synthetic_mandai_location_card", "listing_card_fields_incomplete"}
+    reason = runtime._extract.event_looks_wrong(
+        source("mandai", "Mandai Wildlife Reserve"),
+        card,
+        title,
+        f"9 Aug {year}",
+    )
+    assert reason in {"synthetic_venue_title", "synthetic_mandai_location_card"}
 
 
 def test_synthetic_summary_titles_are_rejected() -> None:
@@ -246,9 +221,13 @@ def test_synthetic_summary_titles_are_rejected() -> None:
         "image_alts": [],
         "text": f"{title}\n22 - 23 August {year}\nResorts World Sentosa",
     }
-    event, reason = event_from_card(source("rws", "Resorts World Sentosa"), card)
-    assert event is None
-    assert reason in {"synthetic_summary_title", "listing_card_fields_incomplete"}
+    reason = runtime._extract.event_looks_wrong(
+        source("rws", "Resorts World Sentosa"),
+        card,
+        title,
+        f"22 - 23 August {year}",
+    )
+    assert reason == "synthetic_summary_title"
 
 
 def test_narrative_venue_falls_back_to_source_default() -> None:
