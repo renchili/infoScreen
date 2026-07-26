@@ -9,26 +9,11 @@ sys.path.insert(0, str(SURFACE))
 
 from local_events_runtime import detail_payload_authority as authority  # noqa: E402
 from local_events_runtime import extract  # noqa: E402
-from local_events_runtime import open_detail_fields_authority as acm_fields  # noqa: E402
+from local_events_runtime import review_detail_navigation_authority as navigation  # noqa: E402
 from local_events_runtime.source_overrides import LISTING_EVIDENCE  # noqa: E402
 
 
 authority.apply()
-
-
-ACM_FACTS = {
-    "date": "10–12 April 2026",
-    "time": "Daily - Friday, 5–9.30pm / Sat & Sun, 2–9.30pm",
-    "venue": "Asian Civilisations Museum",
-    "admission": "Free and ticketed activities available",
-}
-
-SGFASHION_FACTS = {
-    "date": "27 June–1 September 2024",
-    "time": "Daily - 10am - 7pm / Fridays - 10am - 9pm",
-    "venue": "",
-    "admission": "Ticketed",
-}
 
 
 def test_acm_detail_payload_produces_date_venue_and_description() -> None:
@@ -127,144 +112,73 @@ def test_narrative_candidate_wins_when_payload_summary_is_cta() -> None:
 
 
 def test_separate_structured_start_and_end_dates_become_one_range() -> None:
-    card = {
-        "detail_dates": ["2026-06-19", "2027-01-24"],
-    }
-
+    card = {"detail_dates": ["2026-06-19", "2027-01-24"]}
     assert authority._authoritative_when(card) == "19 Jun 2026 – 24 Jan 2027"
 
 
-def test_acm_parent_payload_keeps_combined_when_and_parent_venue() -> None:
-    expected_when = (
-        "10–12 April 2026 · "
-        "Daily - Friday, 5–9.30pm / Sat & Sun, 2–9.30pm"
+def test_review_uses_exact_ltn_date_time_and_venue_rows() -> None:
+    payload = {
+        "title": "Light to Night at ACM: Power of Play",
+        "dates": ["23, 24, 30, 31 Jan 2026"],
+        "venues": ["Asian Civilisations Museum, 1 Empress Place, Singapore 179555"],
+        "lines": [
+            "Light to Night at ACM: Power of Play",
+            "Date",
+            "23, 24, 30, 31 Jan 2026",
+            "Time",
+            "6pm–10pm",
+            "Venue",
+            "Asian Civilisations Museum, 1 Empress Place, Singapore 179555",
+        ],
+    }
+
+    assert navigation._raw_when(payload) == (
+        "23, 24, 30, 31 Jan 2026 · 6pm–10pm"
     )
-    merged = authority.merge_detail_payload(
-        {
-            "text": "Weekend of Curiosities\nDaily\nRiver Room",
-            "text_lines": ["Weekend of Curiosities", "Daily", "River Room"],
-            "extraction_mode": "detail_link",
-        },
-        {
-            "title": "Weekend of Curiosities",
-            "dates": [expected_when],
-            "venues": ["Asian Civilisations Museum"],
-            "summary": "A weekend programme of activities presented throughout the museum.",
-            "summary_candidates": [],
-            "lines": [
-                "Weekend of Curiosities",
-                "Date",
-                expected_when,
-                "Location",
-                "Asian Civilisations Museum",
-                "River Room",
-            ],
-        },
+    assert navigation._raw_where(payload) == (
+        "Asian Civilisations Museum, 1 Empress Place, Singapore 179555"
     )
 
-    assert authority._authoritative_when(merged) == expected_when
-    assert authority._authoritative_venue(merged) == "Asian Civilisations Museum"
-    assert merged["detail_dates"] == [expected_when]
-    assert merged["detail_venues"] == ["Asian Civilisations Museum"]
+
+def test_review_does_not_invent_location_when_page_has_none() -> None:
+    payload = {
+        "title": "Programme without a location row",
+        "dates": ["30–31 May 2026"],
+        "venues": [],
+        "lines": [
+            "Programme without a location row",
+            "Date",
+            "30–31 May 2026",
+            "Time",
+            "10am–5pm",
+        ],
+    }
+
+    assert navigation._raw_when(payload) == "30–31 May 2026 · 10am–5pm"
+    assert navigation._raw_where(payload) == ""
 
 
-def test_acm_parent_wrapper_preserves_structured_parent_facts() -> None:
-    source = read_text("surface/local_events_runtime/open_detail_fields_authority.py")
-
-    assert "infoscreen_acm_parent_fields_v3" in source
-    assert 'add("Date")' in source
-    assert 'add("Time")' in source
-    assert 'add("Location")' in source
-    assert 'add("Admission")' in source
-    assert "primary_facts: facts" in source
-    assert "dates: [when]" in source
-    assert "venues: facts.venue ? [facts.venue] : []" in source
-
-
-def test_final_acm_when_and_where_prefer_structured_parent_facts(monkeypatch) -> None:
-    monkeypatch.setattr(
-        acm_fields,
-        "_BASE_PICK_WHEN",
-        lambda card: ("Daily - Friday, 5–9.30pm", "listing fallback"),
-    )
-    monkeypatch.setattr(
-        acm_fields,
-        "_BASE_PICK_VENUE",
-        lambda source, card, when, when_line: "River Room",
-    )
-    card = {"detail_primary_facts": ACM_FACTS}
-
-    when, source_line = acm_fields.pick_when(card)
-    venue = acm_fields.pick_venue(
-        {"id": "acm", "name": "Asian Civilisations Museum"},
-        card,
-        when,
-        source_line,
-    )
-
-    expected_when = (
-        "10–12 April 2026 · "
-        "Daily - Friday, 5–9.30pm / Sat & Sun, 2–9.30pm"
-    )
-    assert when == expected_when
-    assert source_line == expected_when
-    assert venue == "Asian Civilisations Museum"
-    assert when != "Daily - Friday, 5–9.30pm"
-    assert venue != "River Room"
-
-
-def test_acm_parent_date_and_time_survive_without_an_explicit_location(monkeypatch) -> None:
-    monkeypatch.setattr(
-        acm_fields,
-        "_BASE_BROWSER_MERGE",
-        lambda card, detail: {"title": "#SGFASHIONNOW: Runway Singapore"},
-    )
-    monkeypatch.setattr(
-        acm_fields,
-        "_BASE_PICK_WHEN",
-        lambda card: ("Daily - 10am - 7pm", "Daily - 10am - 7pm"),
-    )
-    monkeypatch.setattr(
-        acm_fields,
-        "_BASE_PICK_VENUE",
-        lambda source, card, when, when_line: "Asian Civilisations Museum",
-    )
-
-    merged = acm_fields.merge_detail_payload({}, {"primary_facts": SGFASHION_FACTS})
-    when, when_line = acm_fields.pick_when(merged)
-    where = acm_fields.pick_venue(
-        {
-            "id": "acm",
-            "name": "Asian Civilisations Museum",
-            "default_venue": "Asian Civilisations Museum",
-        },
-        merged,
-        when,
-        when_line,
-    )
-
-    assert merged["detail_dates"] == [
-        "27 June–1 September 2024 · "
-        "Daily - 10am - 7pm / Fridays - 10am - 9pm"
-    ]
-    assert merged["detail_venues"] == []
-    assert when.startswith("27 June–1 September 2024 ·")
-    assert where == ""
-
-
-def test_review_lifecycle_rejection_uses_final_detail_field_authorities() -> None:
+def test_review_does_not_call_parser_or_field_rewriters() -> None:
     source = read_text(
         "surface/local_events_runtime/review_detail_navigation_authority.py"
     )
-    event_none = source[
-        source.index("        if event is None:"):
-        source.index("        return {", source.index("        if event is None:") + 1)
-    ]
 
-    assert "_extract.pick_when(merged)" in event_none
-    assert "_extract.pick_venue(" in event_none
-    assert "_detail_dates._activity_pick_when(merged)" not in event_none
-    assert "_detail_dates._activity_pick_venue(" not in event_none
+    assert "_extract.event_from_card(" not in source
+    assert "_extract.pick_when(" not in source
+    assert "_extract.pick_venue(" not in source
+    assert "listing_summary=" not in source
+    assert "_raw_when(payload)" in source
+    assert "_raw_where(payload)" in source
+
+
+def test_open_detail_owner_does_not_patch_detail_payload() -> None:
+    source = read_text("surface/local_events_runtime/open_detail_fields_authority.py")
+
+    assert "DETAIL_CARD_JS" not in source
+    assert "merge_detail_payload" not in source
+    assert "pick_when" not in source
+    assert "pick_venue" not in source
+    assert "source defaults must not overwrite" not in source
 
 
 def test_detail_dom_extractor_reads_structural_fields_and_rejects_metadata_cta() -> None:
