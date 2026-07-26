@@ -143,6 +143,8 @@ def _merge_fallback_fields(
     payload: dict[str, Any],
     fallback: dict[str, Any],
 ) -> dict[str, Any]:
+    """Fill missing fields without diluting already authoritative detail rows."""
+
     merged = dict(payload)
     for key in ("dates", "venues"):
         current = [
@@ -150,11 +152,17 @@ def _merge_fallback_fields(
             for value in merged.get(key) or []
             if " ".join(str(value or "").split())
         ]
+        if current:
+            merged[key] = current
+            continue
+
+        filled: list[str] = []
         for value in fallback.get(key) or []:
             text = " ".join(str(value or "").split())
-            if text and text not in current:
-                current.append(text)
-        merged[key] = current
+            if text and text not in filled:
+                filled.append(text)
+        merged[key] = filled
+
     if not str(merged.get("summary") or "").strip():
         merged["summary"] = str(fallback.get("summary") or "").strip()
     return merged
