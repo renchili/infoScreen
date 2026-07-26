@@ -44,9 +44,8 @@ def apply() -> None:
     lifecycle events do not settle. Review remains a blocking operation, but visible
     detail-page navigations are started together so network waits do not accumulate
     one activity at a time. Coverage, source, date, detail-field, section-aware
-    summary, ACM parent-fact grouping, listing-provenance, listing-membership,
-    dynamic-listing, pagination, card, and link authorities are applied before their
-    final values are bound into Review Studio.
+    summary, listing-provenance, listing-membership, dynamic-listing, card, and link
+    authorities are applied before their final values are bound into Review Studio.
     """
     global _APPLIED
     if _APPLIED:
@@ -111,37 +110,14 @@ def apply() -> None:
     )
     apply_review_detail_prefetch_authority()
 
-    # Prefetch may only follow cards already admitted by CARD_JS. Release consumed
-    # pages from its state so a later real page cannot inherit closed tab identities.
-    from .review_prefetch_lifecycle_authority import (
-        apply as apply_review_prefetch_lifecycle_authority,
-    )
-
-    apply_review_prefetch_lifecycle_authority()
-
     from .dynamic_listing_authority import apply as apply_dynamic_listing_authority
     apply_dynamic_listing_authority()
-
-    # A visible "2" or "Next" is not sufficient pagination evidence. Require the
-    # listing URL or canonical detail inventory to change before page_index advances.
-    from .listing_pagination_authority import apply as apply_listing_pagination_authority
-
-    apply_listing_pagination_authority()
 
     from .open_ended_date_authority import apply as apply_open_ended_date_authority
     apply_open_ended_date_authority()
 
     from .open_detail_fields_authority import apply as apply_open_detail_fields_authority
     apply_open_detail_fields_authority()
-
-    # ACM presents the parent activity facts as four visually ordered rows. Read that
-    # group by screen position, preserve Date/Time/Location/Admission separately, and
-    # derive the compatibility `when` value only after the exact rows are retained.
-    from .acm_primary_fact_sequence_authority import (
-        apply as apply_acm_primary_fact_sequence_authority,
-    )
-
-    apply_acm_primary_fact_sequence_authority()
 
     from .gardens_field_authority import apply as apply_gardens_field_authority
     apply_gardens_field_authority()
@@ -161,24 +137,15 @@ def apply() -> None:
     from .listing_url_authority import apply as apply_listing_url_authority
     apply_listing_url_authority()
 
-    # event_review was imported by detail_date_authority before the dynamic,
-    # pagination, fact-group, and structural JavaScript rewrites above. Rebind only
-    # after the final versions are complete, otherwise Studio keeps stale snapshots.
+    # Apply this last over the composed event authority so explicit Where/Location
+    # labels and public URL rewrites survive every source/membership wrapper.
+    from .detail_authority import apply as apply_detail_authority
+    apply_detail_authority()
+
+    # event_review was imported before the final JavaScript rewrites above. Rebind
+    # only after all browser and event authorities have their final values.
     _bind_final_browser_runtime_to_review()
 
-    # Scoped Studio collection must preserve candidates owned by listing pages that
-    # did not participate in this run. Install before effective-field wrapping so the
-    # final lifecycle filter sees the correctly combined candidate set.
-    from .review_collection_scope_authority import (
-        apply as apply_review_collection_scope_authority,
-    )
-
-    apply_review_collection_scope_authority()
-
-    # Existing Review state may contain the old generic summary while the kiosk
-    # already has a narrative for the same canonical detail URL. Apply this before
-    # diagnostics and publication so both GET state and fresh Preview use one
-    # effective summary contract.
     from .review_effective_fields_authority import (
         apply as apply_review_effective_fields_authority,
     )
