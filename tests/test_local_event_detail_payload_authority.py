@@ -118,6 +118,63 @@ def test_separate_structured_start_and_end_dates_become_one_range() -> None:
     assert authority._authoritative_when(card) == "19 Jun 2026 – 24 Jan 2027"
 
 
+def test_acm_parent_payload_keeps_combined_when_and_parent_venue() -> None:
+    expected_when = (
+        "10–12 April 2026 · "
+        "Daily - Friday, 5–9.30pm / Sat & Sun, 2–9.30pm"
+    )
+    merged = authority.merge_detail_payload(
+        {
+            "text": "Weekend of Curiosities\nDaily\nRiver Room",
+            "text_lines": ["Weekend of Curiosities", "Daily", "River Room"],
+            "extraction_mode": "detail_link",
+        },
+        {
+            "title": "Weekend of Curiosities",
+            "dates": [expected_when],
+            "venues": ["Asian Civilisations Museum"],
+            "summary": "A weekend programme of activities presented throughout the museum.",
+            "summary_candidates": [],
+            "lines": [
+                "Weekend of Curiosities",
+                "Date",
+                expected_when,
+                "Location",
+                "Asian Civilisations Museum",
+                "River Room",
+            ],
+        },
+    )
+
+    assert authority._authoritative_when(merged) == expected_when
+    assert authority._authoritative_venue(merged) == "Asian Civilisations Museum"
+    assert merged["detail_dates"] == [expected_when]
+    assert merged["detail_venues"] == ["Asian Civilisations Museum"]
+
+
+def test_acm_parent_wrapper_preserves_existing_review_field_contract() -> None:
+    source = read_text("surface/local_events_runtime/open_detail_fields_authority.py")
+
+    assert "infoscreen_acm_parent_fields_v1" in source
+    assert "dates: [when]" in source
+    assert "venues: [venue.text]" in source
+    assert "primary_facts" not in source
+    assert "admission:" not in source
+    assert "times:" not in source
+
+
+def test_review_lifecycle_rejection_uses_final_detail_field_authorities() -> None:
+    source = read_text(
+        "surface/local_events_runtime/review_detail_navigation_authority.py"
+    )
+    event_none = source[source.index("        if event is None:"):source.index("        return {", source.index("        if event is None:") + 1)]
+
+    assert "_extract.pick_when(merged)" in event_none
+    assert "_extract.pick_venue(" in event_none
+    assert "_detail_dates._activity_pick_when(merged)" not in event_none
+    assert "_detail_dates._activity_pick_venue(" not in event_none
+
+
 def test_detail_dom_extractor_reads_structural_fields_and_rejects_metadata_cta() -> None:
     script = authority.ENRICHED_DETAIL_JS.lower()
 
