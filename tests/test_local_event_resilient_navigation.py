@@ -56,13 +56,32 @@ def test_snap_chromium_is_never_a_supported_browser() -> None:
     assert http1_browser._is_snap_browser("/usr/bin/google-chrome") is False
 
 
+def test_ubuntu_chromium_snap_wrapper_is_rejected(tmp_path: Path) -> None:
+    wrapper = tmp_path / "chromium-browser"
+    wrapper.write_text(
+        "#!/bin/sh\nexec /snap/bin/chromium \"$@\"\n",
+        encoding="utf-8",
+    )
+    wrapper.chmod(wrapper.stat().st_mode | 0o111)
+
+    assert http1_browser._is_snap_browser(wrapper) is True
+    assert http1_browser._select_browser_executable([wrapper]) == ""
+
+
 def test_browser_selection_skips_snap_and_uses_normal_executable(tmp_path: Path) -> None:
+    wrapper = tmp_path / "chromium-browser"
+    wrapper.write_text(
+        "#!/bin/sh\nexec snap run chromium \"$@\"\n",
+        encoding="utf-8",
+    )
+    wrapper.chmod(wrapper.stat().st_mode | 0o111)
+
     browser = tmp_path / "google-chrome"
     browser.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     browser.chmod(browser.stat().st_mode | 0o111)
 
     selected = http1_browser._select_browser_executable(
-        ["/snap/bin/chromium", str(browser)]
+        ["/snap/bin/chromium", str(wrapper), str(browser)]
     )
 
     assert selected == str(browser)
