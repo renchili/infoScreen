@@ -17,7 +17,7 @@ _BASE_SOURCE_MERGE = None
 _BASE_PICK_WHEN = None
 _BASE_PICK_VENUE = None
 
-_ACM_PARENT_FIELDS_MARKER = "infoscreen_acm_parent_fields_v2"
+_ACM_PARENT_FIELDS_MARKER = "infoscreen_acm_parent_fields_v3"
 
 _VENUE_HINT_RE = re.compile(
     r"\b(?:museum|gallery|galleries|level|room|hall|theatre|theater|"
@@ -88,7 +88,7 @@ def candidate_expired(candidate: Any) -> bool:
 
 
 def _wrap_acm_parent_fields(script: str) -> str:
-    """Read ACM's visible Date/Time/Location/Admission group as one fact set."""
+    """Read ACM's visible parent Date/Time and optional Location/Admission rows."""
 
     if _ACM_PARENT_FIELDS_MARKER in script:
         return script
@@ -97,7 +97,7 @@ def _wrap_acm_parent_fields(script: str) -> str:
         "() => {\n"
         f"  const base = ({script})();\n"
         r'''
-  const infoscreen_acm_parent_fields_v2 = true;
+  const infoscreen_acm_parent_fields_v3 = true;
   const clean = value => String(value || "").replace(/\s+/g, " ").trim();
   const host = String(location.hostname || "").replace(/^www\./i, "").toLowerCase();
   const path = String(location.pathname || "");
@@ -105,38 +105,33 @@ def _wrap_acm_parent_fields(script: str) -> str:
     (host === "nhb.gov.sg" && /^\/acm\/whats-on\//i.test(path));
   if (!isAcm) return base;
 
-  const month = "(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|" +
-    "jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|" +
-    "nov(?:ember)?|dec(?:ember)?)";
-  const dated = new RegExp(
-    "(?:\\b\\d{1,2}\\s*(?:[-–—]\\s*\\d{1,2}\\s*)?" + month +
-    "\\s+20\\d{2}\\b|\\b" + month +
-    "\\s+\\d{1,2}(?:st|nd|rd|th)?(?:,)?\\s+20\\d{2}\\b|" +
-    "\\b20\\d{2}-\\d{1,2}-\\d{1,2}\\b|" +
-    "^(?:now\\s+)?(?:till|until|through|thru|from)\\s+.*20\\d{2})",
-    "i"
-  );
+  const month = /\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/i;
+  const explicitYear = /\b20\d{2}\b/;
   const timed = /\b\d{1,2}(?:[.:]\d{1,2})?\s*(?:am|pm)\b/i;
   const recurrence = /\b(?:daily|weekdays?|weekends?|mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\b/i;
   const admissionLike = /\b(?:free|admission|ticket|tickets|fees?|charges?|pricing|price|\$)\b/i;
-  const venueLike = /\b(?:asian civilisations museum|museum|gallery|level|room|hall|foyer|green|hardcourt|courtyard|plaza|studio)\b/i;
-  const narrative = /\b(?:explore|experience|discover|join|learn|enjoy|featuring|presented|step into)\b/i;
+  const venueLike = /\b(?:asian civilisations museum|museum|gallery|galleries|level|room|hall|foyer|green|hardcourt|courtyard|plaza|studio)\b/i;
+  const narrative = /\b(?:explore|experience|discover|join|learn|enjoy|featuring|presented|step into|during the|this section)\b/i;
+  const metadata = /\b(?:last updated|updated on|copyright|privacy|cookie|newsletter)\b/i;
 
   const dateText = value => {
     const text = clean(value);
-    return Boolean(text && dated.test(text));
+    return Boolean(
+      text && text.length <= 180 && explicitYear.test(text) && month.test(text) &&
+      !metadata.test(text) && !narrative.test(text)
+    );
   };
   const timeText = value => {
     const text = clean(value);
     return Boolean(
-      text && timed.test(text) &&
-      (recurrence.test(text) || /[\/,&]/.test(text) || !dated.test(text))
+      text && text.length <= 180 && timed.test(text) && !explicitYear.test(text) &&
+      (recurrence.test(text) || /[\/,&]/.test(text)) && !narrative.test(text)
     );
   };
   const venueText = value => {
     const text = clean(value);
-    if (!text || text.length > 140 || dated.test(text) || timed.test(text) ||
-        admissionLike.test(text) || narrative.test(text)) return false;
+    if (!text || text.length > 140 || explicitYear.test(text) || timed.test(text) ||
+        admissionLike.test(text) || narrative.test(text) || metadata.test(text)) return false;
     return /^asian civilisations museum$/i.test(text) || venueLike.test(text);
   };
   const admissionText = value => {
@@ -149,11 +144,10 @@ def _wrap_acm_parent_fields(script: str) -> str:
     const time = clean(raw.time);
     const venue = clean(raw.venue);
     const admission = clean(raw.admission || raw.ticket);
-    if (!dateText(date) || !timeText(time) || !venueText(venue)) return null;
+    if (!dateText(date) || !timeText(time)) return null;
+    if (venue && !venueText(venue)) return null;
     return {date, time, venue, admission};
   };
-
-  let facts = normaliseFacts(base.primary_facts);
 
   const visible = element => {
     if (!element) return false;
@@ -186,6 +180,7 @@ def _wrap_acm_parent_fields(script: str) -> str:
   const placeIcon = /\b(?:location|venue|map[-_ ]?pin|marker|pin[-_ ]?map|icon[-_ ]?(?:location|venue))\b/i;
   const ticketIcon = /\b(?:ticket|admission|price|fee)\b/i;
 
+  let facts = normaliseFacts(base.primary_facts);
   if (!facts) {
     const heading = Array.from(
       document.querySelectorAll("main h1, article h1, h1")
@@ -203,8 +198,8 @@ def _wrap_acm_parent_fields(script: str) -> str:
       for (const element of Array.from(root.querySelectorAll("*"))) {
         if (!visible(element)) continue;
         const rect = element.getBoundingClientRect();
-        if (rect.top < headingRect.bottom - 16 || rect.top > headingRect.bottom + 1500 ||
-            rect.height > 190) continue;
+        if (rect.top < headingRect.bottom - 16 || rect.top > headingRect.bottom + 1600 ||
+            rect.height > 210) continue;
         const text = clean(element.innerText || element.textContent || "");
         if (!text || text.length > 240 || text.split(/\s+/).length > 38) continue;
         const sameTextChild = Array.from(element.children || []).some(child =>
@@ -228,34 +223,38 @@ def _wrap_acm_parent_fields(script: str) -> str:
         const dateRow = rows[dateIndex];
         if (!dateText(dateRow.text)) continue;
 
-        const timeRow = rows.slice(dateIndex + 1).find(row =>
-          row.top >= dateRow.top && row.top - dateRow.top <= 360 && timeText(row.text)
+        const following = rows.filter(row =>
+          row.top >= dateRow.top && row.top - dateRow.top <= 520
         );
-        if (!timeRow) continue;
+        const timeRows = following.filter(row => timeText(row.text));
+        if (!timeRows.length) continue;
 
-        const venueRow = rows.find(row =>
-          row.top >= timeRow.top && row.top - timeRow.top <= 420 && venueText(row.text)
-        );
-        if (!venueRow) continue;
-
-        const admissionRow = rows.find(row =>
-          row.top >= venueRow.top && row.top - venueRow.top <= 300 &&
-          admissionText(row.text)
+        const venueRow = following.find(row =>
+          row.top >= timeRows[0].top && venueText(row.text)
         ) || null;
+        const admissionRow = following.find(row =>
+          row.top >= (venueRow ? venueRow.top : timeRows[0].top) && admissionText(row.text)
+        ) || null;
+
+        const timeValues = [];
+        for (const row of timeRows) {
+          if (!timeValues.includes(row.text)) timeValues.push(row.text);
+        }
+        const combinedTime = timeValues.slice(0, 3).join(" / ");
 
         let score = 1000 - dateIndex;
         if (dateIcon.test(dateRow.tokens)) score += 100;
-        if (timeIcon.test(timeRow.tokens)) score += 100;
-        if (placeIcon.test(venueRow.tokens)) score += 140;
+        if (timeRows.some(row => timeIcon.test(row.tokens))) score += 100;
+        if (venueRow && placeIcon.test(venueRow.tokens)) score += 140;
         if (admissionRow && ticketIcon.test(admissionRow.tokens)) score += 60;
-        if (/^asian civilisations museum$/i.test(venueRow.text)) score += 100;
-        score -= Math.round(timeRow.top - dateRow.top);
-        score -= Math.round(venueRow.top - timeRow.top);
+        if (venueRow && /^asian civilisations museum$/i.test(venueRow.text)) score += 100;
+        score -= Math.round(timeRows[0].top - dateRow.top);
+
         groups.push({
           score,
           date: dateRow.text,
-          time: timeRow.text,
-          venue: venueRow.text,
+          time: combinedTime,
+          venue: venueRow ? venueRow.text : "",
           admission: admissionRow ? admissionRow.text : "",
         });
       }
@@ -273,39 +272,16 @@ def _wrap_acm_parent_fields(script: str) -> str:
     const lines = rawLines.map(clean).filter(Boolean);
     for (let dateIndex = 0; dateIndex < lines.length && !facts; dateIndex += 1) {
       if (!dateText(lines[dateIndex])) continue;
-      let timeIndex = -1;
-      for (
-        let index = dateIndex + 1;
-        index <= Math.min(lines.length - 1, dateIndex + 6);
-        index += 1
-      ) {
-        if (timeText(lines[index])) {
-          timeIndex = index;
-          break;
-        }
-      }
-      if (timeIndex < 0) continue;
 
-      let venueIndex = -1;
-      for (
-        let index = timeIndex + 1;
-        index <= Math.min(lines.length - 1, timeIndex + 6);
-        index += 1
-      ) {
-        if (venueText(lines[index])) {
-          venueIndex = index;
-          break;
-        }
-      }
-      if (venueIndex < 0) continue;
-
-      const admission = lines
-        .slice(venueIndex + 1, venueIndex + 5)
-        .find(admissionText) || "";
+      const nearby = lines.slice(dateIndex + 1, dateIndex + 9);
+      const times = nearby.filter(timeText);
+      if (!times.length) continue;
+      const venue = nearby.find(venueText) || "";
+      const admission = nearby.find(admissionText) || "";
       facts = normaliseFacts({
         date: lines[dateIndex],
-        time: lines[timeIndex],
-        venue: lines[venueIndex],
+        time: [...new Set(times)].slice(0, 3).join(" / "),
+        venue,
         admission,
       });
     }
@@ -324,8 +300,10 @@ def _wrap_acm_parent_fields(script: str) -> str:
   add(facts.date);
   add("Time");
   add(facts.time);
-  add("Location");
-  add(facts.venue);
+  if (facts.venue) {
+    add("Location");
+    add(facts.venue);
+  }
   if (facts.admission) {
     add("Admission");
     add(facts.admission);
@@ -336,7 +314,7 @@ def _wrap_acm_parent_fields(script: str) -> str:
   return {
     ...base,
     dates: [when],
-    venues: [facts.venue],
+    venues: facts.venue ? [facts.venue] : [],
     primary_facts: facts,
     lines,
     text_lines: lines,
@@ -366,7 +344,7 @@ def _facts(raw: object) -> dict[str, str]:
             "venue": _clean(value.get("venue")),
             "admission": _clean(value.get("admission") or value.get("ticket")),
         }
-        if facts["date"] and facts["time"] and facts["venue"]:
+        if facts["date"] and facts["time"]:
             return facts
     return {}
 
@@ -390,7 +368,7 @@ def merge_detail_payload(
 
     merged["detail_primary_facts"] = facts
     merged["detail_dates"] = [_when(facts)]
-    merged["detail_venues"] = [facts["venue"]]
+    merged["detail_venues"] = [facts["venue"]] if facts["venue"] else []
     return merged
 
 
@@ -410,7 +388,7 @@ def merge_source_detail(
     evidence = dict(merged.get("detail_evidence") or {})
     evidence["primary_facts"] = facts
     evidence["date_candidates"] = [_when(facts)]
-    evidence["venue_candidates"] = [facts["venue"]]
+    evidence["venue_candidates"] = [facts["venue"]] if facts["venue"] else []
     merged["detail_evidence"] = evidence
     merged["detail_primary_facts"] = facts
     return merged
@@ -431,11 +409,11 @@ def pick_venue(
     when: str,
     when_line: str,
 ) -> str:
-    """Make the parent ACM Location row the final Where authority."""
+    """Use only an explicit parent ACM Location when parent facts were found."""
 
     facts = _facts(card)
-    if facts.get("venue"):
-        return facts["venue"]
+    if facts:
+        return facts.get("venue", "")
     return _BASE_PICK_VENUE(source, card, when, when_line)
 
 
