@@ -54,11 +54,18 @@ def apply_gardens_card_fields(
 
 
 def apply() -> None:
-    """Install the Gardens field repair for production and review collectors."""
+    """Install the final detail-script repairs before source-specific card fields."""
 
     global _APPLIED
     if _APPLIED:
         return
+
+    # The preceding ACM authority preserves the parent facts once they are present.
+    # This final extractor reads those facts from the page's real icon-and-text rows,
+    # before the browser scripts are snapshotted into Review Studio.
+    from .acm_icon_fact_authority import apply as apply_acm_icon_fact_authority
+
+    apply_acm_icon_fact_authority()
 
     package = sys.modules.get(__package__)
     if package is None:
