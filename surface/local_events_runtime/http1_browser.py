@@ -41,11 +41,12 @@ def apply() -> None:
     HTTP/1.1 mode directly. Browser operations are clamped to the active source and
     global collection deadlines so timed-out workers close before systemd's outer
     service limit. Listing navigation accepts a readable rendered document even when
-    lifecycle events do not settle. Review remains a blocking operation, but visible
-    detail-page navigations are started together so network waits do not accumulate
-    one activity at a time. Coverage, source, date, detail-field, section-aware
-    summary, listing-provenance, listing-membership, dynamic-listing, card, and link
-    authorities are applied before their final values are bound into Review Studio.
+    lifecycle events do not settle. Review detail pages are read through the existing
+    bounded blocking reader, one admitted card at a time, so no unconsumed background
+    tabs remain when the listing or BrowserContext is closed. Coverage, source, date,
+    detail-field, section-aware summary, listing-provenance, listing-membership,
+    dynamic-listing, card, and link authorities are applied before their final values
+    are bound into Review Studio.
     """
     global _APPLIED
     if _APPLIED:
@@ -104,11 +105,6 @@ def apply() -> None:
         apply as apply_review_detail_navigation_authority,
     )
     apply_review_detail_navigation_authority()
-
-    from .review_detail_prefetch_authority import (
-        apply as apply_review_detail_prefetch_authority,
-    )
-    apply_review_detail_prefetch_authority()
 
     from .dynamic_listing_authority import apply as apply_dynamic_listing_authority
     apply_dynamic_listing_authority()
