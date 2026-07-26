@@ -153,11 +153,13 @@ def test_detail_candidate_reuses_prefetched_page(monkeypatch) -> None:
     assert context.events[-1] == ("wait", DETAIL_URLS[0])
 
 
-def test_http_bootstrap_installs_prefetch_after_detail_reader() -> None:
+def test_http_bootstrap_uses_bounded_reader_without_background_prefetch() -> None:
     bootstrap = read_text("surface/local_events_runtime/http1_browser.py")
 
     navigation = bootstrap.index("apply_review_detail_navigation_authority()")
-    prefetch_apply = bootstrap.index("apply_review_detail_prefetch_authority()")
     binding = bootstrap.index("    _bind_final_browser_runtime_to_review()")
 
-    assert navigation < prefetch_apply < binding
+    assert navigation < binding
+    assert "apply_review_detail_prefetch_authority()" not in bootstrap
+    assert "review_detail_prefetch_authority" not in bootstrap
+    assert "one admitted card at a time" in bootstrap
