@@ -52,6 +52,7 @@ def apply() -> None:
         # product invariant without wrapping the function a second time.
         _publisher._review_event = _review_event
         return
+
     # The canonical job calls this authority directly. Apply the detail authority
     # here as well so scheduled, HTTP, Studio, and direct job paths use one rule.
     from .detail_summary_authority import apply as apply_detail_summary_authority
