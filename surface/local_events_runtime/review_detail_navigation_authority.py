@@ -237,16 +237,15 @@ def _detail_candidate(
         listing = _detail_dates._listing_fields(source, card)
 
         if event is None:
-            # A lifecycle rejection such as ``past_date`` must not fall back to the
-            # old list-card parser. The final detail authorities may already have
-            # isolated a parent Date + Time + Location group; keep those exact values
-            # so the subsequent Review lifecycle filter can remove the ended event.
-            final_when, final_when_line = _extract.pick_when(merged)
-            final_where = _extract.pick_venue(
+            # Lifecycle rejection must retain fields chosen by the final composed
+            # detail authorities. Calling the older activity helpers here would
+            # reintroduce the list-card Daily / child-room fallback.
+            authoritative_when, authoritative_when_line = _extract.pick_when(merged)
+            authoritative_where = _extract.pick_venue(
                 source,
                 merged,
-                final_when,
-                final_when_line,
+                authoritative_when,
+                authoritative_when_line,
             )
             title = (
                 _extract.clean(payload.get("title"))
@@ -256,8 +255,8 @@ def _detail_candidate(
             return {
                 "detail_url": final_url,
                 "title": title,
-                "when": _extract.clean(final_when) or listing["when"],
-                "where": _extract.clean(final_where) or listing["where"],
+                "when": _extract.clean(authoritative_when) or listing["when"],
+                "where": _extract.clean(authoritative_where) or listing["where"],
                 "summary": _best_summary(
                     payload,
                     merged,
