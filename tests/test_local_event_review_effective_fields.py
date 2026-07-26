@@ -7,8 +7,6 @@ from .conftest import SURFACE, read_text
 
 sys.path.insert(0, str(SURFACE))
 
-from local_events_runtime import detail_summary_authority  # noqa: E402
-from local_events_runtime import review_detail_navigation_authority as navigation  # noqa: E402
 from local_events_runtime import review_effective_fields_authority as authority  # noqa: E402
 from local_events_runtime.event_review import (  # noqa: E402
     EventCandidate,
@@ -18,26 +16,9 @@ from local_events_runtime.event_review import (  # noqa: E402
 )
 
 
-detail_summary_authority.apply()
 authority.apply()
 
-DETAIL_URL = (
-    "https://www.acm.nhb.gov.sg/whats-on/exhibitions/"
-    "crosscurrents-masterpieces-of-mughal-safavid-and-ottoman-art-"
-    "from-the-musee-du-louvre"
-)
-PLAY_ON_URL = "https://www.acm.nhb.gov.sg/whats-on/programmes/play-on"
-SGFASHION_URL = "https://www.nhb.gov.sg/acm/whats-on/exhibitions/sgfashionnow2024"
-NARRATIVE = (
-    "From the 16th to 18th century, three great empires – the Mughals, "
-    "Safavids, and Ottomans – shaped a vast and interconnected world across Asia."
-)
-PLAY_ON_DETAIL = (
-    "CHILDREN’S SEASON AT ACM: PLAY ON! PROGRAMMES IN-MUSEUM FREE ADMISSION "
-    "TO MOST PROGRAMMES SAT & SUN, 30–31 MAY 2026, 10AM–5PM Get ready for a "
-    "weekend of big play and even bigger ideas."
-)
-PLACEHOLDER = "Open the official page for details."
+DETAIL_URL = "https://www.acm.nhb.gov.sg/whats-on/programmes/2026-ltn"
 
 
 def store_at(tmp_path) -> EventReviewStore:
@@ -51,7 +32,7 @@ def store_at(tmp_path) -> EventReviewStore:
                         "name": "Asian Civilisations Museum",
                         "official_home": "https://www.acm.nhb.gov.sg/",
                         "default_venue": "Asian Civilisations Museum",
-                        "allowed_domains": ["acm.nhb.gov.sg", "nhb.gov.sg"],
+                        "allowed_domains": ["acm.nhb.gov.sg"],
                         "listing_urls": [
                             "https://www.acm.nhb.gov.sg/whats-on/overview"
                         ],
@@ -64,7 +45,7 @@ def store_at(tmp_path) -> EventReviewStore:
     return EventReviewStore(tmp_path / "env" / "local_event_review", config)
 
 
-def evidence(text: str = "EXHIBITIONS IN-MUSEUM") -> EventEvidence:
+def evidence() -> EventEvidence:
     return EventEvidence(
         selector="div.a-listing-content__content",
         selector_index=2,
@@ -73,257 +54,117 @@ def evidence(text: str = "EXHIBITIONS IN-MUSEUM") -> EventEvidence:
         viewport_position={"x": 881, "y": 466, "width": 348, "height": 589},
         page_index=0,
         page_url="https://www.acm.nhb.gov.sg/whats-on/overview",
-        text=text,
+        text="Light to Night at ACM: Power of Play",
     )
 
 
-def candidate(summary: str = PLACEHOLDER) -> EventCandidate:
+def candidate(
+    *,
+    when: str = "23, 24, 30, 31 Jan 2026 · 6pm–10pm",
+    where: str = "Asian Civilisations Museum, 1 Empress Place, Singapore 179555",
+    summary: str = "Experience ACM after dark through the Power of Play.",
+) -> EventCandidate:
     return EventCandidate(
-        candidate_id="acm-crosscurrents",
+        candidate_id="acm-2026-ltn",
         source_id="acm",
         source_name="Asian Civilisations Museum",
         listing_url="https://www.acm.nhb.gov.sg/whats-on/overview",
         detail_url=DETAIL_URL,
-        title="Crosscurrents",
-        when="19 June 2026 – 24 January 2027",
-        where="Design Gallery on Level 3",
+        title="Light to Night at ACM: Power of Play",
+        when=when,
+        where=where,
         summary=summary,
         detail_status="collected",
-        detail_page_title="Crosscurrents",
+        detail_page_title="Light to Night at ACM: Power of Play",
         evidence=evidence(),
         decision="pending",
-        collected_at="2026-07-24T00:00:00+00:00",
+        collected_at="2026-01-20T00:00:00+00:00",
     )
 
 
-def past_candidate() -> EventCandidate:
-    return EventCandidate(
-        candidate_id="acm-play-on",
-        source_id="acm",
-        source_name="Asian Civilisations Museum",
-        listing_url="https://www.acm.nhb.gov.sg/whats-on/overview",
-        detail_url=PLAY_ON_URL,
-        title="PLAY ON!",
-        when="",
-        where="",
-        summary=PLAY_ON_DETAIL,
-        detail_status="incomplete",
-        detail_error="past_date",
-        detail_page_title="PLAY ON!",
-        evidence=evidence("CHILDREN’S SEASON AT ACM: PLAY ON!"),
-        decision="pending",
-        collected_at="2026-07-24T00:00:00+00:00",
-    )
+def test_repair_fields_is_exact_passthrough() -> None:
+    raw = {
+        "title": "Light to Night at ACM: Power of Play",
+        "when": "23, 24, 30, 31 Jan 2026 · 6pm–10pm",
+        "where": "Asian Civilisations Museum, 1 Empress Place, Singapore 179555",
+        "summary": "Collected detail summary",
+    }
+    runtime = {
+        "title": "Different title",
+        "when": "Daily - 10am - 7pm",
+        "where": "Asian Civilisations Museum",
+        "summary": "Different runtime summary",
+    }
+
+    assert authority._repair_fields(
+        raw,
+        runtime_row=runtime,
+        source={"default_venue": "Asian Civilisations Museum"},
+    ) == raw
 
 
-def sgfashion_candidate() -> EventCandidate:
-    return EventCandidate(
-        candidate_id="acm-sgfashionnow",
-        source_id="acm",
-        source_name="Asian Civilisations Museum",
-        listing_url="https://www.acm.nhb.gov.sg/whats-on/overview",
-        detail_url=SGFASHION_URL,
-        title="#SGFASHIONNOW: RUNWAY SINGAPORE",
-        when="Daily - 10am - 7pm",
-        where="Asian Civilisations Museum",
-        summary=(
-            "The exhibition brings together works by established and emerging "
-            "Singapore designers."
-        ),
-        detail_status="collected",
-        detail_page_title="#SGFASHIONNOW: RUNWAY SINGAPORE",
-        evidence=evidence("#SGFASHIONNOW: RUNWAY SINGAPORE"),
-        decision="pending",
-        collected_at="2026-07-27T00:00:00+00:00",
-    )
-
-
-def write_kiosk_runtime(store: EventReviewStore) -> None:
-    path = store.root.parent / authority.DISPLAY_RUNTIME_FILENAME
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(
-            {
-                "ok": True,
-                "results": [
-                    {
-                        "url": DETAIL_URL,
-                        "title": "Crosscurrents",
-                        "when": "19 June 2026 – 24 January 2027",
-                        "where": "Design Gallery on Level 3",
-                        "summary": NARRATIVE,
-                        "source_name": "Asian Civilisations Museum",
-                    }
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
-
-
-def write_sgfashion_runtime(store: EventReviewStore) -> None:
-    path = store.root.parent / authority.DISPLAY_RUNTIME_FILENAME
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(
-            {
-                "ok": True,
-                "results": [
-                    {
-                        "url": SGFASHION_URL,
-                        "title": "#SGFASHIONNOW: RUNWAY SINGAPORE",
-                        "when": (
-                            "27 June–1 September 2024 · "
-                            "Daily - 10am - 7pm / Fridays - 10am - 9pm"
-                        ),
-                        "where": "Asian Civilisations Museum",
-                        "summary": (
-                            "The exhibition brings together works by established and "
-                            "emerging Singapore designers."
-                        ),
-                        "source_name": "Asian Civilisations Museum",
-                    }
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
-
-
-def install_play_on_field_stubs(monkeypatch) -> None:
-    monkeypatch.setattr(
-        authority._extract,
-        "pick_when",
-        lambda raw: (
-            "30–31 MAY 2026",
-            "SAT & SUN, 30–31 MAY 2026, 10AM–5PM",
-        ),
-    )
-    monkeypatch.setattr(
-        authority._extract,
-        "pick_venue",
-        lambda source, raw, when, when_line: source.get("default_venue") or "",
-    )
-
-
-def test_detail_navigation_prefers_payload_narrative_over_parser_placeholder() -> None:
-    summary = navigation._best_summary(
-        {"summary_candidates": [NARRATIVE], "summary": NARRATIVE},
-        {"detail_summary": NARRATIVE},
-        {"summary": PLACEHOLDER},
-    )
-
-    assert summary == NARRATIVE
-
-
-def test_review_state_get_uses_kiosk_narrative_for_existing_placeholder(tmp_path) -> None:
+def test_state_payload_does_not_backfill_empty_fields(tmp_path) -> None:
     store = store_at(tmp_path)
-    store.save(ReviewState(events=[candidate()]))
-    write_kiosk_runtime(store)
+    exact = candidate(when="", where="", summary="")
+    exact.detail_status = "incomplete"
+    exact.detail_error = "missing_detail_when_and_where"
+    store.save(ReviewState(events=[exact]))
 
-    payload = store.state_payload()
+    event = store.state_payload()["events"][0]
 
-    assert payload["events"][0]["summary"] == NARRATIVE
-    assert payload["events"][0]["decision"] == "pending"
-    assert payload["events"][0]["detail_status"] == "collected"
-    assert payload["events"][0]["evidence"]["selector"] == (
-        "div.a-listing-content__content"
-    )
+    assert event["when"] == ""
+    assert event["where"] == ""
+    assert event["summary"] == ""
+    assert event["detail_status"] == "incomplete"
+    assert event["detail_error"] == "missing_detail_when_and_where"
 
 
-def test_fresh_preview_persists_kiosk_narrative_instead_of_placeholder(tmp_path) -> None:
+def test_replace_events_persists_exact_collected_fields(tmp_path) -> None:
     store = store_at(tmp_path)
-    write_kiosk_runtime(store)
-
-    state = store.replace_events([candidate()], {"completed_at": "now"})
-
-    assert state.events[0].summary == NARRATIVE
-    persisted = store.load()
-    assert persisted.events[0].summary == NARRATIVE
-
-
-def test_valid_review_narrative_is_not_replaced_by_runtime(tmp_path) -> None:
-    store = store_at(tmp_path)
-    review_narrative = (
-        "A newly reviewed activity description with more precise information from "
-        "the official detail page."
-    )
-    store.save(ReviewState(events=[candidate(review_narrative)]))
-    write_kiosk_runtime(store)
-
-    assert store.state_payload()["events"][0]["summary"] == review_narrative
-
-
-def test_detail_result_does_not_invent_default_venue(monkeypatch) -> None:
-    install_play_on_field_stubs(monkeypatch)
-    monkeypatch.setattr(
-        authority,
-        "_BASE_DETAIL_CANDIDATE",
-        lambda context, source, listing_url, raw_url, card: {
-            "detail_url": PLAY_ON_URL,
-            "title": "PLAY ON!",
-            "when": "",
-            "where": "",
-            "summary": PLAY_ON_DETAIL,
-            "detail_status": "incomplete",
-            "detail_error": "past_date",
-            "detail_page_title": "PLAY ON!",
-        },
-    )
-
-    result = authority._detail_candidate(
-        object(),
-        {
-            "name": "Asian Civilisations Museum",
-            "default_venue": "Asian Civilisations Museum",
-        },
-        "https://www.acm.nhb.gov.sg/whats-on/overview",
-        PLAY_ON_URL,
-        {},
-    )
-
-    assert result["when"] == "30–31 MAY 2026 · 10AM–5PM"
-    assert result["where"] == ""
-    assert result["detail_status"] == "incomplete"
-    assert result["detail_error"] == "past_date"
-
-
-def test_existing_past_candidate_is_removed_from_review_state(tmp_path, monkeypatch) -> None:
-    install_play_on_field_stubs(monkeypatch)
-    store = store_at(tmp_path)
-    store.save(ReviewState(events=[past_candidate()]))
-
-    payload = store.state_payload()
-
-    assert payload["events"] == []
-    assert payload["event_collection"]["candidate_count"] == 0
-    assert payload["event_collection"]["expired_candidate_count"] >= 1
-
-
-def test_sgfashion_wrong_opening_hours_are_repaired_then_expired(tmp_path) -> None:
-    store = store_at(tmp_path)
-    store.save(ReviewState(events=[sgfashion_candidate()]))
-    write_sgfashion_runtime(store)
-
-    payload = store.state_payload()
-
-    assert payload["events"] == []
-    assert payload["event_collection"]["candidate_count"] == 0
-    assert payload["event_collection"]["expired_candidate_count"] >= 1
-
-
-def test_fresh_preview_never_persists_expired_candidate(tmp_path) -> None:
-    store = store_at(tmp_path)
-    write_sgfashion_runtime(store)
+    exact = candidate()
 
     state = store.replace_events(
-        [sgfashion_candidate()],
+        [exact],
         {"completed_at": "now", "candidate_count": 1},
     )
 
-    assert state.events == []
-    assert state.event_collection["candidate_count"] == 0
-    assert state.event_collection["expired_candidate_count"] >= 1
+    assert len(state.events) == 1
+    assert state.events[0].when == exact.when
+    assert state.events[0].where == exact.where
+    assert state.events[0].summary == exact.summary
+
+    persisted = store.load().events[0]
+    assert persisted.when == exact.when
+    assert persisted.where == exact.where
+    assert persisted.summary == exact.summary
+
+
+def test_past_exact_date_is_removed_without_field_rewrite(tmp_path) -> None:
+    store = store_at(tmp_path)
+    past = candidate(
+        when="23, 24, 30, 31 Jan 2026 · 6pm–10pm",
+        where="Asian Civilisations Museum, 1 Empress Place, Singapore 179555",
+    )
+    store.save(ReviewState(events=[past]))
+
+    payload = store.state_payload()
+
+    assert payload["events"] == []
+    assert payload["event_collection"]["candidate_count"] == 0
+    assert payload["event_collection"]["expired_candidate_count"] >= 1
+
+
+def test_effective_owner_contains_no_runtime_or_parser_backfill() -> None:
+    source = read_text(
+        "surface/local_events_runtime/review_effective_fields_authority.py"
+    )
+
+    assert "local_event_search_results.json" not in source
+    assert "local_event_collector_results.json" not in source
+    assert "pick_when" not in source
+    assert "pick_venue" not in source
+    assert "default_venue" not in source
+    assert "return dict(raw)" in source
 
 
 def test_effective_fields_authority_is_installed_before_review_publication() -> None:
