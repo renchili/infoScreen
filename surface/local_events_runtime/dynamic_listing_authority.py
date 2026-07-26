@@ -8,14 +8,9 @@ _APPLIED = False
 # cards after a "Load more" control is clicked. The expansion loop must never treat
 # ordinary activity links such as "View More" as pagination controls: clicking one
 # destroys the current Playwright execution context by navigating to a detail page.
-#
-# Stability is measured only from activity-detail URLs and activity-card counts.
-# Site-wide clocks, carousels, analytics widgets, and changing shell text must not
-# keep Review Studio waiting through the full collection ceiling when no activity
-# inventory is changing.
 DYNAMIC_LISTING_PREPARE_JS = r"""
 async (args) => {
-  const maxRounds = Math.max(Number(args.maxRounds || 0), 1);
+  const maxRounds = Math.max(Number(args.maxRounds || 0), 80);
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   const clean = value => String(value || "").replace(/\s+/g, " ").trim();
 
@@ -90,52 +85,23 @@ async (args) => {
     "[data-testid*='load-more' i], [data-action*='load-more' i]"
   )).filter(visible).filter(element => !disabled(element)).filter(safeControl);
 
-  const detailRole = raw => {
-    let url;
-    try { url = new URL(raw, location.href); } catch { return false; }
-    if (url.origin !== location.origin) return false;
-    const path = decodeURIComponent(url.pathname.toLowerCase()).replace(/\/$/, "");
-    const parts = path.split("/").filter(Boolean);
-    const leaf = (parts[parts.length - 1] || "").replace(/\.html$/, "");
-    const generic = new Set([
-      "", "whats-on", "whatson", "overview", "view-all", "events", "event",
-      "exhibition", "exhibitions", "programme", "programmes", "program", "programs",
-      "activities", "activity", "guided-tours"
-    ]);
-    if (generic.has(leaf)) return false;
-    return /\/(whats-on|whatson|events?|event|exhibitions?|exhibition|programmes?|programs?|activities?|guided-tours)\//i.test(path + "/");
-  };
-
-  const activityState = () => {
-    const urls = [];
-    for (const anchor of document.querySelectorAll("a[href]")) {
-      const raw = anchor.getAttribute("href");
-      if (!detailRole(raw)) continue;
-      try {
-        const url = new URL(raw, location.href);
-        url.hash = "";
-        if (!urls.includes(url.href)) urls.push(url.href);
-      } catch {}
-    }
-    urls.sort();
-
-    const cardCount = Array.from(document.querySelectorAll(
-      "article,li,[class*='card' i],[class*='event' i],[class*='programme' i]," +
-      "[class*='program' i],[class*='exhibition' i],[class*='listing' i]"
-    )).filter(visible).filter(element =>
-      Array.from(element.querySelectorAll("a[href]")).some(anchor =>
-        detailRole(anchor.getAttribute("href"))
-      )
-    ).length;
-
-    return {signature: `${urls.join("\n")}\n#cards=${cardCount}`, urlCount: urls.length, cardCount};
+  const state = () => {
+    const body = document.body;
+    const links = Array.from(document.querySelectorAll("a[href]"))
+      .map(anchor => anchor.href).filter(Boolean);
+    return [
+      body ? body.scrollHeight : 0,
+      clean(body ? (body.innerText || body.textContent || "") : "").length,
+      new Set(links).size,
+      document.querySelectorAll("article,li,[class*='card' i],[class*='event' i],[class*='listing' i]").length
+    ].join(":");
   };
 
   let clicks = 0;
   let rounds = 0;
   let stableRounds = 0;
   let failedClicks = 0;
-  let previous = activityState();
+  let previous = state();
 
   for (let round = 0; round < maxRounds; round += 1) {
     rounds = round + 1;
@@ -148,7 +114,7 @@ async (args) => {
     let changedAfterClick = false;
     if (candidates.length) {
       const control = candidates[0];
-      const before = activityState();
+      const before = state();
       const beforeUrl = location.href;
       try {
         control.scrollIntoView({block: "center"});
@@ -169,7 +135,7 @@ async (args) => {
               finalUrl: location.href
             };
           }
-          if (activityState().signature !== before.signature) {
+          if (state() !== before) {
             changedAfterClick = true;
             break;
           }
@@ -179,13 +145,11 @@ async (args) => {
         failedClicks += 1;
       }
     } else {
-      // Allow ordinary lazy rendering to append activity cards, but do not let
-      // unrelated shell mutations keep this loop alive for the 80-round ceiling.
-      await sleep(350);
+      await sleep(900);
     }
 
-    const current = activityState();
-    stableRounds = current.signature === previous.signature ? stableRounds + 1 : 0;
+    const current = state();
+    stableRounds = current === previous ? stableRounds + 1 : 0;
     previous = current;
 
     if (!candidates.length && stableRounds >= 5) break;
@@ -194,16 +158,13 @@ async (args) => {
 
   window.scrollTo(0, 0);
   await sleep(300);
-  const finalState = activityState();
   return {
     clicks,
     rounds,
     stableRounds,
     failedClicks,
     navigationDetected: false,
-    finalState: finalState.signature,
-    activityUrlCount: finalState.urlCount,
-    activityCardCount: finalState.cardCount,
+    finalState: state(),
     remainingControls: controls().length,
     height: document.body ? document.body.scrollHeight : 0
   };
@@ -217,12 +178,6 @@ def apply() -> None:
     global _APPLIED
     if _APPLIED:
         return
-
-    from .review_collection_scope_authority import (
-        apply as apply_review_collection_scope,
-    )
-
-    apply_review_collection_scope()
     _browser.PREPARE_PAGE_JS = DYNAMIC_LISTING_PREPARE_JS
     _APPLIED = True
 
