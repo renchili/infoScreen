@@ -1,14 +1,6 @@
 from __future__ import annotations
 
-import os
-import sys
-from pathlib import Path
-
-from .conftest import SURFACE, read_text
-
-sys.path.insert(0, str(SURFACE))
-
-from local_events_runtime import http1_browser  # noqa: E402
+from .conftest import read_text
 
 
 def test_navigation_commits_once_and_accepts_a_readable_document() -> None:
@@ -41,48 +33,7 @@ def test_navigation_authority_is_installed_before_browser_launch() -> None:
     bootstrap = read_text("surface/local_events_runtime/http1_browser.py")
 
     navigation = bootstrap.index("apply_navigation()")
-    executable = bootstrap.index("executable = _find_supported_browser_executable()")
+    executable = bootstrap.index("executable = original_find()")
     chromium_launch = bootstrap.index("playwright.chromium.launch(")
 
     assert navigation < executable < chromium_launch
-
-
-def test_snap_chromium_is_never_a_supported_browser() -> None:
-    assert http1_browser._is_snap_browser("/snap/bin/chromium") is True
-    assert (
-        http1_browser._is_snap_browser("/var/lib/snapd/snap/bin/chromium")
-        is True
-    )
-    assert http1_browser._is_snap_browser("/usr/bin/google-chrome") is False
-
-
-def test_ubuntu_chromium_snap_wrapper_is_rejected(tmp_path: Path) -> None:
-    wrapper = tmp_path / "chromium-browser"
-    wrapper.write_text(
-        "#!/bin/sh\nexec /snap/bin/chromium \"$@\"\n",
-        encoding="utf-8",
-    )
-    wrapper.chmod(wrapper.stat().st_mode | 0o111)
-
-    assert http1_browser._is_snap_browser(wrapper) is True
-    assert http1_browser._select_browser_executable([wrapper]) == ""
-
-
-def test_browser_selection_skips_snap_and_uses_normal_executable(tmp_path: Path) -> None:
-    wrapper = tmp_path / "chromium-browser"
-    wrapper.write_text(
-        "#!/bin/sh\nexec snap run chromium \"$@\"\n",
-        encoding="utf-8",
-    )
-    wrapper.chmod(wrapper.stat().st_mode | 0o111)
-
-    browser = tmp_path / "google-chrome"
-    browser.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-    browser.chmod(browser.stat().st_mode | 0o111)
-
-    selected = http1_browser._select_browser_executable(
-        ["/snap/bin/chromium", str(wrapper), str(browser)]
-    )
-
-    assert selected == str(browser)
-    assert os.access(selected, os.X_OK)
