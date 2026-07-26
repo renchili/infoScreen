@@ -63,12 +63,18 @@ class FakeContext:
         return self.page
 
 
+class NoDetailContext:
+    def new_page(self):
+        raise AssertionError("complete listing card must not open a detail page")
+
+
 def test_review_detail_read_is_blocking_but_does_not_wait_for_lifecycle_idle() -> None:
     context = FakeContext()
     source = {
         "id": "acm",
         "name": "Asian Civilisations Museum",
         "default_venue": "Asian Civilisations Museum",
+        "review_detail_policy": "always",
     }
     listing_url = "https://www.acm.nhb.gov.sg/whats-on/overview"
     detail_url = context.page.url
@@ -105,6 +111,47 @@ def test_review_detail_read_is_blocking_but_does_not_wait_for_lifecycle_idle() -
     assert result["where"] == "Islamic Art Gallery, Level 2 and Design Gallery, Level 3"
     assert result["summary"].startswith("This exhibition presents")
     assert context.page.closed is True
+
+
+def test_complete_authoritative_listing_card_does_not_open_detail_page() -> None:
+    listing_url = "https://www.thekallang.com.sg/en/things-to-do/events.html"
+    detail_url = "https://www.thekallang.com.sg/en/events/example-event"
+    source = {
+        "id": "thekallang",
+        "name": "The Kallang",
+        "default_venue": "The Kallang",
+    }
+    card = {
+        "id": "thekallang-example-event",
+        "url": detail_url,
+        "headings": ["Example Event"],
+        "link_text": "Example Event",
+        "text": "Example Event\n19 Jun 2026\nThe Kallang",
+        "text_lines": ["Example Event", "19 Jun 2026", "The Kallang"],
+        "extraction_mode": "detail_link",
+        "listing_evidence": LISTING_EVIDENCE,
+        "listing_url": listing_url,
+        "listing_card_id": "thekallang-example-event",
+    }
+
+    result = authority._detail_candidate(
+        NoDetailContext(),
+        source,
+        listing_url,
+        detail_url,
+        card,
+    )
+
+    assert result == {
+        "detail_url": detail_url,
+        "title": "Example Event",
+        "when": "19 Jun 2026",
+        "where": "The Kallang",
+        "summary": "",
+        "detail_status": "collected",
+        "detail_error": "",
+        "detail_page_title": "",
+    }
 
 
 def test_fallback_fills_summary_without_appending_child_fields() -> None:
