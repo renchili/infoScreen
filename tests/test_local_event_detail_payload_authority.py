@@ -9,10 +9,19 @@ sys.path.insert(0, str(SURFACE))
 
 from local_events_runtime import detail_payload_authority as authority  # noqa: E402
 from local_events_runtime import extract  # noqa: E402
+from local_events_runtime import open_detail_fields_authority as acm_fields  # noqa: E402
 from local_events_runtime.source_overrides import LISTING_EVIDENCE  # noqa: E402
 
 
 authority.apply()
+
+
+ACM_FACTS = {
+    "date": "10–12 April 2026",
+    "time": "Daily - Friday, 5–9.30pm / Sat & Sun, 2–9.30pm",
+    "venue": "Asian Civilisations Museum",
+    "admission": "Free and ticketed activities available",
+}
 
 
 def test_acm_detail_payload_produces_date_venue_and_description() -> None:
@@ -152,22 +161,59 @@ def test_acm_parent_payload_keeps_combined_when_and_parent_venue() -> None:
     assert merged["detail_venues"] == ["Asian Civilisations Museum"]
 
 
-def test_acm_parent_wrapper_preserves_existing_review_field_contract() -> None:
+def test_acm_parent_wrapper_preserves_structured_parent_facts() -> None:
     source = read_text("surface/local_events_runtime/open_detail_fields_authority.py")
 
-    assert "infoscreen_acm_parent_fields_v1" in source
+    assert "infoscreen_acm_parent_fields_v2" in source
+    assert 'add("Date")' in source
+    assert 'add("Time")' in source
+    assert 'add("Location")' in source
+    assert 'add("Admission")' in source
+    assert "primary_facts: facts" in source
     assert "dates: [when]" in source
-    assert "venues: [venue.text]" in source
-    assert "primary_facts" not in source
-    assert "admission:" not in source
-    assert "times:" not in source
+    assert "venues: [facts.venue]" in source
+
+
+def test_final_acm_when_and_where_prefer_structured_parent_facts(monkeypatch) -> None:
+    monkeypatch.setattr(
+        acm_fields,
+        "_BASE_PICK_WHEN",
+        lambda card: ("Daily - Friday, 5–9.30pm", "listing fallback"),
+    )
+    monkeypatch.setattr(
+        acm_fields,
+        "_BASE_PICK_VENUE",
+        lambda source, card, when, when_line: "River Room",
+    )
+    card = {"detail_primary_facts": ACM_FACTS}
+
+    when, source_line = acm_fields.pick_when(card)
+    venue = acm_fields.pick_venue(
+        {"id": "acm", "name": "Asian Civilisations Museum"},
+        card,
+        when,
+        source_line,
+    )
+
+    expected_when = (
+        "10–12 April 2026 · "
+        "Daily - Friday, 5–9.30pm / Sat & Sun, 2–9.30pm"
+    )
+    assert when == expected_when
+    assert source_line == expected_when
+    assert venue == "Asian Civilisations Museum"
+    assert when != "Daily - Friday, 5–9.30pm"
+    assert venue != "River Room"
 
 
 def test_review_lifecycle_rejection_uses_final_detail_field_authorities() -> None:
     source = read_text(
         "surface/local_events_runtime/review_detail_navigation_authority.py"
     )
-    event_none = source[source.index("        if event is None:"):source.index("        return {", source.index("        if event is None:") + 1)]
+    event_none = source[
+        source.index("        if event is None:"):
+        source.index("        return {", source.index("        if event is None:") + 1)
+    ]
 
     assert "_extract.pick_when(merged)" in event_none
     assert "_extract.pick_venue(" in event_none
