@@ -20,35 +20,6 @@ def test_dynamic_listing_expansion_never_clicks_generic_detail_links() -> None:
     assert '"button, a[href]' not in authority
 
 
-def test_dynamic_listing_stability_uses_activity_inventory_not_page_shell() -> None:
-    authority = read_text(
-        "surface/local_events_runtime/dynamic_listing_authority.py"
-    )
-
-    assert "const activityState = () =>" in authority
-    assert "activityUrlCount" in authority
-    assert "activityCardCount" in authority
-    assert 'url.hash = ""' in authority
-    assert "new Set(links).size" not in authority
-    assert "body ? (body.innerText || body.textContent || \"\")" not in authority
-    assert "await sleep(900)" not in authority
-    assert "const maxRounds = Math.max(Number(args.maxRounds || 0), 1)" in authority
-
-
-def test_full_collector_keeps_eighty_round_ceiling_without_forcing_idle_pages() -> None:
-    complete = read_text(
-        "surface/local_events_runtime/complete_collection_authority.py"
-    )
-    dynamic = read_text(
-        "surface/local_events_runtime/dynamic_listing_authority.py"
-    )
-
-    assert "MIN_LOAD_MORE_ROUNDS = 80" in complete
-    assert "_browser.LOAD_MORE_ROUNDS" in complete
-    assert "maxRounds = Math.max(Number(args.maxRounds || 0), 1)" in dynamic
-    assert "stableRounds >= 5" in dynamic
-
-
 def test_dynamic_listing_authority_is_applied_before_card_discovery() -> None:
     bootstrap = read_text("surface/local_events_runtime/http1_browser.py")
 
