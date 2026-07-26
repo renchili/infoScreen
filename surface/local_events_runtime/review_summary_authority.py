@@ -60,25 +60,6 @@ def apply() -> None:
     apply_detail_summary_authority()
     _BASE_REVIEW_EVENT = _publisher._review_event
     _publisher._review_event = _review_event
-
-    # A renderer crash poisons a Playwright Page permanently. Review previously retried
-    # the same dead Page, so one ACM listing crash produced a false zero-candidate run.
-    # Wrap the final browser launcher before the isolated worker starts collection.
-    from .review_listing_page_recovery_authority import (
-        apply as apply_review_listing_page_recovery_authority,
-    )
-
-    apply_review_listing_page_recovery_authority()
-
-    # event_review_diagnostics has now installed the final full-fidelity Review
-    # collector. Wrap that final function in a killable child process before the HTTP
-    # server imports it by value. Worker processes set the child marker and therefore
-    # execute the real collector directly instead of recursively spawning workers.
-    from .review_collection_timeout_authority import (
-        apply as apply_review_collection_timeout_authority,
-    )
-
-    apply_review_collection_timeout_authority()
     _APPLIED = True
 
 

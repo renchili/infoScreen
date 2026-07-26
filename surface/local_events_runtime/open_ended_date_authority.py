@@ -11,22 +11,14 @@ _MONTH = (
     r"jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|"
     r"nov(?:ember)?|dec(?:ember)?)"
 )
-_DATE_VALUE = (
-    rf"(?:\d{{1,2}}\s+{_MONTH}\s+\d{{4}}|"
-    rf"{_MONTH}\s+\d{{1,2}}(?:st|nd|rd|th)?(?:,)?\s+\d{{4}})"
-)
-_CLOSED_END_RE = re.compile(
-    rf"^(?:now(?:\s+on)?\s+)?(?:till|until|through|thru)\s+{_DATE_VALUE}"
-    r"(?:\s*[·|,]\s*.+)?$",
-    re.I,
-)
 _OPEN_VALUE_RE = re.compile(
     r"^(?:ongoing|permanent|daily|selected dates?|weekends?|public holidays?)"
     r"(?:\s*[·|,\-–—]\s*.+)?$",
     re.I,
 )
 _OPEN_FROM_RE = re.compile(
-    rf"^from\s+{_DATE_VALUE}"
+    rf"^from\s+(?:\d{{1,2}}\s+{_MONTH}\s+\d{{4}}|"
+    rf"{_MONTH}\s+\d{{1,2}}(?:st|nd|rd|th)?(?:,)?\s+\d{{4}})"
     r"(?:\s*[·|,]\s*.+)?$",
     re.I,
 )
@@ -38,34 +30,11 @@ _BASE_PICK_WHEN = None
 _BASE_CURRENT_DATE_LABEL = None
 
 
-def closed_end_value(value: object) -> str:
-    """Return an explicit end-bounded schedule label, otherwise an empty string."""
-
-    text = _extract.clean(value)
-    return text if _CLOSED_END_RE.fullmatch(text) else ""
-
-
-def start_only_value(value: object) -> str:
-    """Return an explicit start-only schedule label, otherwise an empty string."""
-
-    text = _extract.clean(value)
-    return text if _OPEN_FROM_RE.fullmatch(text) else ""
-
-
-def recurrence_value(value: object) -> str:
-    """Return a recurrence-only schedule label, otherwise an empty string."""
-
-    text = _extract.clean(value)
-    return text if _OPEN_VALUE_RE.fullmatch(text) else ""
-
-
 def open_ended_value(value: object) -> str:
     """Return an explicit non-expiring schedule label, otherwise an empty string."""
 
     text = _extract.clean(value)
-    if closed_end_value(text):
-        return ""
-    return start_only_value(text) or recurrence_value(text)
+    return text if (_OPEN_VALUE_RE.fullmatch(text) or _OPEN_FROM_RE.fullmatch(text)) else ""
 
 
 def _card_lines(card: dict[str, Any]) -> list[str]:
@@ -77,15 +46,19 @@ def _card_lines(card: dict[str, Any]) -> list[str]:
     )
 
 
-def _explicit_label(
-    card: dict[str, Any],
-    parser: Any,
-) -> tuple[str, str]:
+def _explicit_open_label(card: dict[str, Any]) -> tuple[str, str]:
+    """Read a complete ongoing/start-only label before generic date parsing.
+
+    Generic parsers extract the calendar fragment from ``From 23 May 2025`` and
+    return ``23 May 2025``. That loses the start-only meaning and makes an ongoing
+    exhibition look like a past one-day Event. The complete label is authoritative.
+    """
+
     lines = _card_lines(card)
     for index, line in enumerate(lines):
         inline = _WHEN_INLINE_RE.fullmatch(line)
         if inline:
-            value = parser(inline.group(1))
+            value = open_ended_value(inline.group(1))
             if value:
                 return value, line
 
@@ -93,71 +66,39 @@ def _explicit_label(
             for candidate in lines[index + 1:index + 4]:
                 if _WHEN_LABEL_RE.fullmatch(candidate):
                     break
-                value = parser(candidate)
+                value = open_ended_value(candidate)
                 if value:
                     return value, line
                 if _extract.DATE_LINE_RE.search(candidate):
                     break
 
-        value = parser(line)
+        value = open_ended_value(line)
         if value:
             return value, line
     return "", ""
 
 
-def _explicit_closed_label(card: dict[str, Any]) -> tuple[str, str]:
-    """Read a complete end-bounded label before any open-ended interpretation."""
-
-    return _explicit_label(card, closed_end_value)
-
-
-def _explicit_start_label(card: dict[str, Any]) -> tuple[str, str]:
-    """Preserve a complete ``From <date>`` label before generic date parsing."""
-
-    return _explicit_label(card, start_only_value)
-
-
-def _explicit_open_label(card: dict[str, Any]) -> tuple[str, str]:
-    """Read recurrence-only text only after concrete dates have been considered."""
-
-    return _explicit_label(card, recurrence_value)
-
-
 def pick_when(card: dict[str, Any]) -> tuple[str, str]:
-    """Prioritise closed dates, start-only dates, then concrete parser evidence.
+    """Preserve explicit open-ended labels before generic calendar extraction."""
 
-    Recurrence-only rows such as ``Daily - 10am - 7pm`` are a last fallback. They
-    must never override a concrete parent range such as ``10–12 April 2026``.
-    """
-
-    closed_value, source_line = _explicit_closed_label(card)
-    if closed_value:
-        return closed_value, source_line
-
-    start_value, source_line = _explicit_start_label(card)
-    if start_value:
-        return start_value, source_line
+    open_value, source_line = _explicit_open_label(card)
+    if open_value:
+        return open_value, source_line
 
     when, source_line = _BASE_PICK_WHEN(card)
     if when:
         return when, source_line
-
-    recurrence, source_line = _explicit_open_label(card)
-    if recurrence:
-        return recurrence, source_line
     return "", ""
 
 
 def current_date_label(label: str) -> bool:
-    """Treat only genuine ongoing/start-only labels as non-expiring."""
+    """Treat explicit ongoing/start-only labels as current without inventing an end."""
 
-    if closed_end_value(label):
-        return bool(_BASE_CURRENT_DATE_LABEL(label))
     return bool(_BASE_CURRENT_DATE_LABEL(label) or open_ended_value(label))
 
 
 def apply() -> None:
-    """Install explicit end-bounded and open-ended date support."""
+    """Install explicit open-ended date support before collectors bind functions."""
 
     global _APPLIED, _BASE_PICK_WHEN, _BASE_CURRENT_DATE_LABEL
     if _APPLIED:
@@ -170,6 +111,8 @@ def apply() -> None:
 
     package = sys.modules.get(__package__)
     if package is not None:
+        # The active package-level event parser resolves this private global at
+        # call time, so patch both public and private names.
         package._current_date_label = current_date_label
         package.current_date_label = current_date_label
     _APPLIED = True
@@ -177,13 +120,8 @@ def apply() -> None:
 
 __all__ = [
     "apply",
-    "closed_end_value",
     "current_date_label",
     "open_ended_value",
     "pick_when",
-    "recurrence_value",
-    "start_only_value",
-    "_explicit_closed_label",
     "_explicit_open_label",
-    "_explicit_start_label",
 ]
