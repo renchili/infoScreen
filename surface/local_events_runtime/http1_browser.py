@@ -1,117 +1,10 @@
 from __future__ import annotations
 
-import os
-import shutil
-from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from . import browser as _browser
 
 _APPLIED = False
-_SNAP_WRAPPER_MARKERS = (
-    b"/snap/bin/chromium",
-    b"/usr/bin/snap",
-    b"/bin/snap",
-    b"snap run chromium",
-    b"exec snap",
-)
-
-
-def _file_uses_snap(path: Path) -> bool:
-    """Detect Ubuntu Chromium launchers that delegate to Snap."""
-
-    try:
-        if not path.is_file():
-            return False
-        with path.open("rb") as handle:
-            prefix = handle.read(32_768).lower()
-    except OSError:
-        return False
-    return any(marker in prefix for marker in _SNAP_WRAPPER_MARKERS)
-
-
-def _is_snap_browser(value: object) -> bool:
-    """Return whether a browser path is provided by Snap.
-
-    Ubuntu exposes Snap Chromium through ordinary-looking paths such as
-    ``/usr/bin/chromium-browser``. Reject the public path, resolved target, direct
-    snap executable, and wrapper scripts that delegate to Snap instead of treating
-    the resulting SIGTRAP browser death as a page failure.
-    """
-
-    text = str(value or "").strip()
-    if not text:
-        return False
-
-    expanded = Path(text).expanduser()
-    paths = {str(expanded)}
-    resolved = expanded
-    try:
-        resolved = expanded.resolve(strict=False)
-        paths.add(str(resolved))
-    except (OSError, RuntimeError):
-        pass
-
-    if any(
-        path in {"/usr/bin/snap", "/bin/snap"}
-        or path == "/snap"
-        or path.startswith("/snap/")
-        or path == "/var/lib/snapd/snap"
-        or path.startswith("/var/lib/snapd/snap/")
-        for path in paths
-    ):
-        return True
-
-    return _file_uses_snap(expanded) or (
-        resolved != expanded and _file_uses_snap(resolved)
-    )
-
-
-def _select_browser_executable(candidates: Iterable[object]) -> str:
-    """Return the first executable non-Snap browser candidate."""
-
-    seen: set[str] = set()
-    for value in candidates:
-        text = str(value or "").strip()
-        if not text or text in seen:
-            continue
-        seen.add(text)
-        if _is_snap_browser(text):
-            continue
-        path = Path(text).expanduser()
-        try:
-            if path.is_file() and os.access(path, os.X_OK):
-                return str(path)
-        except OSError:
-            continue
-    return ""
-
-
-def _find_supported_browser_executable() -> str:
-    """Find a Playwright-compatible system browser without selecting Snap Chromium."""
-
-    env_path = os.environ.get("INFOSCREEN_CHROMIUM_PATH") or os.environ.get(
-        "PLAYWRIGHT_CHROMIUM_EXECUTABLE"
-    )
-    return _select_browser_executable(
-        [
-            env_path,
-            shutil.which("google-chrome-stable"),
-            shutil.which("google-chrome"),
-            shutil.which("microsoft-edge-stable"),
-            shutil.which("microsoft-edge"),
-            shutil.which("brave-browser"),
-            shutil.which("chromium"),
-            shutil.which("chromium-browser"),
-            "/usr/bin/google-chrome-stable",
-            "/usr/bin/google-chrome",
-            "/usr/bin/microsoft-edge-stable",
-            "/usr/bin/microsoft-edge",
-            "/usr/bin/brave-browser",
-            "/usr/bin/chromium",
-            "/usr/bin/chromium-browser",
-        ]
-    )
 
 
 def _bind_final_browser_runtime_to_review() -> None:
@@ -143,18 +36,23 @@ def _bind_final_browser_runtime_to_review() -> None:
 def apply() -> None:
     """Install the shared Local Events browser and review-backend bootstrap.
 
-    Collection starts in HTTP/1.1 mode directly. Snap Chromium and Ubuntu wrapper
-    scripts that delegate to it are not selected because they terminate with SIGTRAP
-    under the Surface user service. Listing navigation accepts a readable rendered
-    document even when lifecycle events do not settle. Review detail pages are read
-    through the existing bounded blocking reader, one admitted card at a time, so no
-    unconsumed background tabs remain when the listing or BrowserContext is closed.
-    All browser and event authorities are applied before their final values are bound
-    into Review Studio.
+    The Surface has observed Chromium navigation failures with
+    ERR_HTTP2_PROTOCOL_ERROR on official Event sites. Collection starts in
+    HTTP/1.1 mode directly. Browser operations are clamped to the active source and
+    global collection deadlines so timed-out workers close before systemd's outer
+    service limit. Listing navigation accepts a readable rendered document even when
+    lifecycle events do not settle. Review detail pages are read through the existing
+    bounded blocking reader, one admitted card at a time, so no unconsumed background
+    tabs remain when the listing or BrowserContext is closed. Coverage, source, date,
+    detail-field, section-aware summary, listing-provenance, listing-membership,
+    dynamic-listing, card, and link authorities are applied before their final values
+    are bound into Review Studio.
     """
     global _APPLIED
     if _APPLIED:
         return
+
+    original_find = _browser.find_browser_executable
 
     def launch_chromium_http1(playwright: Any):
         from .resilient_navigation_authority import apply as apply_navigation
@@ -167,7 +65,7 @@ def apply() -> None:
             "--disable-background-networking",
             "--disable-http2",
         ]
-        executable = _find_supported_browser_executable()
+        executable = original_find()
         if executable:
             return playwright.chromium.launch(
                 headless=True,
@@ -178,11 +76,11 @@ def apply() -> None:
             return playwright.chromium.launch(headless=True, args=args)
         except Exception as exc:
             raise _browser.MissingPlaywright(
-                "missing_compatible_chromium: Snap Chromium is unsupported for the "
-                "InfoScreen Playwright service and no compatible browser could be "
-                "launched. Install Google Chrome/Chromium as a normal executable or "
-                "install Playwright Chromium, then optionally set "
-                "INFOSCREEN_CHROMIUM_PATH to that non-Snap executable. "
+                "missing_system_chromium: Playwright bundled Chromium is unavailable "
+                "on this distro. Install a system browser and set "
+                "INFOSCREEN_CHROMIUM_PATH if needed. Examples: sudo apt install "
+                "chromium; or install Google Chrome and export "
+                "INFOSCREEN_CHROMIUM_PATH=/usr/bin/google-chrome. "
                 f"Original error: {exc}"
             ) from exc
 
@@ -260,9 +158,4 @@ def apply() -> None:
     _APPLIED = True
 
 
-__all__ = [
-    "apply",
-    "_find_supported_browser_executable",
-    "_is_snap_browser",
-    "_select_browser_executable",
-]
+__all__ = ["apply"]
