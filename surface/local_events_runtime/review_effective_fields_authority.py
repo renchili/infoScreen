@@ -5,14 +5,12 @@ import re
 from pathlib import Path
 from typing import Any
 
-from . import detail_date_authority as _detail_dates
 from . import event_review as _review
 from . import extract as _extract
 from .detail_summary_authority import useful_event_summary
 
 _APPLIED = False
 _BASE_DETAIL_CANDIDATE = None
-_BASE_LOAD = None
 _BASE_STATE_PAYLOAD = None
 _BASE_REPLACE_EVENTS = None
 
@@ -43,7 +41,12 @@ def _canonical(value: object) -> str:
 
 
 def _runtime_by_url(store: _review.EventReviewStore) -> dict[str, dict[str, Any]]:
-    """Return effective runtime rows indexed by canonical detail URL."""
+    """Return effective runtime rows indexed by canonical detail URL.
+
+    The collector snapshot is loaded first and the public kiosk projection second,
+    so the map reflects exactly what the homepage currently renders when both files
+    contain the same activity.
+    """
 
     index: dict[str, dict[str, Any]] = {}
     runtime_root = store.root.parent
@@ -111,7 +114,11 @@ def _repair_fields(
     runtime_row: dict[str, Any] | None = None,
     source: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Recover fields before lifecycle filtering or Review publication."""
+    """Keep parsed evidence even when lifecycle admission rejects the activity.
+
+    ``past_date`` determines whether a row belongs on the current-events kiosk. It
+    must not erase the date and venue from the operator's Review evidence.
+    """
 
     result = dict(raw)
     runtime = runtime_row or {}
@@ -187,26 +194,6 @@ def _effective_candidate_model(
     return candidate.model_copy(update=updates) if updates else candidate
 
 
-def _expired(candidate: _review.EventCandidate) -> bool:
-    """Apply the final open-ended-aware lifecycle rule after field recovery."""
-
-    return bool(_detail_dates._candidate_expired(candidate))
-
-
-def _active_candidates(
-    candidates: list[_review.EventCandidate],
-    collection: dict[str, Any],
-) -> tuple[list[_review.EventCandidate], dict[str, Any]]:
-    active = [candidate for candidate in candidates if not _expired(candidate)]
-    removed = len(candidates) - len(active)
-    metadata = dict(collection)
-    metadata["candidate_count"] = len(active)
-    metadata["expired_candidate_count"] = int(
-        metadata.get("expired_candidate_count") or 0
-    ) + removed
-    return active, metadata
-
-
 def _detail_candidate(
     context: Any,
     source: dict[str, Any],
@@ -214,7 +201,7 @@ def _detail_candidate(
     raw_url: str,
     card: dict[str, Any],
 ) -> dict[str, str]:
-    """Recover detail fields so the lifecycle decision sees the real date."""
+    """Retain fields from a loaded detail page even when it is already past."""
 
     result = dict(
         _BASE_DETAIL_CANDIDATE(
@@ -231,46 +218,16 @@ def _detail_candidate(
     }
 
 
-def load(store: _review.EventReviewStore) -> _review.ReviewState:
-    """Repair legacy blank fields, then remove past Review candidates."""
-
-    state = _BASE_LOAD(store)
-    runtime_index = _runtime_by_url(store)
-    effective = [
-        _effective_candidate_model(candidate, runtime_index)
-        for candidate in state.events
-    ]
-    state.events, state.event_collection = _active_candidates(
-        effective,
-        state.event_collection,
-    )
-    return state
-
-
 def state_payload(store: _review.EventReviewStore) -> dict[str, Any]:
-    """Expose only current Review evidence with effective fields."""
+    """Expose Review evidence with the same effective fields as the kiosk."""
 
     payload = dict(_BASE_STATE_PAYLOAD(store))
     runtime_index = _runtime_by_url(store)
-    effective = [
+    payload["events"] = [
         _effective_candidate_dict(dict(row), runtime_index)
         for row in payload.get("events") or []
         if isinstance(row, dict)
     ]
-    payload["events"] = [
-        row
-        for row in effective
-        if not _detail_dates._candidate_expired(
-            _review.EventCandidate.model_validate(row)
-        )
-    ]
-    collection = dict(payload.get("event_collection") or {})
-    removed = len(effective) - len(payload["events"])
-    collection["candidate_count"] = len(payload["events"])
-    collection["expired_candidate_count"] = int(
-        collection.get("expired_candidate_count") or 0
-    ) + removed
-    payload["event_collection"] = collection
     return payload
 
 
@@ -279,33 +236,31 @@ def replace_events(
     candidates: list[_review.EventCandidate],
     collection: dict[str, Any],
 ) -> _review.ReviewState:
-    """Persist recovered fields but never persist already-ended candidates."""
+    """Persist effective fields when fresh Preview returned a lifecycle rejection."""
 
     runtime_index = _runtime_by_url(store)
     effective = [
         _effective_candidate_model(candidate, runtime_index)
         for candidate in candidates
     ]
-    active, metadata = _active_candidates(effective, collection)
-    return _BASE_REPLACE_EVENTS(store, active, metadata)
+    return _BASE_REPLACE_EVENTS(store, effective, collection)
 
 
 def apply() -> None:
-    """Install one effective field and lifecycle contract for Review and kiosk."""
+    """Install one effective field contract for Review state and kiosk output."""
 
-    global _APPLIED, _BASE_DETAIL_CANDIDATE, _BASE_LOAD
-    global _BASE_STATE_PAYLOAD, _BASE_REPLACE_EVENTS
+    global _APPLIED, _BASE_DETAIL_CANDIDATE, _BASE_STATE_PAYLOAD, _BASE_REPLACE_EVENTS
     if _APPLIED:
         return
 
     _BASE_DETAIL_CANDIDATE = _review._detail_candidate
-    _BASE_LOAD = _review.EventReviewStore.load
     _BASE_STATE_PAYLOAD = _review.EventReviewStore.state_payload
     _BASE_REPLACE_EVENTS = _review.EventReviewStore.replace_events
 
+    # event_review imported the parser before the final listing/date authorities were
+    # installed. Rebind it so Preview and the formal collector use the same parser.
     _review.event_from_card = _extract.event_from_card
     _review._detail_candidate = _detail_candidate
-    _review.EventReviewStore.load = load
     _review.EventReviewStore.state_payload = state_payload
     _review.EventReviewStore.replace_events = replace_events
     _APPLIED = True
@@ -315,7 +270,6 @@ __all__ = [
     "COLLECTOR_RUNTIME_FILENAME",
     "DISPLAY_RUNTIME_FILENAME",
     "apply",
-    "load",
     "replace_events",
     "state_payload",
     "_detail_candidate",
