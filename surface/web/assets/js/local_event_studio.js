@@ -122,6 +122,8 @@
     rows.forEach((row) => {
       const article = document.createElement("article");
       article.className = `card ${row.decision || "pending"}`;
+      article.dataset.candidateId = row.candidate_id || "";
+      article.dataset.sourceId = row.source_id || "";
 
       const head = document.createElement("div");
       head.className = "card-head";
@@ -171,6 +173,8 @@
       const evidence = row.evidence || {};
       const article = document.createElement("article");
       article.className = `card ${row.decision || "pending"}`;
+      article.dataset.candidateId = row.candidate_id || "";
+      article.dataset.sourceId = row.source_id || "";
 
       const head = document.createElement("div");
       head.className = "card-head";
@@ -341,13 +345,19 @@
     renderFeedback(payload.feedback || []);
     populateFeedbackSources();
     setStatus(ui.globalStatus, "READY", "ok");
+    document.dispatchEvent(new CustomEvent("infoscreen:review-rendered", {
+      detail: payload,
+    }));
   }
 
   async function loadState() {
     try {
-      render(await request("/api/local-events/review/state"));
+      const payload = await request("/api/local-events/review/state");
+      render(payload);
+      return payload;
     } catch (error) {
       setStatus(ui.globalStatus, error.message, "error");
+      throw error;
     }
   }
 
@@ -435,9 +445,12 @@
     });
     ui.openFeedback.addEventListener("click", openFeedbackBrowser);
 
-    loadState();
-    window.setInterval(loadState, 3000);
+    loadState().catch(() => {});
   }
+
+  window.InfoScreenReviewStudio = {
+    loadState,
+  };
 
   document.addEventListener("DOMContentLoaded", initialize);
 })();

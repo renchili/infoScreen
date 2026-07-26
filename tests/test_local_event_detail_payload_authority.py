@@ -9,6 +9,7 @@ sys.path.insert(0, str(SURFACE))
 
 from local_events_runtime import detail_payload_authority as authority  # noqa: E402
 from local_events_runtime import extract  # noqa: E402
+from local_events_runtime.source_overrides import LISTING_EVIDENCE  # noqa: E402
 
 
 authority.apply()
@@ -20,8 +21,11 @@ def test_acm_detail_payload_produces_date_venue_and_description() -> None:
         "name": "Asian Civilisations Museum",
         "default_venue": "Asian Civilisations Museum",
     }
+    detail_url = "https://www.acm.nhb.gov.sg/whats-on/exhibitions/crosscurrents-masterpieces-of-mughal-safavid-and-ottoman-art-from-the-musee-du-louvre"
+    listing_url = "https://www.acm.nhb.gov.sg/whats-on/overview"
     card = {
-        "url": "https://www.acm.nhb.gov.sg/whats-on/exhibitions/crosscurrents-masterpieces-of-mughal-safavid-and-ottoman-art-from-the-musee-du-louvre",
+        "id": "acm-crosscurrents",
+        "url": detail_url,
         "headings": [
             "Crosscurrents: Masterpieces of Mughal, Safavid, and Ottoman Art from the Musée du Louvre"
         ],
@@ -29,6 +33,9 @@ def test_acm_detail_payload_produces_date_venue_and_description() -> None:
         "text": "Crosscurrents",
         "text_lines": ["Crosscurrents"],
         "extraction_mode": "detail_link",
+        "listing_evidence": LISTING_EVIDENCE,
+        "listing_url": listing_url,
+        "listing_card_id": "acm-crosscurrents",
     }
     summary = (
         "From the 16th to 18th century, three great empires – the Mughals, "
@@ -131,7 +138,7 @@ def test_detail_payload_authority_is_applied_before_final_review_binding() -> No
     bootstrap = read_text("surface/local_events_runtime/http1_browser.py")
 
     payload = bootstrap.index("apply_detail_payload_authority()")
-    binding = bootstrap.index("_bind_final_browser_runtime_to_review()")
+    binding = bootstrap.index("    _bind_final_browser_runtime_to_review()")
     diagnostics = bootstrap.index("apply_event_review_diagnostics()")
 
     assert payload < binding < diagnostics

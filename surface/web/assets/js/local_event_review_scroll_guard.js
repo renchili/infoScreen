@@ -5,15 +5,17 @@
   const RENDERING_POST_PATHS = new Set([
     "/api/local-events/review/discover-listings",
     "/api/local-events/review/collect-events",
+    "/api/local-events/review/preview-events",
     "/api/local-events/review/listing-decision",
     "/api/local-events/review/event-decision",
+    "/api/local-events/review/listing-page",
   ]);
 
   let pendingCard = null;
   let pendingScrollY = null;
   let restoreFrame = 0;
   let restoreTimer = 0;
-  let resumeHandler = null;
+  let resumeInFlight = false;
 
   function pathAndMethod(input, init = {}) {
     const raw = typeof input === "string" ? input : input?.url || "";
@@ -36,6 +38,9 @@
 
   function cardKey(card) {
     if (!card) return "";
+    const candidateId = String(card.dataset.candidateId || "").trim();
+    if (candidateId) return `candidate:${candidateId}`;
+
     const primaryUrl = normalizedUrl(
       card.querySelector(".card-head a[href]")?.getAttribute("href") || "",
     );
@@ -83,13 +88,10 @@
           if (pendingCard) {
             const saved = pendingCard;
             const container = document.getElementById(saved.containerId);
-            const allCards = container
-              ? [...container.children].filter((card) => card.classList?.contains("card"))
-              : [];
-            let target = allCards.find((card) => cardKey(card) === saved.key && !card.hidden);
-            if (!target) {
-              const visible = visibleCards(container);
-              target = visible[Math.min(saved.visibleIndex, Math.max(0, visible.length - 1))];
+            const cards = visibleCards(container);
+            let target = cards.find((card) => cardKey(card) === saved.key);
+            if (!target && cards.length) {
+              target = cards[Math.min(saved.visibleIndex, cards.length - 1)];
             }
 
             if (target) {
@@ -135,30 +137,27 @@
     return previousFetch(input, init);
   };
 
-  const previousSetInterval = window.setInterval.bind(window);
-  window.setInterval = (handler, delay, ...args) => {
-    if (Number(delay) === 3000 && typeof handler === "function") {
-      resumeHandler = () => handler(...args);
-      return -1;
-    }
-    return previousSetInterval(handler, delay, ...args);
-  };
-
   async function refreshAfterReturning() {
     if (
-      document.hidden
-      || typeof resumeHandler !== "function"
+      resumeInFlight
+      || document.hidden
       || document.documentElement.classList.contains("review-is-blocked")
       || document.documentElement.classList.contains("review-sequence-busy")
     ) {
       return;
     }
 
+    const loadState = window.InfoScreenReviewStudio?.loadState;
+    if (typeof loadState !== "function") return;
+
+    resumeInFlight = true;
     rememberScroll();
     try {
-      await resumeHandler();
-    } finally {
+      await loadState();
+    } catch {
       restorePosition();
+    } finally {
+      resumeInFlight = false;
     }
   }
 
@@ -178,18 +177,12 @@
       }
 
       const globalButton = event.target.closest(
-        "#collect-listings, #collect-events, #reload-state",
+        "#collect-listings, #collect-events, #reload-state, #add-listing-page",
       );
       if (globalButton) rememberScroll();
     },
     true,
   );
 
-  document.addEventListener("DOMContentLoaded", () => {
-    const observer = new MutationObserver(() => restorePosition());
-    for (const id of ["listing-pages", "event-candidates", "feedback-list"]) {
-      const node = document.getElementById(id);
-      if (node) observer.observe(node, { childList: true });
-    }
-  });
+  document.addEventListener("infoscreen:review-rendered", restorePosition);
 })();

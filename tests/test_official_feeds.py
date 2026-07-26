@@ -8,11 +8,13 @@ from .conftest import SURFACE
 sys.path.insert(0, str(SURFACE))
 
 from local_events_runtime import event_from_card  # noqa: E402
+from local_events_runtime import source_overrides  # noqa: E402
 from local_events_runtime.official_feeds import (  # noqa: E402
     event_card,
     extract_structured_events,
     prefer_structured_cards,
 )
+from local_events_runtime.source_overrides import LISTING_EVIDENCE  # noqa: E402
 
 
 def future_year() -> int:
@@ -24,6 +26,8 @@ def source(name: str = "Official Source") -> dict:
         "id": "official-source",
         "name": name,
         "default_venue": name,
+        "allowed_domains": ["example.org"],
+        "listing_urls": ["https://example.org/events"],
     }
 
 
@@ -77,14 +81,14 @@ def test_structured_feed_parses_display_range_without_separate_date_fields() -> 
     assert events[0]["end_date"] == f"{year}-08-10"
 
 
-def test_structured_cards_replace_same_title_dom_guess_but_keep_other_dom_cards() -> None:
+def test_structured_data_enriches_matching_listing_card_and_keeps_other_cards() -> None:
     year = future_year()
     structured = event_card(
         {
             "title": "Orchid Extravaganza",
             "when": f"3 Jul - 10 Aug {year}",
             "where": "Flower Dome",
-            "url": "https://example.org/orchid",
+            "url": "https://example.org/events/orchid",
             "summary": "",
             "start_date": f"{year}-07-03",
             "end_date": f"{year}-08-10",
@@ -92,34 +96,58 @@ def test_structured_cards_replace_same_title_dom_guess_but_keep_other_dom_cards(
         "source",
         0,
     )
-    bad_dom = {
+    matching_dom = {
+        "id": "orchid-card",
         "link_text": "Orchid Extravaganza",
         "headings": ["Orchid Extravaganza"],
         "text": f"Orchid Extravaganza\n10 Aug {year}",
-        "url": "https://example.org/orchid",
+        "url": "https://example.org/events/orchid",
+        "detail_urls": ["https://example.org/events/orchid"],
+        "detail_url_count": 1,
+        "extraction_mode": "detail_link",
     }
     other_dom = {
+        "id": "another-card",
         "link_text": "Another Event",
         "headings": ["Another Event"],
         "text": f"Another Event\n20 Aug {year}",
-        "url": "https://example.org/another",
+        "url": "https://example.org/events/another",
+        "detail_urls": ["https://example.org/events/another"],
+        "detail_url_count": 1,
+        "extraction_mode": "detail_link",
     }
 
-    cards = prefer_structured_cards([structured], [bad_dom, other_dom], 10)
+    token = source_overrides._listing_context.set((source(), "https://example.org/events"))
+    try:
+        cards = prefer_structured_cards([structured], [matching_dom, other_dom], 10)
+    finally:
+        source_overrides._listing_context.reset(token)
 
-    assert cards == [structured, other_dom]
+    assert len(cards) == 2
+    assert cards[0]["structured_event"]["title"] == "Orchid Extravaganza"
+    assert cards[0]["listing_evidence"] == LISTING_EVIDENCE
+    assert cards[0]["listing_card_id"] == "orchid-card"
+    assert cards[1]["link_text"] == "Another Event"
+    assert cards[1]["listing_evidence"] == LISTING_EVIDENCE
 
 
-def test_structured_card_bypasses_dom_date_guessing_for_any_source() -> None:
+def test_structured_card_bypasses_dom_date_guessing_after_listing_admission() -> None:
     year = future_year()
+    detail_url = "https://example.org/events/orchid"
     card = {
-        "url": "https://example.org/events/orchid",
+        "id": "orchid-card",
+        "url": detail_url,
         "text": f"10 Aug {year}",
+        "detail_urls": [detail_url],
+        "detail_url_count": 1,
+        "listing_evidence": LISTING_EVIDENCE,
+        "listing_url": "https://example.org/events",
+        "listing_card_id": "orchid-card",
         "structured_event": {
             "title": "Orchid Extravaganza",
             "when": f"3 Jul - 10 Aug {year}",
             "where": "Flower Dome",
-            "url": "https://example.org/events/orchid",
+            "url": detail_url,
             "summary": "",
             "start_date": f"{year}-07-03",
             "end_date": f"{year}-08-10",
@@ -133,7 +161,7 @@ def test_structured_card_bypasses_dom_date_guessing_for_any_source() -> None:
     assert event["when"] == f"3 Jul - 10 Aug {year}"
     assert event["start_date"] == f"{year}-07-03"
     assert event["end_date"] == f"{year}-08-10"
-    assert event["source_type"] == "official_structured_data"
+    assert event["source_type"] == "official_structured_data_matched_to_listing"
 
 
 def test_untyped_structured_record_outside_event_route_is_rejected() -> None:

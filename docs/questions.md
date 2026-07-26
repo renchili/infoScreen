@@ -6,7 +6,7 @@ This document records requirement areas that are easy to misread and the evidenc
 
 ### Easy-to-make interpretation
 
-A TTY-inspired display requires decorative CRT noise, a dot grid, or a pixel wallpaper.
+A TTY-inspired display requires decorative CRT noise, a dot grid, scanlines, or a pixel wallpaper.
 
 ### Why it fails
 
@@ -18,55 +18,55 @@ TTY character comes from monospaced typography, aligned values, concise labels, 
 
 ### Required implementation
 
-Use typography, hierarchy, alignment, borders, and state presentation rather than decorative noise.
+Use typography, hierarchy, alignment, borders, and state presentation rather than decorative noise. The dashboard background must not add a full-screen repeating pattern.
 
 ### Acceptance evidence
 
-Browser evidence must show readable content at the target display size and no pattern obscuring text.
+Static CSS evidence must contain no full-screen scanline or repeating-grid overlay. Browser evidence must show readable content at the target display size and no pattern obscuring text.
 
 ## Calendar authority and unattended sync
 
 ### Easy-to-make interpretation
 
-The Surface can act as a second Calendar client or any Python runtime can export EventKit.
+The Surface can act as a second Calendar client, any Python runtime can export EventKit, or copying directly to the final file is safe enough.
 
 ### Why it fails
 
-macOS Calendar owns accounts, permissions, and authoritative event state. A Python runtime without `import EventKit` cannot export Calendar data.
+macOS Calendar/EventKit owns accounts, permissions, and authoritative event state. A Python runtime without `import EventKit` cannot export Calendar data. Direct replacement during transfer can expose a partially written JSON file.
 
 ### Correct requirement interpretation
 
-Calendar follows EventKit -> Mac export -> SSH/SCP -> Surface runtime JSON -> browser.
+Calendar follows EventKit -> Mac export -> temporary remote upload -> atomic remote rename -> Surface runtime JSON -> browser.
 
 ### Required implementation
 
-Probe EventKit-capable Python, keep machine settings in uncommitted `mac/local.env`, and copy to the canonical Surface runtime file.
+Probe EventKit-capable Python, keep machine settings in uncommitted `mac/local.env`, and publish to `~/infoscreen/surface/.env/schedule.json` through a temporary file in the same remote directory.
 
 ### Acceptance evidence
 
-Show unattended LaunchAgent execution, a changed Surface file, current HTTP modification time, and visible Calendar output.
+Show unattended LaunchAgent execution, a changed Surface file, current HTTP modification time, visible Calendar output, and a sync script that uploads to a temporary name before `mv` publishes the final file.
 
 ## Runtime freshness and refresh layers
 
 ### Easy-to-make interpretation
 
-One online indicator or one generic refresh interval proves all data is current.
+One online indicator, one generic refresh interval, or frequent whole-page rebuilding proves all data is current.
 
 ### Why it fails
 
-The server can remain online while individual files are stale, missing, or unreachable. Producer refresh, browser reload, visual rotation, and operator-state refresh are different operations.
+The server can remain online while individual files are stale, missing, or unreachable. Producer refresh, browser data reload, visual rotation, dashboard filtering, and operator-state refresh are different operations. Rebuilding the Studio repeatedly also destroys scroll context.
 
 ### Correct requirement interpretation
 
-The Sync ticker observes per-file `Last-Modified`. The Local Event review page refreshes only at explicit operations, manual reload, and tab return.
+The Sync ticker observes per-file `Last-Modified`. The Calendar board rotates every seven seconds but reloads Schedule data independently. The Local Event Studio refreshes only on initial load, explicit operations, manual reload, and return to the browser tab.
 
 ### Required implementation
 
-Keep per-file freshness checks and do not clear/rebuild all review cards every three seconds.
+Keep per-file freshness checks, reload Schedule data without reloading the page, remove idle Studio polling, emit one completed-render event, and restore one stable card anchor or scroll position after that render.
 
 ### Acceptance evidence
 
-Leave the review page idle and during a long operation: it must not flash repeatedly or lose scroll.
+Leave the Studio idle and during a long operation: it must not flash repeatedly or lose scroll. Static source must not contain `setInterval(loadState, 3000)` or a global timer monkey patch that recognises a magic 3000-millisecond interval.
 
 ## Local Events source-specific collection
 
@@ -124,17 +124,17 @@ Automated discovery can return the wrong page, and some institutions expose a sh
 
 ### Correct requirement interpretation
 
-The Studio must let the user select one global institution, enter a correct official Event list URL, save it into review state, and then use the same preview/confirm/reject workflow as discovered pages.
+The Studio lets the user select one global institution, enter a correct official Event list URL, save it into review state as pending, review that page, and use the same confirmed-page collection flow as discovered pages.
 
 ### Required implementation
 
-Provide an always-visible URL field and `ADD LIST PAGE` button. Send `source_id` and `url` to `POST /api/local-events/review/listing-page`. Validate the configured institution and its allowed domains. Save the page as `pending`; do not collect automatically and do not edit committed `event_sources.json`.
+Provide an always-visible URL field and `ADD LIST PAGE` button. Send `source_id` and `url` to `POST /api/local-events/review/listing-page`. Validate the configured institution and its allowed domains. Save the page as `pending`; do not collect automatically and do not edit committed `event_sources.json`. The operator confirms the page before preview or collection.
 
 Adding the same institution/URL again resets it to `pending`, allowing a rejected or stale decision to be reconsidered.
 
 ### Acceptance evidence
 
-Select an institution, add a valid allowed-domain URL, observe it immediately in the left-side list, preview it, and confirm/reject it. Invalid institution, malformed URL, and disallowed domain must return HTTP `400` without changing review state.
+Select an institution, add a valid allowed-domain URL, observe it immediately in the left-side list, confirm it, then preview or collect it. Invalid institution, malformed URL, and disallowed domain must return HTTP `400` without changing review state.
 
 ## Local Events positive Event intent
 
@@ -144,19 +144,19 @@ A title plus dates, explicit `Event` type, event-looking route, or absence of bl
 
 ### Why it fails
 
-Facilities, memberships, promotions, and navigation records can be event-shaped or typed as Events.
+Facilities, memberships, promotions, and navigation records can be event-shaped or typed as Events. The SAFRA `Carpark Rates` record demonstrated this failure mode.
 
 ### Correct requirement interpretation
 
-Positive Event intent means membership in the correct official activity list. Structured data and detail pages cannot independently create output rows.
+Positive event intent means membership in the correct official activity list. Structured data and detail pages cannot independently create output rows.
 
 ### Required implementation
 
-Require rendered official list evidence and match enrichment back to that card.
+Require rendered official list evidence and match enrichment back to that card. Do not replace this positive authority with title blacklists.
 
 ### Acceptance evidence
 
-Reject unmatched typed Event objects and accept matched enrichment without adding title blacklists.
+Reject unmatched typed Event objects and accept matched enrichment without adding title blacklists. Preserve the SAFRA facility regression case.
 
 ## Local Events zero-result diagnostics
 
@@ -192,7 +192,7 @@ That approach doubles navigation behavior, complicates diagnostics, and still st
 
 ### Correct requirement interpretation
 
-The supported collection entrypoints must disable HTTP/2 before Chromium launches. No HTTP/2-first request and no protocol retry loop should occur.
+The supported collection entrypoints disable HTTP/2 before Chromium launches. No HTTP/2-first request and no protocol retry loop should occur.
 
 ### Required implementation
 
@@ -218,11 +218,11 @@ Do not generate a ZIP, extension bundle, helper archive, or extra installation f
 
 ### Required implementation
 
-Remove the ZIP builder, download button, extension files, remote `feedback:` transport, and documentation that instructs the operator to install them. Until an accepted interaction design exists, the Studio must state that Ability 2 is not implemented rather than pretending it works.
+Remove the ZIP builder, download button, extension files, remote `feedback:` transport, and documentation that instructs the operator to install them. Until an accepted interaction design exists, the Studio states that Ability 2 is not implemented rather than pretending it works.
 
 ### Acceptance evidence
 
-Repository search and the rendered Studio must contain no active helper-download control, extension source directory, ZIP-building JavaScript, or remote helper submission route. No archive is generated at runtime.
+Repository search and the rendered Studio contain no active helper-download control, extension source directory, ZIP-building JavaScript, or remote helper submission route. No archive is generated at runtime.
 
 ## Local Events evidence and partial-result protection
 
@@ -232,41 +232,41 @@ A total count is enough to diagnose coverage, and every completed crawl should r
 
 ### Why it fails
 
-Failure can occur at page access, expansion, card discovery, detail enrichment, date parsing, normalization, or budget. A smaller partial run can erase valid results.
+Failure can occur at page access, expansion, card discovery, detail enrichment, date parsing, normalization, or budget. A smaller partial run can erase valid results. Counting `debug_by_source` rows does not prove completion because failed sources also produce debug rows.
 
 ### Correct requirement interpretation
 
-Runtime output includes per-source evidence. A smaller partial run does not replace a larger verified collector snapshot.
+Runtime output includes explicit per-source completion states and evidence. A smaller partial run does not replace a larger verified collector snapshot.
 
 ### Required implementation
 
-Record per-source evidence, calculate partial coverage, preserve the producer-owned `local_event_collector_results.json` snapshot when required, retain a partial payload, and rebuild the kiosk primary from the retained collector snapshot plus current Review decisions.
+Record per-source evidence, calculate partial coverage from source completion states, preserve the producer-owned `local_event_collector_results.json` snapshot when required, retain `local_event_search_results.partial.json`, and rebuild the kiosk primary from the retained collector snapshot plus current Review decisions. The retained write policy remains visible as `kept_previous_complete_result` when applicable.
 
 ### Acceptance evidence
 
-Tests and runtime evidence must cover verified-to-partial transitions, retained debug data, retained collector rows, and reapplication of confirmed/rejected Review decisions.
+Tests and runtime evidence must cover verified-to-partial transitions, timed-out sources with retained `debug_by_source`, retained collector rows, and reapplication of confirmed/rejected Review decisions.
 
 ## Local Events Review publication and kiosk authority
 
 ### Easy-to-make interpretation
 
-The Studio can display corrected date, venue, and description fields while the kiosk continues rendering a separate collector row for the same detail URL, or a duplicate detector can skip the reviewed candidate because that URL is already present.
+The Studio can display corrected fields while the kiosk continues rendering a separate collector row, or a preview may temporarily rewrite unrelated list-page decisions and restore them later.
 
 ### Why it fails
 
-That creates two visible truths for one activity. The operator may confirm corrected fields, but the homepage still shows stale collector values. Embedding the entire original collector row inside each public Event also leaks an internal recovery structure into the kiosk payload and makes later collection protection ambiguous.
+That creates multiple visible truths and makes Review state vulnerable to interruption. A failed client rollback can leave unrelated pages in the wrong decision state.
 
 ### Correct requirement interpretation
 
-Review state and collector output may be stored separately, but the kiosk primary is one deterministic projection. For the same canonical detail URL, a confirmed Review candidate is authoritative for its non-empty title, date, venue, and description fields. A rejected candidate suppresses that collector row. Reset/pending restores the collector row.
+Review state and collector output may be stored separately, but the kiosk primary is one deterministic projection. Preview and collection read confirmed pages without temporarily changing unrelated decisions.
 
 ### Required implementation
 
-Persist producer output to `local_event_collector_results.json`. Build `local_event_search_results.json` from that clean snapshot plus current Review decisions after every accepted producer run, Event decision, and HTTP-service startup migration. Preserve collector order/evidence metadata on matching confirmed rows. Do not replace a non-empty collector field with an empty Review field. Do not place `review_overlay_base` inside public Event rows.
+Persist producer output to `local_event_collector_results.json`. Build `local_event_search_results.json` from that clean snapshot plus current Review decisions after every accepted producer run and Event decision. For the same canonical detail URL, a confirmed Review candidate is authoritative for non-empty title, date, venue, and description fields; a rejected candidate suppresses the collector row; pending restores it. Preview must not call the list-decision API.
 
 ### Acceptance evidence
 
-A fixture with stale collector fields and a confirmed candidate sharing the same canonical URL must produce exactly one kiosk row with the confirmed fields and preserved collector ordering metadata. `NOT RELATED` must remove the matching row, `RESET` must restore the clean collector row, a later producer run must reapply the decision, and the public primary must contain no nested collector-base copy.
+A fixture with stale collector fields and a confirmed candidate sharing the same canonical URL must produce exactly one kiosk row with the confirmed fields and preserved collector ordering metadata. `NOT RELATED` must remove the matching row, `RESET` must restore the clean collector row, a later producer run must reapply the decision, and preview source must contain no temporary list-decision writes.
 
 ## Dashboard Local Events filtering and collection boundary
 
@@ -276,7 +276,7 @@ The kiosk card’s `SEARCH` control should submit the displayed text as a new co
 
 ### Why it fails
 
-Collection is an expensive producer operation that opens many official pages and rewrites runtime state. It does not provide an immediate or predictable filter over the events already displayed, so a search control can appear to do nothing while unnecessarily starting another crawl.
+Collection is an expensive producer operation that opens many official pages and rewrites runtime state. It does not provide an immediate or predictable filter over the events already displayed.
 
 ### Correct requirement interpretation
 
@@ -310,4 +310,4 @@ Tie each claim to the exact revision and actual command, test, log, runtime file
 
 ### Acceptance evidence
 
-A final acceptance record must state the exact revision, checks run, checks not run, remaining gaps, and a verdict no stronger than the evidence.
+A final acceptance record states the exact revision, checks run, checks not run, remaining gaps, and a verdict no stronger than the evidence. Without live-source and device evidence, the affected behavior remains partially verified.

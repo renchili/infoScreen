@@ -19,10 +19,16 @@ while IFS= read -r -d '' file; do
   node --check "$file"
 done < <(git ls-files -z -- '*.js')
 
-python3 scripts/ci/extract_inline_js.py index.html "$TEMP_DIR/inline-js"
+html_index=0
+while IFS= read -r -d '' html; do
+  html_index=$((html_index + 1))
+  python3 scripts/ci/extract_inline_js.py \
+    "$html" \
+    "$TEMP_DIR/inline-js-$html_index"
+done < <(git ls-files -z -- '*.html')
 
 while IFS= read -r -d '' file; do
   node --check "$file"
-done < <(find "$TEMP_DIR/inline-js" -type f -name '*.js' -print0)
+done < <(find "$TEMP_DIR" -type f -name '*.js' -print0)
 
 echo "PASSED JavaScript syntax"

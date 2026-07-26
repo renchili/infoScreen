@@ -17,7 +17,6 @@ _OLD_ANCHOR_DECLARATION = (
 
 def _configured_selectors() -> dict[str, list[str]]:
     """Return explicit activity-card selectors keyed by source id."""
-
     payload = json.loads(_CONFIG_PATH.read_text(encoding="utf-8"))
     output: dict[str, list[str]] = {}
     for source in payload.get("sources") or []:
@@ -138,11 +137,7 @@ def _patch_card_locator() -> None:
     card_js = _browser.CARD_JS
     declaration = _card_first_anchor_declaration()
     if _OLD_ANCHOR_DECLARATION in card_js:
-        card_js = card_js.replace(
-            _OLD_ANCHOR_DECLARATION,
-            declaration,
-            1,
-        )
+        card_js = card_js.replace(_OLD_ANCHOR_DECLARATION, declaration, 1)
     elif "const sourceCardSelectors =" not in card_js:
         raise RuntimeError("activity_card_anchor_declaration_missing")
     _browser.CARD_JS = card_js
@@ -151,23 +146,19 @@ def _patch_card_locator() -> None:
 def _patch_diagnostics() -> None:
     script = _diagnostics.LISTING_DIAGNOSTIC_JS
     if _OLD_DIAGNOSTIC_FILTER in script:
-        script = script.replace(
-            _OLD_DIAGNOSTIC_FILTER,
-            _CARD_FIRST_DIAGNOSTIC_FILTER,
-            1,
-        )
+        script = script.replace(_OLD_DIAGNOSTIC_FILTER, _CARD_FIRST_DIAGNOSTIC_FILTER, 1)
     elif _CARD_FIRST_DIAGNOSTIC_FILTER not in script:
         raise RuntimeError("activity_card_diagnostic_filter_missing")
     _diagnostics.LISTING_DIAGNOSTIC_JS = script
 
 
 def apply() -> None:
-    """Locate official activity cards first, then read one allowed official link."""
+    """Locate official activity cards first, then read one allowed official link.
 
+    Re-run the idempotent patches because other authorities may rebuild the shared
+    browser JavaScript after this module was first imported.
+    """
     global _APPLIED
-    if _APPLIED:
-        return
-
     listing_url_authority.apply()
     _patch_card_locator()
     _patch_diagnostics()

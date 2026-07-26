@@ -15,7 +15,6 @@ def _bind_final_browser_runtime_to_review() -> None:
     module has already been imported, so its local names otherwise remain stale.
     This binding is the single final handoff after every browser authority has run.
     """
-
     from . import event_review as review
 
     for name in (
@@ -48,7 +47,6 @@ def apply() -> None:
     summary, listing-provenance, listing-membership, dynamic-listing, card, and link
     authorities are applied before their final values are bound into Review Studio.
     """
-
     global _APPLIED
     if _APPLIED:
         return
@@ -59,7 +57,6 @@ def apply() -> None:
         from .resilient_navigation_authority import apply as apply_navigation
 
         apply_navigation()
-
         args = [
             "--no-sandbox",
             "--disable-dev-shm-usage",
@@ -88,111 +85,79 @@ def apply() -> None:
 
     _browser.launch_chromium = launch_chromium_http1
 
-    # This must wrap the final HTTP/1 launcher before source/detail authorities capture
-    # browser functions. It propagates collect_source's deadline through ContextVar and
-    # clamps every long Playwright wait to the remaining source budget.
     from .deadline_authority import apply as apply_deadline_authority
-
     apply_deadline_authority()
 
     from .complete_collection_authority import apply as apply_complete_collection
-
     apply_complete_collection()
 
     from .detail_date_authority import apply as apply_detail_date_authority
-
     apply_detail_date_authority()
 
     from .detail_payload_authority import apply as apply_detail_payload_authority
-
     apply_detail_payload_authority()
 
     from .detail_summary_authority import apply as apply_detail_summary_authority
-
     apply_detail_summary_authority()
 
     from .review_detail_navigation_authority import (
         apply as apply_review_detail_navigation_authority,
     )
-
     apply_review_detail_navigation_authority()
 
-    # Keep Preview blocking until all fields are ready, but start the detail tabs
-    # together so ten activities cost roughly one slow navigation rather than ten.
     from .review_detail_prefetch_authority import (
         apply as apply_review_detail_prefetch_authority,
     )
-
     apply_review_detail_prefetch_authority()
 
     from .dynamic_listing_authority import apply as apply_dynamic_listing_authority
-
     apply_dynamic_listing_authority()
 
     from .open_ended_date_authority import apply as apply_open_ended_date_authority
-
     apply_open_ended_date_authority()
 
-    # Preserve explicit start-only schedules and recognise unlabelled NHB venue lines
-    # before membership and Review lifecycle filters consume the extracted fields.
     from .open_detail_fields_authority import apply as apply_open_detail_fields_authority
-
     apply_open_detail_fields_authority()
 
     from .gardens_field_authority import apply as apply_gardens_field_authority
-
     apply_gardens_field_authority()
 
     from .listing_provenance_authority import apply as apply_listing_provenance_authority
-
     apply_listing_provenance_authority()
 
     from .listing_membership_authority import apply as apply_listing_membership_authority
-
     apply_listing_membership_authority()
 
-    # Mandai wraps the final provenance and membership functions so its legitimate
-    # listing-only activities retain their separate card identities.
     from .mandai_listing_authority import apply as apply_mandai_listing_authority
-
     apply_mandai_listing_authority()
 
     from .structural_link_authority import apply as apply_structural_link_authority
-
     apply_structural_link_authority()
 
     from .listing_url_authority import apply as apply_listing_url_authority
-
     apply_listing_url_authority()
 
-    # event_review was imported by detail_date_authority before the dynamic and
-    # structural JavaScript rewrites above. Rebind only after the final versions are
-    # complete, otherwise Studio keeps stale parser and CARD_JS snapshots. The
-    # detail-candidate function itself remains the bounded blocking implementation.
+    # Apply this last over the composed event authority so explicit Where/Location
+    # labels and public URL rewrites survive every source/membership wrapper.
+    from .detail_authority import apply as apply_detail_authority
+    apply_detail_authority()
+
+    # event_review was imported before the final JavaScript rewrites above. Rebind
+    # only after all browser and event authorities have their final values.
     _bind_final_browser_runtime_to_review()
 
-    # Existing Review state may contain the old generic summary while the kiosk
-    # already has a narrative for the same canonical detail URL. Apply this before
-    # diagnostics and publication so both GET state and fresh Preview use one
-    # effective summary contract.
     from .review_effective_fields_authority import (
         apply as apply_review_effective_fields_authority,
     )
-
     apply_review_effective_fields_authority()
 
     from .event_review_diagnostics import apply as apply_event_review_diagnostics
-
     apply_event_review_diagnostics()
 
-    # Review summary sanitisation must patch the publisher before its apply() call,
-    # because publisher startup immediately projects existing confirmed state.
     from .review_summary_authority import apply as apply_review_summary_authority
-
     apply_review_summary_authority()
 
     from .review_publish_authority import apply as apply_review_publish_authority
-
     apply_review_publish_authority()
     _APPLIED = True
 

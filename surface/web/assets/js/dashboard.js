@@ -9,9 +9,15 @@
   }
   function pad(value) { return String(value).padStart(2, "0"); }
   function dir(value) {
-    var v = text(value || "N/A");
-    if (!v || v === "N/A" || v === "--") return "flat";
-    return v.charAt(0) === "-" ? "down" : "up";
+    var raw = text(value || "N/A");
+    if (!raw || raw === "N/A" || raw === "--") return "flat";
+    var numeric = Number(raw.replace(/[%,+\s]/g, ""));
+    if (Number.isFinite(numeric)) {
+      if (numeric < 0) return "down";
+      if (numeric > 0) return "up";
+      return "flat";
+    }
+    return raw.charAt(0) === "-" ? "down" : "up";
   }
   function arrow(direction) { return direction === "down" ? "▼" : (direction === "up" ? "▲" : "◆"); }
   function price(item) {
@@ -61,6 +67,7 @@
     var box = id("marketList");
     try {
       var response = await fetch("market.json?_=" + Date.now(), { cache: "no-store" });
+      if (!response.ok) throw new Error("market HTTP " + response.status);
       var data = await response.json();
       var items = Array.isArray(data.items) ? data.items : [];
       if (!items.length) throw new Error("empty market data");
@@ -80,12 +87,25 @@
     var desc = id("weatherDesc");
     try {
       var response = await fetch("weather.json?_=" + Date.now(), { cache: "no-store" });
+      if (!response.ok) throw new Error("weather HTTP " + response.status);
       var data = await response.json();
-      if (temp) temp.textContent = (data.temp_c == null ? "--" : data.temp_c) + "°C";
-      if (desc) desc.innerHTML = html(data.location || "Singapore") + "<br />" + html(data.desc || "unknown") + " / humidity " + html(data.humidity || "--") + "%<br />feels " + html(data.feels_like_c || "--") + "°C · " + html(data.source || "local");
+      var failed = text(data.status).toUpperCase() === "ERR" || data.ok === false;
+      if (temp) {
+        temp.textContent = (data.temp_c == null ? "--" : data.temp_c) + "°C";
+        temp.className = "weather-temp" + (failed ? " bad" : "");
+      }
+      if (desc) {
+        var facts = html(data.location || "Singapore") + "<br />" + html(data.desc || "unknown") + " / humidity " + html(data.humidity == null ? "--" : data.humidity) + "%<br />feels " + html(data.feels_like_c == null ? "--" : data.feels_like_c) + "°C · " + html(data.source || "local");
+        desc.innerHTML = failed
+          ? '<span class="bad">WEATHER ERROR · RETAINED DATA</span><br />' + facts + (data.error ? '<br /><span class="bad">' + html(data.error) + '</span>' : "")
+          : facts;
+      }
     } catch (error) {
-      if (temp) temp.textContent = "--°C";
-      if (desc) desc.innerHTML = "weather.json not loaded<br />check Surface timer";
+      if (temp) {
+        temp.textContent = "--°C";
+        temp.className = "weather-temp bad";
+      }
+      if (desc) desc.innerHTML = '<span class="bad">weather.json not loaded</span><br />check Surface timer';
     }
   }
 

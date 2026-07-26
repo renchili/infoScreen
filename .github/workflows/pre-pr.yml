@@ -9,8 +9,35 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
+  run-policy:
+    name: pre-pr-run-policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Reject repeated attempts
+        shell: bash
+        run: |
+          if [ "${{ github.run_attempt }}" != "1" ]; then
+            echo "::error::This run already failed once. Re-runs are blocked; push a corrective commit to create a new run."
+            exit 1
+          fi
+
+  debounce:
+    name: pre-pr-debounce
+    needs: run-policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Wait for the branch to settle
+        run: sleep 90
+
   repository-check:
+    needs: debounce
     name: pre-pr-${{ matrix.check }}
     runs-on: ubuntu-latest
     strategy:

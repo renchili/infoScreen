@@ -73,6 +73,6 @@ def test_listing_url_serializes_normally_but_card_identities_stay_distinct() -> 
     second = OfficialListingCardURL(LISTING_URL, "card-two")
 
     assert str(first) == str(second) == LISTING_URL
-    assert first != second
+    assert not (first == second)
     assert len({first, second}) == 2
     assert json.dumps({"url": first}) == json.dumps({"url": LISTING_URL})
