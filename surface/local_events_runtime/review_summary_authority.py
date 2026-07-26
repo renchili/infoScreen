@@ -1,40 +1,20 @@
 from __future__ import annotations
 
-import re
 from typing import Any
 
 from . import review_publish_authority as _publisher
 
 _APPLIED = False
 _BASE_REVIEW_EVENT = None
-_OPERATIONAL_RE = re.compile(
-    r"\b(?:terms?|conditions?|registration|ticketing|admission|refund|"
-    r"cancellation|safety|enquir(?:y|ies)|contact|privacy|cookie)\b|@",
-    re.I,
-)
-_CTA_RE = re.compile(
-    r"\b(?:book now|buy tickets?|register now|sign up|learn more|read more|"
-    r"find out more|plan your visit)\b",
-    re.I,
-)
 
 
 def _review_event(candidate: Any) -> dict[str, Any]:
-    """Remove operational copy while preserving concise real activity summaries."""
+    """Remove CTA, terms, contact, registration, and safety text before publish."""
 
     from .detail_summary_authority import useful_event_summary
 
     event = dict(_BASE_REVIEW_EVENT(candidate))
-    raw = " ".join(str(event.get("summary") or "").split())
-    summary = useful_event_summary(raw)
-    if (
-        not summary
-        and len(raw) >= 20
-        and not _OPERATIONAL_RE.search(raw)
-        and not _CTA_RE.search(raw)
-    ):
-        summary = raw
-    event["summary"] = summary
+    event["summary"] = useful_event_summary(event.get("summary"))
     return event
 
 
@@ -43,6 +23,10 @@ def apply() -> None:
 
     global _APPLIED, _BASE_REVIEW_EVENT
     if _APPLIED:
+        # Test modules and later authority composition may temporarily restore the
+        # publisher's base function. Re-applying the authority must restore the
+        # product invariant without wrapping the function a second time.
+        _publisher._review_event = _review_event
         return
 
     # The canonical job calls this authority directly. Apply the detail authority

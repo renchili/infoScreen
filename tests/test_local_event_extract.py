@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import sys
 from datetime import date
+from urllib.parse import urlparse
 
 from .conftest import SURFACE
 
@@ -22,18 +23,42 @@ def source(source_id: str = "test", venue: str = "Test Venue") -> dict:
 
 
 def event_from_card(source_value: dict, raw_card: dict):
+    """Adapt parser fixtures to the current official-list membership contract."""
+
     card = dict(raw_card)
     raw_url = str(card.get("url") or "")
     if re.search(r"#(?:nhb|nhb-json|structured)-", raw_url, re.I):
         base = raw_url.split("#", 1)[0].rstrip("/")
-        slug = re.sub(r"[^a-z0-9]+", "-", str(card.get("id") or card.get("link_text") or "fixture").lower()).strip("-")
+        slug = re.sub(
+            r"[^a-z0-9]+",
+            "-",
+            str(card.get("id") or card.get("link_text") or "fixture").lower(),
+        ).strip("-")
         card["url"] = f"{base}/events/{slug or 'fixture'}"
         card["detail_urls"] = [card["url"]]
         card["detail_url_count"] = 1
+
+    detail_url = str(card.get("url") or "")
+    parsed = urlparse(detail_url)
+    origin = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else ""
+    listing_url = str(
+        card.get("listing_url")
+        or card.get("page_url")
+        or (f"{origin}/events" if origin else "")
+    )
+    if listing_url.rstrip("/") == detail_url.split("#", 1)[0].rstrip("/"):
+        listing_url = f"{origin}/events" if origin else listing_url
+
     card.setdefault("listing_evidence", LISTING_EVIDENCE)
-    card.setdefault("listing_url", str(card.get("page_url") or card.get("url") or "").split("#", 1)[0])
+    card["listing_url"] = listing_url
     card.setdefault("listing_card_id", str(card.get("id") or "fixture-listing-card"))
-    return runtime_event_from_card(source_value, card)
+
+    configured_source = dict(source_value)
+    if parsed.hostname:
+        configured_source.setdefault("allowed_domains", [parsed.hostname])
+    if listing_url:
+        configured_source.setdefault("listing_urls", [listing_url])
+    return runtime_event_from_card(configured_source, card)
 
 
 def future_year() -> int:
@@ -63,7 +88,10 @@ def test_weekday_prefixed_range_is_preserved() -> None:
     assert event["start_date"] == f"{year}-07-03"
     assert event["end_date"] == f"{year}-08-10"
     assert event["where"] == "Flower Dome"
-    assert [item.isoformat() for item in label_dates(event["when"])] == [f"{year}-07-03", f"{year}-08-10"]
+    assert [item.isoformat() for item in label_dates(event["when"])] == [
+        f"{year}-07-03",
+        f"{year}-08-10",
+    ]
 
 
 def test_weekday_prefixed_range_split_across_dom_lines_is_preserved() -> None:
@@ -183,7 +211,13 @@ def test_fake_date_location_titles_are_rejected() -> None:
         }
         event, reason = event_from_card(source("mandai", "Mandai Wildlife Reserve"), card)
         assert event is None
-        assert reason in {"title_not_found", "listing_card_title_not_found", "listing_card_fields_incomplete", "synthetic_venue_title", "synthetic_mandai_location_card"}
+        assert reason in {
+            "title_not_found",
+            "listing_card_title_not_found",
+            "listing_card_fields_incomplete",
+            "synthetic_venue_title",
+            "synthetic_mandai_location_card",
+        }
 
 
 def test_mandai_synthetic_location_card_is_rejected() -> None:

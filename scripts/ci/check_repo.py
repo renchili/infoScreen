@@ -194,6 +194,10 @@ def check_python_syntax(errors):
 
 def run_paths_suite(paths, errors):
     for relative in paths:
+        # A deletion can remove a path that violates the current policy. Validate only
+        # paths present in the proposed tree; otherwise cleanup PRs can never pass.
+        if not (ROOT / relative).exists():
+            continue
         check_path_policy(relative, errors)
 
 

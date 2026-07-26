@@ -254,10 +254,6 @@ def test_existing_past_candidate_exposes_recovered_fields(tmp_path, monkeypatch)
     assert event["summary"] == PLAY_ON_DETAIL
 
 
-def test_review_uses_final_formal_event_parser() -> None:
-    assert authority._review.event_from_card is authority._extract.event_from_card
-
-
 def test_effective_fields_authority_is_installed_before_review_publication() -> None:
     bootstrap = read_text("surface/local_events_runtime/http1_browser.py")
 

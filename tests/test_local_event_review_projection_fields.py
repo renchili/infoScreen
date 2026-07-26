@@ -107,6 +107,7 @@ def test_empty_review_fields_do_not_replace_specific_collector_fields(tmp_path) 
 
 
 def test_review_cta_does_not_replace_collector_activity_description(tmp_path) -> None:
+    review_summary_authority.apply()
     store = store_at(tmp_path)
     detail_url = "https://www.acm.nhb.gov.sg/whats-on/exhibitions/crosscurrents"
     collector = {"results": [collector_event(detail_url)]}
@@ -125,6 +126,7 @@ def test_review_cta_does_not_replace_collector_activity_description(tmp_path) ->
 
 
 def test_review_terms_do_not_replace_collector_activity_description(tmp_path) -> None:
+    review_summary_authority.apply()
     store = store_at(tmp_path)
     detail_url = "https://www.heritage.sg/childrensmuseum/whatson/activities/example"
     collector = {"results": [collector_event(detail_url)]}
