@@ -107,6 +107,29 @@ def test_review_detail_read_is_blocking_but_does_not_wait_for_lifecycle_idle() -
     assert context.page.closed is True
 
 
+def test_fallback_fills_summary_without_appending_child_fields() -> None:
+    parent_when = (
+        "10–12 April 2026 · "
+        "Daily - Friday, 5–9.30pm / Sat & Sun, 2–9.30pm"
+    )
+    result = authority._merge_fallback_fields(
+        {
+            "dates": [parent_when],
+            "venues": ["Asian Civilisations Museum"],
+            "summary": "",
+        },
+        {
+            "dates": ["12 April 2026"],
+            "venues": ["River Room"],
+            "summary": "A weekend programme of activities throughout the museum.",
+        },
+    )
+
+    assert result["dates"] == [parent_when]
+    assert result["venues"] == ["Asian Civilisations Museum"]
+    assert result["summary"].startswith("A weekend programme")
+
+
 def test_review_ui_still_blocks_collect_events_request() -> None:
     blocker = read_text("surface/web/assets/js/local_event_review_blocking.js")
     studio = read_text("surface/web/local-events/studio/index.html")
