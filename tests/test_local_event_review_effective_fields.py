@@ -27,6 +27,7 @@ DETAIL_URL = (
     "from-the-musee-du-louvre"
 )
 PLAY_ON_URL = "https://www.acm.nhb.gov.sg/whats-on/programmes/play-on"
+SGFASHION_URL = "https://www.nhb.gov.sg/acm/whats-on/exhibitions/sgfashionnow2024"
 NARRATIVE = (
     "From the 16th to 18th century, three great empires – the Mughals, "
     "Safavids, and Ottomans – shaped a vast and interconnected world across Asia."
@@ -50,7 +51,7 @@ def store_at(tmp_path) -> EventReviewStore:
                         "name": "Asian Civilisations Museum",
                         "official_home": "https://www.acm.nhb.gov.sg/",
                         "default_venue": "Asian Civilisations Museum",
-                        "allowed_domains": ["acm.nhb.gov.sg"],
+                        "allowed_domains": ["acm.nhb.gov.sg", "nhb.gov.sg"],
                         "listing_urls": [
                             "https://www.acm.nhb.gov.sg/whats-on/overview"
                         ],
@@ -61,6 +62,19 @@ def store_at(tmp_path) -> EventReviewStore:
         encoding="utf-8",
     )
     return EventReviewStore(tmp_path / "env" / "local_event_review", config)
+
+
+def evidence(text: str = "EXHIBITIONS IN-MUSEUM") -> EventEvidence:
+    return EventEvidence(
+        selector="div.a-listing-content__content",
+        selector_index=2,
+        selector_match_count=6,
+        document_position={"x": 881, "y": 466, "width": 348, "height": 589},
+        viewport_position={"x": 881, "y": 466, "width": 348, "height": 589},
+        page_index=0,
+        page_url="https://www.acm.nhb.gov.sg/whats-on/overview",
+        text=text,
+    )
 
 
 def candidate(summary: str = PLACEHOLDER) -> EventCandidate:
@@ -76,16 +90,7 @@ def candidate(summary: str = PLACEHOLDER) -> EventCandidate:
         summary=summary,
         detail_status="collected",
         detail_page_title="Crosscurrents",
-        evidence=EventEvidence(
-            selector="div.a-listing-content__content",
-            selector_index=2,
-            selector_match_count=6,
-            document_position={"x": 881, "y": 466, "width": 348, "height": 589},
-            viewport_position={"x": 881, "y": 466, "width": 348, "height": 589},
-            page_index=0,
-            page_url="https://www.acm.nhb.gov.sg/whats-on/overview",
-            text="EXHIBITIONS IN-MUSEUM",
-        ),
+        evidence=evidence(),
         decision="pending",
         collected_at="2026-07-24T00:00:00+00:00",
     )
@@ -105,18 +110,31 @@ def past_candidate() -> EventCandidate:
         detail_status="incomplete",
         detail_error="past_date",
         detail_page_title="PLAY ON!",
-        evidence=EventEvidence(
-            selector="div.a-listing-content__content",
-            selector_index=1,
-            selector_match_count=6,
-            document_position={"x": 526, "y": 466, "width": 348, "height": 589},
-            viewport_position={"x": 526, "y": 466, "width": 348, "height": 589},
-            page_index=1,
-            page_url="https://www.acm.nhb.gov.sg/whats-on/overview",
-            text="CHILDREN’S SEASON AT ACM: PLAY ON!",
-        ),
+        evidence=evidence("CHILDREN’S SEASON AT ACM: PLAY ON!"),
         decision="pending",
         collected_at="2026-07-24T00:00:00+00:00",
+    )
+
+
+def sgfashion_candidate() -> EventCandidate:
+    return EventCandidate(
+        candidate_id="acm-sgfashionnow",
+        source_id="acm",
+        source_name="Asian Civilisations Museum",
+        listing_url="https://www.acm.nhb.gov.sg/whats-on/overview",
+        detail_url=SGFASHION_URL,
+        title="#SGFASHIONNOW: RUNWAY SINGAPORE",
+        when="Daily - 10am - 7pm",
+        where="Asian Civilisations Museum",
+        summary=(
+            "The exhibition brings together works by established and emerging "
+            "Singapore designers."
+        ),
+        detail_status="collected",
+        detail_page_title="#SGFASHIONNOW: RUNWAY SINGAPORE",
+        evidence=evidence("#SGFASHIONNOW: RUNWAY SINGAPORE"),
+        decision="pending",
+        collected_at="2026-07-27T00:00:00+00:00",
     )
 
 
@@ -134,6 +152,35 @@ def write_kiosk_runtime(store: EventReviewStore) -> None:
                         "when": "19 June 2026 – 24 January 2027",
                         "where": "Design Gallery on Level 3",
                         "summary": NARRATIVE,
+                        "source_name": "Asian Civilisations Museum",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def write_sgfashion_runtime(store: EventReviewStore) -> None:
+    path = store.root.parent / authority.DISPLAY_RUNTIME_FILENAME
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "ok": True,
+                "results": [
+                    {
+                        "url": SGFASHION_URL,
+                        "title": "#SGFASHIONNOW: RUNWAY SINGAPORE",
+                        "when": (
+                            "27 June–1 September 2024 · "
+                            "Daily - 10am - 7pm / Fridays - 10am - 9pm"
+                        ),
+                        "where": "Asian Civilisations Museum",
+                        "summary": (
+                            "The exhibition brings together works by established and "
+                            "emerging Singapore designers."
+                        ),
                         "source_name": "Asian Civilisations Museum",
                     }
                 ],
@@ -207,7 +254,7 @@ def test_valid_review_narrative_is_not_replaced_by_runtime(tmp_path) -> None:
     assert store.state_payload()["events"][0]["summary"] == review_narrative
 
 
-def test_past_detail_result_keeps_parsed_date_and_venue(monkeypatch) -> None:
+def test_detail_result_does_not_invent_default_venue(monkeypatch) -> None:
     install_play_on_field_stubs(monkeypatch)
     monkeypatch.setattr(
         authority,
@@ -236,22 +283,47 @@ def test_past_detail_result_keeps_parsed_date_and_venue(monkeypatch) -> None:
     )
 
     assert result["when"] == "30–31 MAY 2026 · 10AM–5PM"
-    assert result["where"] == "Asian Civilisations Museum"
+    assert result["where"] == ""
     assert result["detail_status"] == "incomplete"
     assert result["detail_error"] == "past_date"
 
 
-def test_existing_past_candidate_exposes_recovered_fields(tmp_path, monkeypatch) -> None:
+def test_existing_past_candidate_is_removed_from_review_state(tmp_path, monkeypatch) -> None:
     install_play_on_field_stubs(monkeypatch)
     store = store_at(tmp_path)
     store.save(ReviewState(events=[past_candidate()]))
 
-    event = store.state_payload()["events"][0]
+    payload = store.state_payload()
 
-    assert event["when"] == "30–31 MAY 2026 · 10AM–5PM"
-    assert event["where"] == "Asian Civilisations Museum"
-    assert event["detail_error"] == "past_date"
-    assert event["summary"] == PLAY_ON_DETAIL
+    assert payload["events"] == []
+    assert payload["event_collection"]["candidate_count"] == 0
+    assert payload["event_collection"]["expired_candidate_count"] >= 1
+
+
+def test_sgfashion_wrong_opening_hours_are_repaired_then_expired(tmp_path) -> None:
+    store = store_at(tmp_path)
+    store.save(ReviewState(events=[sgfashion_candidate()]))
+    write_sgfashion_runtime(store)
+
+    payload = store.state_payload()
+
+    assert payload["events"] == []
+    assert payload["event_collection"]["candidate_count"] == 0
+    assert payload["event_collection"]["expired_candidate_count"] >= 1
+
+
+def test_fresh_preview_never_persists_expired_candidate(tmp_path) -> None:
+    store = store_at(tmp_path)
+    write_sgfashion_runtime(store)
+
+    state = store.replace_events(
+        [sgfashion_candidate()],
+        {"completed_at": "now", "candidate_count": 1},
+    )
+
+    assert state.events == []
+    assert state.event_collection["candidate_count"] == 0
+    assert state.event_collection["expired_candidate_count"] >= 1
 
 
 def test_effective_fields_authority_is_installed_before_review_publication() -> None:
