@@ -1,23 +1,20 @@
 name: Pre PR Verification
 
 on:
-  push:
-    branches-ignore:
-      - main
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref_name }}
+  group: infoscreen-ci-global
   cancel-in-progress: true
 
 jobs:
-  run-policy:
-    name: pre-pr-run-policy
+  verify:
+    name: pre-pr-verification
     runs-on: ubuntu-latest
-    timeout-minutes: 1
+    timeout-minutes: 10
     steps:
       - name: Reject repeated attempts
         shell: bash
@@ -27,32 +24,10 @@ jobs:
             exit 1
           fi
 
-  debounce:
-    name: pre-pr-debounce
-    needs: run-policy
-    runs-on: ubuntu-latest
-    timeout-minutes: 3
-    steps:
       - name: Wait for the branch to settle
         run: sleep 90
 
-  repository-check:
-    needs: debounce
-    name: pre-pr-${{ matrix.check }}
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        check:
-          - paths
-          - content
-          - structure
-          - python
-          - shell
-          - javascript
-
-    steps:
-      - name: Checkout branch
+      - name: Checkout selected branch
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -70,21 +45,16 @@ jobs:
       - name: Fetch main baseline
         run: git fetch origin main --depth=1
 
-      - name: Run selected check
+      - name: Run changed repository checks serially
         shell: bash
         run: |
-          case "${{ matrix.check }}" in
-            paths|content|structure|python)
-              python3 scripts/ci/check_repo.py \
-                --suite "${{ matrix.check }}" \
-                --scope changed \
-                --base origin/main \
-                --head HEAD
-              ;;
-            shell)
-              bash scripts/ci/check_shell_syntax.sh
-              ;;
-            javascript)
-              bash scripts/ci/check_javascript_syntax.sh
-              ;;
-          esac
+          set -euo pipefail
+          for suite in paths content structure python; do
+            python3 scripts/ci/check_repo.py \
+              --suite "$suite" \
+              --scope changed \
+              --base origin/main \
+              --head HEAD
+          done
+          bash scripts/ci/check_shell_syntax.sh
+          bash scripts/ci/check_javascript_syntax.sh

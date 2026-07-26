@@ -2,21 +2,21 @@ name: Pull Request Gate
 
 on:
   pull_request:
-    branches:
-      - main
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  group: infoscreen-ci-global
   cancel-in-progress: true
 
 jobs:
-  run-policy:
-    name: pr-run-policy
+  verify:
+    name: pr-verification
     runs-on: ubuntu-latest
-    timeout-minutes: 1
+    timeout-minutes: 20
     steps:
       - name: Reject repeated attempts
         shell: bash
@@ -26,31 +26,9 @@ jobs:
             exit 1
           fi
 
-  debounce:
-    name: pr-debounce
-    needs: run-policy
-    runs-on: ubuntu-latest
-    timeout-minutes: 3
-    steps:
       - name: Wait for the PR branch to settle
         run: sleep 90
 
-  repository-check:
-    needs: debounce
-    name: pr-${{ matrix.check }}
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        check:
-          - paths
-          - content
-          - structure
-          - python
-          - shell
-          - javascript
-
-    steps:
       - name: Checkout pull request head
         uses: actions/checkout@v4
         with:
@@ -67,21 +45,21 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Run selected check
-        shell: bash
+      - name: Install acceptance dependencies
         run: |
-          case "${{ matrix.check }}" in
-            paths|content|structure|python)
-              python3 scripts/ci/check_repo.py \
-                --suite "${{ matrix.check }}" \
-                --scope changed \
-                --base "${{ github.event.pull_request.base.sha }}" \
-                --head "${{ github.event.pull_request.head.sha }}"
-              ;;
-            shell)
-              bash scripts/ci/check_shell_syntax.sh
-              ;;
-            javascript)
-              bash scripts/ci/check_javascript_syntax.sh
-              ;;
-          esac
+          python -m pip install --upgrade pip
+          python -m pip install pytest 'pydantic>=2,<3'
+
+      - name: Run repository checks and full acceptance
+        env:
+          ACCEPTANCE_ARTIFACT_DIR: /tmp/infoscreen-acceptance
+        run: bash scripts/run_full_ci_tests.sh
+
+      - name: Upload acceptance diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: infoscreen-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/infoscreen-acceptance/
+          if-no-files-found: error
+          retention-days: 3

@@ -1,24 +1,19 @@
 name: InfoScreen acceptance
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  group: infoscreen-ci-global
   cancel-in-progress: true
 
 jobs:
-  run-policy:
-    name: acceptance-run-policy
+  acceptance:
     runs-on: ubuntu-latest
-    timeout-minutes: 1
+    timeout-minutes: 20
     steps:
       - name: Reject repeated attempts
         shell: bash
@@ -28,38 +23,28 @@ jobs:
             exit 1
           fi
 
-  debounce:
-    name: acceptance-debounce
-    needs: run-policy
-    runs-on: ubuntu-latest
-    timeout-minutes: 3
-    steps:
-      - name: Wait for the PR branch to settle
-        shell: bash
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            sleep 90
-          fi
+      - name: Wait for the selected revision to settle
+        run: sleep 90
 
-  acceptance:
-    needs: debounce
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
       - name: Checkout exact revision
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
 
       - name: Install acceptance dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pytest pydantic
+          python -m pip install pytest 'pydantic>=2,<3'
 
       - name: Run full local closed-loop tests
         env:
