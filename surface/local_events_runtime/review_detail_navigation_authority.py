@@ -121,7 +121,6 @@ def _best_summary(
     detail payload's real narrative, producing ``Open the official page for details.``
     while the kiosk displayed the same URL's extracted description.
     """
-
     candidates = [
         *_clean_rows(payload.get("summary_candidates")),
         payload.get("summary"),
@@ -144,7 +143,6 @@ def _merge_fallback_fields(
     fallback: dict[str, Any],
 ) -> dict[str, Any]:
     """Fill missing fields without diluting already authoritative detail rows."""
-
     merged = dict(payload)
     for key in ("dates", "venues"):
         current = [
@@ -168,6 +166,39 @@ def _merge_fallback_fields(
     return merged
 
 
+def _listing_candidate_if_complete(
+    source: dict[str, Any],
+    requested_url: str,
+    card: dict[str, Any],
+) -> dict[str, str] | None:
+    """Use an authoritative complete list card without opening its detail page.
+
+    The source inventory defines the rendered list card as the membership authority
+    and detail pages as enrichment. Opening every detail page made Review Preview
+    serially wait on dozens of pages even when title, date, and venue were already
+    present. A source may opt into ``review_detail_policy=always`` when its detail page
+    must replace misleading child/list-card fields, as ACM does.
+    """
+    policy = _extract.clean(source.get("review_detail_policy") or "missing_fields").casefold()
+    if policy == "always":
+        return None
+
+    listing = _detail_dates._listing_fields(source, card)
+    if not all(listing.get(key) for key in ("title", "when", "where")):
+        return None
+
+    return {
+        "detail_url": requested_url,
+        "title": listing["title"],
+        "when": listing["when"],
+        "where": listing["where"],
+        "summary": useful_event_summary(listing.get("summary")) or "",
+        "detail_status": "collected",
+        "detail_error": "",
+        "detail_page_title": "",
+    }
+
+
 def _detail_candidate(
     context: Any,
     source: dict[str, Any],
@@ -175,14 +206,13 @@ def _detail_candidate(
     raw_url: str,
     card: dict[str, Any],
 ) -> dict[str, str]:
-    """Read one detail page without waiting for long-lived lifecycle events.
+    """Read one required detail page without waiting for long-lived lifecycle events.
 
-    Official Event pages often keep analytics, consent, or personalisation requests
-    alive. Preview remains a blocking operation, but each detail read stops waiting
-    as soon as the response has committed and a readable activity document exists.
-    Missing fields produce an incomplete candidate rather than removing membership.
+    Complete authoritative list cards return immediately. Official Event pages are
+    opened only when fields are missing or the source explicitly requires detail
+    correction. Missing fields produce an incomplete candidate rather than removing
+    membership.
     """
-
     if "#nhb-" in raw_url or "#nhb-json-" in raw_url:
         listing = _detail_dates._listing_fields(source, card)
         return {
@@ -196,6 +226,10 @@ def _detail_candidate(
     requested_url = _provenance.listing_detail_url(listing_url, raw_url)
     if not requested_url:
         raise ValueError("detail URL is not a safe HTTP(S) target from the listing")
+
+    listing_candidate = _listing_candidate_if_complete(source, requested_url, card)
+    if listing_candidate is not None:
+        return listing_candidate
 
     detail = context.new_page()
     try:
@@ -213,8 +247,6 @@ def _detail_candidate(
                 timeout=DETAIL_CONTENT_WAIT_MS,
             )
         except Exception:
-            # The extractor still inspects the committed DOM. Field absence is
-            # represented as detail_status=incomplete, not as a dropped activity.
             pass
         detail.wait_for_timeout(150)
 
@@ -245,9 +277,6 @@ def _detail_candidate(
         listing = _detail_dates._listing_fields(source, card)
 
         if event is None:
-            # Lifecycle rejection must retain fields chosen by the final composed
-            # detail authorities. Calling the older activity helpers here would
-            # reintroduce the list-card Daily / child-room fallback.
             authoritative_when, authoritative_when_line = _extract.pick_when(merged)
             authoritative_where = _extract.pick_venue(
                 source,
@@ -295,8 +324,7 @@ def _detail_candidate(
 
 
 def apply() -> None:
-    """Install bounded blocking detail navigation for Review Preview."""
-
+    """Install bounded, conditional detail navigation for Review Preview."""
     global _APPLIED
     if _APPLIED:
         return
@@ -313,5 +341,6 @@ __all__ = [
     "DETAIL_READY_JS",
     "FALLBACK_DETAIL_FIELDS_JS",
     "_best_summary",
+    "_listing_candidate_if_complete",
     "apply",
 ]
