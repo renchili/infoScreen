@@ -37,6 +37,9 @@ def national_gallery_source() -> dict:
 
 
 def test_national_gallery_detail_page_supplies_specific_venue_and_public_url() -> None:
+    # Other test modules compose additional event authorities during collection.
+    # Rebind this final repair over the current chain immediately before use.
+    apply_detail_authority()
     cms_url = (
         "https://www.nationalgallery.sg/content/nationalgallerysg/sg/en/exhibitions/"
         "He-Xiangning-Ink-Intent.html"

@@ -1,0 +1,13 @@
+/* Keep the TTY visual language readable and allocate every left-column panel. */
+body::before {
+  display: none !important;
+}
+
+.news-ticker-panel {
+  background: #050606 !important;
+  background-size: auto !important;
+}
+
+.left {
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1.25fr) 46px !important;
+}

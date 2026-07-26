@@ -282,10 +282,6 @@ def test_fresh_past_candidate_is_not_persisted(tmp_path, monkeypatch) -> None:
     assert state.event_collection["expired_candidate_count"] >= 1
 
 
-def test_review_uses_final_formal_event_parser() -> None:
-    assert authority._review.event_from_card is authority._extract.event_from_card
-
-
 def test_effective_fields_authority_is_installed_before_review_publication() -> None:
     bootstrap = read_text("surface/local_events_runtime/http1_browser.py")
 

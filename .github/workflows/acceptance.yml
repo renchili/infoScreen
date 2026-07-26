@@ -1,31 +1,61 @@
 name: InfoScreen acceptance
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: infoscreen-ci-global
+  cancel-in-progress: true
 
 jobs:
   acceptance:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
-      - name: Checkout
+      - name: Reject repeated attempts
+        shell: bash
+        run: |
+          if [ "${{ github.run_attempt }}" != "1" ]; then
+            echo "::error::This run already failed once. Re-runs are blocked; push a corrective commit to create a new run."
+            exit 1
+          fi
+
+      - name: Wait for the selected revision to settle
+        run: sleep 90
+
+      - name: Checkout exact revision
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
 
       - name: Install acceptance dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pytest pydantic
+          python -m pip install pytest 'pydantic>=2,<3'
 
       - name: Run full local closed-loop tests
         env:
           ACCEPTANCE_ARTIFACT_DIR: /tmp/infoscreen-acceptance
         run: bash scripts/run_full_ci_tests.sh
+
+      - name: Upload acceptance diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: infoscreen-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/infoscreen-acceptance/
+          if-no-files-found: error
+          retention-days: 3

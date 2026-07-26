@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import json
+import os
 import random
 import re
 import time
 import urllib.parse
 import urllib.request
+import uuid
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +17,13 @@ SURFACE_DIR = Path(__file__).resolve().parent
 ENV_DIR = SURFACE_DIR / ".env"
 OUT = ENV_DIR / "event_stream.json"
 ITEM_COUNT = 8
+SINGAPORE_PRIORITY_SOURCES = {
+    "SG-EN",
+    "CNA",
+    "SG-FR",
+    "新加坡",
+    "联合早报/8视界",
+}
 
 
 def google_news_rss(query: str, hl: str, gl: str, ceid: str) -> str:
@@ -93,6 +102,14 @@ def dedupe_exact(items):
     return out
 
 
+def prioritized_pool(items):
+    singapore = [item for item in items if item.get("base_source") in SINGAPORE_PRIORITY_SOURCES]
+    other = [item for item in items if item.get("base_source") not in SINGAPORE_PRIORITY_SOURCES]
+    random.shuffle(singapore)
+    random.shuffle(other)
+    return singapore + other
+
+
 def translate_google(text: str, target_lang: str) -> str:
     tl = {"en": "en", "fr": "fr", "zh": "zh-CN"}[target_lang]
     url = "https://translate.googleapis.com/translate_a/single?" + urllib.parse.urlencode({"client": "gtx", "sl": "auto", "tl": tl, "dt": "t", "q": text})
@@ -136,6 +153,16 @@ def make_item(base, target_lang: str):
     }
 
 
+def atomic_write_json(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    temporary.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(temporary, path)
+
+
 def main() -> None:
     ENV_DIR.mkdir(exist_ok=True)
     pool = []
@@ -146,8 +173,7 @@ def main() -> None:
         except Exception as exc:
             errors.append({"source": feed["source"], "lang": feed["lang"], "error": str(exc)[:180]})
 
-    pool = dedupe_exact(pool)
-    random.shuffle(pool)
+    pool = prioritized_pool(dedupe_exact(pool))
     by_lang = {"en": [], "fr": [], "zh": []}
     base_items = []
 
@@ -167,15 +193,20 @@ def main() -> None:
         by_lang["zh"].append(zh)
 
     payload = {
-        "source": "rss_random_same_items_strict_translated_3lang",
+        "source": "rss_singapore_priority_same_items_strict_translated_3lang",
         "updated_at": datetime.now().isoformat(timespec="seconds"),
         "items_by_lang": by_lang,
         "items": by_lang["en"] + by_lang["fr"] + by_lang["zh"],
         "base_items": base_items,
         "errors": errors,
-        "selection": {"mode": "same random base news items, strict EN/FR/ZH translation, failed triples skipped", "item_count": ITEM_COUNT, "no_keywords": True, "no_scoring": True, "no_filtering": True, "no_time_sort": True},
+        "selection": {
+            "mode": "Singapore-priority base items, same-item strict EN/FR/ZH translation, failed triples skipped",
+            "item_count": ITEM_COUNT,
+            "singapore_priority_sources": sorted(SINGAPORE_PRIORITY_SOURCES),
+            "priority_before_random_remainder": True,
+        },
     }
-    OUT.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    atomic_write_json(OUT, payload)
     print(f"wrote {OUT}")
 
 

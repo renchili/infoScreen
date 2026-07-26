@@ -135,9 +135,17 @@ def event_from_card(source: dict[str, Any], card: dict[str, Any]):
 
 
 def apply() -> None:
+    """Bind labeled venue and public-URL repair over the current event authority.
+
+    Other authorities intentionally replace ``extract.event_from_card`` while they
+    compose the final collector. Re-running this function must therefore wrap the
+    latest base rather than returning only because it ran earlier in the process.
+    """
     global _applied, _base_event_from_card
-    if _applied:
+    if _extract.event_from_card is event_from_card:
+        _applied = True
         return
+
     _base_event_from_card = _extract.event_from_card
     _extract.event_from_card = event_from_card
     package = sys.modules.get(__package__)

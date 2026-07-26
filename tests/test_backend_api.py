@@ -7,7 +7,12 @@ import pytest
 from pydantic import ValidationError
 
 from surface import serve_infoscreen
-from surface.api_models import LocalEventSearchResponse, MarketConfigRequest, PhotosResponse
+from surface.api_models import (
+    LocalEventSearchResponse,
+    MarketConfigRequest,
+    MarketRefreshResponse,
+    PhotosResponse,
+)
 from surface.openapi_spec import build_openapi
 
 pytestmark = pytest.mark.backend
@@ -20,7 +25,7 @@ def test_runtime_json_returns_fixture_payload(monkeypatch: pytest.MonkeyPatch, s
     assert market["items"][0]["symbol"] == "AAPL"
 
 
-def test_openapi_covers_dashboard_and_mutating_routes() -> None:
+def test_openapi_covers_dashboard_mutations_and_actual_error_statuses() -> None:
     spec = build_openapi()
     paths = spec["paths"]
     assert spec["openapi"].startswith("3.1")
@@ -28,6 +33,25 @@ def test_openapi_covers_dashboard_and_mutating_routes() -> None:
     assert "/api/market-refresh" in paths
     assert "/api/local-events/search" in paths
     assert "/public_photos/{path}" in paths
+
+    assert "404" not in paths["/api/local-events/search"]["get"]["responses"]
+    assert "404" not in paths["/local_event_search_results.json"]["get"]["responses"]
+    assert "504" in paths["/api/local-events/search"]["post"]["responses"]
+    assert "sanitized" not in paths["/"]["get"]["description"].lower()
+
+
+def test_market_refresh_schema_contains_both_producer_outputs() -> None:
+    payload = MarketRefreshResponse.model_validate(
+        {
+            "ok": True,
+            "returncode": 0,
+            "market": {"items": []},
+            "weather": {"status": "OK"},
+        }
+    )
+
+    assert payload.market == {"items": []}
+    assert payload.weather == {"status": "OK"}
 
 
 def test_pydantic_models_validate_closed_loop_fixture() -> None:

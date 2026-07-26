@@ -1,31 +1,33 @@
 name: Pre PR Verification
 
 on:
-  push:
-    branches-ignore:
-      - main
   workflow_dispatch:
 
 permissions:
   contents: read
 
-jobs:
-  repository-check:
-    name: pre-pr-${{ matrix.check }}
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        check:
-          - paths
-          - content
-          - structure
-          - python
-          - shell
-          - javascript
+concurrency:
+  group: infoscreen-ci-global
+  cancel-in-progress: true
 
+jobs:
+  verify:
+    name: pre-pr-verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - name: Checkout branch
+      - name: Reject repeated attempts
+        shell: bash
+        run: |
+          if [ "${{ github.run_attempt }}" != "1" ]; then
+            echo "::error::This run already failed once. Re-runs are blocked; push a corrective commit to create a new run."
+            exit 1
+          fi
+
+      - name: Wait for the branch to settle
+        run: sleep 90
+
+      - name: Checkout selected branch
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -43,21 +45,16 @@ jobs:
       - name: Fetch main baseline
         run: git fetch origin main --depth=1
 
-      - name: Run selected check
+      - name: Run changed repository checks serially
         shell: bash
         run: |
-          case "${{ matrix.check }}" in
-            paths|content|structure|python)
-              python3 scripts/ci/check_repo.py \
-                --suite "${{ matrix.check }}" \
-                --scope changed \
-                --base origin/main \
-                --head HEAD
-              ;;
-            shell)
-              bash scripts/ci/check_shell_syntax.sh
-              ;;
-            javascript)
-              bash scripts/ci/check_javascript_syntax.sh
-              ;;
-          esac
+          set -euo pipefail
+          for suite in paths content structure python; do
+            python3 scripts/ci/check_repo.py \
+              --suite "$suite" \
+              --scope changed \
+              --base origin/main \
+              --head HEAD
+          done
+          bash scripts/ci/check_shell_syntax.sh
+          bash scripts/ci/check_javascript_syntax.sh

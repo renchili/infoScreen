@@ -182,43 +182,6 @@
     box.innerHTML = '<div class="listing-event-preview-heading">EVENT PREVIEW · NOT COLLECTED</div>';
   }
 
-  async function setListingDecision(candidateId, decision) {
-    return request("/api/local-events/review/listing-decision", {
-      method: "POST",
-      body: JSON.stringify({ candidate_id: candidateId, decision }),
-    });
-  }
-
-  async function withExclusiveConfirmedListings(state, targetIds, action) {
-    const changed = [];
-    document.documentElement.classList.add("review-sequence-busy");
-
-    try {
-      for (const row of state.listing_pages || []) {
-        let desired = row.decision || "pending";
-        if (targetIds.has(row.candidate_id)) {
-          desired = "confirmed";
-        } else if (desired === "confirmed") {
-          desired = "pending";
-        }
-
-        if (desired === row.decision) continue;
-        changed.push({ candidate_id: row.candidate_id, decision: row.decision || "pending" });
-        await setListingDecision(row.candidate_id, desired);
-      }
-      return await action();
-    } finally {
-      for (const row of changed.reverse()) {
-        try {
-          await setListingDecision(row.candidate_id, row.decision);
-        } catch {
-          // The visible status below reports collection errors; restoration is retried by reload.
-        }
-      }
-      document.documentElement.classList.remove("review-sequence-busy");
-    }
-  }
-
   function setGlobalStatus(message, kind) {
     const status = document.getElementById("global-status");
     if (!status) return;
@@ -227,7 +190,14 @@
   }
 
   async function reloadState() {
-    document.getElementById("reload-state")?.click();
+    await window.InfoScreenReviewStudio?.loadState?.();
+  }
+
+  async function collectConfirmedPages() {
+    return request("/api/local-events/review/collect-events", {
+      method: "POST",
+      body: "{}",
+    });
   }
 
   async function collectPreview(card, button) {
@@ -235,23 +205,18 @@
     if (!url) return;
 
     button.disabled = true;
-    button.textContent = "COLLECTING THIS PAGE...";
-    setGlobalStatus("COLLECTING EVENT PREVIEW FOR ONE LIST PAGE", "warn");
+    button.textContent = "COLLECTING CONFIRMED PAGES...";
+    setGlobalStatus("COLLECTING EVENT PREVIEW", "warn");
 
     try {
       const state = await request("/api/local-events/review/state");
       const listing = (state.listing_pages || []).find((row) => row.url === url);
       if (!listing) throw new Error("Listing page is not present in review state");
+      if (listing.decision !== "confirmed") {
+        throw new Error("Confirm this list page before previewing it. Preview no longer changes review decisions temporarily.");
+      }
 
-      const payload = await withExclusiveConfirmedListings(
-        state,
-        new Set([listing.candidate_id]),
-        () => request("/api/local-events/review/collect-events", {
-          method: "POST",
-          body: "{}",
-        }),
-      );
-
+      const payload = await collectConfirmedPages();
       const rows = normalizedPreviewRows(payload, url);
       savePreview(url, rows);
       publishState(payload);
@@ -281,42 +246,22 @@
 
     button.disabled = true;
     setGlobalStatus(
-      sourceId ? `COLLECTING CONFIRMED PAGES FOR ${sourceName}` : "COLLECTING ALL CONFIRMED PAGES",
+      sourceId ? `COLLECTING ALL CONFIRMED PAGES; REPORTING ${sourceName}` : "COLLECTING ALL CONFIRMED PAGES",
       "warn",
     );
 
     try {
-      if (!sourceId) {
-        const payload = await request("/api/local-events/review/collect-events", {
-          method: "POST",
-          body: "{}",
-        });
-        publishState(payload);
-        setGlobalStatus(`${(payload.events || []).length} EVENT CANDIDATES RETURNED`, "ok");
-        await reloadState();
-        return;
-      }
-
-      const state = await request("/api/local-events/review/state");
-      const selected = (state.listing_pages || []).filter(
-        (row) => row.source_id === sourceId && row.decision === "confirmed",
-      );
-      if (!selected.length) {
-        throw new Error(`No confirmed list pages for ${sourceName}`);
-      }
-
-      const payload = await withExclusiveConfirmedListings(
-        state,
-        new Set(selected.map((row) => row.candidate_id)),
-        () => request("/api/local-events/review/collect-events", {
-          method: "POST",
-          body: "{}",
-        }),
-      );
-
+      const payload = await collectConfirmedPages();
       publishState(payload);
-      const count = (payload.events || []).filter((row) => row.source_id === sourceId).length;
-      setGlobalStatus(`${count} EVENT CANDIDATES RETURNED FOR ${sourceName}`, count ? "ok" : "error");
+      const count = sourceId
+        ? (payload.events || []).filter((row) => row.source_id === sourceId).length
+        : (payload.events || []).length;
+      setGlobalStatus(
+        sourceId
+          ? `${count} EVENT CANDIDATES RETURNED FOR ${sourceName}`
+          : `${count} EVENT CANDIDATES RETURNED`,
+        count ? "ok" : "error",
+      );
       await reloadState();
     } catch (error) {
       setGlobalStatus(text(error.message || error), "error");
@@ -356,13 +301,9 @@
     replaceGlobalCollectButton();
     enhanceListingCards();
 
-    const listing = document.getElementById("listing-pages");
-    const events = document.getElementById("event-candidates");
-    const observer = new MutationObserver(() => {
+    document.addEventListener("infoscreen:review-rendered", () => {
       enhanceListingCards();
       window.InfoScreenReviewContext?.applyFilters?.();
     });
-    if (listing) observer.observe(listing, { childList: true });
-    if (events) observer.observe(events, { childList: true });
   });
 })();

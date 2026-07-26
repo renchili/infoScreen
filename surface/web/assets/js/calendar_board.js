@@ -40,8 +40,8 @@
       .replaceAll("'", "&#039;");
   }
 
-  function normalize(v) {
-    return String(v || "NO SCHEDULE EVENTS")
+  function normalize(v, fallback) {
+    return String(v || fallback || "")
       .replace(/\s+/g, " ")
       .trim()
       .toUpperCase();
@@ -75,8 +75,8 @@
     return Math.max(18, Math.min(42, Math.floor((w - 104) / 14)));
   }
 
-  function cells(text, pad) {
-    var raw = normalize(text);
+  function cells(text) {
+    var raw = normalize(text, "");
     var n = slotCount();
     if (raw.length > n) raw = raw.slice(0, n);
 
@@ -94,17 +94,17 @@
 
   function rowHtml(item) {
     return '<div class="calendar-board-row">' +
-      '<div class="calendar-board-time">' + cells(item.time || "", false) + "</div>" +
-      '<div class="calendar-board-event">' + cells(item.title || item.text || "NO SCHEDULE EVENTS", false) + "</div>" +
+      '<div class="calendar-board-time">' + cells(item.time || "") + "</div>" +
+      '<div class="calendar-board-event">' + cells(item.title || item.text || "NO SCHEDULE EVENTS") + "</div>" +
       "</div>";
   }
 
   function animateBoard(rows) {
-    var cells = Array.prototype.slice.call(
+    var boardCells = Array.prototype.slice.call(
       rows.querySelectorAll(".calendar-board-cell:not(.blank)")
     );
 
-    cells.forEach(function (cell, idx) {
+    boardCells.forEach(function (cell, idx) {
       var finalChar = cell.getAttribute("data-final") || cell.textContent || "";
       var delay = idx * 95;
 
@@ -177,6 +177,7 @@
 
     try {
       var res = await fetch("schedule.json?_=" + Date.now(), { cache: "no-store" });
+      if (!res.ok) throw new Error("schedule HTTP " + res.status);
       var data = await res.json();
       var events = Array.isArray(data) ? data : (data.events || []);
       var nextItems = events.map(function (e) {

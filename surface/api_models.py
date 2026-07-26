@@ -39,7 +39,8 @@ class MarketRefreshResponse(BaseModel):
     returncode: int | None = Field(None, description="Subprocess return code.")
     stdout: str = Field("", description="Tail of subprocess stdout.")
     stderr: str = Field("", description="Tail of subprocess stderr.")
-    market: dict[str, Any] = Field(default_factory=dict, description="Current market runtime payload.")
+    market: dict[str, Any] = Field(default_factory=dict, description="Current Market runtime payload.")
+    weather: dict[str, Any] = Field(default_factory=dict, description="Current Weather runtime payload produced by the same refresh.")
 
 
 class LocalEventSearchRequest(BaseModel):

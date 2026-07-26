@@ -54,7 +54,7 @@ def test_dynamic_listing_authority_is_applied_before_card_discovery() -> None:
 
     dynamic = bootstrap.index("apply_dynamic_listing_authority()")
     structural = bootstrap.index("apply_structural_link_authority()")
-    binding = bootstrap.index("_bind_final_browser_runtime_to_review()")
+    binding = bootstrap.index("    _bind_final_browser_runtime_to_review()")
     diagnostics = bootstrap.index("apply_event_review_diagnostics()")
 
     assert dynamic < structural < binding < diagnostics

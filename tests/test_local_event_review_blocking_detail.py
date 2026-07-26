@@ -9,6 +9,7 @@ sys.path.insert(0, str(SURFACE))
 
 from local_events_runtime import detail_payload_authority  # noqa: E402
 from local_events_runtime import review_detail_navigation_authority as authority  # noqa: E402
+from local_events_runtime.source_overrides import LISTING_EVIDENCE  # noqa: E402
 
 
 detail_payload_authority.apply()
@@ -72,12 +73,16 @@ def test_review_detail_read_is_blocking_but_does_not_wait_for_lifecycle_idle() -
     listing_url = "https://www.acm.nhb.gov.sg/whats-on/overview"
     detail_url = context.page.url
     card = {
+        "id": "acm-crosscurrents",
         "url": detail_url,
         "headings": ["Crosscurrents"],
         "link_text": "Crosscurrents",
         "text": "Crosscurrents",
         "text_lines": ["Crosscurrents"],
         "extraction_mode": "detail_link",
+        "listing_evidence": LISTING_EVIDENCE,
+        "listing_url": listing_url,
+        "listing_card_id": "acm-crosscurrents",
     }
 
     result = authority._detail_candidate(
