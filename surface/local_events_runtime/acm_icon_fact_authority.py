@@ -143,14 +143,20 @@ def _wrap_script(script: str) -> str:
     "img,svg,use,i,[class*='icon' i],[id*='icon' i],[data-icon]"
   )) {
     if (!visible(icon)) continue;
-    const kind = iconKind(icon);
-    if (!kind) continue;
-    const row = rowForIcon(icon, kind);
-    if (!row) continue;
-    const key = `${kind}\u0000${row.text}\u0000${Math.round(row.top / 3)}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    rows.push(row);
+    const declaredKind = iconKind(icon);
+    const kinds = declaredKind
+      ? [declaredKind]
+      : ["date", "time", "venue", "admission"];
+    for (const kind of kinds) {
+      const row = rowForIcon(icon, kind);
+      if (!row) continue;
+      const key = `${kind}\u0000${row.text}\u0000${Math.round(row.top / 3)}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        rows.push(row);
+      }
+      break;
+    }
   }
 
   const byKind = kind => rows.filter(row => row.kind === kind)
