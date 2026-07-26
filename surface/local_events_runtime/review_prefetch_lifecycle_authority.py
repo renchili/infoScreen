@@ -67,6 +67,13 @@ def apply() -> None:
         return
     _prefetch.PREFETCH_DETAIL_URLS_JS = ADMITTED_DETAIL_URLS_JS
     _prefetch._take_prefetched = take_prefetched
+
+    # Unconsumed admitted cards still own live navigation tabs. Install a context
+    # wrapper that stops and closes those tabs before the next listing navigation and
+    # before BrowserContext.close(), rather than leaving Chromium to drain them forever.
+    from .review_prefetch_cleanup_authority import apply as apply_prefetch_cleanup
+
+    apply_prefetch_cleanup()
     _APPLIED = True
 
 
