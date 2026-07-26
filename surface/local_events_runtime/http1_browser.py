@@ -8,32 +8,62 @@ from typing import Any, Iterable
 from . import browser as _browser
 
 _APPLIED = False
+_SNAP_WRAPPER_MARKERS = (
+    b"/snap/bin/chromium",
+    b"/usr/bin/snap",
+    b"/bin/snap",
+    b"snap run chromium",
+    b"exec snap",
+)
+
+
+def _file_uses_snap(path: Path) -> bool:
+    """Detect Ubuntu Chromium launchers that delegate to Snap."""
+
+    try:
+        if not path.is_file():
+            return False
+        with path.open("rb") as handle:
+            prefix = handle.read(32_768).lower()
+    except OSError:
+        return False
+    return any(marker in prefix for marker in _SNAP_WRAPPER_MARKERS)
 
 
 def _is_snap_browser(value: object) -> bool:
     """Return whether a browser path is provided by Snap.
 
-    The Snap Chromium wrapper exits with SIGTRAP when Playwright launches it from
-    the Surface user service. Reject both the public wrapper path and resolved Snap
-    locations instead of treating the resulting browser death as a page failure.
+    Ubuntu exposes Snap Chromium through ordinary-looking paths such as
+    ``/usr/bin/chromium-browser``. Reject the public path, resolved target, direct
+    snap executable, and wrapper scripts that delegate to Snap instead of treating
+    the resulting SIGTRAP browser death as a page failure.
     """
 
     text = str(value or "").strip()
     if not text:
         return False
 
-    paths = {text}
+    expanded = Path(text).expanduser()
+    paths = {str(expanded)}
+    resolved = expanded
     try:
-        paths.add(str(Path(text).expanduser().resolve(strict=False)))
+        resolved = expanded.resolve(strict=False)
+        paths.add(str(resolved))
     except (OSError, RuntimeError):
         pass
 
-    return any(
-        path == "/snap"
+    if any(
+        path in {"/usr/bin/snap", "/bin/snap"}
+        or path == "/snap"
         or path.startswith("/snap/")
         or path == "/var/lib/snapd/snap"
         or path.startswith("/var/lib/snapd/snap/")
         for path in paths
+    ):
+        return True
+
+    return _file_uses_snap(expanded) or (
+        resolved != expanded and _file_uses_snap(resolved)
     )
 
 
@@ -113,13 +143,14 @@ def _bind_final_browser_runtime_to_review() -> None:
 def apply() -> None:
     """Install the shared Local Events browser and review-backend bootstrap.
 
-    Collection starts in HTTP/1.1 mode directly. Snap Chromium is not selected
-    because it terminates with SIGTRAP under the Surface user service. Listing
-    navigation accepts a readable rendered document even when lifecycle events do
-    not settle. Review detail pages are read through the existing bounded blocking
-    reader, one admitted card at a time, so no unconsumed background tabs remain
-    when the listing or BrowserContext is closed. All browser and event authorities
-    are applied before their final values are bound into Review Studio.
+    Collection starts in HTTP/1.1 mode directly. Snap Chromium and Ubuntu wrapper
+    scripts that delegate to it are not selected because they terminate with SIGTRAP
+    under the Surface user service. Listing navigation accepts a readable rendered
+    document even when lifecycle events do not settle. Review detail pages are read
+    through the existing bounded blocking reader, one admitted card at a time, so no
+    unconsumed background tabs remain when the listing or BrowserContext is closed.
+    All browser and event authorities are applied before their final values are bound
+    into Review Studio.
     """
     global _APPLIED
     if _APPLIED:
