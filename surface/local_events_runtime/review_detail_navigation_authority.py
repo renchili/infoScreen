@@ -96,6 +96,13 @@ FALLBACK_DETAIL_FIELDS_JS = r"""
 }
 """
 
+_FIELD_LABELS = {
+    "date": {"date", "dates", "when"},
+    "time": {"time", "times"},
+    "where": {"location", "venue", "where"},
+}
+_ALL_FIELD_LABELS = set().union(*_FIELD_LABELS.values(), {"admission", "ticket", "tickets"})
+
 
 def _clean_rows(raw: object) -> list[str]:
     if not isinstance(raw, list):
@@ -108,30 +115,67 @@ def _clean_rows(raw: object) -> list[str]:
     return output
 
 
-def _best_summary(
-    payload: dict[str, Any],
-    merged: dict[str, Any],
-    event: dict[str, Any] | None = None,
-    listing_summary: object = "",
-) -> str:
-    """Choose real narrative detail text before parser fallback labels.
+def _payload_lines(payload: dict[str, Any]) -> list[str]:
+    rows = payload.get("lines") or payload.get("text_lines")
+    if isinstance(rows, list):
+        return _clean_rows(rows)
+    return [
+        _extract.clean(line)
+        for line in str(payload.get("text") or "").splitlines()
+        if _extract.clean(line)
+    ]
 
-    ``event_from_card`` intentionally returns a non-empty generic fallback when no
-    summary survives its parser. Review previously preferred that fallback over the
-    detail payload's real narrative, producing ``Open the official page for details.``
-    while the kiosk displayed the same URL's extracted description.
-    """
-    candidates = [
+
+def _label_key(value: object) -> str:
+    return _extract.clean(value).rstrip(":").casefold()
+
+
+def _labeled_values(lines: list[str], labels: set[str]) -> list[str]:
+    output: list[str] = []
+    for index, line in enumerate(lines):
+        if _label_key(line) not in labels:
+            continue
+        for candidate in lines[index + 1 : index + 5]:
+            if _label_key(candidate) in _ALL_FIELD_LABELS:
+                break
+            text = _extract.clean(candidate)
+            if text and text not in output:
+                output.append(text)
+    return output
+
+
+def _raw_when(payload: dict[str, Any]) -> str:
+    """Return exact collected Date/Time rows without parser reconstruction."""
+
+    lines = _payload_lines(payload)
+    date_rows = _labeled_values(lines, _FIELD_LABELS["date"])
+    time_rows = _labeled_values(lines, _FIELD_LABELS["time"])
+
+    if not date_rows:
+        date_rows = _clean_rows(payload.get("dates"))
+
+    values: list[str] = []
+    for value in [*date_rows, *time_rows]:
+        if value and value not in values:
+            values.append(value)
+    return " · ".join(values)
+
+
+def _raw_where(payload: dict[str, Any]) -> str:
+    """Return an exact collected Location/Venue row; never use a source default."""
+
+    lines = _payload_lines(payload)
+    rows = _labeled_values(lines, _FIELD_LABELS["where"])
+    if not rows:
+        rows = _clean_rows(payload.get("venues"))
+    return rows[0] if rows else ""
+
+
+def _raw_summary(payload: dict[str, Any]) -> str:
+    for candidate in [
         *_clean_rows(payload.get("summary_candidates")),
         payload.get("summary"),
-        *_clean_rows(merged.get("detail_summary_candidates")),
-        merged.get("detail_summary"),
-    ]
-    if isinstance(event, dict):
-        candidates.append(event.get("summary"))
-    candidates.append(listing_summary)
-
-    for candidate in candidates:
+    ]:
         summary = useful_event_summary(candidate)
         if summary:
             return _extract.short(summary, 500)
@@ -142,27 +186,15 @@ def _merge_fallback_fields(
     payload: dict[str, Any],
     fallback: dict[str, Any],
 ) -> dict[str, Any]:
-    """Fill missing fields without diluting already authoritative detail rows."""
+    """Add only exact fields collected from the same detail document."""
+
     merged = dict(payload)
     for key in ("dates", "venues"):
-        current = [
-            " ".join(str(value or "").split())
-            for value in merged.get(key) or []
-            if " ".join(str(value or "").split())
-        ]
-        if current:
-            merged[key] = current
+        if _clean_rows(merged.get(key)):
             continue
-
-        filled: list[str] = []
-        for value in fallback.get(key) or []:
-            text = " ".join(str(value or "").split())
-            if text and text not in filled:
-                filled.append(text)
-        merged[key] = filled
-
-    if not str(merged.get("summary") or "").strip():
-        merged["summary"] = str(fallback.get("summary") or "").strip()
+        merged[key] = _clean_rows(fallback.get(key))
+    if not _extract.clean(merged.get("summary")):
+        merged["summary"] = _extract.clean(fallback.get("summary"))
     return merged
 
 
@@ -171,14 +203,8 @@ def _listing_candidate_if_complete(
     requested_url: str,
     card: dict[str, Any],
 ) -> dict[str, str] | None:
-    """Use an authoritative complete list card without opening its detail page.
+    """Use exact complete list-card fields unless the source requires detail reading."""
 
-    The source inventory defines the rendered list card as the membership authority
-    and detail pages as enrichment. Opening every detail page made Review Preview
-    serially wait on dozens of pages even when title, date, and venue were already
-    present. A source may opt into ``review_detail_policy=always`` when its detail page
-    must replace misleading child/list-card fields, as ACM does.
-    """
     policy = _extract.clean(source.get("review_detail_policy") or "missing_fields").casefold()
     if policy == "always":
         return None
@@ -206,13 +232,8 @@ def _detail_candidate(
     raw_url: str,
     card: dict[str, Any],
 ) -> dict[str, str]:
-    """Read one required detail page without waiting for long-lived lifecycle events.
+    """Read exact detail fields without parser, runtime, or source-default rewriting."""
 
-    Complete authoritative list cards return immediately. Official Event pages are
-    opened only when fields are missing or the source explicitly requires detail
-    correction. Missing fields produce an incomplete candidate rather than removing
-    membership.
-    """
     if "#nhb-" in raw_url or "#nhb-json-" in raw_url:
         listing = _detail_dates._listing_fields(source, card)
         return {
@@ -242,10 +263,7 @@ def _detail_candidate(
             raise ValueError(f"detail_http_status_{response.status}")
 
         try:
-            detail.wait_for_function(
-                DETAIL_READY_JS,
-                timeout=DETAIL_CONTENT_WAIT_MS,
-            )
+            detail.wait_for_function(DETAIL_READY_JS, timeout=DETAIL_CONTENT_WAIT_MS)
         except Exception:
             pass
         detail.wait_for_timeout(150)
@@ -262,69 +280,33 @@ def _detail_candidate(
             if isinstance(fallback, dict):
                 payload = _merge_fallback_fields(payload, fallback)
 
-        merged = _browser.merge_detail_payload(
-            {
-                **card,
-                "url": final_url,
-                "page_url": final_url,
-                "detail_urls": [final_url],
-                "detail_url_count": 1,
-            },
-            payload,
-        )
-        event, reason = _extract.event_from_card(source, merged)
-        page_title = _extract.clean(payload.get("title") or detail.title() or "")
-        listing = _detail_dates._listing_fields(source, card)
+        title = _extract.clean(payload.get("title") or detail.title() or "")
+        when = _raw_when(payload)
+        where = _raw_where(payload)
+        summary = _raw_summary(payload)
 
-        if event is None:
-            authoritative_when, authoritative_when_line = _extract.pick_when(merged)
-            authoritative_where = _extract.pick_venue(
-                source,
-                merged,
-                authoritative_when,
-                authoritative_when_line,
-            )
-            title = (
-                _extract.clean(payload.get("title"))
-                or listing["title"]
-                or _extract.title_from_url(final_url)
-            )
-            return {
-                "detail_url": final_url,
-                "title": title,
-                "when": _extract.clean(authoritative_when) or listing["when"],
-                "where": _extract.clean(authoritative_where) or listing["where"],
-                "summary": _best_summary(
-                    payload,
-                    merged,
-                    listing_summary=listing["summary"],
-                ),
-                "detail_status": "incomplete",
-                "detail_error": reason,
-                "detail_page_title": page_title,
-            }
-
+        missing = [
+            name
+            for name, value in (("title", title), ("when", when), ("where", where))
+            if not value
+        ]
         return {
             "detail_url": final_url,
-            "title": str(event.get("title") or payload.get("title") or ""),
-            "when": str(event.get("when") or ""),
-            "where": str(event.get("where") or ""),
-            "summary": _best_summary(
-                payload,
-                merged,
-                event,
-                listing["summary"],
-            ),
-            "detail_status": "collected",
-            "detail_error": "",
-            "detail_page_title": page_title,
+            "title": title,
+            "when": when,
+            "where": where,
+            "summary": summary,
+            "detail_status": "incomplete" if missing else "collected",
+            "detail_error": "missing_detail_" + "_and_".join(missing) if missing else "",
+            "detail_page_title": _extract.clean(payload.get("title") or detail.title() or ""),
         }
     finally:
         detail.close()
 
 
 def apply() -> None:
-    """Install bounded, conditional detail navigation for Review Preview."""
+    """Install direct, bounded detail collection for Review Preview."""
+
     global _APPLIED
     if _APPLIED:
         return
@@ -340,7 +322,10 @@ __all__ = [
     "DETAIL_CONTENT_WAIT_MS",
     "DETAIL_READY_JS",
     "FALLBACK_DETAIL_FIELDS_JS",
-    "_best_summary",
-    "_listing_candidate_if_complete",
     "apply",
+    "_detail_candidate",
+    "_listing_candidate_if_complete",
+    "_raw_summary",
+    "_raw_when",
+    "_raw_where",
 ]
