@@ -7,6 +7,7 @@ from .conftest import SURFACE, read_text
 
 sys.path.insert(0, str(SURFACE))
 
+from local_events_runtime import event_review  # noqa: E402
 from local_events_runtime import review_detail_navigation_authority as detail_navigation  # noqa: E402
 from local_events_runtime import review_effective_fields_authority as authority  # noqa: E402
 from local_events_runtime.event_review import (  # noqa: E402
@@ -181,9 +182,6 @@ def test_explicit_past_date_error_is_removed_even_when_when_is_empty(tmp_path) -
 
 
 def test_fallback_date_and_detail_time_are_preserved_and_expire(tmp_path) -> None:
-    # This matches the real flow: the page-wide fallback contributes the ordinary
-    # date row through payload["dates"], while the primary detail payload already
-    # contains the opening-hours row in lines.
     payload = {
         "dates": ["25 November 2022 - 26 March 2023"],
         "venues": [],
@@ -219,6 +217,14 @@ def test_final_owner_installs_primary_document_fact_collection() -> None:
     assert "last updated" in script
     assert "date-start-date" not in script
     assert "data-start-date" in script
+
+
+def test_web_and_navigation_use_the_same_final_detail_owner() -> None:
+    authority.apply()
+
+    assert event_review._detail_candidate is authority.detail_candidate
+    assert detail_navigation._detail_candidate is authority.detail_candidate
+    assert detail_navigation._read_detail_page is authority._read_detail_page
 
 
 def test_effective_owner_contains_no_runtime_or_parser_backfill() -> None:
