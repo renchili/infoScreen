@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from . import browser as _browser
@@ -102,6 +103,34 @@ _FIELD_LABELS = {
     "where": {"location", "venue", "where"},
 }
 _ALL_FIELD_LABELS = set().union(*_FIELD_LABELS.values(), {"admission", "ticket", "tickets"})
+_MONTH_PATTERN = (
+    r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|"
+    r"jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|"
+    r"nov(?:ember)?|dec(?:ember)?)"
+)
+_UNLABELLED_DATE_RE = re.compile(
+    rf"(?:\b20\d{{2}}-\d{{1,2}}-\d{{1,2}}\b|"
+    rf"\b\d{{1,2}}(?:st|nd|rd|th)?"
+    rf"(?:\s*(?:,|[-–—])\s*\d{{1,2}}(?:st|nd|rd|th)?)*"
+    rf"\s+{_MONTH_PATTERN}\s+20\d{{2}}\b|"
+    rf"\b{_MONTH_PATTERN}\s+\d{{1,2}}(?:st|nd|rd|th)?(?:,)?\s+20\d{{2}}\b)",
+    re.I,
+)
+_UNLABELLED_TIME_RE = re.compile(
+    r"\b\d{1,2}(?:[.:]\d{1,2})?\s*(?:am|pm)?\s*[-–—]\s*"
+    r"\d{1,2}(?:[.:]\d{1,2})?\s*(?:am|pm)\b",
+    re.I,
+)
+_UNLABELLED_VENUE_RE = re.compile(
+    r"\b(?:museum|gallery|galleries|room|hall|theatre|theater|auditorium|"
+    r"foyer|atrium|courtyard|plaza|studio|park|gardens?|zoo|centre|center)\b",
+    re.I,
+)
+_UNLABELLED_VENUE_NOISE_RE = re.compile(
+    r"^(?:visit|explore|experience|discover|join|learn|see|walk|programme|"
+    r"programmes|admission|ticket|tickets|book)\b",
+    re.I,
+)
 
 
 def _clean_rows(raw: object) -> list[str]:
@@ -144,21 +173,53 @@ def _labeled_values(lines: list[str], labels: set[str]) -> list[str]:
     return output
 
 
+def _unlabelled_schedule_line(lines: list[str]) -> str:
+    """Return a complete schedule line exactly as collected from the page."""
+
+    for line in lines:
+        text = _extract.clean(line)
+        if not text or len(text) > 240:
+            continue
+        if _UNLABELLED_DATE_RE.search(text) and _UNLABELLED_TIME_RE.search(text):
+            return text
+    return ""
+
+
+def _unlabelled_venue_line(lines: list[str]) -> str:
+    """Return a short venue line exactly as collected, never a narrative sentence."""
+
+    for line in lines:
+        text = _extract.clean(line)
+        if not text or len(text) > 140 or len(text.split()) > 14:
+            continue
+        if _UNLABELLED_VENUE_NOISE_RE.search(text):
+            continue
+        if _UNLABELLED_DATE_RE.search(text) or _UNLABELLED_TIME_RE.search(text):
+            continue
+        if _UNLABELLED_VENUE_RE.search(text):
+            return text
+    return ""
+
+
 def _raw_when(payload: dict[str, Any]) -> str:
-    """Return exact collected Date/Time/Duration rows without reconstruction."""
+    """Return exact collected Date/Time/Duration text without reconstruction."""
 
     lines = _payload_lines(payload)
     date_rows = _labeled_values(lines, _FIELD_LABELS["date"])
     time_rows = _labeled_values(lines, _FIELD_LABELS["time"])
 
-    if not date_rows:
-        date_rows = _clean_rows(payload.get("dates"))
-
     values: list[str] = []
     for value in [*date_rows, *time_rows]:
         if value and value not in values:
             values.append(value)
-    return " · ".join(values)
+    if values:
+        return " · ".join(values)
+
+    schedule_line = _unlabelled_schedule_line(lines)
+    if schedule_line:
+        return schedule_line
+
+    return " · ".join(_clean_rows(payload.get("dates")))
 
 
 def _raw_where(payload: dict[str, Any]) -> str:
@@ -166,8 +227,14 @@ def _raw_where(payload: dict[str, Any]) -> str:
 
     lines = _payload_lines(payload)
     rows = _labeled_values(lines, _FIELD_LABELS["where"])
-    if not rows:
-        rows = _clean_rows(payload.get("venues"))
+    if rows:
+        return rows[0]
+
+    venue_line = _unlabelled_venue_line(lines)
+    if venue_line:
+        return venue_line
+
+    rows = _clean_rows(payload.get("venues"))
     return rows[0] if rows else ""
 
 
@@ -328,4 +395,6 @@ __all__ = [
     "_raw_summary",
     "_raw_when",
     "_raw_where",
+    "_unlabelled_schedule_line",
+    "_unlabelled_venue_line",
 ]
