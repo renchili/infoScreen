@@ -62,7 +62,7 @@ def evidence() -> EventEvidence:
 
 def candidate(
     *,
-    when: str = "23, 24, 30, 31 Jan 2026 · 6pm–10pm",
+    when: str = "23, 24, 30, 31 Jan 2027 · 6pm–10pm",
     where: str = "Asian Civilisations Museum, 1 Empress Place, Singapore 179555",
     summary: str = "Experience ACM after dark through the Power of Play.",
     detail_error: str = "",
