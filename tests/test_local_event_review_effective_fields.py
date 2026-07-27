@@ -203,6 +203,62 @@ def test_fallback_date_and_detail_time_are_preserved_and_expire(tmp_path) -> Non
     assert store.state_payload()["events"] == []
 
 
+def test_time_only_detail_when_is_rejected() -> None:
+    payload = {
+        "dates": ["Daily - 10am - 7pm"],
+        "venues": ["Shaw Foyer"],
+        "lines": [
+            "BODY AND SPIRIT: THE HUMAN BODY IN THOUGHT AND PRACTICE",
+            "Daily - 10am - 7pm",
+            "Shaw Foyer",
+        ],
+    }
+
+    assert detail_navigation._raw_when(payload) == ""
+
+
+def test_document_fact_wait_does_not_settle_before_delayed_date(monkeypatch) -> None:
+    class DelayedDatePage:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def evaluate(self, _script):
+            self.calls += 1
+            if self.calls < 10:
+                return {
+                    "dates": [],
+                    "venues": ["Shaw Foyer"],
+                    "lines": ["Daily - 10am - 7pm", "Shaw Foyer"],
+                }
+            return {
+                "dates": ["25 November 2022 - 26 March 2023"],
+                "venues": ["Shaw Foyer"],
+                "lines": [
+                    "25 November 2022 - 26 March 2023",
+                    "Daily - 10am - 7pm",
+                    "Shaw Foyer",
+                ],
+            }
+
+        def wait_for_timeout(self, _milliseconds: int) -> None:
+            return None
+
+    current = -0.2
+
+    def monotonic() -> float:
+        nonlocal current
+        current += 0.2
+        return current
+
+    monkeypatch.setattr(authority.time, "monotonic", monotonic)
+    page = DelayedDatePage()
+
+    facts = authority._collect_document_facts(page)
+
+    assert page.calls >= 10
+    assert facts["dates"] == ["25 November 2022 - 26 March 2023"]
+
+
 def test_final_owner_installs_primary_document_fact_collection() -> None:
     assert detail_navigation.DETAIL_READY_JS == authority.DETAIL_STABLE_READY_JS
     assert (
