@@ -106,9 +106,12 @@ def test_readme_has_newcomer_path_runtime_boundaries_and_success_urls() -> None:
     assert positions == sorted(positions)
 
     for value in [
+        "python3 -m venv .venv",
+        'python -m pip install "pydantic>=2,<3"',
         "python3 surface/serve_infoscreen.py",
         "http://127.0.0.1:8765/",
         "http://127.0.0.1:8765/docs",
+        "http://127.0.0.1:8765/openapi.json",
         "surface/.env/",
         "surface/local_events_runtime/",
         "surface/.env/migration_backup/",
@@ -136,7 +139,7 @@ def test_mac_schedule_sync_uses_atomic_remote_publish() -> None:
     assert "~/infoscreen/surface/.env/schedule.json" in sync_script
     assert 'REMOTE_TMP_RELATIVE="${REMOTE_RELATIVE_JSON}.tmp.$$"' in sync_script
     assert 'scp -q "$SCRIPT_DIR/$LOCAL_SCHEDULE_JSON"' in sync_script
-    assert 'mv -f -- \'$REMOTE_TMP_RELATIVE\' \'$REMOTE_RELATIVE_JSON\'' in sync_script
+    assert "mv -f -- '$REMOTE_TMP_RELATIVE' '$REMOTE_RELATIVE_JSON'" in sync_script
     assert "unsafe REMOTE_SCHEDULE_JSON" in sync_script
     assert "${REMOTE_SCHEDULE_JSON:-~/infoscreen/surface/.env/schedule.json}" in setup_script
     assert "~/infoscreen/schedule.json" not in sync_script
@@ -187,7 +190,9 @@ def test_readme_covers_current_product_interaction_and_recovery() -> None:
         "Last-Modified" if "Last-Modified" in readme else "Sync ticker",
         "--disable-http2",
         "migration_backup",
-        "never change other list-page decisions temporarily",
+        "POST /api/local-events/review/preview-events",
+        "never changes the real list-page decision or persisted Review state",
+        "does not refresh other confirmed pages",
     ]
     for value in required:
         assert value in readme
@@ -211,6 +216,8 @@ def test_design_documents_current_ownership_and_review_projection() -> None:
         "local_event_collector_results.json",
         "local_event_search_results.partial.json",
         "--disable-http2",
+        "isolated temporary state",
+        "never collects unrelated confirmed pages",
     ]
     for value in required:
         assert value in design
@@ -235,7 +242,11 @@ def test_api_spec_documents_current_routes_and_side_effects() -> None:
         "local_event_collector_results.json",
         "## 9. Local Event review interaction",
         "POST /api/local-events/review/listing-page",
+        "POST /api/local-events/review/preview-events",
+        '"listing_url": "https://official.example/events"',
         "POST /api/local-events/review/collect-events",
+        "temporary directory",
+        "does not collect unrelated confirmed pages",
         "## 10. Browser interaction summary",
         "0.0.0.0:8765",
     ]
@@ -285,6 +296,7 @@ def test_questions_follow_mandatory_clarification_structure() -> None:
         "debug_by_source",
         "local_event_search_results.partial.json",
         "surface/local_events_runtime/",
+        "POST /api/local-events/review/preview-events",
         "partially verified",
     ]:
         assert value in explanations
