@@ -200,26 +200,25 @@
     });
   }
 
+  async function collectPreviewPage(url) {
+    return request("/api/local-events/review/preview-events", {
+      method: "POST",
+      body: JSON.stringify({ listing_url: url }),
+    });
+  }
+
   async function collectPreview(card, button) {
     const url = listingUrl(card);
     if (!url) return;
 
     button.disabled = true;
-    button.textContent = "COLLECTING CONFIRMED PAGES...";
+    button.textContent = "COLLECTING PREVIEW...";
     setGlobalStatus("COLLECTING EVENT PREVIEW", "warn");
 
     try {
-      const state = await request("/api/local-events/review/state");
-      const listing = (state.listing_pages || []).find((row) => row.url === url);
-      if (!listing) throw new Error("Listing page is not present in review state");
-      if (listing.decision !== "confirmed") {
-        throw new Error("Confirm this list page before previewing it. Preview no longer changes review decisions temporarily.");
-      }
-
-      const payload = await collectConfirmedPages();
+      const payload = await collectPreviewPage(url);
       const rows = normalizedPreviewRows(payload, url);
       savePreview(url, rows);
-      publishState(payload);
       if (card.isConnected) {
         renderPreviewRows(card, rows, { collectedAt: new Date().toISOString() });
       }
