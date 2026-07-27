@@ -4,7 +4,6 @@ import re
 import time
 from typing import Any
 
-from . import detail_date_authority as _detail_dates
 from . import event_review as _review
 from . import extract as _extract
 from . import review_detail_navigation_authority as _detail_navigation
