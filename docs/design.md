@@ -136,15 +136,17 @@ The persistence files are separate, but confirmed and rejected Event decisions a
 ```text
 discover candidate list pages
   -> inspect candidate URL
+  -> optionally preview that saved page in any decision state
   -> confirm/reject/reset list page
-  -> optionally preview a confirmed page
   -> collect from all confirmed pages
   -> inspect detail data and DOM evidence
   -> confirm/reject/reset Event candidate
   -> rebuild local_event_search_results.json from collector snapshot + Review state
 ```
 
-Preview uses the current confirmed-page collection and filters the returned candidates for the selected list URL. It does not temporarily set unrelated confirmed pages to `pending`, and it does not restore decisions through a best-effort client rollback.
+Preview is decision-independent. `POST /api/local-events/review/preview-events` copies the current Review state to a temporary store, keeps only the selected list page, marks only that temporary copy confirmed, clears copied Event candidates and feedback, and runs the same final collector/detail owner. The returned preview is browser-session evidence only. The saved list-page decision, persisted Event candidates, feedback, collection metadata, and real `state.json` are not changed.
+
+Normal collection remains separate: `POST /api/local-events/review/collect-events` reads all pages currently marked `confirmed`, persists the resulting Event candidates and diagnostics, and leaves list-page decisions unchanged.
 
 Decision projection rules are:
 
@@ -178,11 +180,12 @@ select one global institution
   -> validate hostname against that institution's allowed_domains
   -> save or reset the page as pending review state
   -> display it immediately in the left-side list-page cards
+  -> optionally preview before deciding
   -> confirm/reject/reset
-  -> preview or collect after confirmation
+  -> include it in normal collection only when confirmed
 ```
 
-Manual addition does not edit committed `event_sources.json` and does not automatically collect Events. It creates a review candidate only. The user confirms it before preview or normal confirmed-page collection.
+Manual addition does not edit committed `event_sources.json` and does not automatically collect Events. It creates a review candidate only. The operator may run the isolated preview while the page is pending, rejected, or confirmed. Confirmation is required only for the normal persisted collection across confirmed pages.
 
 When the same institution/URL already exists, manual addition resets it to `pending`, allowing the operator to reconsider a previously rejected or stale decision.
 
