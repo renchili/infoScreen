@@ -7,6 +7,7 @@ from .conftest import SURFACE, read_text
 
 sys.path.insert(0, str(SURFACE))
 
+from local_events_runtime import review_detail_navigation_authority as detail_navigation  # noqa: E402
 from local_events_runtime import review_effective_fields_authority as authority  # noqa: E402
 from local_events_runtime.event_review import (  # noqa: E402
     EventCandidate,
@@ -17,6 +18,7 @@ from local_events_runtime.event_review import (  # noqa: E402
 
 
 authority.apply()
+
 
 DETAIL_URL = "https://www.acm.nhb.gov.sg/whats-on/programmes/2026-ltn"
 
@@ -63,6 +65,7 @@ def candidate(
     when: str = "23, 24, 30, 31 Jan 2026 · 6pm–10pm",
     where: str = "Asian Civilisations Museum, 1 Empress Place, Singapore 179555",
     summary: str = "Experience ACM after dark through the Power of Play.",
+    detail_error: str = "",
 ) -> EventCandidate:
     return EventCandidate(
         candidate_id="acm-2026-ltn",
@@ -74,7 +77,8 @@ def candidate(
         when=when,
         where=where,
         summary=summary,
-        detail_status="collected",
+        detail_status="collected" if not detail_error else "incomplete",
+        detail_error=detail_error,
         detail_page_title="Light to Night at ACM: Power of Play",
         evidence=evidence(),
         decision="pending",
@@ -152,6 +156,50 @@ def test_past_exact_date_is_removed_without_field_rewrite(tmp_path) -> None:
     assert payload["events"] == []
     assert payload["event_collection"]["candidate_count"] == 0
     assert payload["event_collection"]["expired_candidate_count"] >= 1
+
+
+def test_explicit_past_date_error_is_removed_even_when_when_is_empty(tmp_path) -> None:
+    store = store_at(tmp_path)
+    past = candidate(
+        when="",
+        where="",
+        summary="CHILDREN’S SEASON AT ACM: PLAY ON!",
+        detail_error="past_date",
+    )
+
+    replaced = store.replace_events(
+        [past],
+        {"completed_at": "now", "candidate_count": 1},
+    )
+    assert replaced.events == []
+    assert replaced.event_collection["candidate_count"] == 0
+    assert replaced.event_collection["expired_candidate_count"] >= 1
+
+    store.save(ReviewState(events=[past]))
+    assert store.load().events == []
+    assert store.state_payload()["events"] == []
+
+
+def test_separate_detail_date_and_time_rows_are_preserved_and_expire(tmp_path) -> None:
+    payload = {
+        "dates": [],
+        "venues": [],
+        "lines": [
+            "BODY AND SPIRIT: THE HUMAN BODY IN THOUGHT AND PRACTICE",
+            "25 November 2022 – 26 March 2023",
+            "Daily – 10am – 7pm",
+            "Shaw Foyer",
+        ],
+    }
+
+    when = detail_navigation._raw_when(payload)
+
+    assert when == "25 November 2022 – 26 March 2023 · Daily – 10am – 7pm"
+
+    store = store_at(tmp_path)
+    past = candidate(when=when, where="Shaw Foyer")
+    store.save(ReviewState(events=[past]))
+    assert store.state_payload()["events"] == []
 
 
 def test_effective_owner_contains_no_runtime_or_parser_backfill() -> None:
