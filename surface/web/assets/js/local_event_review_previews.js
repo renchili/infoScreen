@@ -189,14 +189,17 @@
     status.className = `status ${kind || ""}`.trim();
   }
 
-  async function reloadState() {
-    await window.InfoScreenReviewStudio?.loadState?.();
-  }
-
   async function collectConfirmedPages() {
     return request("/api/local-events/review/collect-events", {
       method: "POST",
       body: "{}",
+    });
+  }
+
+  async function collectPreviewPage(url) {
+    return request("/api/local-events/review/preview-events", {
+      method: "POST",
+      body: JSON.stringify({ listing_url: url }),
     });
   }
 
@@ -205,18 +208,11 @@
     if (!url) return;
 
     button.disabled = true;
-    button.textContent = "COLLECTING CONFIRMED PAGES...";
-    setGlobalStatus("COLLECTING EVENT PREVIEW", "warn");
+    button.textContent = "PREVIEWING THIS PAGE...";
+    setGlobalStatus("COLLECTING ISOLATED EVENT PREVIEW", "warn");
 
     try {
-      const state = await request("/api/local-events/review/state");
-      const listing = (state.listing_pages || []).find((row) => row.url === url);
-      if (!listing) throw new Error("Listing page is not present in review state");
-      if (listing.decision !== "confirmed") {
-        throw new Error("Confirm this list page before previewing it. Preview no longer changes review decisions temporarily.");
-      }
-
-      const payload = await collectConfirmedPages();
+      const payload = await collectPreviewPage(url);
       const rows = normalizedPreviewRows(payload, url);
       savePreview(url, rows);
       publishState(payload);
@@ -225,10 +221,9 @@
       }
 
       setGlobalStatus(
-        `${rows.length} EVENT CANDIDATE${rows.length === 1 ? "" : "S"} RETURNED FOR THIS LIST PAGE`,
+        `${rows.length} EVENT CANDIDATE${rows.length === 1 ? "" : "S"} PREVIEWED; REVIEW DECISION UNCHANGED`,
         rows.length ? "ok" : "error",
       );
-      await reloadState();
     } catch (error) {
       if (card.isConnected) {
         renderPreviewRows(card, [], { error: text(error.message || error) });
@@ -262,7 +257,7 @@
           : `${count} EVENT CANDIDATES RETURNED`,
         count ? "ok" : "error",
       );
-      await reloadState();
+      await window.InfoScreenReviewStudio?.loadState?.();
     } catch (error) {
       setGlobalStatus(text(error.message || error), "error");
     } finally {
