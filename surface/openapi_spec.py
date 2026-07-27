@@ -103,12 +103,24 @@ def build_openapi() -> dict[str, Any]:
             },
         },
     }
+    preview_listing_schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["listing_url"],
+        "properties": {
+            "listing_url": {
+                "type": "string",
+                "format": "uri",
+                "description": "Exact URL of an existing review list-page candidate to preview in isolated temporary state.",
+            },
+        },
+    }
 
     return {
         "openapi": OPENAPI_VERSION,
         "info": {
             "title": "InfoScreen Local API",
-            "version": "0.2.1",
+            "version": "0.2.2",
             "description": "Local kiosk API for runtime dashboard JSON, refresh actions, market config, local event search, and Local Event operator review.",
         },
         "servers": [{"url": "http://127.0.0.1:8765", "description": "Surface kiosk server; replace 127.0.0.1 with the Surface LAN address when using another trusted device"}],
@@ -148,13 +160,26 @@ def build_openapi() -> dict[str, Any]:
                 "post": {"tags": ["local-event-review"], "summary": "Discover candidate official list pages", "description": "Runs Playwright against configured institution home pages. Chromium starts with --disable-http2 and performs no HTTP/2-first retry.", "responses": {"200": json_response(object_schema), "500": json_response(ref("ErrorResponse"), "Discovery failed")}},
             },
             "/api/local-events/review/listing-page": {
-                "post": {"tags": ["local-event-review"], "summary": "Add one operator-supplied official Event list page", "description": "Validates the selected institution and allowed official domain, saves the page as pending review state, and does not collect Events until it is confirmed.", "requestBody": request_body(manual_listing_schema), "responses": {"200": json_response(object_schema), "400": json_response(ref("ErrorResponse"), "Invalid institution or listing URL")}},
+                "post": {"tags": ["local-event-review"], "summary": "Add one operator-supplied official Event list page", "description": "Validates the selected institution and allowed official domain, saves the page as pending review state, and does not collect Events automatically.", "requestBody": request_body(manual_listing_schema), "responses": {"200": json_response(object_schema), "400": json_response(ref("ErrorResponse"), "Invalid institution or listing URL")}},
             },
             "/api/local-events/review/listing-decision": {
                 "post": {"tags": ["local-event-review"], "summary": "Save a list-page review decision", "requestBody": request_body(decision_schema), "responses": {"200": json_response(object_schema), "400": json_response(ref("ErrorResponse"), "Invalid decision")}},
             },
+            "/api/local-events/review/preview-events": {
+                "post": {
+                    "tags": ["local-event-review"],
+                    "summary": "Preview Event candidates from one review list page",
+                    "description": "Copies the current Review state into a temporary store, confirms only the selected page inside that temporary copy, clears temporary Event/feedback/collection data, collects only that page, and returns the preview without saving or changing the real list-page decision or persisted Review state. Pending, confirmed, and rejected candidates may be previewed.",
+                    "requestBody": request_body(preview_listing_schema),
+                    "responses": {
+                        "200": json_response(object_schema),
+                        "400": json_response(ref("ErrorResponse"), "Missing or unknown listing URL"),
+                        "500": json_response(ref("ErrorResponse"), "Preview collection failed"),
+                    },
+                },
+            },
             "/api/local-events/review/collect-events": {
-                "post": {"tags": ["local-event-review"], "summary": "Collect Event candidates from confirmed pages", "description": "Reads confirmed list pages with Chromium forced to --disable-http2, follows official detail links, writes per-listing recognition diagnostics, and persists Event candidates.", "responses": {"200": json_response(object_schema), "500": json_response(ref("ErrorResponse"), "Collection failed")}},
+                "post": {"tags": ["local-event-review"], "summary": "Collect Event candidates from confirmed pages", "description": "Reads all confirmed list pages with Chromium forced to --disable-http2, follows official detail links, writes per-listing recognition diagnostics, and persists Event candidates.", "responses": {"200": json_response(object_schema), "500": json_response(ref("ErrorResponse"), "Collection failed")}},
             },
             "/api/local-events/review/event-decision": {
                 "post": {"tags": ["local-event-review"], "summary": "Save an Event candidate review decision", "requestBody": request_body(decision_schema), "responses": {"200": json_response(object_schema), "400": json_response(ref("ErrorResponse"), "Invalid decision")}},
