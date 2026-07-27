@@ -14,9 +14,16 @@ Runtime JSON, machine-local configuration, logs, debug captures, and personal ph
 
 ## First 10 minutes
 
+The HTTP server imports the Local Events review models at startup, so Pydantic 2 is required even when only opening the kiosk page. On Ubuntu or the Surface, use an isolated environment:
+
 ```bash
 git clone https://github.com/renchili/infoScreen.git ~/infoscreen
 cd ~/infoscreen
+sudo apt update
+sudo apt install -y python3 python3-venv
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install "pydantic>=2,<3"
 mkdir -p surface/.env
 python3 surface/serve_infoscreen.py
 ```
@@ -33,11 +40,18 @@ Open API documentation:
 http://127.0.0.1:8765/docs
 ```
 
+The machine-readable contract remains available without the Swagger UI assets at:
+
+```text
+http://127.0.0.1:8765/openapi.json
+```
+
 ## Prerequisites
 
 For the smallest local path:
 
-- Python 3;
+- Python 3 with `venv` support;
+- Pydantic 2 installed in the active Python environment;
 - a browser or `curl`;
 - a checkout at `~/infoscreen` when following the supported deployment scripts.
 
@@ -82,8 +96,8 @@ The dashboard includes:
 - a Calendar board supplied by macOS Calendar/EventKit;
 - a local Photo wall;
 - a Sync ticker showing whether Schedule, Weather, Market, and News runtime files are fresh, stale, missing, or unreachable;
-- local OpenAPI documentation;
-- a Local Event operator page for list-page review, Event review, manual correct-list-page entry, and diagnostics.
+- local OpenAPI JSON and a Swagger UI wrapper;
+- a Local Event operator page for list-page review, Event review, isolated single-page preview, manual correct-list-page entry, and diagnostics.
 
 ## Runtime model
 
@@ -125,14 +139,14 @@ Each visible DOM mount has one renderer owner. Producers write runtime data; bro
 
 ## Local-event dashboard filter
 
-- The kiosk card reads the current results with `GET /api/local-events/search`; opening or applying its filter does not run a collection.
-- The institution dropdown is built from the institutions present in the current event rows and includes `ALL INSTITUTIONS`.
-- The text field filters title, institution/source, date/time, venue/place, and description. Multiple typed terms must all match the same event.
+- The kiosk card reads current results with `GET /api/local-events/search`; opening or applying its filter does not run a collection.
+- The institution dropdown is built from institutions present in the current event rows and includes `ALL INSTITUTIONS`.
+- The text field filters title, institution/source, date/time, venue/place, and description. Multiple terms must all match the same event.
 - The selected institution and text are stored in browser `localStorage` as `local_events_filter_source` and `local_events_filter_query`.
-- Pressing `FILTER` only filters the already-loaded rows in browser memory. It does not send `POST /api/local-events/search`, launch Chromium, or rewrite runtime JSON.
+- Pressing `FILTER` filters the already-loaded rows in browser memory. It does not send `POST /api/local-events/search`, launch Chromium, or rewrite runtime JSON.
 - Periodic GET reloads keep the current filter applied to newly loaded results.
 
-`POST /api/local-events/search` remains an explicit producer trigger for direct operator/API use; it is not the kiosk filter action.
+`POST /api/local-events/search` remains an explicit producer trigger for operator/API use; it is not the kiosk filter action.
 
 ## Local Event Studio
 
@@ -148,6 +162,8 @@ From another computer on the same trusted LAN:
 http://<surface-lan-address>:8765/local-events/studio/
 ```
 
+The local server has no authentication layer. Do not expose port 8765 outside the trusted device/LAN boundary.
+
 Update and restart the canonical branch:
 
 ```bash
@@ -160,14 +176,19 @@ systemctl --user restart infoscreen-http.service
 
 ### Review system-collected list pages and Events
 
-1. Select the global institution used to filter the visible Review cards.
+1. Select the global institution used to filter visible Review cards.
 2. Click `COLLECT LIST PAGES`.
-3. Inspect the candidate URL and choose `CONFIRM LIST PAGE`, `REJECT`, or `RESET`.
-4. For a confirmed page, use `PREVIEW EVENTS` when a page-specific preview is needed.
-5. Click `COLLECT EVENTS FROM CONFIRMED PAGES` to refresh all confirmed pages.
-6. Review each Event and choose `RELATED ACTIVITY`, `NOT RELATED`, or `RESET`.
+3. Inspect a candidate URL.
+4. Use `PREVIEW EVENTS` at any time on a pending, confirmed, or rejected list-page card when an isolated page-specific preview is needed.
+5. Choose `CONFIRM LIST PAGE`, `REJECT`, or `RESET` for the real list-page decision.
+6. Click `COLLECT EVENTS FROM CONFIRMED PAGES` to refresh and persist all currently confirmed pages.
+7. Review each Event and choose `RELATED ACTIVITY`, `NOT RELATED`, or `RESET`.
 
-Preview and collection never change other list-page decisions temporarily. A listing card needs a usable title and one official detail link. The list card itself does not need to repeat date or venue. The collector follows detail pages for title, date/time, location, summary, and detail status.
+`PREVIEW EVENTS` sends only the selected `listing_url` to `POST /api/local-events/review/preview-events`. The server copies the current Review state into a temporary directory, confirms only that selected page inside the temporary copy, clears temporary Event/feedback/collection data, and runs the normal final collector. It never changes the real list-page decision or persisted Review state, never changes other list-page decisions temporarily, and does not refresh other confirmed pages.
+
+Normal collection remains separate: `COLLECT EVENTS FROM CONFIRMED PAGES` persists candidates and diagnostics for all confirmed pages.
+
+A listing card needs a usable title and one official detail link. The list card itself does not need to repeat date or venue. The collector follows detail pages for title, date/time, location, summary, and detail status.
 
 Every Event candidate shows its originating list URL, DOM selector, selector match number, listing page index, document position, detail URL, and detail result.
 
@@ -179,8 +200,9 @@ The manual input is directly below the top collection toolbar.
 2. Paste the correct official Event list URL into `Add an official Event list page to the selected global institution`.
 3. Click `ADD LIST PAGE`.
 4. The page is saved as `pending` and appears in the left-side Event list pages.
-5. Confirm the page.
-6. Use `PREVIEW EVENTS` or collect all confirmed pages.
+5. Use isolated `PREVIEW EVENTS` immediately when validation is needed; this does not confirm the page.
+6. Confirm, reject, or reset the page.
+7. Confirmed pages participate in normal `COLLECT EVENTS FROM CONFIRMED PAGES` runs.
 
 The backend validates that:
 
@@ -208,10 +230,7 @@ before collector imports, and every patched Chromium launch includes:
 --disable-http2
 ```
 
-This applies to:
-
-- Studio discovery and Event collection through `surface/serve_infoscreen.py`;
-- scheduled and HTTP-triggered Local Events through `surface/search_local_events.py`.
+This applies to Studio discovery, isolated preview, confirmed-page collection, and scheduled/HTTP-triggered Local Events.
 
 ### Interactive browser feedback status
 
@@ -244,7 +263,13 @@ Collection behaviour includes:
 - recording per-source and per-listing evidence;
 - preserving previous verified rows when a partial run would replace them with fewer results.
 
-Primary output:
+Producer-owned snapshot:
+
+```text
+surface/.env/local_event_collector_results.json
+```
+
+Primary kiosk output:
 
 ```text
 surface/.env/local_event_search_results.json
@@ -274,6 +299,8 @@ surface/.env/local_event_debug_cards/
 
 The Local Event Studio loads on initial entry, explicit operations, manual `RELOAD`, and return to the browser tab. It does not register an idle polling interval. Full-card rendering emits one completion event, and the scroll guard restores the previous card anchor or scroll position after that completed render.
 
+The Sync ticker observes per-file `Last-Modified`; it is not a scheduler.
+
 ## Project structure
 
 ```text
@@ -300,7 +327,8 @@ Install dependencies:
 ```bash
 sudo apt update
 sudo apt install -y python3 python3-pip curl ca-certificates chromium imagemagick ffmpeg
-python3 -m pip install --user playwright pydantic
+python3 -m pip install --user playwright "pydantic>=2,<3" || \
+  python3 -m pip install --user --break-system-packages playwright "pydantic>=2,<3"
 ```
 
 Install or update user services:
@@ -344,13 +372,13 @@ python3 -m json.tool surface/.env/local_event_search_results.json | less
 python3 -m json.tool surface/.env/local_event_search_results.partial.json | less
 ```
 
-When a Studio preview fails, inspect `event_collection.listing_diagnostics` in:
+A normal confirmed-page collection stores diagnostics in:
 
 ```text
 surface/.env/local_event_review/state.json
 ```
 
-A failure before DOM parsing should be shown as a page/navigation error. Missing date on the listing card is not a rejection reason.
+An isolated preview returns its diagnostics in the preview response and does not overwrite that persisted file. A failure before DOM parsing is shown as a page/navigation error. Missing date on the listing card is not a rejection reason.
 
 ## Calendar sync
 
@@ -385,10 +413,12 @@ The public `photos.json` contains only browser URLs, captions, and output types;
 
 ## Development and validation
 
-Install test dependencies:
+Install test dependencies in an isolated environment:
 
 ```bash
-python3 -m pip install --user pytest pydantic
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install pytest "pydantic>=2,<3"
 ```
 
 Repository checks include:
