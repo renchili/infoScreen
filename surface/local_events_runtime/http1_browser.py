@@ -33,6 +33,40 @@ def _bind_final_browser_runtime_to_review() -> None:
         setattr(review, name, getattr(_browser, name))
 
 
+def _is_explicit_open_schedule(value: object) -> bool:
+    """Preserve the existing explicit open-ended schedule policy."""
+    from . import extract
+
+    text = extract.clean(value).casefold()
+    return text.startswith("from ") or "ongoing" in text or "permanent" in text
+
+
+def _filter_final_expired_events(state, effective):
+    """Use the final detail parser for the final HTTP lifecycle decision."""
+    from . import extract
+
+    active = []
+    removed = 0
+    for candidate in state.events:
+        if _is_explicit_open_schedule(candidate.when):
+            active.append(candidate)
+            continue
+        dates = effective._line_dates(candidate.when)
+        if dates and max(dates) < extract.TODAY:
+            removed += 1
+            continue
+        active.append(candidate)
+
+    state.events = active
+    metadata = dict(state.event_collection)
+    metadata["candidate_count"] = len(active)
+    metadata["expired_candidate_count"] = int(
+        metadata.get("expired_candidate_count") or 0
+    ) + removed
+    state.event_collection = metadata
+    return state
+
+
 def _bind_final_event_collector() -> None:
     """Pin every HTTP collection run to the final detail owner.
 
@@ -49,6 +83,7 @@ def _bind_final_event_collector() -> None:
         effective.apply()
         review._detail_candidate = effective.detail_candidate
         state = diagnostics.collect_event_candidates(store)
+        state = _filter_final_expired_events(state, effective)
         state.event_collection = {
             **state.event_collection,
             "detail_owner_module": effective.detail_candidate.__module__,
