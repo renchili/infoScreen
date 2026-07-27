@@ -177,6 +177,29 @@ def test_fallback_fills_summary_without_appending_child_fields() -> None:
     assert result["summary"].startswith("A weekend programme")
 
 
+def test_unlabelled_acm_fact_lines_are_preserved_verbatim() -> None:
+    payload = {
+        "dates": [],
+        "venues": [],
+        "lines": [
+            "LIGHT TO NIGHT AT ACM: POWER OF PLAY",
+            "Programme",
+            "Experience ACM after dark through the Power of Play!",
+            "Programmes on 23, 24, 30, 31 Jan 2026, 6–10pm",
+            "Asian Civilisations Museum",
+            "5 mins walk from Raffles Place MRT (Exit H), More Info",
+            "Free admission to most activities",
+            "Visit Asian Civilisations Museum today",
+            "BOOK YOUR TICKET NOW",
+        ],
+    }
+
+    assert authority._raw_when(payload) == (
+        "Programmes on 23, 24, 30, 31 Jan 2026, 6–10pm"
+    )
+    assert authority._raw_where(payload) == "Asian Civilisations Museum"
+
+
 def test_review_ui_still_blocks_collect_events_request() -> None:
     blocker = read_text("surface/web/assets/js/local_event_review_blocking.js")
     studio = read_text("surface/web/local-events/studio/index.html")
