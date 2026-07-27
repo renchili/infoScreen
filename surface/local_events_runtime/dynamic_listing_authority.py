@@ -4,13 +4,12 @@ from . import browser as _browser
 
 _APPLIED = False
 
-# Dynamic official listings often render only the first batch, then append more
-# cards after a "Load more" control is clicked. The expansion loop must never treat
-# ordinary activity links such as "View More" as pagination controls: clicking one
-# destroys the current Playwright execution context by navigating to a detail page.
+# The upper round budget remains a completeness ceiling. Early completion is based
+# only on listing-card/link/control state, so unrelated animations, clocks, consent
+# text, and rotating banners cannot keep one institution busy for the full 80 rounds.
 DYNAMIC_LISTING_PREPARE_JS = r"""
 async (args) => {
-  const maxRounds = Math.max(Number(args.maxRounds || 0), 80);
+  const maxRounds = Math.max(0, Number(args.maxRounds || 0));
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   const clean = value => String(value || "").replace(/\s+/g, " ").trim();
 
@@ -53,8 +52,6 @@ async (args) => {
     } catch {
       return false;
     }
-    // A load-more anchor may update the current listing query or fragment. It may
-    // not change origin or path, which would be a detail/listing navigation.
     return target.origin === current.origin && target.pathname === current.pathname;
   };
 
@@ -67,9 +64,6 @@ async (args) => {
     if (enclosingAnchor && !safeAnchor(enclosingAnchor)) return false;
     if (element.matches("a[href]") && !safeAnchor(element)) return false;
 
-    // Generic links are never admitted merely because their label says "more".
-    // An anchor must also carry an explicit load-more marker or stay on the exact
-    // listing path through a query/fragment update.
     if (element.matches("a[href]") && !markerMatches) {
       const href = clean(element.getAttribute("href"));
       if (!href || href === "#" || /^javascript:/i.test(href)) return true;
@@ -85,28 +79,35 @@ async (args) => {
     "[data-testid*='load-more' i], [data-action*='load-more' i]"
   )).filter(visible).filter(element => !disabled(element)).filter(safeControl);
 
-  const state = () => {
-    const body = document.body;
-    const links = Array.from(document.querySelectorAll("a[href]"))
-      .map(anchor => anchor.href).filter(Boolean);
-    return [
-      body ? body.scrollHeight : 0,
-      clean(body ? (body.innerText || body.textContent || "") : "").length,
-      new Set(links).size,
-      document.querySelectorAll("article,li,[class*='card' i],[class*='event' i],[class*='listing' i]").length
-    ].join(":");
+  const listingState = () => {
+    const root = document.querySelector("main") ||
+      document.querySelector("article") || document.body;
+    const hrefs = new Set(
+      Array.from(root ? root.querySelectorAll("a[href]") : [])
+        .map(anchor => {
+          try { return new URL(anchor.getAttribute("href"), location.href).href; }
+          catch (error) { return ""; }
+        })
+        .filter(Boolean)
+    );
+    const cards = root ? root.querySelectorAll(
+      "article, [data-infoscreen-card-id], " +
+      "[class*='event-card' i], [class*='listing-card' i], " +
+      "[class*='programme-card' i], [class*='activity-card' i]"
+    ).length : 0;
+    return [hrefs.size, cards, controls().length].join(":");
   };
 
   let clicks = 0;
   let rounds = 0;
   let stableRounds = 0;
   let failedClicks = 0;
-  let previous = state();
+  let previous = listingState();
 
   for (let round = 0; round < maxRounds; round += 1) {
     rounds = round + 1;
     window.scrollTo(0, document.body ? document.body.scrollHeight : 0);
-    await sleep(700);
+    await sleep(450);
 
     const candidates = controls().sort((left, right) =>
       right.getBoundingClientRect().top - left.getBoundingClientRect().top
@@ -114,17 +115,15 @@ async (args) => {
     let changedAfterClick = false;
     if (candidates.length) {
       const control = candidates[0];
-      const before = state();
+      const before = listingState();
       const beforeUrl = location.href;
       try {
         control.scrollIntoView({block: "center"});
-        await sleep(150);
+        await sleep(100);
         control.click();
         clicks += 1;
         for (let poll = 0; poll < 20; poll += 1) {
           await sleep(500);
-          // A real in-page expansion must not navigate. Stop before attempting any
-          // further DOM work if a site unexpectedly changed the URL.
           if (location.href !== beforeUrl) {
             return {
               clicks,
@@ -135,7 +134,7 @@ async (args) => {
               finalUrl: location.href
             };
           }
-          if (state() !== before) {
+          if (listingState() !== before) {
             changedAfterClick = true;
             break;
           }
@@ -145,26 +144,29 @@ async (args) => {
         failedClicks += 1;
       }
     } else {
-      await sleep(900);
+      // Give intersection observers one bounded chance to append cards after scroll.
+      await sleep(450);
     }
 
-    const current = state();
+    const current = listingState();
     stableRounds = current === previous ? stableRounds + 1 : 0;
     previous = current;
 
-    if (!candidates.length && stableRounds >= 5) break;
-    if (candidates.length && failedClicks >= 4 && stableRounds >= 4) break;
+    // Two unchanged listing states are enough. Dynamic non-listing text is excluded
+    // from listingState, so rotating banners no longer consume the whole round budget.
+    if (!candidates.length && stableRounds >= 2) break;
+    if (candidates.length && failedClicks >= 3 && stableRounds >= 2) break;
   }
 
   window.scrollTo(0, 0);
-  await sleep(300);
+  await sleep(150);
   return {
     clicks,
     rounds,
     stableRounds,
     failedClicks,
     navigationDetected: false,
-    finalState: state(),
+    finalState: listingState(),
     remainingControls: controls().length,
     height: document.body ? document.body.scrollHeight : 0
   };
@@ -173,7 +175,7 @@ async (args) => {
 
 
 def apply() -> None:
-    """Install complete asynchronous listing expansion for collector and Studio."""
+    """Install adaptive complete listing expansion for collector and Studio."""
 
     global _APPLIED
     if _APPLIED:
