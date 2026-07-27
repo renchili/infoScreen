@@ -165,25 +165,35 @@ def _raw_when(payload: dict[str, Any]) -> str:
 
     base_picker = _BASE_RAW_WHEN or _detail_navigation._raw_when
     base = _extract.clean(base_picker(payload))
-    if _line_dates(base):
-        return base
-
     date_line = _detail_date_line(payload)
     if not date_line:
         return base
-    if base and base != date_line:
-        return f"{date_line} · {base}"
 
-    for line in _detail_navigation._payload_lines(payload):
-        text = _extract.clean(line)
-        if (
-            text
-            and text != date_line
-            and not _line_dates(text)
-            and _detail_navigation._UNLABELLED_TIME_RE.search(text)
-        ):
-            return f"{date_line} · {text}"
-    return date_line
+    values: list[str]
+    if base and _line_dates(base):
+        values = [base]
+    else:
+        values = [date_line]
+        if base and base != date_line:
+            values.append(base)
+
+    already_has_time = any(
+        _detail_navigation._UNLABELLED_TIME_RE.search(value)
+        for value in values
+    )
+    if not already_has_time:
+        for line in _detail_navigation._payload_lines(payload):
+            text = _extract.clean(line)
+            if (
+                text
+                and text not in values
+                and not _line_dates(text)
+                and _detail_navigation._UNLABELLED_TIME_RE.search(text)
+            ):
+                values.append(text)
+                break
+
+    return " · ".join(values)
 
 
 def _merge_document_facts(
