@@ -196,15 +196,23 @@ def test_local_event_studio_has_no_idle_polling_and_one_render_restore_event() -
     assert "MutationObserver" not in guard
 
 
-def test_local_event_preview_does_not_rewrite_review_decisions() -> None:
+def test_local_event_preview_is_available_before_confirmation_without_mutation() -> None:
     preview = read_text("surface/web/assets/js/local_event_review_previews.js")
+    blocking = read_text("surface/web/assets/js/local_event_review_blocking.js")
     html = read_text("surface/web/local-events/studio/index.html")
 
+    assert "/api/local-events/review/preview-events" in preview
     assert "/api/local-events/review/listing-decision" not in preview
     assert "withExclusiveConfirmedListings" not in preview
     assert "setListingDecision" not in preview
-    assert "Confirm this list page before previewing it" in preview
-    assert "never changes review decisions temporarily" in html
+    assert "Confirm this list page before previewing it" not in preview
+    assert 'return "pending";' in preview
+    assert '"PREVIEW BEFORE CONFIRM"' in preview
+    assert 'button.dataset.decisionIndependent = "true"' in preview
+    assert "without changing its review decision" in preview
+    assert '"/api/local-events/review/preview-events"' in blocking
+    assert "Preview any saved list page before or after deciding" in html
+    assert "Confirm a list page before using PREVIEW EVENTS" not in html
 
 
 def test_demo_metrics_are_explicit_in_source() -> None:
