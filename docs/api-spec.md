@@ -287,7 +287,8 @@ Rules:
 - adding an existing page resets it to `pending`;
 - the operation does not edit committed `event_sources.json`;
 - the operation does not collect Events automatically;
-- the operator confirms the page before preview or normal confirmed-page collection.
+- the saved page may be previewed while `pending`, `confirmed`, or `rejected`;
+- only normal persisted collection requires the page to be `confirmed`.
 
 Invalid institution, URL, or domain returns HTTP `400` without changing review state.
 
@@ -305,7 +306,48 @@ Content-Type: application/json
 }
 ```
 
-### Preview and collect Event candidates
+### Preview one saved list page without changing its decision
+
+```http
+POST /api/local-events/review/preview-events
+Content-Type: application/json
+```
+
+```json
+{
+  "listing_url": "https://official.example/events"
+}
+```
+
+The requested URL must already exist in Review state. Its current decision may be `pending`, `confirmed`, or `rejected`.
+
+Preview is isolated:
+
+```text
+load real Review state
+  -> deep-copy state
+  -> keep only the selected list page
+  -> mark only the temporary copy confirmed
+  -> clear copied Event candidates, feedback, and Event collection metadata
+  -> save the copy under a temporary Review root
+  -> run the same final Event collector and detail owner
+  -> return the temporary result
+  -> delete the temporary root
+```
+
+Preview does not call the list-decision endpoint and does not change:
+
+- the selected page’s persisted decision;
+- unrelated page decisions;
+- persisted Event candidates or Event decisions;
+- submitted feedback;
+- persisted collection metadata;
+- `surface/.env/local_event_review/state.json`;
+- the kiosk projection.
+
+The Studio stores the returned display rows in `sessionStorage` only so the preview remains visible during the browser session. A missing or unknown `listing_url` returns HTTP `400`; collection failure returns HTTP `500`.
+
+### Collect Event candidates from confirmed pages
 
 ```http
 POST /api/local-events/review/collect-events
@@ -313,7 +355,7 @@ POST /api/local-events/review/collect-events
 
 The collector reads all pages currently marked `confirmed`, identifies isolated official detail links, records DOM selectors and page positions, and opens detail pages for title, date/time, venue, and diagnostics. A date is not required on the listing card itself.
 
-`PREVIEW EVENTS` requires the selected list page to be confirmed. It invokes the same confirmed-page collection, then displays only the candidates associated with the selected list URL. It does not call the list-decision API and does not temporarily set unrelated confirmed pages to `pending`.
+This is the persisted collection path. It replaces Review Event candidates and Event collection metadata while preserving matching Event decisions. It never changes list-page decisions.
 
 ### Save Event review decisions
 
@@ -355,7 +397,8 @@ The downloadable Chrome Helper, extension files, ZIP generation, and remote `fee
 | Review page load or return to tab | `GET /api/local-events/review/state` | None | Render once, then restore card anchor or scroll position |
 | Add list page | `POST /api/local-events/review/listing-page` | Persist one pending page | Reload list cards |
 | Review list decision | `POST /api/local-events/review/listing-decision` | Persist decision | Refresh Review cards |
-| Preview confirmed list page | `POST /api/local-events/review/collect-events` | Refresh all currently confirmed pages; no decision mutation | Display candidates for selected URL |
+| Preview any saved list page | `POST /api/local-events/review/preview-events` | Collect one temporary isolated copy; no persisted mutation | Display candidates for selected URL |
+| Collect confirmed list pages | `POST /api/local-events/review/collect-events` | Persist Event candidates and diagnostics from all confirmed pages | Refresh Review cards |
 | Review Event decision | `POST /api/local-events/review/event-decision` | Persist decision and rebuild kiosk primary | Refresh Review cards |
 | Sync observation | `HEAD` four runtime paths | None | Compute `AGE` and status |
 
