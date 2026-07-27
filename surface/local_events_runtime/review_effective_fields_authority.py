@@ -22,10 +22,6 @@ _DATE_NOISE_RE = re.compile(
     re.I,
 )
 
-# The detail reader used to stop as soon as an h1 or readyState appeared. On ACM's
-# archived pages that can happen before the primary fact rows have entered the rendered
-# document. Date-bearing pages may finish immediately; pages without dates wait until
-# their primary content has remained stable for one bounded interval.
 DETAIL_STABLE_READY_JS = r"""
 () => {
   const clean = value => String(value || "").replace(/\s+/g, " ").trim();
@@ -55,10 +51,6 @@ DETAIL_STABLE_READY_JS = r"""
 }
 """
 
-# Scan the primary activity document itself, not only elements whose class contains
-# "date". ACM renders some archived date ranges as ordinary text rows. The scan begins
-# at the activity h1 and stops before recommendations, preventing a related activity's
-# date from being borrowed.
 DETAIL_DOCUMENT_FACTS_JS = r"""
 () => {
   const clean = value => String(value || "").replace(/\s+/g, " ").trim();
@@ -77,10 +69,12 @@ DETAIL_DOCUMENT_FACTS_JS = r"""
     .find(element => clean(element.innerText || element.textContent || "")) || null;
   const title = clean(heading ? (heading.innerText || heading.textContent) : "");
   const titleKey = key(title);
-  const root = heading && heading.closest(
-    "article, [class*='event-detail' i], [class*='eventDetail' i], " +
-    "[class*='detail-page' i], [class*='content-detail' i], main"
-  ) || document.querySelector("main") || document.querySelector("article") || document.body;
+  const main = heading && heading.closest("main");
+  const root = main || document.querySelector("main") ||
+    (heading && heading.closest(
+      "article, [class*='event-detail' i], [class*='eventDetail' i], " +
+      "[class*='detail-page' i], [class*='content-detail' i]"
+    )) || document.querySelector("article") || document.body;
 
   const rawLines = String(root ? (root.innerText || root.textContent || "") : "")
     .split(/\n+/).map(clean).filter(Boolean);
@@ -125,7 +119,7 @@ DETAIL_DOCUMENT_FACTS_JS = r"""
 
   for (const image of root ? root.querySelectorAll("img[alt]") : []) {
     const alt = clean(image.getAttribute("alt"));
-    if (alt && dateLike(alt) && (!titleKey || key(alt).includes(titleKey))) add(dates, alt);
+    if (alt && dateLike(alt)) add(dates, alt);
   }
 
   const summary = clean(document.querySelector('meta[name="description"]')?.content) ||
@@ -184,13 +178,7 @@ def _detail_date_line(payload: dict[str, Any]) -> str:
 
 
 def _raw_when(payload: dict[str, Any]) -> str:
-    """Preserve separate detail Date and Time rows in one exact display value.
-
-    Some official pages place the activity date range on one row and opening hours on
-    another. The base collector previously returned the time row immediately and lost
-    the date, which prevented lifecycle filtering. This function keeps both original
-    rows and performs no semantic rewriting.
-    """
+    """Preserve separate detail Date and Time rows in one exact display value."""
 
     base = _extract.clean(_BASE_RAW_WHEN(payload))
     if _line_dates(base):
