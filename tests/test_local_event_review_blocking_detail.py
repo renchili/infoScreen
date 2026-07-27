@@ -63,12 +63,18 @@ class FakeContext:
         return self.page
 
 
+class NoDetailContext:
+    def new_page(self):
+        raise AssertionError("complete listing card must not open a detail page")
+
+
 def test_review_detail_read_is_blocking_but_does_not_wait_for_lifecycle_idle() -> None:
     context = FakeContext()
     source = {
         "id": "acm",
         "name": "Asian Civilisations Museum",
         "default_venue": "Asian Civilisations Museum",
+        "review_detail_policy": "always",
     }
     listing_url = "https://www.acm.nhb.gov.sg/whats-on/overview"
     detail_url = context.page.url
@@ -105,6 +111,93 @@ def test_review_detail_read_is_blocking_but_does_not_wait_for_lifecycle_idle() -
     assert result["where"] == "Islamic Art Gallery, Level 2 and Design Gallery, Level 3"
     assert result["summary"].startswith("This exhibition presents")
     assert context.page.closed is True
+
+
+def test_complete_authoritative_listing_card_does_not_open_detail_page() -> None:
+    listing_url = "https://www.thekallang.com.sg/en/things-to-do/events.html"
+    detail_url = "https://www.thekallang.com.sg/en/events/example-event"
+    source = {
+        "id": "thekallang",
+        "name": "The Kallang",
+        "default_venue": "The Kallang",
+    }
+    card = {
+        "id": "thekallang-example-event",
+        "url": detail_url,
+        "headings": ["Example Event"],
+        "link_text": "Example Event",
+        "text": "Example Event\n19 Jun 2026\nThe Kallang",
+        "text_lines": ["Example Event", "19 Jun 2026", "The Kallang"],
+        "extraction_mode": "detail_link",
+        "listing_evidence": LISTING_EVIDENCE,
+        "listing_url": listing_url,
+        "listing_card_id": "thekallang-example-event",
+    }
+
+    result = authority._detail_candidate(
+        NoDetailContext(),
+        source,
+        listing_url,
+        detail_url,
+        card,
+    )
+
+    assert result == {
+        "detail_url": detail_url,
+        "title": "Example Event",
+        "when": "19 Jun 2026",
+        "where": "The Kallang",
+        "summary": "",
+        "detail_status": "collected",
+        "detail_error": "",
+        "detail_page_title": "",
+    }
+
+
+def test_fallback_fills_summary_without_appending_child_fields() -> None:
+    parent_when = (
+        "10–12 April 2026 · "
+        "Daily - Friday, 5–9.30pm / Sat & Sun, 2–9.30pm"
+    )
+    result = authority._merge_fallback_fields(
+        {
+            "dates": [parent_when],
+            "venues": ["Asian Civilisations Museum"],
+            "summary": "",
+        },
+        {
+            "dates": ["12 April 2026"],
+            "venues": ["River Room"],
+            "summary": "A weekend programme of activities throughout the museum.",
+        },
+    )
+
+    assert result["dates"] == [parent_when]
+    assert result["venues"] == ["Asian Civilisations Museum"]
+    assert result["summary"].startswith("A weekend programme")
+
+
+def test_unlabelled_acm_fact_lines_are_preserved_verbatim() -> None:
+    payload = {
+        "dates": [],
+        "venues": [],
+        "lines": [
+            "LIGHT TO NIGHT AT ACM: POWER OF PLAY",
+            "Programme",
+            "Experience ACM after dark through the Power of Play!",
+            "Programmes on 23, 24, 30, 31 Jan 2026, 6–10pm",
+            "Asian Civilisations Museum",
+            "5 mins walk from Raffles Place MRT (Exit H), More Info",
+            "Free admission to most activities",
+            "Visit Asian Civilisations Museum today",
+            "BOOK YOUR TICKET NOW",
+        ],
+    }
+
+    assert authority._raw_when(payload) == (
+        "Programmes on 23, 24, 30, 31 Jan 2026, 6–10pm"
+    )
+    assert authority._raw_where(payload) == "Asian Civilisations Museum"
 
 
 def test_review_ui_still_blocks_collect_events_request() -> None:

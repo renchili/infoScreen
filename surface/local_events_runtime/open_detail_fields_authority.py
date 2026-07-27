@@ -31,13 +31,7 @@ def _card_lines(card: dict[str, Any]) -> list[str]:
 
 
 def explicit_venue(card: dict[str, Any]) -> str:
-    """Recognise an unlabelled venue line in an official detail document.
-
-    NHB detail pages often render date, venue, and admission as three adjacent lines
-    without ``Location`` labels. The old parser recognised the date fragment but did
-    not count ``Asian Civilisations Museum`` as an explicit venue, leaving a correctly
-    loaded detail page marked incomplete.
-    """
+    """Recognise an explicit unlabelled venue line without inventing a default."""
 
     venue = _BASE_EXPLICIT_VENUE(card)
     if venue:
@@ -73,7 +67,7 @@ def explicit_venue(card: dict[str, Any]) -> str:
 
 
 def candidate_expired(candidate: Any) -> bool:
-    """Never expire an explicit ongoing/start-only schedule by its start date."""
+    """Preserve the existing open-ended date rule without changing field text."""
 
     when = _extract.clean(getattr(candidate, "when", ""))
     if when and _extract.current_date_label(when):
@@ -82,7 +76,11 @@ def candidate_expired(candidate: Any) -> bool:
 
 
 def apply() -> None:
-    """Install shared open-date lifecycle and unlabelled-venue repair."""
+    """Install only open-ended lifecycle and explicit venue recognition.
+
+    This owner intentionally does not rewrite detail-page date, time, or location
+    payloads. Review must display the exact fields collected from the official page.
+    """
 
     global _APPLIED, _BASE_CANDIDATE_EXPIRED, _BASE_EXPLICIT_VENUE
     if _APPLIED:
@@ -95,4 +93,8 @@ def apply() -> None:
     _APPLIED = True
 
 
-__all__ = ["apply", "candidate_expired", "explicit_venue"]
+__all__ = [
+    "apply",
+    "candidate_expired",
+    "explicit_venue",
+]

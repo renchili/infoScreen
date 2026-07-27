@@ -33,6 +33,69 @@ def _bind_final_browser_runtime_to_review() -> None:
         setattr(review, name, getattr(_browser, name))
 
 
+def _is_explicit_open_schedule(value: object) -> bool:
+    """Preserve the existing explicit open-ended schedule policy."""
+    from . import extract
+
+    text = extract.clean(value).casefold()
+    return text.startswith("from ") or "ongoing" in text or "permanent" in text
+
+
+def _filter_final_expired_events(state, effective):
+    """Use the final detail parser for the final HTTP lifecycle decision."""
+    from . import extract
+
+    active = []
+    removed = 0
+    for candidate in state.events:
+        if _is_explicit_open_schedule(candidate.when):
+            active.append(candidate)
+            continue
+        dates = effective._line_dates(candidate.when)
+        if dates and max(dates) < extract.TODAY:
+            removed += 1
+            continue
+        active.append(candidate)
+
+    state.events = active
+    metadata = dict(state.event_collection)
+    metadata["candidate_count"] = len(active)
+    metadata["expired_candidate_count"] = int(
+        metadata.get("expired_candidate_count") or 0
+    ) + removed
+    state.event_collection = metadata
+    return state
+
+
+def _bind_final_event_collector() -> None:
+    """Pin every HTTP collection run to the final detail owner.
+
+    The HTTP server imports ``event_review.collect_event_candidates`` only after this
+    bootstrap completes. This wrapper refreshes the final owner immediately before
+    the diagnostics collector starts, so no import-time snapshot or later monkey
+    patch can route POST collection through an older detail implementation.
+    """
+    from . import event_review as review
+    from . import event_review_diagnostics as diagnostics
+    from . import review_effective_fields_authority as effective
+
+    def collect_event_candidates(store):
+        effective.apply()
+        review._detail_candidate = effective.detail_candidate
+        state = diagnostics.collect_event_candidates(store)
+        state = _filter_final_expired_events(state, effective)
+        state.event_collection = {
+            **state.event_collection,
+            "detail_owner_module": effective.detail_candidate.__module__,
+            "detail_owner_name": effective.detail_candidate.__qualname__,
+            "detail_owner_file": str(effective.__file__),
+        }
+        store.save(state)
+        return state
+
+    review.collect_event_candidates = collect_event_candidates
+
+
 def apply() -> None:
     """Install the shared Local Events browser and review-backend bootstrap.
 
@@ -41,11 +104,13 @@ def apply() -> None:
     HTTP/1.1 mode directly. Browser operations are clamped to the active source and
     global collection deadlines so timed-out workers close before systemd's outer
     service limit. Listing navigation accepts a readable rendered document even when
-    lifecycle events do not settle. Review remains a blocking operation, but visible
-    detail-page navigations are started together so network waits do not accumulate
-    one activity at a time. Coverage, source, date, detail-field, section-aware
-    summary, listing-provenance, listing-membership, dynamic-listing, card, and link
-    authorities are applied before their final values are bound into Review Studio.
+    lifecycle events do not settle. Review detail navigations use a bounded batch,
+    are consumed synchronously by the existing blocking reader, and are closed
+    immediately after extraction. A per-context URL cache prevents overlapping
+    listing pages from downloading the same detail document repeatedly. Coverage,
+    source, date, detail-field, section-aware summary, listing-provenance,
+    listing-membership, dynamic-listing, card, and link authorities are applied before
+    their final values are bound into Review Studio.
     """
     global _APPLIED
     if _APPLIED:
@@ -105,11 +170,6 @@ def apply() -> None:
     )
     apply_review_detail_navigation_authority()
 
-    from .review_detail_prefetch_authority import (
-        apply as apply_review_detail_prefetch_authority,
-    )
-    apply_review_detail_prefetch_authority()
-
     from .dynamic_listing_authority import apply as apply_dynamic_listing_authority
     apply_dynamic_listing_authority()
 
@@ -159,6 +219,10 @@ def apply() -> None:
 
     from .review_publish_authority import apply as apply_review_publish_authority
     apply_review_publish_authority()
+
+    # This is the final HTTP handoff. The server imports the wrapper from event_review
+    # after apply() returns, and the wrapper pins every POST to the effective owner.
+    _bind_final_event_collector()
     _APPLIED = True
 
 

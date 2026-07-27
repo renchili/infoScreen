@@ -9,6 +9,7 @@ sys.path.insert(0, str(SURFACE))
 
 from local_events_runtime import detail_payload_authority as authority  # noqa: E402
 from local_events_runtime import extract  # noqa: E402
+from local_events_runtime import review_detail_navigation_authority as navigation  # noqa: E402
 from local_events_runtime.source_overrides import LISTING_EVIDENCE  # noqa: E402
 
 
@@ -111,11 +112,73 @@ def test_narrative_candidate_wins_when_payload_summary_is_cta() -> None:
 
 
 def test_separate_structured_start_and_end_dates_become_one_range() -> None:
-    card = {
-        "detail_dates": ["2026-06-19", "2027-01-24"],
+    card = {"detail_dates": ["2026-06-19", "2027-01-24"]}
+    assert authority._authoritative_when(card) == "19 Jun 2026 – 24 Jan 2027"
+
+
+def test_review_uses_exact_ltn_date_time_and_venue_rows() -> None:
+    payload = {
+        "title": "Light to Night at ACM: Power of Play",
+        "dates": ["23, 24, 30, 31 Jan 2026"],
+        "venues": ["Asian Civilisations Museum, 1 Empress Place, Singapore 179555"],
+        "lines": [
+            "Light to Night at ACM: Power of Play",
+            "Date",
+            "23, 24, 30, 31 Jan 2026",
+            "Time",
+            "6pm–10pm",
+            "Venue",
+            "Asian Civilisations Museum, 1 Empress Place, Singapore 179555",
+        ],
     }
 
-    assert authority._authoritative_when(card) == "19 Jun 2026 – 24 Jan 2027"
+    assert navigation._raw_when(payload) == (
+        "23, 24, 30, 31 Jan 2026 · 6pm–10pm"
+    )
+    assert navigation._raw_where(payload) == (
+        "Asian Civilisations Museum, 1 Empress Place, Singapore 179555"
+    )
+
+
+def test_review_does_not_invent_location_when_page_has_none() -> None:
+    payload = {
+        "title": "Programme without a location row",
+        "dates": ["30–31 May 2026"],
+        "venues": [],
+        "lines": [
+            "Programme without a location row",
+            "Date",
+            "30–31 May 2026",
+            "Time",
+            "10am–5pm",
+        ],
+    }
+
+    assert navigation._raw_when(payload) == "30–31 May 2026 · 10am–5pm"
+    assert navigation._raw_where(payload) == ""
+
+
+def test_review_does_not_call_parser_or_field_rewriters() -> None:
+    source = read_text(
+        "surface/local_events_runtime/review_detail_navigation_authority.py"
+    )
+
+    assert "_extract.event_from_card(" not in source
+    assert "_extract.pick_when(" not in source
+    assert "_extract.pick_venue(" not in source
+    assert "listing_summary=" not in source
+    assert "_raw_when(payload)" in source
+    assert "_raw_where(payload)" in source
+
+
+def test_open_detail_owner_does_not_patch_detail_payload() -> None:
+    source = read_text("surface/local_events_runtime/open_detail_fields_authority.py")
+
+    assert "DETAIL_CARD_JS" not in source
+    assert "merge_detail_payload" not in source
+    assert "pick_when" not in source
+    assert "pick_venue" not in source
+    assert "source defaults must not overwrite" not in source
 
 
 def test_detail_dom_extractor_reads_structural_fields_and_rejects_metadata_cta() -> None:
