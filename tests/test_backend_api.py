@@ -13,6 +13,11 @@ from surface.api_models import (
     MarketRefreshResponse,
     PhotosResponse,
 )
+from surface.local_events_runtime.event_review import (
+    EventReviewStore,
+    ListingPageCandidate,
+    ReviewState,
+)
 from surface.openapi_spec import build_openapi
 
 pytestmark = pytest.mark.backend
@@ -47,6 +52,68 @@ def test_openapi_covers_dashboard_mutations_and_actual_error_statuses() -> None:
     assert "temporary" in preview["description"].lower()
     assert "real list-page decision" in preview["description"]
     assert set(preview["responses"]) == {"200", "400", "500"}
+
+
+def test_preview_event_candidates_uses_temporary_state_without_mutating_real_store(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    config = tmp_path / "event_sources.json"
+    config.write_text(json.dumps({"sources": []}), encoding="utf-8")
+    store = EventReviewStore(tmp_path / "review", config)
+    pending_url = "https://example.test/events/pending"
+    confirmed_url = "https://example.test/events/confirmed"
+    original = ReviewState(
+        listing_pages=[
+            ListingPageCandidate(
+                candidate_id="pending-page",
+                source_id="source",
+                source_name="Source",
+                url=pending_url,
+                origin="discovered",
+                decision="pending",
+                discovered_at="2026-07-28T00:00:00+00:00",
+            ),
+            ListingPageCandidate(
+                candidate_id="confirmed-page",
+                source_id="source",
+                source_name="Source",
+                url=confirmed_url,
+                origin="configured",
+                decision="confirmed",
+                discovered_at="2026-07-28T00:00:00+00:00",
+            ),
+        ],
+        listing_collection={"preserved_in_real_state": True},
+        event_collection={"previous_real_collection": True},
+    )
+    store.save(original)
+    real_state_before = store.state_path.read_bytes()
+    captured: dict[str, object] = {}
+
+    def fake_collect(temporary_store: EventReviewStore) -> ReviewState:
+        captured["root"] = temporary_store.root
+        captured["state"] = temporary_store.load()
+        return temporary_store.load()
+
+    monkeypatch.setattr(serve_infoscreen, "collect_event_candidates", fake_collect)
+    preview = serve_infoscreen.preview_event_candidates(store, pending_url)
+
+    temporary_state = captured["state"]
+    assert isinstance(temporary_state, ReviewState)
+    assert [item.url for item in temporary_state.listing_pages] == [pending_url]
+    assert temporary_state.listing_pages[0].decision == "confirmed"
+    assert temporary_state.events == []
+    assert temporary_state.feedback == []
+    assert temporary_state.event_collection == {}
+    assert preview.model_dump(mode="json") == temporary_state.model_dump(mode="json")
+
+    assert store.state_path.read_bytes() == real_state_before
+    assert store.load().model_dump(mode="json") == original.model_dump(mode="json")
+    temporary_root = captured["root"]
+    assert isinstance(temporary_root, Path)
+    assert temporary_root != store.root
+    assert not temporary_root.exists()
 
 
 def test_market_refresh_schema_contains_both_producer_outputs() -> None:
