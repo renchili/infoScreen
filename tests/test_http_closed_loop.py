@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from surface import serve_infoscreen
+from surface.local_events_runtime.event_review import ReviewState
 
 pytestmark = pytest.mark.integration
 
@@ -38,6 +39,17 @@ def fetch_json(base: str, path: str):
     return json.loads(fetch_text(base, path))
 
 
+def post_json(base: str, path: str, payload: dict):
+    request = urllib.request.Request(
+        base + path,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=5) as response:
+        return response.status, json.loads(response.read().decode("utf-8"))
+
+
 def assert_http_status(base: str, path: str, method: str, expected: int) -> None:
     request = urllib.request.Request(base + path, method=method)
     with pytest.raises(urllib.error.HTTPError) as caught:
@@ -62,6 +74,33 @@ def test_http_runtime_json_uses_seeded_fixture_data(http_base: str) -> None:
     assert market["items"][0]["symbol"] == "AAPL"
     assert events["results"][0]["title"] == "Fixture Community Fitness Session"
     assert news["items_by_lang"]["zh"][0]["title"] == "中文测试标题"
+
+
+def test_http_isolated_preview_route_uses_requested_listing_without_persistence(
+    monkeypatch: pytest.MonkeyPatch,
+    http_base: str,
+) -> None:
+    seen: dict[str, str] = {}
+
+    def fake_preview(store, listing_url: str) -> ReviewState:
+        seen["listing_url"] = listing_url
+        seen["root"] = str(store.root)
+        return ReviewState()
+
+    monkeypatch.setattr(serve_infoscreen, "preview_event_candidates", fake_preview)
+    listing_url = "https://example.test/events"
+    status, payload = post_json(
+        http_base,
+        "/api/local-events/review/preview-events",
+        {"listing_url": listing_url},
+    )
+
+    assert status == 200
+    assert payload["ok"] is True
+    assert payload["preview"] is True
+    assert payload["events"] == []
+    assert seen["listing_url"] == listing_url
+    assert seen["root"].endswith("local_event_review")
 
 
 def test_http_local_event_details_are_plain_text_for_stale_runtime(
