@@ -22,8 +22,6 @@ _DATE_NOISE_RE = re.compile(
     re.I,
 )
 
-# Readiness is intentionally minimal. The targeted fact collector below owns stability;
-# a generic page-ready probe must not decide that an activity date is complete.
 DETAIL_STABLE_READY_JS = r"""
 () => {
   const clean = value => String(value || "").replace(/\s+/g, " ").trim();
@@ -37,9 +35,9 @@ DETAIL_STABLE_READY_JS = r"""
 }
 """
 
-# Scan the primary activity section itself. ACM archived pages render the date range as
-# an ordinary text row, so class/id selectors are insufficient. Reading stops before
-# recommendation content to avoid borrowing dates from another activity.
+# Read plain activity fact rows from the current detail page. The activity title is the
+# start boundary and recommendation headings are the end boundary, so related activities
+# cannot supply dates or venues for the current activity.
 DETAIL_DOCUMENT_FACTS_JS = r"""
 () => {
   const clean = value => String(value || "").replace(/\s+/g, " ").trim();
@@ -58,8 +56,8 @@ DETAIL_DOCUMENT_FACTS_JS = r"""
     .find(element => clean(element.innerText || element.textContent || "")) || null;
   const title = clean(heading ? (heading.innerText || heading.textContent) : "");
   const titleKey = key(title);
-  const main = heading && heading.closest("main");
-  const root = main || document.querySelector("main") ||
+  const root = (heading && heading.closest("main")) ||
+    document.querySelector("main") ||
     (heading && heading.closest(
       "article, [class*='event-detail' i], [class*='eventDetail' i], " +
       "[class*='detail-page' i], [class*='content-detail' i]"
@@ -165,7 +163,8 @@ def _detail_date_line(payload: dict[str, Any]) -> str:
 def _raw_when(payload: dict[str, Any]) -> str:
     """Keep the exact activity date and exact opening-hours row together."""
 
-    base = _extract.clean(_BASE_RAW_WHEN(payload))
+    base_picker = _BASE_RAW_WHEN or _detail_navigation._raw_when
+    base = _extract.clean(base_picker(payload))
     if _line_dates(base):
         return base
 
@@ -229,7 +228,7 @@ def _facts_have_date(facts: dict[str, Any]) -> bool:
 
 
 def _collect_document_facts(page: Any) -> dict[str, Any]:
-    """Wait for the primary activity facts, not merely for the page shell."""
+    """Wait for current-activity facts rather than accepting the first page shell."""
 
     timeout_seconds = max(1.0, _detail_navigation.DETAIL_CONTENT_WAIT_MS / 1000)
     deadline = time.monotonic() + timeout_seconds
@@ -239,7 +238,7 @@ def _collect_document_facts(page: Any) -> dict[str, Any]:
 
     while True:
         try:
-            observed = page.evaluate(_detail_navigation.FALLBACK_DETAIL_FIELDS_JS) or {}
+            observed = page.evaluate(DETAIL_DOCUMENT_FACTS_JS) or {}
         except Exception:
             observed = {}
         if isinstance(observed, dict):
@@ -268,7 +267,7 @@ def _read_detail_page(
     requested_url: str,
     entry: Any | None,
 ) -> dict[str, str]:
-    """Read and settle the same detail document before constructing Review fields."""
+    """Read one detail document and construct the only Review field result."""
 
     if entry is None:
         response = page.goto(
@@ -293,7 +292,7 @@ def _read_detail_page(
 
     try:
         page.wait_for_function(
-            _detail_navigation.DETAIL_READY_JS,
+            DETAIL_STABLE_READY_JS,
             timeout=_detail_navigation.DETAIL_CONTENT_WAIT_MS,
         )
     except Exception:
@@ -311,7 +310,7 @@ def _read_detail_page(
     payload = _merge_document_facts(payload, facts)
 
     title = _extract.clean(payload.get("title") or page.title() or "")
-    when = _detail_navigation._raw_when(payload)
+    when = _raw_when(payload)
     where = _detail_navigation._raw_where(payload)
     summary = _detail_navigation._raw_summary(payload)
 
@@ -330,6 +329,74 @@ def _read_detail_page(
         "detail_error": "missing_detail_" + "_and_".join(missing) if missing else "",
         "detail_page_title": _extract.clean(payload.get("title") or page.title() or ""),
     }
+
+
+def detail_candidate(
+    context: Any,
+    source: dict[str, Any],
+    listing_url: str,
+    raw_url: str,
+    card: dict[str, Any],
+) -> dict[str, str]:
+    """Single detail owner used by Web collection, caching, and direct review reads."""
+
+    if "#nhb-" in raw_url or "#nhb-json-" in raw_url:
+        listing = _detail_dates._listing_fields(source, card)
+        return {
+            "detail_url": raw_url,
+            **listing,
+            "detail_status": "incomplete",
+            "detail_error": "public_detail_url_not_found",
+            "detail_page_title": "",
+        }
+
+    requested_url = _detail_navigation._provenance.listing_detail_url(
+        listing_url,
+        raw_url,
+    )
+    if not requested_url:
+        raise ValueError("detail URL is not a safe HTTP(S) target from the listing")
+
+    listing_candidate = _detail_navigation._listing_candidate_if_complete(
+        source,
+        requested_url,
+        card,
+    )
+    if listing_candidate is not None:
+        return listing_candidate
+
+    state = _detail_navigation._state(context)
+    cached = _detail_navigation._cache_get(state, source, requested_url)
+    if cached is not None:
+        return cached
+
+    _detail_navigation._prepare_prefetch(
+        context,
+        state,
+        source,
+        listing_url,
+        requested_url,
+    )
+    entry = _detail_navigation._take_prefetched(state, requested_url)
+    page = entry.page if entry is not None else context.new_page()
+
+    try:
+        result = _read_detail_page(
+            page,
+            listing_url,
+            requested_url,
+            entry,
+        )
+        _detail_navigation._cache_put(state, source, requested_url, result)
+        return result
+    finally:
+        try:
+            if not page.is_closed():
+                page.close()
+        finally:
+            state.page_ids.discard(id(page))
+            if entry is not None:
+                _detail_navigation._fill_prefetch(state)
 
 
 def _expired(candidate: _review.EventCandidate) -> bool:
@@ -396,32 +463,36 @@ def replace_events(
 
 
 def apply() -> None:
-    """Install the final detail-field and lifecycle owner used by Review Web."""
+    """Install one final detail and lifecycle owner for Review Web."""
 
     global _APPLIED, _BASE_LOAD, _BASE_STATE_PAYLOAD
     global _BASE_REPLACE_EVENTS, _BASE_RAW_WHEN
-    if _APPLIED:
-        return
 
+    if not _APPLIED:
+        _BASE_RAW_WHEN = _detail_navigation._raw_when
+        _BASE_LOAD = _review.EventReviewStore.load
+        _BASE_STATE_PAYLOAD = _review.EventReviewStore.state_payload
+        _BASE_REPLACE_EVENTS = _review.EventReviewStore.replace_events
+        _APPLIED = True
+
+    # Re-apply these bindings every time so no later authority or test fixture can leave
+    # Review collection on an older detail implementation.
     _detail_navigation.DETAIL_READY_JS = DETAIL_STABLE_READY_JS
     _detail_navigation.FALLBACK_DETAIL_FIELDS_JS = DETAIL_DOCUMENT_FACTS_JS
-    _detail_navigation._read_detail_page = _read_detail_page
-    _BASE_RAW_WHEN = _detail_navigation._raw_when
     _detail_navigation._raw_when = _raw_when
-
-    _BASE_LOAD = _review.EventReviewStore.load
-    _BASE_STATE_PAYLOAD = _review.EventReviewStore.state_payload
-    _BASE_REPLACE_EVENTS = _review.EventReviewStore.replace_events
+    _detail_navigation._read_detail_page = _read_detail_page
+    _detail_navigation._detail_candidate = detail_candidate
+    _review._detail_candidate = detail_candidate
     _review.EventReviewStore.load = load
     _review.EventReviewStore.state_payload = state_payload
     _review.EventReviewStore.replace_events = replace_events
-    _APPLIED = True
 
 
 __all__ = [
     "DETAIL_DOCUMENT_FACTS_JS",
     "DETAIL_STABLE_READY_JS",
     "apply",
+    "detail_candidate",
     "load",
     "replace_events",
     "state_payload",
