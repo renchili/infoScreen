@@ -1,10 +1,10 @@
 # InfoScreen system architecture
 
-This document explains system boundaries, data ownership, refresh behavior, Local Event collection, operator review, and the current interaction limits. Deployment and recovery commands belong in `README.md`.
+This document explains system boundaries, data ownership, refresh behaviour, Local Event collection, operator review, and current interaction limits. Deployment and recovery commands belong in `README.md`.
 
 ## 1. Product shape
 
-InfoScreen is an always-on, local-first information screen. Its design priorities are readable distance viewing, compact information density, stable layout, predictable long-running behavior, local ownership of personal data, and visible freshness/failure state.
+InfoScreen is an always-on, local-first information screen. Its design priorities are readable distance viewing, compact information density, stable layout, predictable long-running behaviour, local ownership of personal data, and visible freshness/failure state.
 
 The frontend is plain HTML, CSS, and JavaScript. The backend is a Python standard-library HTTP server plus short-lived producer jobs. Runtime persistence is local JSON rather than a database.
 
@@ -24,7 +24,7 @@ Surface or Ubuntu device
   -> Local Event Studio on the Surface or another trusted LAN device
 ```
 
-The Surface is the runtime host for HTTP, Market, Weather, News, Local Events, Photos, review state, and the kiosk page. The Mac is authoritative for Calendar.
+The Surface owns HTTP, Market, Weather, News, Local Events, Photos, Review state, and the kiosk page. The Mac is authoritative for Calendar.
 
 ## 3. Runtime component boundaries
 
@@ -34,21 +34,23 @@ The Surface is the runtime host for HTTP, Market, Weather, News, Local Events, P
 | `surface/fetch_live_data.py` | Fetch Weather and Market and atomically replace their runtime files |
 | `surface/fetch_event_stream.py` | Fetch RSS, prioritise Singapore sources, build aligned EN/FR/ZH rows, and atomically replace `event_stream.json` |
 | `surface/search_local_events.py` | Supported Local Events command wrapper |
-| `surface/jobs/local_event_search.py` | Configure crawl budgets, run collector, normalize output, protect verified results, persist the collector snapshot, and publish the kiosk projection |
+| `surface/jobs/local_event_search.py` | Configure crawl budgets, run collector, protect verified results, persist the collector snapshot, and publish the kiosk projection |
 | `surface/local_events_runtime/` | Canonical Local Events collection, extraction, review, diagnostics, projection, and persistence library |
-| `surface/web/local-events/studio/` | Operator review, filtering, manual list-page entry, explicit collection, and diagnostics |
-| `surface/build_photos_json.py` | Normalize/copy photos and atomically build a public-path-only manifest |
-| `mac/export.py`, `mac/sync_schedule.sh` | Export EventKit, upload a temporary schedule file, and atomically publish it on the Surface |
+| `surface/web/local-events/studio/` | Operator review, filtering, isolated preview, manual list-page entry, confirmed-page collection, and diagnostics |
+| `surface/build_photos_json.py` | Normalise/copy photos and atomically build a public-path-only manifest |
+| `mac/export.py`, `mac/sync_schedule.sh` | Export EventKit, upload a temporary Schedule file, and atomically publish it on the Surface |
 
 Runtime state belongs under `surface/.env/`. It is device state or personal data and is not source code.
 
 ## 4. Refresh layers
 
-Producer refresh, browser data reload, visual rotation, dashboard filtering, and review-state refresh are independent.
+Producer refresh, browser data reload, visual rotation, dashboard filtering, isolated preview, persisted collection, and Review-state refresh are independent.
 
-The kiosk Local Events card periodically performs `GET /api/local-events/search` to read the current runtime payload. Its institution and text controls filter that in-memory payload only. Applying a dashboard filter does not run Chromium, start a producer, or write runtime JSON. A later GET refresh re-applies the active browser filter to the new payload.
+The kiosk Local Events card periodically performs `GET /api/local-events/search` to read the current runtime payload. Its institution and text controls filter that in-memory payload only. Applying a dashboard filter does not run Chromium, start a producer, or write runtime JSON. A later GET refresh re-applies the active browser filter.
 
-The Local Event Studio loads review state on initial load, explicit operations, manual `RELOAD`, and return to the browser tab. It does not register an idle polling interval. A completed render emits one lifecycle event, after which the scroll guard restores a stable candidate anchor or the previous scroll position.
+The Local Event Studio loads persisted Review state on initial load, explicit state-changing operations, manual `RELOAD`, and return to the browser tab. It does not register an idle polling interval. A completed render emits one lifecycle event, after which the scroll guard restores a stable candidate anchor or the previous scroll position.
+
+An isolated page preview is not a persisted Review refresh. The browser sends one `listing_url` to the preview API, renders the returned temporary events and diagnostics in the selected card, and leaves the real Review state untouched.
 
 Calendar visual rotation remains separate from data reload. The board rotates loaded rows every seven seconds and checks `schedule.json` every 60 seconds without reloading the whole page.
 
@@ -56,7 +58,9 @@ Calendar visual rotation remains separate from data reload. The board rotates lo
 
 Each visible mount has one renderer owner. Producer jobs write authoritative runtime files. Browser scripts render those files and send explicit mutations. Asynchronous scripts must not overwrite another owner’s final DOM.
 
-`surface/web/assets/js/local_event_card.js` owns both rendering the kiosk Local Events card and filtering its already-loaded rows. Collection remains owned by the producer job and explicit collection API, not by the dashboard filter dialog.
+`surface/web/assets/js/local_event_card.js` owns rendering and filtering the kiosk Local Events card. Collection remains owned by producer jobs and explicit collection APIs, not by the dashboard filter dialog.
+
+`surface/web/assets/js/local_event_review_previews.js` owns list-card previews. It calls the isolated preview route for one card and calls the confirmed-page collection route only from the global collection control.
 
 The left dashboard column has three explicit rows for Market, Local Events, and the Sync ticker. The Local Event panel is not placed in the fixed ticker row.
 
@@ -75,7 +79,7 @@ It defines source ID, display name, official home, allowed domains, configured l
 ### 6.2 Collection pipeline
 
 ```text
-source configuration or confirmed review-state list page
+source configuration, confirmed review page, or isolated preview page
   -> launch Chromium with --disable-http2
   -> open official list URL
   -> deep-scroll and operate expansion/pagination controls
@@ -86,7 +90,7 @@ source configuration or confirmed review-state list page
   -> optionally match XHR/embedded structured data to the admitted card
   -> discard unmatched structured records
   -> open the admitted official detail page
-  -> extract/normalize title, date/time, venue, summary, public URL
+  -> extract/normalise title, date/time, venue, summary, public URL
   -> record admission, rejection, detail, and failure evidence
 ```
 
@@ -94,22 +98,19 @@ The official list proves activity membership. The detail page is authoritative f
 
 ### 6.3 HTTP protocol policy
 
-The Surface observed `ERR_HTTP2_PROTOCOL_ERROR` while Chromium opened official Event sites. The supported collection entrypoints apply:
+The Surface observed `ERR_HTTP2_PROTOCOL_ERROR` while Chromium opened official Event sites. Supported collection entrypoints apply:
 
 ```text
 surface/local_events_runtime/http1_browser.py
 ```
 
-before importing collector code. The patched Chromium launch always includes:
+before importing collector code. Every patched Chromium launch includes:
 
 ```text
 --disable-http2
 ```
 
-There is no initial HTTP/2 navigation and no retry that switches browser instances or protocols. This applies to:
-
-- Local Event Studio discovery and Event collection through `surface/serve_infoscreen.py`;
-- scheduled and HTTP-triggered Local Events through `surface/search_local_events.py`.
+There is no initial HTTP/2 navigation and no retry that switches browser instances or protocols. This applies to Studio discovery, isolated page preview, normal confirmed-page collection, and scheduled/HTTP-triggered Local Events.
 
 ### 6.4 Positive Event intent
 
@@ -117,17 +118,17 @@ Positive Event intent means membership in the correct official activity list. A 
 
 ### 6.5 Detail-page authority
 
-A correct listing card may omit date and venue. After admission, the collector follows only that card’s official detail URL. Detail failure does not erase the list evidence; review candidates remain visible with exact detail status/error.
+A correct listing card may omit date and venue. After admission, the collector follows only that card’s official detail URL. Detail failure does not erase the list evidence; Review candidates remain visible with exact detail status/error.
 
 ## 7. Operator review state and kiosk projection
 
-Operator review persistence is separate from the collector snapshot and kiosk output:
+Operator Review persistence is separate from the collector snapshot, kiosk output, and isolated preview:
 
 ```text
 surface/.env/local_event_review/state.json
 ```
 
-It contains candidate list pages and decisions, Event candidates and decisions, collection metadata, per-listing recognition diagnostics, and previously submitted DOM positions.
+It contains candidate list pages and decisions, Event candidates and decisions, persisted collection metadata, per-listing recognition diagnostics, and previously submitted DOM positions.
 
 The persistence files are separate, but confirmed and rejected Event decisions are authoritative inputs to the kiosk projection. The homepage must not independently choose stale collector fields when the same canonical detail URL has a reviewed decision.
 
@@ -136,15 +137,17 @@ The persistence files are separate, but confirmed and rejected Event decisions a
 ```text
 discover candidate list pages
   -> inspect candidate URL
-  -> confirm/reject/reset list page
-  -> optionally preview a confirmed page
-  -> collect from all confirmed pages
+  -> optionally preview that one page in isolated temporary state
+  -> confirm/reject/reset the real list-page decision
+  -> collect and persist from all confirmed pages
   -> inspect detail data and DOM evidence
   -> confirm/reject/reset Event candidate
   -> rebuild local_event_search_results.json from collector snapshot + Review state
 ```
 
-Preview uses the current confirmed-page collection and filters the returned candidates for the selected list URL. It does not temporarily set unrelated confirmed pages to `pending`, and it does not restore decisions through a best-effort client rollback.
+The isolated preview API accepts any list-page candidate already present in Review state, including `pending`, `confirmed`, and `rejected`. It deep-copies the current state into a temporary store, confirms only the selected page in that copy, clears temporary Event/feedback/collection data, runs the final collector for that page, and returns the temporary result. It never saves the temporary state, never changes the real decision, and never collects unrelated confirmed pages.
+
+Normal confirmed-page collection remains a separate persistent operation.
 
 Decision projection rules are:
 
@@ -168,35 +171,36 @@ The projection is deterministic and is rebuilt from the private collector snapsh
 
 ### 7.2 Manual correct-list-page flow
 
-Some institutions do not expose a discoverable dedicated list URL, or the automated discovery result is wrong. The Studio therefore provides an explicit manual input tied to the global institution selection.
+Some institutions do not expose a discoverable dedicated list URL, or automated discovery returns the wrong page. The Studio provides an explicit manual input tied to the global institution selection.
 
 ```text
 select one global institution
   -> enter official Event list URL
   -> POST /api/local-events/review/listing-page
   -> validate configured institution
-  -> validate hostname against that institution's allowed_domains
-  -> save or reset the page as pending review state
+  -> validate hostname against allowed_domains
+  -> save or reset the page as pending Review state
   -> display it immediately in the left-side list-page cards
+  -> optionally preview the pending page in isolated temporary state
   -> confirm/reject/reset
-  -> preview or collect after confirmation
+  -> include confirmed pages in normal persisted collection
 ```
 
-Manual addition does not edit committed `event_sources.json` and does not automatically collect Events. It creates a review candidate only. The user confirms it before preview or normal confirmed-page collection.
-
-When the same institution/URL already exists, manual addition resets it to `pending`, allowing the operator to reconsider a previously rejected or stale decision.
+Manual addition does not edit committed `event_sources.json` and does not automatically collect Events. Adding the same institution/URL resets it to `pending`, allowing the operator to reconsider a rejected or stale decision.
 
 ### 7.3 Zero-result diagnostics
 
-Each attempted list page records stage counts for page access, visible links, allowed-domain links, possible detail links, extracted cards, admitted cards, DOM evidence, selectors, candidates, and detail result counts. The first failed stage produces a stable `reason_code`. The browser renders the backend diagnostic rather than guessing.
+Each attempted list page records stage counts for page access, visible links, allowed-domain links, possible detail links, extracted cards, admitted cards, DOM evidence, selectors, candidates, and detail result counts. The first failed stage produces a stable `reason_code`.
+
+Normal collection persists diagnostics in Review state. Isolated preview returns diagnostics in its temporary response and the browser renders them without replacing persisted Review state.
 
 ## 8. Interactive browser feedback status
 
-The previously introduced downloadable Chrome Helper, generated ZIP, unpacked extension files, and remote `feedback:` transport were removed because they were not part of the requested product/deployment boundary.
+The previously introduced downloadable Chrome Helper, generated ZIP, unpacked extension files, and remote `feedback:` transport were removed because they were outside the requested product/deployment boundary.
 
 The current branch does not expose a replacement interactive browser-feedback action. Ability 2 remains visibly marked `NOT IMPLEMENTED`; it must not pretend a browser opened or ask the operator to download/install generated artifacts.
 
-Existing submitted positions remain readable from review state.
+Existing submitted positions remain readable from Review state.
 
 ## 9. Local Events output protection
 
@@ -224,9 +228,9 @@ Debug evidence:
 surface/.env/local_event_debug_cards/
 ```
 
-Accepted collector rows carry `candidate_policy: official-listing-authority-v1`. Source completion states, not debug-row counts, determine whether a run is partial. A smaller partial run does not replace a larger verified collector snapshot. The kiosk primary is rebuilt from the retained or newly accepted collector snapshot plus current Review decisions, so scheduled collection cannot silently discard confirmed corrections.
+Accepted collector rows carry `candidate_policy: official-listing-authority-v1`. Source completion states determine whether a run is partial. A smaller partial run does not replace a larger verified collector snapshot. The kiosk primary is rebuilt from the retained or newly accepted collector snapshot plus current Review decisions.
 
-On first startup after migration, the current primary is cleaned into a collector snapshot. Legacy Review-only rows are re-created from review state, and legacy rows containing `review_overlay_base` restore that embedded collector base once; new primary rows never contain `review_overlay_base`.
+Isolated preview writes none of these files. Its temporary store is removed when the request completes.
 
 ## 10. Calendar pipeline
 
@@ -252,7 +256,7 @@ surface/.env/photos/
   -> browser photo wall
 ```
 
-The public manifest contains browser URLs, captions, and output types only. It does not include original absolute paths. JPEG inputs can be copied without conversion. PNG and WebP require ImageMagick; they are skipped rather than copied into files with false `.jpg` extensions when no converter exists. HEIC and HEIF require `ffmpeg`.
+The public manifest contains browser URLs, captions, and output types only. It does not include original absolute paths. JPEG inputs can be copied without conversion. PNG and WebP require ImageMagick; HEIC and HEIF require `ffmpeg`.
 
 ## 12. Freshness observation
 
@@ -265,11 +269,12 @@ The Sync ticker is an observer, not a scheduler. It performs `HEAD` requests and
 - Weather retains previous values only with a visible `ERR`/retained-data presentation.
 - One Local Event source failure is recorded under that source.
 - A partial Local Event run does not replace a larger verified collector snapshot.
-- A zero-result review page records the first failed recognition stage.
+- A zero-result Review page records the first failed recognition stage.
 - A manually supplied list page outside the configured institution allow-list is rejected before persistence.
-- HTTP/2 is disabled before Chromium collection begins, so `ERR_HTTP2_PROTOCOL_ERROR` is not handled by a second retry flow.
-- A dashboard filter with no matches displays an empty filtered state without changing or deleting the underlying runtime events.
-- A Review projection failure must leave the previous kiosk primary intact because both collector and display writes are atomic.
+- HTTP/2 is disabled before Chromium collection begins.
+- A dashboard filter with no matches displays an empty filtered state without changing runtime events.
+- A Review projection failure leaves the previous kiosk primary intact because collector and display writes are atomic.
+- An isolated preview failure returns an error and temporary diagnostics without changing persisted Review state.
 - Market, Weather, News, and photo manifest producers use temporary files and atomic replacement.
 
 ## 14. Documentation boundaries
