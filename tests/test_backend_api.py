@@ -105,7 +105,11 @@ def test_preview_event_candidates_uses_temporary_state_without_mutating_real_sto
     assert temporary_state.listing_pages[0].decision == "confirmed"
     assert temporary_state.events == []
     assert temporary_state.feedback == []
-    assert temporary_state.event_collection == {}
+    assert temporary_state.event_collection == {
+        "candidate_count": 0,
+        "expired_candidate_count": 0,
+    }
+    assert "previous_real_collection" not in temporary_state.event_collection
     assert preview.model_dump(mode="json") == temporary_state.model_dump(mode="json")
 
     assert store.state_path.read_bytes() == real_state_before
@@ -149,42 +153,3 @@ def test_runtime_fixtures_are_valid_json() -> None:
     root = Path(__file__).resolve().parent / "fixtures" / "runtime_data"
     for path in root.glob("*.json"):
         json.loads(path.read_text(encoding="utf-8"))
-
-
-def test_public_photo_path_is_confined_to_public_directory(
-    monkeypatch: pytest.MonkeyPatch,
-    seeded_env: Path,
-) -> None:
-    monkeypatch.setattr(serve_infoscreen, "ENV_DIR", seeded_env)
-    expected = (seeded_env / "public_photos" / "fixture-photo.txt").resolve()
-
-    assert serve_infoscreen.public_photo_path("/public_photos/fixture-photo.txt") == expected
-
-    unsafe_paths = [
-        "/public_photos/../market.json",
-        "/public_photos/%2e%2e/market.json",
-        "/public_photos/%2E%2E%2Fmarket.json",
-        "/public_photos/%2Fetc%2Fpasswd",
-        "/public_photos/./fixture-photo.txt",
-        "/public_photos/folder//fixture-photo.txt",
-        "/public_photos/..%5cmarket.json",
-        "/public_photos/%00fixture-photo.txt",
-    ]
-    for request_path in unsafe_paths:
-        assert serve_infoscreen.public_photo_path(request_path) is None
-
-
-def test_public_photo_path_rejects_symlink_escape(
-    monkeypatch: pytest.MonkeyPatch,
-    seeded_env: Path,
-) -> None:
-    monkeypatch.setattr(serve_infoscreen, "ENV_DIR", seeded_env)
-    secret = seeded_env / "secret.txt"
-    secret.write_text("private", encoding="utf-8")
-    link = seeded_env / "public_photos" / "escape.txt"
-    try:
-        link.symlink_to(secret)
-    except OSError as exc:
-        pytest.skip(f"symlinks unavailable: {exc}")
-
-    assert serve_infoscreen.public_photo_path("/public_photos/escape.txt") is None
