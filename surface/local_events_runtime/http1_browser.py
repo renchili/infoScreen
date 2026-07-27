@@ -104,8 +104,8 @@ def apply() -> None:
     HTTP/1.1 mode directly. Browser operations are clamped to the active source and
     global collection deadlines so timed-out workers close before systemd's outer
     service limit. Listing navigation accepts a readable rendered document even when
-    lifecycle events do not settle. Review detail navigations start in a bounded
-    batch, are consumed synchronously by the existing blocking reader, and are closed
+    lifecycle events do not settle. Review detail navigations use a bounded batch,
+    are consumed synchronously by the existing blocking reader, and are closed
     immediately after extraction. A per-context URL cache prevents overlapping
     listing pages from downloading the same detail document repeatedly. Coverage,
     source, date, detail-field, section-aware summary, listing-provenance,
