@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import time
 from typing import Any
 
 from . import detail_date_authority as _detail_dates
@@ -9,7 +10,6 @@ from . import extract as _extract
 from . import review_detail_navigation_authority as _detail_navigation
 
 _APPLIED = False
-_BASE_DETAIL_CANDIDATE = None
 _BASE_LOAD = None
 _BASE_STATE_PAYLOAD = None
 _BASE_REPLACE_EVENTS = None
@@ -22,9 +22,8 @@ _DATE_NOISE_RE = re.compile(
     re.I,
 )
 
-# Do not declare a detail page ready merely because an h1 or one date-like string is
-# present. ACM pages can render their primary facts after the shell and recommendation
-# content. The primary document must remain stable for a bounded interval.
+# Readiness is intentionally minimal. The targeted fact collector below owns stability;
+# a generic page-ready probe must not decide that an activity date is complete.
 DETAIL_STABLE_READY_JS = r"""
 () => {
   const clean = value => String(value || "").replace(/\s+/g, " ").trim();
@@ -33,28 +32,14 @@ DETAIL_STABLE_READY_JS = r"""
   const heading = Array.from(document.querySelectorAll("main h1, article h1, h1"))
     .find(element => clean(element.innerText || element.textContent || ""));
   if (!root || !heading) return false;
-
   const text = clean(root.innerText || root.textContent || "");
-  if (text.length < 120 || document.readyState !== "complete") return false;
-
-  const signature = [
-    location.href,
-    text.length,
-    text.slice(0, 12000),
-    text.slice(-2000),
-  ].join("\u0000");
-  const now = Date.now();
-  const previous = window.__infoscreenDetailReadyState;
-  if (!previous || previous.signature !== signature) {
-    window.__infoscreenDetailReadyState = {signature, since: now};
-    return false;
-  }
-  return now - previous.since >= 1200;
+  return document.readyState === "complete" && text.length >= 120;
 }
 """
 
-# Scan ordinary text rows in the primary activity document. ACM archived pages often
-# render the date as plain text, without a date class, id, time element, or JSON-LD.
+# Scan the primary activity section itself. ACM archived pages render the date range as
+# an ordinary text row, so class/id selectors are insufficient. Reading stops before
+# recommendation content to avoid borrowing dates from another activity.
 DETAIL_DOCUMENT_FACTS_JS = r"""
 () => {
   const clean = value => String(value || "").replace(/\s+/g, " ").trim();
@@ -138,7 +123,7 @@ def _repair_fields(
     runtime_row: dict[str, Any] | None = None,
     source: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Return the collected Review fields unchanged."""
+    """Return collected Review fields unchanged."""
 
     return dict(raw)
 
@@ -154,7 +139,7 @@ def _line_dates(value: object) -> list[Any]:
 
 
 def _detail_date_line(payload: dict[str, Any]) -> str:
-    """Return one exact date-bearing detail line, without rewriting its text."""
+    """Return one exact date-bearing detail row without rewriting it."""
 
     rows: list[object] = []
     raw_dates = payload.get("dates")
@@ -178,7 +163,7 @@ def _detail_date_line(payload: dict[str, Any]) -> str:
 
 
 def _raw_when(payload: dict[str, Any]) -> str:
-    """Preserve separate detail Date and Time rows in one exact display value."""
+    """Keep the exact activity date and exact opening-hours row together."""
 
     base = _extract.clean(_BASE_RAW_WHEN(payload))
     if _line_dates(base):
@@ -187,7 +172,6 @@ def _raw_when(payload: dict[str, Any]) -> str:
     date_line = _detail_date_line(payload)
     if not date_line:
         return base
-
     if base and base != date_line:
         return f"{date_line} · {base}"
 
@@ -207,7 +191,7 @@ def _merge_document_facts(
     payload: dict[str, Any],
     facts: dict[str, Any],
 ) -> dict[str, Any]:
-    """Append real document facts even when the base extractor produced false dates."""
+    """Append document facts even when the base extractor produced a false date."""
 
     merged = dict(payload)
     for key in ("dates", "venues"):
@@ -230,13 +214,61 @@ def _merge_document_facts(
     return merged
 
 
+def _facts_signature(facts: dict[str, Any]) -> str:
+    values: list[str] = []
+    for key in ("dates", "venues", "lines"):
+        values.extend(_detail_navigation._clean_rows(facts.get(key)))
+    return "\0".join(values)
+
+
+def _facts_have_date(facts: dict[str, Any]) -> bool:
+    rows: list[str] = []
+    rows.extend(_detail_navigation._clean_rows(facts.get("dates")))
+    rows.extend(_detail_navigation._clean_rows(facts.get("lines")))
+    return any(_line_dates(value) for value in rows)
+
+
+def _collect_document_facts(page: Any) -> dict[str, Any]:
+    """Wait for the primary activity facts, not merely for the page shell."""
+
+    timeout_seconds = max(1.0, _detail_navigation.DETAIL_CONTENT_WAIT_MS / 1000)
+    deadline = time.monotonic() + timeout_seconds
+    latest: dict[str, Any] = {}
+    previous_signature = ""
+    stable_since = time.monotonic()
+
+    while True:
+        try:
+            observed = page.evaluate(_detail_navigation.FALLBACK_DETAIL_FIELDS_JS) or {}
+        except Exception:
+            observed = {}
+        if isinstance(observed, dict):
+            latest = observed
+
+        now = time.monotonic()
+        signature = _facts_signature(latest)
+        if signature != previous_signature:
+            previous_signature = signature
+            stable_since = now
+        else:
+            stable_for = now - stable_since
+            if _facts_have_date(latest) and stable_for >= 0.35:
+                return latest
+            if signature and stable_for >= 1.2:
+                return latest
+
+        if now >= deadline:
+            return latest
+        page.wait_for_timeout(200)
+
+
 def _read_detail_page(
     page: Any,
     listing_url: str,
     requested_url: str,
     entry: Any | None,
 ) -> dict[str, str]:
-    """Always scan the rendered activity document before choosing Review fields."""
+    """Read and settle the same detail document before constructing Review fields."""
 
     if entry is None:
         response = page.goto(
@@ -266,29 +298,16 @@ def _read_detail_page(
         )
     except Exception:
         pass
-    page.wait_for_timeout(150)
 
+    facts = _collect_document_facts(page)
     final_url = _detail_navigation._provenance.listing_detail_url(
         listing_url,
         str(page.url),
-    )
-    if not final_url:
-        final_url = requested_url
+    ) or requested_url
 
     payload = page.evaluate(_detail_navigation._browser.DETAIL_CARD_JS) or {}
     if not isinstance(payload, dict):
         payload = {}
-
-    # This must be unconditional. The base extractor can put an opening-hours row such
-    # as "Daily - 10am - 7pm" into payload["dates"], which is non-empty but contains no
-    # calendar date. Conditional fallback therefore loses the actual activity range.
-    facts: dict[str, Any] = {}
-    try:
-        observed = page.evaluate(_detail_navigation.FALLBACK_DETAIL_FIELDS_JS) or {}
-        if isinstance(observed, dict):
-            facts = observed
-    except Exception:
-        facts = {}
     payload = _merge_document_facts(payload, facts)
 
     title = _extract.clean(payload.get("title") or page.title() or "")
@@ -310,30 +329,6 @@ def _read_detail_page(
         "detail_status": "incomplete" if missing else "collected",
         "detail_error": "missing_detail_" + "_and_".join(missing) if missing else "",
         "detail_page_title": _extract.clean(payload.get("title") or page.title() or ""),
-    }
-
-
-def _detail_candidate(
-    context: Any,
-    source: dict[str, Any],
-    listing_url: str,
-    raw_url: str,
-    card: dict[str, Any],
-) -> dict[str, str]:
-    """Preserve the exact result returned by the active detail collector."""
-
-    result = dict(
-        _BASE_DETAIL_CANDIDATE(
-            context,
-            source,
-            listing_url,
-            raw_url,
-            card,
-        )
-    )
-    return {
-        key: str(value or "") if key != "status" else value
-        for key, value in result.items()
     }
 
 
@@ -361,8 +356,6 @@ def _active_candidates(
 
 
 def load(store: _review.EventReviewStore) -> _review.ReviewState:
-    """Load exact persisted fields and hide only candidates that are already past."""
-
     state = _BASE_LOAD(store)
     state.events, state.event_collection = _active_candidates(
         list(state.events),
@@ -372,8 +365,6 @@ def load(store: _review.EventReviewStore) -> _review.ReviewState:
 
 
 def state_payload(store: _review.EventReviewStore) -> dict[str, Any]:
-    """Expose exact persisted fields; do not backfill them from another runtime."""
-
     payload = dict(_BASE_STATE_PAYLOAD(store))
     events = [
         dict(row)
@@ -400,17 +391,15 @@ def replace_events(
     candidates: list[_review.EventCandidate],
     collection: dict[str, Any],
 ) -> _review.ReviewState:
-    """Persist exact collected fields and exclude already-ended candidates."""
-
     active, metadata = _active_candidates(list(candidates), collection)
     return _BASE_REPLACE_EVENTS(store, active, metadata)
 
 
 def apply() -> None:
-    """Install final exact-field and lifecycle handling for Review Web output."""
+    """Install the final detail-field and lifecycle owner used by Review Web."""
 
-    global _APPLIED, _BASE_DETAIL_CANDIDATE, _BASE_LOAD
-    global _BASE_STATE_PAYLOAD, _BASE_REPLACE_EVENTS, _BASE_RAW_WHEN
+    global _APPLIED, _BASE_LOAD, _BASE_STATE_PAYLOAD
+    global _BASE_REPLACE_EVENTS, _BASE_RAW_WHEN
     if _APPLIED:
         return
 
@@ -420,12 +409,9 @@ def apply() -> None:
     _BASE_RAW_WHEN = _detail_navigation._raw_when
     _detail_navigation._raw_when = _raw_when
 
-    _BASE_DETAIL_CANDIDATE = _review._detail_candidate
     _BASE_LOAD = _review.EventReviewStore.load
     _BASE_STATE_PAYLOAD = _review.EventReviewStore.state_payload
     _BASE_REPLACE_EVENTS = _review.EventReviewStore.replace_events
-
-    _review._detail_candidate = _detail_candidate
     _review.EventReviewStore.load = load
     _review.EventReviewStore.state_payload = state_payload
     _review.EventReviewStore.replace_events = replace_events
@@ -439,7 +425,7 @@ __all__ = [
     "load",
     "replace_events",
     "state_payload",
-    "_detail_candidate",
+    "_collect_document_facts",
     "_detail_date_line",
     "_expired",
     "_merge_document_facts",
