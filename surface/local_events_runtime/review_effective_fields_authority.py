@@ -22,6 +22,118 @@ _DATE_NOISE_RE = re.compile(
     re.I,
 )
 
+# The detail reader used to stop as soon as an h1 or readyState appeared. On ACM's
+# archived pages that can happen before the primary fact rows have entered the rendered
+# document. Date-bearing pages may finish immediately; pages without dates wait until
+# their primary content has remained stable for one bounded interval.
+DETAIL_STABLE_READY_JS = r"""
+() => {
+  const clean = value => String(value || "").replace(/\s+/g, " ").trim();
+  const root = document.querySelector("main") ||
+    document.querySelector("article") || document.body;
+  const heading = Array.from(document.querySelectorAll("main h1, article h1, h1"))
+    .find(element => clean(element.innerText || element.textContent || ""));
+  if (!root || !heading) return false;
+
+  const text = clean(root.innerText || root.textContent || "");
+  if (text.length < 120) return false;
+
+  const dateLike = /(?:\b20\d{2}-\d{1,2}-\d{1,2}\b|\b\d{1,2}(?:st|nd|rd|th)?(?:\s*(?:,|&|\/|[-–—])\s*\d{1,2}(?:st|nd|rd|th)?)*\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+20\d{2}\b|\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?(?:,)?\s+20\d{2}\b)/i;
+  if (dateLike.test(text) || document.querySelector(
+    "time[datetime], [itemprop='startDate'], [itemprop='endDate'], " +
+    "[data-start-date], [data-end-date], [data-date]"
+  )) return true;
+
+  const signature = `${location.href}\u0000${text.slice(0, 6000)}`;
+  const now = Date.now();
+  const previous = window.__infoscreenDetailReadyState;
+  if (!previous || previous.signature !== signature) {
+    window.__infoscreenDetailReadyState = {signature, since: now};
+    return false;
+  }
+  return document.readyState === "complete" && now - previous.since >= 1200;
+}
+"""
+
+# Scan the primary activity document itself, not only elements whose class contains
+# "date". ACM renders some archived date ranges as ordinary text rows. The scan begins
+# at the activity h1 and stops before recommendations, preventing a related activity's
+# date from being borrowed.
+DETAIL_DOCUMENT_FACTS_JS = r"""
+() => {
+  const clean = value => String(value || "").replace(/\s+/g, " ").trim();
+  const key = value => clean(value).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const add = (rows, value) => {
+    const text = clean(value);
+    if (text && !rows.includes(text)) rows.push(text);
+  };
+  const rejected = value => /\b(last updated|updated on|page updated|copyright|privacy|cookie|newsletter|previous programme|next programme|previous event|next event|presale|pre-sale|ticket sale|registration opens?)\b/i.test(clean(value));
+  const boundary = value => /^(?:you might also like|related (?:events?|programmes?|programs?|activities?)|recommended for you|more from|explore more|previous programme|next programme|previous event|next event|visit .+ today)$/i.test(clean(value));
+  const dateLike = value => /(?:\b20\d{2}-\d{1,2}-\d{1,2}\b|\b\d{1,2}(?:st|nd|rd|th)?(?:\s*(?:,|&|\/|[-–—])\s*\d{1,2}(?:st|nd|rd|th)?)*\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+20\d{2}\b|\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?(?:,)?\s+20\d{2}\b)/i.test(clean(value));
+  const timeLike = value => /\b(?:daily|weekdays?|weekends?|mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\b|\b\d{1,2}(?:[.:]\d{1,2})?\s*(?:am|pm)?\s*[-–—]\s*\d{1,2}(?:[.:]\d{1,2})?\s*(?:am|pm)\b/i.test(clean(value));
+  const venueLike = value => /\b(?:museum|gallery|galleries|level|room|hall|theatre|theater|auditorium|foyer|atrium|courtyard|plaza|studio|park|gardens?|zoo|centre|center)\b/i.test(clean(value));
+
+  const heading = Array.from(document.querySelectorAll("main h1, article h1, h1"))
+    .find(element => clean(element.innerText || element.textContent || "")) || null;
+  const title = clean(heading ? (heading.innerText || heading.textContent) : "");
+  const titleKey = key(title);
+  const root = heading && heading.closest(
+    "article, [class*='event-detail' i], [class*='eventDetail' i], " +
+    "[class*='detail-page' i], [class*='content-detail' i], main"
+  ) || document.querySelector("main") || document.querySelector("article") || document.body;
+
+  const rawLines = String(root ? (root.innerText || root.textContent || "") : "")
+    .split(/\n+/).map(clean).filter(Boolean);
+  const sectionLines = [];
+  let started = !title;
+  for (const line of rawLines) {
+    if (!started) {
+      const lineKey = key(line);
+      if (lineKey === titleKey || lineKey.includes(titleKey) || titleKey.includes(lineKey)) {
+        started = true;
+      } else {
+        continue;
+      }
+    }
+    if (boundary(line) && sectionLines.length >= 2) break;
+    if (!rejected(line)) add(sectionLines, line);
+    if (sectionLines.length >= 260) break;
+  }
+
+  const dates = [];
+  const venues = [];
+  for (const line of sectionLines) {
+    if (line.length <= 240 && dateLike(line)) add(dates, line);
+    if (
+      line.length <= 180 && line.split(/\s+/).length <= 24 &&
+      venueLike(line) && !dateLike(line) && !timeLike(line) &&
+      !/^(?:visit|explore|experience|discover|join|learn|see|walk|programme|programmes|admission|ticket|tickets|book)\b/i.test(line)
+    ) add(venues, line);
+  }
+
+  for (const element of root ? root.querySelectorAll(
+    "time[datetime], [itemprop='startDate'], [itemprop='endDate'], " +
+    "[data-date], [data-start-date], [data-end-date]"
+  ) : []) {
+    for (const attribute of ["datetime", "content", "data-date", "data-start-date", "data-end-date"] ) {
+      const value = clean(element.getAttribute(attribute));
+      if (value && dateLike(value)) add(dates, value);
+    }
+    const text = clean(element.innerText || element.textContent || "");
+    if (text && dateLike(text)) add(dates, text);
+  }
+
+  for (const image of root ? root.querySelectorAll("img[alt]") : []) {
+    const alt = clean(image.getAttribute("alt"));
+    if (alt && dateLike(alt) && (!titleKey || key(alt).includes(titleKey))) add(dates, alt);
+  }
+
+  const summary = clean(document.querySelector('meta[name="description"]')?.content) ||
+    clean(document.querySelector('meta[property="og:description"]')?.content);
+  return {dates, venues, summary, lines: sectionLines};
+}
+"""
+
 
 def _repair_fields(
     raw: dict[str, Any],
@@ -204,6 +316,8 @@ def apply() -> None:
     if _APPLIED:
         return
 
+    _detail_navigation.DETAIL_READY_JS = DETAIL_STABLE_READY_JS
+    _detail_navigation.FALLBACK_DETAIL_FIELDS_JS = DETAIL_DOCUMENT_FACTS_JS
     _BASE_RAW_WHEN = _detail_navigation._raw_when
     _detail_navigation._raw_when = _raw_when
 
@@ -220,6 +334,8 @@ def apply() -> None:
 
 
 __all__ = [
+    "DETAIL_DOCUMENT_FACTS_JS",
+    "DETAIL_STABLE_READY_JS",
     "apply",
     "load",
     "replace_events",
