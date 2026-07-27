@@ -116,25 +116,27 @@ A date-less list card with one official detail link must be admitted and enriche
 
 ### Easy-to-make interpretation
 
-The operator can only accept or reject URLs discovered by the system, or a correct URL must be added by editing committed configuration.
+The operator can only accept or reject URLs discovered by the system, a correct URL must be added by editing committed configuration, or a manually added page cannot be inspected until it is confirmed.
 
 ### Why it fails
 
-Automated discovery can return the wrong page, and some institutions expose a shared or non-obvious entrypoint that cannot be discovered reliably. Without a manual input, the user cannot correct the workflow.
+Automated discovery can return the wrong page, and some institutions expose a shared or non-obvious entrypoint that cannot be discovered reliably. Without a manual input, the user cannot correct the workflow. Requiring confirmation before preview forces a decision before the operator can inspect the Event evidence used to make that decision.
 
 ### Correct requirement interpretation
 
-The Studio lets the user select one global institution, enter a correct official Event list URL, save it into review state as pending, review that page, and use the same confirmed-page collection flow as discovered pages.
+The Studio lets the user select one global institution, enter a correct official Event list URL, save it into review state as pending, preview that saved page without changing its decision, then confirm, reject, or reset it. Only the normal persisted collection across all accepted pages requires confirmation.
 
 ### Required implementation
 
-Provide an always-visible URL field and `ADD LIST PAGE` button. Send `source_id` and `url` to `POST /api/local-events/review/listing-page`. Validate the configured institution and its allowed domains. Save the page as `pending`; do not collect automatically and do not edit committed `event_sources.json`. The operator confirms the page before preview or collection.
+Provide an always-visible URL field and `ADD LIST PAGE` button. Send `source_id` and `url` to `POST /api/local-events/review/listing-page`. Validate the configured institution and its allowed domains. Save the page as `pending`; do not collect automatically and do not edit committed `event_sources.json`.
 
-Adding the same institution/URL again resets it to `pending`, allowing a rejected or stale decision to be reconsidered.
+Expose isolated preview for every saved decision state. `POST /api/local-events/review/preview-events` must receive the saved `listing_url`, copy Review state into a temporary store, keep only that list page, mark only the temporary copy confirmed, clear copied Event candidates and feedback, run the final collector, and return the temporary result. It must not call the list-decision API or change persisted Review state.
+
+Adding the same institution/URL again resets it to `pending`, allowing a rejected or stale decision to be reconsidered. `POST /api/local-events/review/collect-events` remains the persisted path and reads only pages currently marked `confirmed`.
 
 ### Acceptance evidence
 
-Select an institution, add a valid allowed-domain URL, observe it immediately in the left-side list, confirm it, then preview or collect it. Invalid institution, malformed URL, and disallowed domain must return HTTP `400` without changing review state.
+Select an institution, add a valid allowed-domain URL, observe it immediately in the left-side list as pending, and preview it before confirmation. The preview must return only that page’s candidates while the persisted page decision, Event candidates, feedback, collection metadata, and `state.json` remain byte-for-byte or model-equivalent to their pre-preview state. Confirming the page must then make it eligible for normal confirmed-page collection. Invalid institution, malformed URL, disallowed domain, missing preview URL, and unknown preview URL must return HTTP `400` without changing review state.
 
 ## Local Events positive Event intent
 
@@ -250,23 +252,27 @@ Tests and runtime evidence must cover verified-to-partial transitions, timed-out
 
 ### Easy-to-make interpretation
 
-The Studio can display corrected fields while the kiosk continues rendering a separate collector row, or a preview may temporarily rewrite unrelated list-page decisions and restore them later.
+The Studio can display corrected fields while the kiosk continues rendering a separate collector row, or a preview may temporarily rewrite the selected or unrelated list-page decisions and restore them later.
 
 ### Why it fails
 
-That creates multiple visible truths and makes Review state vulnerable to interruption. A failed client rollback can leave unrelated pages in the wrong decision state.
+That creates multiple visible truths and makes Review state vulnerable to interruption. A failed client rollback can leave one or more pages in the wrong decision state. Requiring confirmation before preview also couples evidence gathering to a persisted review mutation.
 
 ### Correct requirement interpretation
 
-Review state and collector output may be stored separately, but the kiosk primary is one deterministic projection. Preview and collection read confirmed pages without temporarily changing unrelated decisions.
+Review state and collector output may be stored separately, but the kiosk primary is one deterministic projection. Preview is an isolated, decision-independent read/collection operation. Normal Event collection persists results from confirmed pages only.
 
 ### Required implementation
 
-Persist producer output to `local_event_collector_results.json`. Build `local_event_search_results.json` from that clean snapshot plus current Review decisions after every accepted producer run and Event decision. For the same canonical detail URL, a confirmed Review candidate is authoritative for non-empty title, date, venue, and description fields; a rejected candidate suppresses the collector row; pending restores it. Preview must not call the list-decision API.
+Persist producer output to `local_event_collector_results.json`. Build `local_event_search_results.json` from that clean snapshot plus current Review decisions after every accepted producer run and Event decision. For the same canonical detail URL, a confirmed Review candidate is authoritative for non-empty title, date, venue, and description fields; a rejected candidate suppresses the collector row; pending restores it.
+
+Preview must use `/api/local-events/review/preview-events`, must not call the list-decision API, and must not publish to the kiosk. The server must create an isolated temporary Review store containing only the selected page, confirmed only inside that copy, with copied Events and feedback cleared. The real Review state remains untouched even when preview collection fails.
 
 ### Acceptance evidence
 
-A fixture with stale collector fields and a confirmed candidate sharing the same canonical URL must produce exactly one kiosk row with the confirmed fields and preserved collector ordering metadata. `NOT RELATED` must remove the matching row, `RESET` must restore the clean collector row, a later producer run must reapply the decision, and preview source must contain no temporary list-decision writes.
+A fixture with stale collector fields and a confirmed candidate sharing the same canonical URL must produce exactly one kiosk row with the confirmed fields and preserved collector ordering metadata. `NOT RELATED` must remove the matching row, `RESET` must restore the clean collector row, and a later producer run must reapply the decision.
+
+A separate pending-page fixture must prove that preview succeeds before confirmation, the temporary collector sees one confirmed page, and persisted list decisions, Event candidates, feedback, collection metadata, and kiosk output do not change. Frontend source must contain the isolated preview endpoint and no temporary list-decision writes or confirmation gate.
 
 ## Dashboard Local Events filtering and collection boundary
 
