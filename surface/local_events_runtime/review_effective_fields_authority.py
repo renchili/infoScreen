@@ -22,6 +22,9 @@ _DATE_NOISE_RE = re.compile(
     re.I,
 )
 
+# Do not declare a detail page ready merely because an h1 or one date-like string is
+# present. ACM pages can render their primary facts after the shell and recommendation
+# content. The primary document must remain stable for a bounded interval.
 DETAIL_STABLE_READY_JS = r"""
 () => {
   const clean = value => String(value || "").replace(/\s+/g, " ").trim();
@@ -32,25 +35,26 @@ DETAIL_STABLE_READY_JS = r"""
   if (!root || !heading) return false;
 
   const text = clean(root.innerText || root.textContent || "");
-  if (text.length < 120) return false;
+  if (text.length < 120 || document.readyState !== "complete") return false;
 
-  const dateLike = /(?:\b20\d{2}-\d{1,2}-\d{1,2}\b|\b\d{1,2}(?:st|nd|rd|th)?(?:\s*(?:,|&|\/|[-–—])\s*\d{1,2}(?:st|nd|rd|th)?)*\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+20\d{2}\b|\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?(?:,)?\s+20\d{2}\b)/i;
-  if (dateLike.test(text) || document.querySelector(
-    "time[datetime], [itemprop='startDate'], [itemprop='endDate'], " +
-    "[data-start-date], [data-end-date], [data-date]"
-  )) return true;
-
-  const signature = `${location.href}\u0000${text.slice(0, 6000)}`;
+  const signature = [
+    location.href,
+    text.length,
+    text.slice(0, 12000),
+    text.slice(-2000),
+  ].join("\u0000");
   const now = Date.now();
   const previous = window.__infoscreenDetailReadyState;
   if (!previous || previous.signature !== signature) {
     window.__infoscreenDetailReadyState = {signature, since: now};
     return false;
   }
-  return document.readyState === "complete" && now - previous.since >= 1200;
+  return now - previous.since >= 1200;
 }
 """
 
+# Scan ordinary text rows in the primary activity document. ACM archived pages often
+# render the date as plain text, without a date class, id, time element, or JSON-LD.
 DETAIL_DOCUMENT_FACTS_JS = r"""
 () => {
   const clean = value => String(value || "").replace(/\s+/g, " ").trim();
@@ -60,7 +64,7 @@ DETAIL_DOCUMENT_FACTS_JS = r"""
     if (text && !rows.includes(text)) rows.push(text);
   };
   const rejected = value => /\b(last updated|updated on|page updated|copyright|privacy|cookie|newsletter|previous programme|next programme|previous event|next event|presale|pre-sale|ticket sale|registration opens?)\b/i.test(clean(value));
-  const boundary = value => /^(?:you might also like|related (?:events?|programmes?|programs?|activities?)|recommended for you|more from|explore more|previous programme|next programme|previous event|next event|visit .+ today)$/i.test(clean(value));
+  const boundary = value => /^(?:you might also like|you may also like|related (?:events?|programmes?|programs?|activities?)|recommended for you|more from|explore more|previous programme|next programme|previous event|next event|visit .+ today)$/i.test(clean(value));
   const dateLike = value => /(?:\b20\d{2}-\d{1,2}-\d{1,2}\b|\b\d{1,2}(?:st|nd|rd|th)?(?:\s*(?:,|&|\/|[-–—])\s*\d{1,2}(?:st|nd|rd|th)?)*\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+20\d{2}\b|\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?(?:,)?\s+20\d{2}\b)/i.test(clean(value));
   const timeLike = value => /\b(?:daily|weekdays?|weekends?|mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\b|\b\d{1,2}(?:[.:]\d{1,2})?\s*(?:am|pm)?\s*[-–—]\s*\d{1,2}(?:[.:]\d{1,2})?\s*(?:am|pm)\b/i.test(clean(value));
   const venueLike = value => /\b(?:museum|gallery|galleries|level|room|hall|theatre|theater|auditorium|foyer|atrium|courtyard|plaza|studio|park|gardens?|zoo|centre|center)\b/i.test(clean(value));
@@ -109,7 +113,7 @@ DETAIL_DOCUMENT_FACTS_JS = r"""
     "time[datetime], [itemprop='startDate'], [itemprop='endDate'], " +
     "[data-date], [data-start-date], [data-end-date]"
   ) : []) {
-    for (const attribute of ["datetime", "content", "data-date", "data-start-date", "data-end-date"] ) {
+    for (const attribute of ["datetime", "content", "data-date", "data-start-date", "data-end-date"]) {
       const value = clean(element.getAttribute(attribute));
       if (value && dateLike(value)) add(dates, value);
     }
@@ -134,11 +138,7 @@ def _repair_fields(
     runtime_row: dict[str, Any] | None = None,
     source: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Return the collected Review fields unchanged.
-
-    Runtime snapshots, listing cards, parser reconstruction, and source defaults must
-    not overwrite title, when, where, or summary returned by the detail collector.
-    """
+    """Return the collected Review fields unchanged."""
 
     return dict(raw)
 
@@ -201,6 +201,116 @@ def _raw_when(payload: dict[str, Any]) -> str:
         ):
             return f"{date_line} · {text}"
     return date_line
+
+
+def _merge_document_facts(
+    payload: dict[str, Any],
+    facts: dict[str, Any],
+) -> dict[str, Any]:
+    """Append real document facts even when the base extractor produced false dates."""
+
+    merged = dict(payload)
+    for key in ("dates", "venues"):
+        values = _detail_navigation._clean_rows(merged.get(key))
+        for value in _detail_navigation._clean_rows(facts.get(key)):
+            if value not in values:
+                values.append(value)
+        merged[key] = values
+
+    lines = _detail_navigation._payload_lines(merged)
+    for value in _detail_navigation._clean_rows(facts.get("lines")):
+        if value not in lines:
+            lines.append(value)
+    merged["lines"] = lines
+    merged["text_lines"] = lines
+    merged["text"] = "\n".join(lines)
+
+    if not _extract.clean(merged.get("summary")):
+        merged["summary"] = _extract.clean(facts.get("summary"))
+    return merged
+
+
+def _read_detail_page(
+    page: Any,
+    listing_url: str,
+    requested_url: str,
+    entry: Any | None,
+) -> dict[str, str]:
+    """Always scan the rendered activity document before choosing Review fields."""
+
+    if entry is None:
+        response = page.goto(
+            requested_url,
+            wait_until="commit",
+            timeout=_detail_navigation.DETAIL_COMMIT_TIMEOUT_MS,
+        )
+        if response is not None and response.status >= 400:
+            raise ValueError(f"detail_http_status_{response.status}")
+    else:
+        try:
+            page.wait_for_function(
+                _detail_navigation.WAIT_FOR_NAVIGATION_JS,
+                timeout=_detail_navigation.DETAIL_COMMIT_TIMEOUT_MS,
+            )
+        except Exception:
+            if str(page.url or "") == "about:blank":
+                raise
+        status = entry.status.get("value")
+        if status is not None and status >= 400:
+            raise ValueError(f"detail_http_status_{status}")
+
+    try:
+        page.wait_for_function(
+            _detail_navigation.DETAIL_READY_JS,
+            timeout=_detail_navigation.DETAIL_CONTENT_WAIT_MS,
+        )
+    except Exception:
+        pass
+    page.wait_for_timeout(150)
+
+    final_url = _detail_navigation._provenance.listing_detail_url(
+        listing_url,
+        str(page.url),
+    )
+    if not final_url:
+        final_url = requested_url
+
+    payload = page.evaluate(_detail_navigation._browser.DETAIL_CARD_JS) or {}
+    if not isinstance(payload, dict):
+        payload = {}
+
+    # This must be unconditional. The base extractor can put an opening-hours row such
+    # as "Daily - 10am - 7pm" into payload["dates"], which is non-empty but contains no
+    # calendar date. Conditional fallback therefore loses the actual activity range.
+    facts: dict[str, Any] = {}
+    try:
+        observed = page.evaluate(_detail_navigation.FALLBACK_DETAIL_FIELDS_JS) or {}
+        if isinstance(observed, dict):
+            facts = observed
+    except Exception:
+        facts = {}
+    payload = _merge_document_facts(payload, facts)
+
+    title = _extract.clean(payload.get("title") or page.title() or "")
+    when = _detail_navigation._raw_when(payload)
+    where = _detail_navigation._raw_where(payload)
+    summary = _detail_navigation._raw_summary(payload)
+
+    missing = [
+        name
+        for name, value in (("title", title), ("when", when), ("where", where))
+        if not value
+    ]
+    return {
+        "detail_url": final_url,
+        "title": title,
+        "when": when,
+        "where": where,
+        "summary": summary,
+        "detail_status": "incomplete" if missing else "collected",
+        "detail_error": "missing_detail_" + "_and_".join(missing) if missing else "",
+        "detail_page_title": _extract.clean(payload.get("title") or page.title() or ""),
+    }
 
 
 def _detail_candidate(
@@ -306,6 +416,7 @@ def apply() -> None:
 
     _detail_navigation.DETAIL_READY_JS = DETAIL_STABLE_READY_JS
     _detail_navigation.FALLBACK_DETAIL_FIELDS_JS = DETAIL_DOCUMENT_FACTS_JS
+    _detail_navigation._read_detail_page = _read_detail_page
     _BASE_RAW_WHEN = _detail_navigation._raw_when
     _detail_navigation._raw_when = _raw_when
 
@@ -331,6 +442,8 @@ __all__ = [
     "_detail_candidate",
     "_detail_date_line",
     "_expired",
+    "_merge_document_facts",
     "_raw_when",
+    "_read_detail_page",
     "_repair_fields",
 ]
