@@ -162,12 +162,15 @@ systemctl --user restart infoscreen-http.service
 
 1. Select the global institution used to filter the visible Review cards.
 2. Click `COLLECT LIST PAGES`.
-3. Inspect the candidate URL and choose `CONFIRM LIST PAGE`, `REJECT`, or `RESET`.
-4. For a confirmed page, use `PREVIEW EVENTS` when a page-specific preview is needed.
-5. Click `COLLECT EVENTS FROM CONFIRMED PAGES` to refresh all confirmed pages.
-6. Review each Event and choose `RELATED ACTIVITY`, `NOT RELATED`, or `RESET`.
+3. Inspect a candidate URL. A pending card exposes `PREVIEW BEFORE CONFIRM`; confirmed and rejected cards expose `PREVIEW EVENTS`.
+4. Use preview whenever page-specific evidence is needed. Preview works before or after a decision and never changes the saved list-page decision or persisted Review state.
+5. Choose `CONFIRM LIST PAGE`, `REJECT`, or `RESET`.
+6. Click `COLLECT EVENTS FROM CONFIRMED PAGES` to refresh and persist Events from all confirmed pages.
+7. Review each Event and choose `RELATED ACTIVITY`, `NOT RELATED`, or `RESET`.
 
-Preview and collection never change other list-page decisions temporarily. A listing card needs a usable title and one official detail link. The list card itself does not need to repeat date or venue. The collector follows detail pages for title, date/time, location, summary, and detail status.
+Preview and normal collection are separate operations. `POST /api/local-events/review/preview-events` copies Review state into an isolated temporary store, keeps only the selected page, marks only that temporary copy confirmed, clears copied Events and feedback, and returns temporary candidates. It does not call the list-decision API, modify `surface/.env/local_event_review/state.json`, rebuild the kiosk projection, or alter other page decisions.
+
+Normal `POST /api/local-events/review/collect-events` reads all pages currently marked confirmed and persists their Event candidates and diagnostics. A listing card needs a usable title and one official detail link. The list card itself does not need to repeat date or venue. The collector follows detail pages for title, date/time, location, summary, and detail status.
 
 Every Event candidate shows its originating list URL, DOM selector, selector match number, listing page index, document position, detail URL, and detail result.
 
@@ -179,8 +182,9 @@ The manual input is directly below the top collection toolbar.
 2. Paste the correct official Event list URL into `Add an official Event list page to the selected global institution`.
 3. Click `ADD LIST PAGE`.
 4. The page is saved as `pending` and appears in the left-side Event list pages.
-5. Confirm the page.
-6. Use `PREVIEW EVENTS` or collect all confirmed pages.
+5. Use `PREVIEW BEFORE CONFIRM` when evidence is needed before deciding.
+6. Confirm, reject, or reset the page.
+7. A confirmed page is included the next time `COLLECT EVENTS FROM CONFIRMED PAGES` runs.
 
 The backend validates that:
 
@@ -188,7 +192,7 @@ The backend validates that:
 - the URL is absolute HTTP/HTTPS;
 - the hostname is within that institution’s `allowed_domains`.
 
-Manual addition does not modify committed `event_sources.json` and does not collect Events automatically. Adding the same URL again resets it to `pending` for re-review.
+Manual addition does not modify committed `event_sources.json` and does not collect Events automatically. Adding the same URL again resets it to `pending` for re-review. Isolated preview remains available in `pending`, `confirmed`, and `rejected` states; only normal persisted collection requires confirmation.
 
 ### Zero-result diagnostics
 
@@ -210,7 +214,7 @@ before collector imports, and every patched Chromium launch includes:
 
 This applies to:
 
-- Studio discovery and Event collection through `surface/serve_infoscreen.py`;
+- Studio discovery, isolated preview, and confirmed-page Event collection through `surface/serve_infoscreen.py`;
 - scheduled and HTTP-triggered Local Events through `surface/search_local_events.py`.
 
 ### Interactive browser feedback status
@@ -344,7 +348,7 @@ python3 -m json.tool surface/.env/local_event_search_results.json | less
 python3 -m json.tool surface/.env/local_event_search_results.partial.json | less
 ```
 
-When a Studio preview fails, inspect `event_collection.listing_diagnostics` in:
+When a Studio preview fails, inspect `event_collection.listing_diagnostics` in the returned preview payload. The persisted state remains at:
 
 ```text
 surface/.env/local_event_review/state.json
@@ -353,8 +357,6 @@ surface/.env/local_event_review/state.json
 A failure before DOM parsing should be shown as a page/navigation error. Missing date on the listing card is not a rejection reason.
 
 ## Calendar sync
-
-Run on the Mac:
 
 ```bash
 cd ~/infoscreen
