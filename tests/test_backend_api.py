@@ -32,12 +32,21 @@ def test_openapi_covers_dashboard_mutations_and_actual_error_statuses() -> None:
     assert "/api/market-config" in paths
     assert "/api/market-refresh" in paths
     assert "/api/local-events/search" in paths
+    assert "/api/local-events/review/preview-events" in paths
     assert "/public_photos/{path}" in paths
 
     assert "404" not in paths["/api/local-events/search"]["get"]["responses"]
     assert "404" not in paths["/local_event_search_results.json"]["get"]["responses"]
     assert "504" in paths["/api/local-events/search"]["post"]["responses"]
     assert "sanitized" not in paths["/"]["get"]["description"].lower()
+
+    preview = paths["/api/local-events/review/preview-events"]["post"]
+    schema = preview["requestBody"]["content"]["application/json"]["schema"]
+    assert schema["required"] == ["listing_url"]
+    assert schema["properties"]["listing_url"]["format"] == "uri"
+    assert "temporary" in preview["description"].lower()
+    assert "real list-page decision" in preview["description"]
+    assert set(preview["responses"]) == {"200", "400", "500"}
 
 
 def test_market_refresh_schema_contains_both_producer_outputs() -> None:
