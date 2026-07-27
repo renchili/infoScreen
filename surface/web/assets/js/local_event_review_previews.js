@@ -52,6 +52,18 @@
     return "";
   }
 
+  function listingDecision(card) {
+    if (card.classList.contains("confirmed")) return "confirmed";
+    if (card.classList.contains("rejected")) return "rejected";
+    return "pending";
+  }
+
+  function previewButtonText(card) {
+    return listingDecision(card) === "pending"
+      ? "PREVIEW BEFORE CONFIRM"
+      : "PREVIEW EVENTS";
+  }
+
   function eventRowsFor(url) {
     return [...document.querySelectorAll("#event-candidates > .card")].filter((card) => {
       for (const row of card.querySelectorAll(".meta > div")) {
@@ -235,7 +247,7 @@
       setGlobalStatus(text(error.message || error), "error");
     } finally {
       button.disabled = false;
-      button.textContent = "PREVIEW EVENTS";
+      button.textContent = previewButtonText(card);
     }
   }
 
@@ -286,13 +298,21 @@
       previewSummary(card, url);
 
       const actions = card.querySelector(".actions");
-      if (!actions || actions.querySelector(".preview-events-button")) continue;
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "button small warning preview-events-button";
-      button.textContent = "PREVIEW EVENTS";
-      button.addEventListener("click", () => collectPreview(card, button));
-      actions.prepend(button);
+      if (!actions) continue;
+
+      let button = actions.querySelector(".preview-events-button");
+      if (!button) {
+        button = document.createElement("button");
+        button.type = "button";
+        button.className = "button small warning preview-events-button";
+        button.addEventListener("click", () => collectPreview(card, button));
+        actions.prepend(button);
+      }
+
+      button.dataset.decisionIndependent = "true";
+      button.title = "Preview this saved list page without changing its review decision.";
+      button.setAttribute("aria-label", button.title);
+      if (!button.disabled) button.textContent = previewButtonText(card);
     }
   }
 
