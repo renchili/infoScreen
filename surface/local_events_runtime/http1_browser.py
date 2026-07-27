@@ -33,6 +33,34 @@ def _bind_final_browser_runtime_to_review() -> None:
         setattr(review, name, getattr(_browser, name))
 
 
+def _bind_final_event_collector() -> None:
+    """Pin every HTTP collection run to the final detail owner.
+
+    The HTTP server imports ``event_review.collect_event_candidates`` only after this
+    bootstrap completes. This wrapper refreshes the final owner immediately before
+    the diagnostics collector starts, so no import-time snapshot or later monkey
+    patch can route POST collection through an older detail implementation.
+    """
+    from . import event_review as review
+    from . import event_review_diagnostics as diagnostics
+    from . import review_effective_fields_authority as effective
+
+    def collect_event_candidates(store):
+        effective.apply()
+        review._detail_candidate = effective.detail_candidate
+        state = diagnostics.collect_event_candidates(store)
+        state.event_collection = {
+            **state.event_collection,
+            "detail_owner_module": effective.detail_candidate.__module__,
+            "detail_owner_name": effective.detail_candidate.__qualname__,
+            "detail_owner_file": str(effective.__file__),
+        }
+        store.save(state)
+        return state
+
+    review.collect_event_candidates = collect_event_candidates
+
+
 def apply() -> None:
     """Install the shared Local Events browser and review-backend bootstrap.
 
@@ -156,6 +184,10 @@ def apply() -> None:
 
     from .review_publish_authority import apply as apply_review_publish_authority
     apply_review_publish_authority()
+
+    # This is the final HTTP handoff. The server imports the wrapper from event_review
+    # after apply() returns, and the wrapper pins every POST to the effective owner.
+    _bind_final_event_collector()
     _APPLIED = True
 
 
