@@ -9,6 +9,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import tempfile
 import threading
 from datetime import datetime, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -165,6 +166,43 @@ def review_store() -> EventReviewStore:
         root=review_root(),
         config_path=CONF_DIR / "event_sources.json",
     )
+
+
+def preview_event_candidates(
+    store: EventReviewStore,
+    listing_url: str,
+):
+    """Collect one review listing in an isolated temporary store.
+
+    The real listing decision, Event candidates, feedback, and state file are never
+    modified. The copy is confirmed only inside the temporary store so the normal
+    final collector and detail owner can be reused without a second implementation.
+    """
+
+    requested = str(listing_url or "").strip()
+    if not requested:
+        raise ValueError("listing_url is required")
+
+    state = store.load()
+    listing = next((item for item in state.listing_pages if item.url == requested), None)
+    if listing is None:
+        raise ValueError("listing page is not present in review state")
+
+    preview_state = state.model_copy(deep=True)
+    preview_state.listing_pages = [
+        listing.model_copy(update={"decision": "confirmed"})
+    ]
+    preview_state.events = []
+    preview_state.feedback = []
+    preview_state.event_collection = {}
+
+    with tempfile.TemporaryDirectory(prefix="infoscreen-event-preview-") as root:
+        temporary_store = EventReviewStore(
+            root=Path(root),
+            config_path=store.config_path,
+        )
+        temporary_store.save(preview_state)
+        return collect_event_candidates(temporary_store)
 
 
 def public_photo_path(request_target: str) -> Path | None:
@@ -458,6 +496,38 @@ class Handler(SimpleHTTPRequestHandler):
                         "detail": str(exc),
                     },
                     400,
+                )
+
+        if path == "/api/local-events/review/preview-events":
+            try:
+                body = self.body_json()
+                listing_url = str(body.get("listing_url") or "").strip()
+                with REVIEW_MUTATION_LOCK:
+                    state = preview_event_candidates(review_store(), listing_url)
+                return self.send_json(
+                    {
+                        "ok": True,
+                        "preview": True,
+                        **state.model_dump(mode="json"),
+                    }
+                )
+            except ValueError as exc:
+                return self.send_json(
+                    {
+                        "ok": False,
+                        "error": "event_preview_request_failed",
+                        "detail": str(exc),
+                    },
+                    400,
+                )
+            except Exception as exc:
+                return self.send_json(
+                    {
+                        "ok": False,
+                        "error": "event_preview_collection_failed",
+                        "detail": str(exc),
+                    },
+                    500,
                 )
 
         if path == "/api/local-events/review/collect-events":
