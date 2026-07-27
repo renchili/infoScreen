@@ -4,6 +4,7 @@ import re
 import time
 from typing import Any
 
+from . import detail_date_authority as _detail_dates
 from . import event_review as _review
 from . import extract as _extract
 from . import review_detail_navigation_authority as _detail_navigation
@@ -265,7 +266,7 @@ def _collect_document_facts(page: Any) -> dict[str, Any]:
 
         if now >= deadline:
             return latest
-        page.wait_for_timeout(200)
+        page.wait_for_timeout(150)
 
 
 def _read_detail_page(
@@ -398,7 +399,8 @@ def detail_candidate(
         return result
     finally:
         try:
-            if not page.is_closed():
+            is_closed = getattr(page, "is_closed", None)
+            if not callable(is_closed) or not is_closed():
                 page.close()
         finally:
             state.page_ids.discard(id(page))
@@ -477,9 +479,15 @@ def apply() -> None:
 
     if not _APPLIED:
         _BASE_RAW_WHEN = _detail_navigation._raw_when
-        _BASE_LOAD = _review.EventReviewStore.load
+        _BASE_LOAD = (
+            _detail_dates._BASE_REVIEW_LOAD
+            or _review.EventReviewStore.load
+        )
         _BASE_STATE_PAYLOAD = _review.EventReviewStore.state_payload
-        _BASE_REPLACE_EVENTS = _review.EventReviewStore.replace_events
+        _BASE_REPLACE_EVENTS = (
+            _detail_dates._BASE_REPLACE_EVENTS
+            or _review.EventReviewStore.replace_events
+        )
         _APPLIED = True
 
     # Re-apply these bindings every time so no later authority or test fixture can leave
