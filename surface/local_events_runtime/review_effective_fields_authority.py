@@ -161,13 +161,13 @@ def _detail_date_line(payload: dict[str, Any]) -> str:
 
 
 def _raw_when(payload: dict[str, Any]) -> str:
-    """Keep the exact activity date and exact opening-hours row together."""
+    """Require exact date evidence, then keep one exact opening-hours row."""
 
     base_picker = _BASE_RAW_WHEN or _detail_navigation._raw_when
     base = _extract.clean(base_picker(payload))
     date_line = _detail_date_line(payload)
     if not date_line:
-        return base
+        return ""
 
     values: list[str]
     if base and _line_dates(base):
@@ -238,7 +238,7 @@ def _facts_have_date(facts: dict[str, Any]) -> bool:
 
 
 def _collect_document_facts(page: Any) -> dict[str, Any]:
-    """Wait for current-activity facts rather than accepting the first page shell."""
+    """Wait for date-bearing activity facts; never settle early on time-only rows."""
 
     timeout_seconds = max(1.0, _detail_navigation.DETAIL_CONTENT_WAIT_MS / 1000)
     deadline = time.monotonic() + timeout_seconds
@@ -262,8 +262,6 @@ def _collect_document_facts(page: Any) -> dict[str, Any]:
         else:
             stable_for = now - stable_since
             if _facts_have_date(latest) and stable_for >= 0.35:
-                return latest
-            if signature and stable_for >= 1.2:
                 return latest
 
         if now >= deadline:
