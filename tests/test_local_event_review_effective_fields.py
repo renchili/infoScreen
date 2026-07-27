@@ -180,26 +180,45 @@ def test_explicit_past_date_error_is_removed_even_when_when_is_empty(tmp_path) -
     assert store.state_payload()["events"] == []
 
 
-def test_separate_detail_date_and_time_rows_are_preserved_and_expire(tmp_path) -> None:
+def test_fallback_date_and_detail_time_are_preserved_and_expire(tmp_path) -> None:
+    # This matches the real flow: the page-wide fallback contributes the ordinary
+    # date row through payload["dates"], while the primary detail payload already
+    # contains the opening-hours row in lines.
     payload = {
-        "dates": [],
+        "dates": ["25 November 2022 - 26 March 2023"],
         "venues": [],
         "lines": [
             "BODY AND SPIRIT: THE HUMAN BODY IN THOUGHT AND PRACTICE",
-            "25 November 2022 – 26 March 2023",
-            "Daily – 10am – 7pm",
+            "Daily - 10am - 7pm",
+            "Fridays - 10am - 9pm",
             "Shaw Foyer",
         ],
     }
 
     when = detail_navigation._raw_when(payload)
 
-    assert when == "25 November 2022 – 26 March 2023 · Daily – 10am – 7pm"
+    assert when == "25 November 2022 - 26 March 2023 · Daily - 10am - 7pm"
 
     store = store_at(tmp_path)
     past = candidate(when=when, where="Shaw Foyer")
     store.save(ReviewState(events=[past]))
     assert store.state_payload()["events"] == []
+
+
+def test_final_owner_installs_primary_document_fact_collection() -> None:
+    assert detail_navigation.DETAIL_READY_JS == authority.DETAIL_STABLE_READY_JS
+    assert (
+        detail_navigation.FALLBACK_DETAIL_FIELDS_JS
+        == authority.DETAIL_DOCUMENT_FACTS_JS
+    )
+
+    script = authority.DETAIL_DOCUMENT_FACTS_JS.lower()
+    assert "root.innertext" in script
+    assert "you might also like" in script
+    assert "img[alt]" in script
+    assert "last updated" in script
+    assert "date-start-date" not in script
+    assert "data-start-date" in script
 
 
 def test_effective_owner_contains_no_runtime_or_parser_backfill() -> None:
