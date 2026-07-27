@@ -41,12 +41,13 @@ def apply() -> None:
     HTTP/1.1 mode directly. Browser operations are clamped to the active source and
     global collection deadlines so timed-out workers close before systemd's outer
     service limit. Listing navigation accepts a readable rendered document even when
-    lifecycle events do not settle. Review detail pages are read through the existing
-    bounded blocking reader, one admitted card at a time, so no unconsumed background
-    tabs remain when the listing or BrowserContext is closed. Coverage, source, date,
-    detail-field, section-aware summary, listing-provenance, listing-membership,
-    dynamic-listing, card, and link authorities are applied before their final values
-    are bound into Review Studio.
+    lifecycle events do not settle. Review detail navigations start in a bounded
+    batch, are consumed synchronously by the existing blocking reader, and are closed
+    immediately after extraction. A per-context URL cache prevents overlapping
+    listing pages from downloading the same detail document repeatedly. Coverage,
+    source, date, detail-field, section-aware summary, listing-provenance,
+    listing-membership, dynamic-listing, card, and link authorities are applied before
+    their final values are bound into Review Studio.
     """
     global _APPLIED
     if _APPLIED:
