@@ -52,17 +52,21 @@ def apply() -> None:
         # product invariant without wrapping the function a second time.
         _publisher._review_event = _review_event
         from .preview_collector_authority import apply as apply_preview_collector
+        from .preview_transport_authority import apply as apply_preview_transport
 
         apply_preview_collector()
+        apply_preview_transport()
         return
 
     # The canonical job calls this authority directly. Apply the detail authority
     # here as well so scheduled, HTTP, Studio, and direct job paths use one rule.
     from .detail_summary_authority import apply as apply_detail_summary_authority
     from .preview_collector_authority import apply as apply_preview_collector
+    from .preview_transport_authority import apply as apply_preview_transport
 
     apply_detail_summary_authority()
     apply_preview_collector()
+    apply_preview_transport()
     _BASE_REVIEW_EVENT = _publisher._review_event
     _publisher._review_event = _review_event
     _APPLIED = True
