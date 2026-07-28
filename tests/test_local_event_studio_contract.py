@@ -22,10 +22,17 @@ def test_studio_uses_one_scroll_owner_and_one_render_lifecycle() -> None:
     assert 'document.addEventListener("infoscreen:review-rendered", refreshAfterRender)' in filters
 
 
-def test_studio_preview_never_writes_list_page_decisions() -> None:
+def test_studio_preview_never_writes_list_page_decisions_and_keeps_its_diagnostic() -> None:
     preview = read_text("surface/web/assets/js/local_event_review_previews.js")
+    diagnostics = read_text("surface/web/assets/js/local_event_review_diagnostics.js")
 
     assert "/api/local-events/review/listing-decision" not in preview
     assert "setListingDecision" not in preview
     assert "withExclusiveConfirmedListings" not in preview
-    assert "Confirm this list page before previewing it" in preview
+    assert "Confirm this list page before previewing it" not in preview
+    assert 'diagnostic: diagnostic && typeof diagnostic === "object"' in preview
+    assert 'new CustomEvent("infoscreen:review-preview"' in preview
+    assert 'const PREVIEW_STORAGE_KEY = "infoscreen.review.event-previews"' in diagnostics
+    assert "stored?.diagnostic" in diagnostics
+    assert "preview_diagnostic_missing" in diagnostics
+    assert 'document.addEventListener("infoscreen:review-preview"' in diagnostics
