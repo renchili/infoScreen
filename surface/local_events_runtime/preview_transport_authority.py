@@ -6,6 +6,7 @@ from . import browser as _browser
 from . import event_review as _review
 from . import event_review_diagnostics as _diagnostics
 from . import preview_collector_authority as _preview
+from . import resilient_navigation_authority as _navigation
 
 _APPLIED = False
 _BASE_COLLECT = None
@@ -16,15 +17,16 @@ def _preview_store(store: _review.EventReviewStore) -> bool:
 
 
 def _launch_preview_chromium(playwright: Any):
-    """Launch Preview Chromium without forcing HTTP/1.1.
+    """Launch HTTP/2-capable Preview Chromium with readable-DOM recovery installed.
 
-    The shared Local Events browser deliberately adds ``--disable-http2`` for sites
-    that previously failed with HTTP/2 protocol errors. Marina Bay Sands is served by
-    Akamai over HTTP/2 and can stall before navigation commit when that protocol is
-    disabled. Preview therefore uses an isolated browser process with normal ALPN
-    negotiation while the formal collector keeps its existing HTTP/1.1 policy.
+    The formal collector deliberately forces HTTP/1.1 for sources that previously
+    failed with HTTP/2 protocol errors. Preview keeps normal ALPN negotiation, but it
+    must still install the shared resilient Page.goto wrapper. Without that wrapper an
+    HTTP/2 stream error raised after useful HTML has already rendered is returned
+    immediately instead of accepting the readable document.
     """
 
+    _navigation.apply()
     args = [
         "--no-sandbox",
         "--disable-dev-shm-usage",
