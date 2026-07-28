@@ -34,7 +34,7 @@ def test_preview_browser_keeps_http2_and_captures_netlog(monkeypatch, tmp_path) 
         "find_browser_executable",
         lambda: "/usr/bin/chromium",
     )
-    monkeypatch.setattr(transport, "_new_netlog_path", lambda: netlog)
+    monkeypatch.setattr(transport, "_new_netlog_path", lambda executable: netlog)
     monkeypatch.setattr(
         transport._navigation,
         "apply",
@@ -55,6 +55,27 @@ def test_preview_browser_keeps_http2_and_captures_netlog(monkeypatch, tmp_path) 
         "browser_version": "149.0.0.0",
         "netlog": str(netlog),
     }
+
+
+def test_snap_chromium_netlog_uses_host_visible_user_common(monkeypatch, tmp_path) -> None:
+    monkeypatch.delenv("INFOSCREEN_PREVIEW_NETLOG_DIR", raising=False)
+    monkeypatch.setattr(transport.Path, "home", lambda: tmp_path)
+
+    path = transport._new_netlog_path("/snap/bin/chromium")
+
+    assert path.parent == tmp_path / "snap" / "chromium" / "common" / "infoscreen-netlog"
+    assert path.name.startswith("infoscreen-preview-netlog-")
+    assert path.suffix == ".json"
+    assert path.parent.is_dir()
+
+
+def test_non_snap_chromium_netlog_keeps_system_tmp(monkeypatch, tmp_path) -> None:
+    monkeypatch.delenv("INFOSCREEN_PREVIEW_NETLOG_DIR", raising=False)
+    monkeypatch.setattr(transport.tempfile, "gettempdir", lambda: str(tmp_path))
+
+    path = transport._new_netlog_path("/usr/bin/google-chrome")
+
+    assert path.parent == tmp_path
 
 
 def test_preview_transport_restores_formal_browser_launcher(monkeypatch, tmp_path) -> None:
