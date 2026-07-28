@@ -10,8 +10,9 @@ from local_events_runtime import browser as browser_runtime  # noqa: E402
 from local_events_runtime import preview_transport_authority as transport  # noqa: E402
 
 
-def test_preview_browser_does_not_disable_http2(monkeypatch) -> None:
+def test_preview_browser_keeps_http2_and_installs_resilient_navigation(monkeypatch) -> None:
     observed: dict[str, object] = {}
+    navigation_calls: list[bool] = []
 
     class Chromium:
         def launch(self, **kwargs):
@@ -26,10 +27,16 @@ def test_preview_browser_does_not_disable_http2(monkeypatch) -> None:
         "find_browser_executable",
         lambda: "/usr/bin/chromium",
     )
+    monkeypatch.setattr(
+        transport._navigation,
+        "apply",
+        lambda: navigation_calls.append(True),
+    )
 
     result = transport._launch_preview_chromium(Playwright())
 
     assert result == "preview-browser"
+    assert navigation_calls == [True]
     assert observed["headless"] is True
     assert observed["executable_path"] == "/usr/bin/chromium"
     assert "--disable-http2" not in observed["args"]
