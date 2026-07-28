@@ -26,6 +26,17 @@
     }));
   }
 
+  function canonical(value) {
+    try {
+      const url = new URL(value, window.location.href);
+      url.hash = "";
+      if (url.pathname !== "/") url.pathname = url.pathname.replace(/\/$/, "");
+      return url.href;
+    } catch {
+      return text(value);
+    }
+  }
+
   function previews() {
     try {
       const value = JSON.parse(sessionStorage.getItem(PREVIEW_STORAGE_KEY) || "{}");
@@ -35,13 +46,27 @@
     }
   }
 
-  function savePreview(url, rows) {
+  function diagnosticFor(payload, url) {
+    const expected = canonical(url);
+    const rows = payload?.event_collection?.listing_diagnostics;
+    if (!Array.isArray(rows)) return null;
+    return rows.find((row) => canonical(row?.listing_url) === expected) || null;
+  }
+
+  function savePreview(url, rows, diagnostic) {
     const value = previews();
     value[url] = {
       collected_at: new Date().toISOString(),
       events: rows,
+      diagnostic: diagnostic && typeof diagnostic === "object" ? diagnostic : null,
     };
     sessionStorage.setItem(PREVIEW_STORAGE_KEY, JSON.stringify(value));
+  }
+
+  function publishPreview(url, diagnostic) {
+    document.dispatchEvent(new CustomEvent("infoscreen:review-preview", {
+      detail: { url, diagnostic },
+    }));
   }
 
   function listingUrl(card) {
@@ -230,10 +255,12 @@
     try {
       const payload = await collectPreviewPage(url);
       const rows = normalizedPreviewRows(payload, url);
-      savePreview(url, rows);
+      const diagnostic = diagnosticFor(payload, url);
+      savePreview(url, rows, diagnostic);
       if (card.isConnected) {
         renderPreviewRows(card, rows, { collectedAt: new Date().toISOString() });
       }
+      publishPreview(url, diagnostic);
 
       setGlobalStatus(
         `${rows.length} EVENT CANDIDATE${rows.length === 1 ? "" : "S"} RETURNED FOR THIS LIST PAGE`,
