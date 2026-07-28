@@ -44,15 +44,9 @@ def _review_event(candidate: Any) -> dict[str, Any]:
 
 def _apply_review_authorities() -> None:
     from .artscience_preview_authority import apply as apply_artscience_preview
-    from .configured_listing_collection_authority import (
-        apply as apply_configured_listing_collection,
-    )
     from .preview_collector_authority import apply as apply_preview_collector
     from .preview_transport_authority import apply as apply_preview_transport
 
-    # Verified configured listing entrypoints are authoritative; do not scan every
-    # institution homepage again when the operator refreshes list-page candidates.
-    apply_configured_listing_collection()
     apply_preview_collector()
     # Source-specific rendered-card recognition must wrap the direct collector before
     # transport selects headed/headless mode for the same installed Chromium process.
