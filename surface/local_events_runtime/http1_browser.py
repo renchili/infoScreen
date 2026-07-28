@@ -70,25 +70,83 @@ def _filter_final_expired_events(state, effective):
 def _bind_final_event_collector() -> None:
     """Pin every HTTP collection run to the final detail owner.
 
-    The HTTP server imports ``event_review.collect_event_candidates`` only after this
-    bootstrap completes. This wrapper refreshes the final owner immediately before
-    the diagnostics collector starts, so no import-time snapshot or later monkey
-    patch can route POST collection through an older detail implementation.
+    Normal confirmed-page collection keeps the final detail owner. An isolated
+    pre-confirmation preview is intentionally different: its purpose is to show
+    which activities the selected list page contains so the operator can decide
+    whether to confirm it. Preview therefore keeps the same listing/card/evidence
+    collector but does not open every detail page. The temporary-store prefix is
+    created only by ``serve_infoscreen.preview_event_candidates`` and all Review
+    mutations are serialized by the server lock, so the temporary binding cannot
+    leak into a normal persisted collection.
     """
+    from . import detail_date_authority as detail_dates
     from . import event_review as review
     from . import event_review_diagnostics as diagnostics
+    from . import extract
+    from . import listing_provenance_authority as provenance
     from . import review_effective_fields_authority as effective
+    from .detail_summary_authority import useful_event_summary
+
+    def preview_detail_candidate(
+        context: Any,
+        source: dict[str, Any],
+        listing_url: str,
+        raw_url: str,
+        card: dict[str, Any],
+    ) -> dict[str, str]:
+        """Build one preview row from listing evidence without detail navigation."""
+
+        requested_url = provenance.listing_detail_url(listing_url, raw_url)
+        if not requested_url:
+            raise ValueError("detail URL is not a safe HTTP(S) target from the listing")
+
+        listing = detail_dates._listing_fields(source, card)
+        title = extract.clean(listing.get("title")) or review._listing_title(card)
+        when = extract.clean(listing.get("when"))
+        where = extract.clean(listing.get("where"))
+        summary = useful_event_summary(listing.get("summary")) or ""
+        missing = [
+            name
+            for name, value in (("title", title), ("when", when), ("where", where))
+            if not value
+        ]
+        suffix = "_missing_" + "_and_".join(missing) if missing else ""
+        return {
+            "detail_url": requested_url,
+            "title": title,
+            "when": when,
+            "where": where,
+            "summary": summary,
+            "detail_status": "incomplete",
+            "detail_error": "preview_listing_evidence_only" + suffix,
+            "detail_page_title": "",
+        }
 
     def collect_event_candidates(store):
         effective.apply()
-        review._detail_candidate = effective.detail_candidate
-        state = diagnostics.collect_event_candidates(store)
+        preview_listing_only = store.root.name.startswith("infoscreen-event-preview-")
+        review._detail_candidate = (
+            preview_detail_candidate
+            if preview_listing_only
+            else effective.detail_candidate
+        )
+        try:
+            state = diagnostics.collect_event_candidates(store)
+        finally:
+            review._detail_candidate = effective.detail_candidate
+
         state = _filter_final_expired_events(state, effective)
         state.event_collection = {
             **state.event_collection,
             "detail_owner_module": effective.detail_candidate.__module__,
             "detail_owner_name": effective.detail_candidate.__qualname__,
             "detail_owner_file": str(effective.__file__),
+            "preview_detail_mode": (
+                "listing_evidence_only" if preview_listing_only else "full_detail"
+            ),
+            "detail_page_requests_skipped": (
+                len(state.events) if preview_listing_only else 0
+            ),
         }
         store.save(state)
         return state
