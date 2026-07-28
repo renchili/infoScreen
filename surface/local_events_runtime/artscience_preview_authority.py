@@ -102,12 +102,17 @@ async (args) => {
       !genericTitle(title) && !scheduleLine(title);
   };
 
-  const sameActivityAnchors = (element, detailUrl) => {
+  const activityAnchors = element => {
     const anchors = [];
     if (element.matches?.("a[href]")) anchors.push(element);
     anchors.push(...element.querySelectorAll("a[href]"));
-    return anchors.filter(anchor => activityUrl(anchor.getAttribute("href")) === detailUrl);
+    return anchors.filter(anchor => activityUrl(anchor.getAttribute("href")));
   };
+
+  const sameActivityAnchors = (element, detailUrl) =>
+    activityAnchors(element).filter(
+      anchor => activityUrl(anchor.getAttribute("href")) === detailUrl
+    );
 
   const titleFrom = (element, detailUrl) => {
     const candidates = [];
@@ -139,7 +144,7 @@ async (args) => {
         const rect = element.getBoundingClientRect();
         const textLength = clean(element.innerText || element.textContent || "").length;
         const urls = new Set(
-          sameActivityAnchors(element, detailUrl)
+          activityAnchors(element)
             .map(candidate => activityUrl(candidate.getAttribute("href")))
             .filter(Boolean)
         );
