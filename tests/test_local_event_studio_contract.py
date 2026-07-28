@@ -52,3 +52,26 @@ def test_isolated_preview_renders_temporary_candidates_without_review_actions() 
     assert "RELATED ACTIVITY" not in preview
     assert 'id="event-candidates-title"' in html
     assert 'id="event-candidates-hint"' in html
+
+
+def test_temporary_preview_panel_survives_page_renders_until_formal_collection() -> None:
+    persistence = read_text(
+        "surface/web/assets/js/local_event_review_preview_persistence.js"
+    )
+    html = read_text("surface/web/local-events/studio/index.html")
+
+    assert 'const STORAGE_KEY = "infoscreen.review.active-preview-panel"' in persistence
+    assert 'sessionStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot))' in persistence
+    assert 'container.innerHTML = String(snapshot.html || "")' in persistence
+    assert 'document.addEventListener("infoscreen:review-preview"' in persistence
+    assert 'document.addEventListener("infoscreen:review-rendered"' in persistence
+    assert 'document.addEventListener("infoscreen:review-state"' in persistence
+    assert "clearStored();" in persistence
+    assert 'data-preview="true"' in persistence
+    assert (
+        '<script src="/assets/js/local_event_review_preview_persistence.js" defer></script>'
+        in html
+    )
+    assert html.index("local_event_review_previews.js") < html.index(
+        "local_event_review_preview_persistence.js"
+    )
