@@ -36,3 +36,19 @@ def test_studio_preview_never_writes_list_page_decisions_and_keeps_its_diagnosti
     assert "stored?.diagnostic" in diagnostics
     assert "preview_diagnostic_missing" in diagnostics
     assert 'document.addEventListener("infoscreen:review-preview"' in diagnostics
+
+
+def test_isolated_preview_renders_temporary_candidates_without_review_actions() -> None:
+    preview = read_text("surface/web/assets/js/local_event_review_previews.js")
+    html = read_text("surface/web/local-events/studio/index.html")
+
+    assert 'function renderPreviewCandidatePanel(payload, url)' in preview
+    assert 'document.getElementById("event-candidates")' in preview
+    assert 'article.dataset.preview = "true"' in preview
+    assert 'TEMPORARY PREVIEW · NOT SAVED · Event review actions are disabled.' in preview
+    assert 'renderPreviewCandidatePanel(payload, url);' in preview
+    assert 'await reloadState();' not in preview[preview.index("async function collectPreview(card, button)"):preview.index("async function collectForGlobalInstitution(button)")]
+    assert "/api/local-events/review/event-decision" not in preview
+    assert "RELATED ACTIVITY" not in preview
+    assert 'id="event-candidates-title"' in html
+    assert 'id="event-candidates-hint"' in html
