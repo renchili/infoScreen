@@ -25,6 +25,187 @@ async () => {
 }
 """
 
+# The complete collector's generic CARD_JS scores every visible document link against
+# several ancestors. Each score scans all descendant links again, and sorting repeats
+# those scans. Large pages with duplicated desktop/mobile navigation can therefore
+# spend minutes in one unbounded page.evaluate call. Preview only needs authoritative
+# cards from the selected list page, so this extractor performs one main-content pass,
+# caches each container's text and URLs, and never sorts or parses embedded JSON.
+PREVIEW_CARD_JS = r"""
+(args) => {
+  const allowedDomains = (args.allowedDomains || [])
+    .map(value => String(value || "").replace(/^www\./, "").toLowerCase())
+    .filter(Boolean);
+  const maxCards = Math.max(1, Math.min(Number(args.maxCards || 60), 80));
+  const sourceId = String(args.sourceId || "source");
+  const pageIndex = Number(args.pageIndex || 0);
+  const root = document.querySelector("main") ||
+    document.querySelector("[role='main']") || document.body;
+
+  const clean = value => String(value || "")
+    .replace(/[ \t\f\v]+/g, " ")
+    .replace(/\n\s+/g, "\n")
+    .replace(/\s+\n/g, "\n")
+    .trim();
+  const oneLine = value => clean(value).replace(/\s+/g, " ").trim();
+  const dateLike = value => /\b20\d{2}\b|\b\d{1,2}\s+(?:jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b/i.test(value);
+  const excludedContainer = element => Boolean(element.closest(
+    "header, nav, footer, form, dialog, [role='navigation'], [role='dialog'], " +
+    "[class*='breadcrumb' i], [class*='cookie' i], [class*='newsletter' i]"
+  ));
+  const visible = element => {
+    if (!element || excludedContainer(element)) return false;
+    const style = getComputedStyle(element);
+    if (style.display === "none" || style.visibility === "hidden" ||
+        Number(style.opacity || 1) === 0) return false;
+    const rect = element.getBoundingClientRect();
+    return rect.width >= 40 && rect.height >= 18;
+  };
+  const sameDomain = raw => {
+    try {
+      const host = new URL(raw, location.href).hostname
+        .replace(/^www\./, "").toLowerCase();
+      return allowedDomains.some(domain =>
+        host === domain || host.endsWith("." + domain)
+      );
+    } catch (error) {
+      return false;
+    }
+  };
+  const canonical = raw => {
+    try {
+      const url = new URL(raw, location.href);
+      url.hash = "";
+      return url.href;
+    } catch (error) {
+      return "";
+    }
+  };
+  const isDetailUrl = raw => {
+    const value = canonical(raw);
+    if (!value || !sameDomain(value)) return false;
+    const url = new URL(value);
+    const current = new URL(location.href);
+    const path = decodeURIComponent(url.pathname).replace(/\/$/, "").toLowerCase();
+    const currentPath = decodeURIComponent(current.pathname)
+      .replace(/\/$/, "").toLowerCase();
+    if (!path || path === currentPath) return false;
+    if (/\.(?:jpg|jpeg|png|gif|webp|svg|pdf)$/i.test(path)) return false;
+    if (/[?&](?:category|filter|time|date|type|page)=/i.test(url.search)) return false;
+    const leaf = (path.split("/").filter(Boolean).pop() || "")
+      .replace(/\.html$/, "");
+    return !new Set([
+      "", "whats-on", "whatson", "overview", "view-all", "events", "event",
+      "exhibition", "exhibitions", "programme", "programmes", "program",
+      "programs", "activities", "activity", "guided-tours"
+    ]).has(leaf);
+  };
+  const textHash = value => {
+    let hash = 2166136261;
+    for (let index = 0; index < value.length; index += 1) {
+      hash ^= value.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(16);
+  };
+
+  const lineCache = new WeakMap();
+  const urlCache = new WeakMap();
+  const textLines = element => {
+    if (lineCache.has(element)) return lineCache.get(element);
+    const lines = String(element.innerText || element.textContent || "")
+      .replace(/\r/g, "\n")
+      .split("\n")
+      .map(oneLine)
+      .filter(Boolean);
+    lineCache.set(element, lines);
+    return lines;
+  };
+  const detailUrls = element => {
+    if (urlCache.has(element)) return urlCache.get(element);
+    const anchors = [];
+    if (element.matches && element.matches("a[href]")) anchors.push(element);
+    for (const anchor of element.querySelectorAll("a[href]")) anchors.push(anchor);
+    const urls = [];
+    for (const anchor of anchors) {
+      const value = canonical(anchor.getAttribute("href"));
+      if (isDetailUrl(value) && !urls.includes(value)) urls.push(value);
+      if (urls.length > 1) break;
+    }
+    urlCache.set(element, urls);
+    return urls;
+  };
+  const cardContainer = (anchor, detailUrl) => {
+    let element = anchor;
+    for (let depth = 0; element && depth < 9; depth += 1) {
+      if (element === root.parentElement) break;
+      if (visible(element)) {
+        const lines = textLines(element);
+        const urls = detailUrls(element);
+        const text = lines.join(" ");
+        const rect = element.getBoundingClientRect();
+        if (
+          urls.length === 1 && urls[0] === detailUrl && dateLike(text) &&
+          text.length >= 12 && text.length <= 2600 &&
+          rect.width >= 80 && rect.height >= 35 && rect.height <= 1200
+        ) {
+          return element;
+        }
+      }
+      if (element === root) break;
+      element = element.parentElement;
+    }
+    return null;
+  };
+
+  const output = [];
+  const seenUrls = new Set();
+  const anchors = Array.from(root.querySelectorAll("a[href]"));
+  for (const anchor of anchors) {
+    if (output.length >= maxCards || !visible(anchor)) continue;
+    const detailUrl = canonical(anchor.getAttribute("href"));
+    if (!isDetailUrl(detailUrl) || seenUrls.has(detailUrl)) continue;
+    const card = cardContainer(anchor, detailUrl);
+    if (!card) continue;
+
+    const lines = textLines(card);
+    const headings = Array.from(card.querySelectorAll("h1,h2,h3,h4,h5,h6"))
+      .map(element => oneLine(element.innerText || element.textContent || ""))
+      .filter(Boolean)
+      .slice(0, 8);
+    const imageAlts = Array.from(card.querySelectorAll("img[alt]"))
+      .map(image => oneLine(image.getAttribute("alt")))
+      .filter(Boolean)
+      .slice(0, 8);
+    const linkText = oneLine(
+      anchor.innerText || anchor.textContent || anchor.getAttribute("aria-label") || ""
+    );
+    const text = lines.join("\n");
+    const id = `${sourceId}-${pageIndex}-preview-${textHash(detailUrl + text.slice(0, 500))}`;
+    const rect = card.getBoundingClientRect();
+    card.setAttribute("data-infoscreen-card-id", id);
+    output.push({
+      id,
+      url: detailUrl,
+      link_text: linkText,
+      headings,
+      image_alts: imageAlts,
+      text,
+      text_lines: lines,
+      detail_url_count: 1,
+      detail_urls: [detailUrl],
+      page_index: pageIndex,
+      page_url: location.href,
+      rect: {x: rect.x, y: rect.y, width: rect.width, height: rect.height},
+      role: "detail",
+      extraction_mode: "detail_link"
+    });
+    seenUrls.add(detailUrl);
+  }
+  return output;
+}
+"""
+
 
 def _bind_final_browser_runtime_to_review() -> None:
     """Make Studio use the final browser rules, not import-time snapshots.
@@ -90,10 +271,8 @@ def _bind_final_event_collector() -> None:
     """Pin every HTTP collection run to the final detail owner.
 
     Normal confirmed-page collection keeps the final detail owner and its complete
-    listing-expansion budget. An isolated preview is intentionally narrower: it
-    proves that one selected URL exposes activity cards without opening every detail
-    page, traversing pagination, or inheriting the formal collector's 180-second
-    navigation waits and 80-round expansion ceiling.
+    listing-expansion budget. An isolated preview uses a linear main-content card
+    extractor and does not open every detail page or traverse pagination.
     """
     from . import detail_date_authority as detail_dates
     from . import event_review as review
@@ -150,6 +329,7 @@ def _bind_final_event_collector() -> None:
         original_preview_runtime: dict[str, Any] = {}
         if preview_listing_only:
             for name in (
+                "CARD_JS",
                 "MAX_LISTING_PAGES",
                 "LOAD_MORE_ROUNDS",
                 "NAV_TIMEOUT_MS",
@@ -157,6 +337,7 @@ def _bind_final_event_collector() -> None:
                 "PREPARE_PAGE_JS",
             ):
                 original_preview_runtime[name] = getattr(_browser, name)
+            _browser.CARD_JS = PREVIEW_CARD_JS
             _browser.MAX_LISTING_PAGES = 1
             _browser.LOAD_MORE_ROUNDS = 0
             _browser.NAV_TIMEOUT_MS = PREVIEW_NAV_TIMEOUT_MS
@@ -180,7 +361,10 @@ def _bind_final_event_collector() -> None:
                 "listing_evidence_only" if preview_listing_only else "full_detail"
             ),
             "preview_listing_mode": (
-                "single_page_initial_render" if preview_listing_only else "complete"
+                "single_page_linear_main_dom" if preview_listing_only else "complete"
+            ),
+            "preview_card_mode": (
+                "cached_linear_main_content" if preview_listing_only else "complete"
             ),
             "detail_page_requests_skipped": (
                 len(state.events) if preview_listing_only else 0
@@ -323,6 +507,7 @@ def apply() -> None:
 
 
 __all__ = [
+    "PREVIEW_CARD_JS",
     "PREVIEW_DOM_TIMEOUT_MS",
     "PREVIEW_NAV_TIMEOUT_MS",
     "PREVIEW_PREPARE_PAGE_JS",
