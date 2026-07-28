@@ -17,7 +17,7 @@ from local_events_runtime.event_review import (  # noqa: E402
 
 
 LISTING_URL = "https://www.marinabaysands.com/museum/whats-on.html"
-DETAIL_URL = "https://www.marinabaysands.com/museum/exhibitions/future-world.html"
+DETAIL_URL = "https://www.marinabaysands.com/museum/exhibitions/into-the-ocean.html"
 
 
 def preview_store(tmp_path) -> EventReviewStore:
@@ -74,6 +74,7 @@ def install_fake_playwright(monkeypatch, payload):
             assert script == preview.PREVIEW_LISTING_JS
             assert args["listingUrl"] == LISTING_URL
             assert args["allowedDomains"] == ["marinabaysands.com"]
+            assert args["sourceId"] == "artscience"
             return payload
 
     class Browser:
@@ -116,7 +117,7 @@ def observed(**overrides):
         "cards_with_evidence": 1,
         "cards_with_selector": 1,
         "detail_link_examples": [
-            {"text": "teamLab Future World", "url": DETAIL_URL},
+            {"text": "Into the Ocean: Journey Beneath", "url": DETAIL_URL},
         ],
     }
     value.update(overrides)
@@ -138,12 +139,12 @@ def test_preview_bypasses_formal_collector_and_admits_date_less_list_card(monkey
         {
             "rows": [
                 {
-                    "title": "teamLab Future World",
+                    "title": "Into the Ocean: Journey Beneath",
                     "when": "",
                     "where": "",
-                    "summary": "Interactive permanent exhibition.",
+                    "summary": "",
                     "detail_url": DETAIL_URL,
-                    "text": "teamLab Future World",
+                    "text": "Into the Ocean: Journey Beneath",
                     "selector": '[data-infoscreen-preview-index="0"]',
                     "document_position": {"x": 10, "y": 20, "width": 300, "height": 200},
                     "viewport_position": {"x": 10, "y": 20, "width": 300, "height": 200},
@@ -156,7 +157,7 @@ def test_preview_bypasses_formal_collector_and_admits_date_less_list_card(monkey
     state = preview.collect_event_candidates(store)
 
     assert formal_calls == []
-    assert [event.title for event in state.events] == ["teamLab Future World"]
+    assert [event.title for event in state.events] == ["Into the Ocean: Journey Beneath"]
     assert state.events[0].when == ""
     assert state.events[0].detail_url == DETAIL_URL
     assert state.events[0].where == "ArtScience Museum"
@@ -218,4 +219,8 @@ def test_direct_preview_script_does_not_run_formal_audits() -> None:
     assert "networkidle" not in script
     assert "if (!when) continue" not in script
     assert "strong_boundary" in script
+    assert 'sourceId !== "artscience"' in script
+    assert "/museum\\/(?:exhibitions|events|programmes|programs|experiences)" in script
+    assert "descriptiveAnchorTitle" in script
+    assert "genericLinkText" in script
     assert "listing_diagnostics" not in script
