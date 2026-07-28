@@ -57,6 +57,10 @@ def _new_netlog_path(executable: str) -> Path:
     else:
         snap_name = _snap_name(executable)
         if snap_name:
+            # Strictly confined snaps have a private /tmp mount. A NetLog written to
+            # /tmp by Snap Chromium is therefore invisible to the host Python process.
+            # The snap's user-common directory is writable by Chromium and visible to
+            # the host service after the browser process exits.
             root = Path.home() / "snap" / snap_name / "common" / "infoscreen-netlog"
         else:
             root = Path(tempfile.gettempdir())
@@ -74,35 +78,6 @@ def _browser_version(browser: Any) -> str:
         except Exception:
             value = ""
     return str(value or "")
-
-
-def _preview_browser_choice(playwright: Any) -> tuple[str, bool]:
-    """Return the preview browser path and whether it is an explicit operator override.
-
-    Preview defaults to the Chromium revision bundled for the active Playwright Python
-    package. Playwright does not guarantee compatibility with an arbitrary system
-    Chromium executable; the Surface's Snap Chromium also receives a server-side
-    HTTP/2 RST_STREAM from Marina Bay Sands before response headers arrive.
-    """
-
-    configured = str(os.environ.get("INFOSCREEN_PREVIEW_CHROMIUM_PATH") or "").strip()
-    if configured:
-        path = Path(configured).expanduser().resolve()
-        if not path.is_file():
-            raise _browser.MissingPlaywright(
-                "invalid_INFOSCREEN_PREVIEW_CHROMIUM_PATH: "
-                f"configured executable does not exist: {path}"
-            )
-        return str(path), True
-
-    bundled = Path(str(getattr(playwright.chromium, "executable_path", "") or "")).expanduser()
-    if not bundled.is_file():
-        raise _browser.MissingPlaywright(
-            "preview_playwright_chromium_missing: install the browser revision matching "
-            "the active Python Playwright package with: "
-            "python3 -m playwright install chromium"
-        )
-    return str(bundled), False
 
 
 def _filtered_netlog_events(payload: object) -> list[dict[str, Any]]:
@@ -182,20 +157,11 @@ def _write_netlog_summary(diagnostic: dict[str, str]) -> str:
 
 
 def _launch_preview_chromium(playwright: Any):
-    """Launch the Playwright-matched Chromium with readable-DOM recovery and NetLog."""
+    """Launch HTTP/2-capable Preview Chromium with readable-DOM recovery and NetLog."""
 
     global _LAST_PREVIEW_DIAGNOSTIC
     _navigation.apply()
-    try:
-        executable, explicit_override = _preview_browser_choice(playwright)
-    except Exception:
-        _LAST_PREVIEW_DIAGNOSTIC = {
-            "browser_executable": "playwright-managed-chromium",
-            "browser_version": "",
-            "netlog": "",
-        }
-        raise
-
+    executable = _browser.find_browser_executable()
     netlog_path = _new_netlog_path(executable)
     args = [
         "--no-sandbox",
@@ -205,23 +171,25 @@ def _launch_preview_chromium(playwright: Any):
         "--net-log-capture-mode=Default",
     ]
     _LAST_PREVIEW_DIAGNOSTIC = {
-        "browser_executable": executable,
+        "browser_executable": executable or "playwright-bundled-chromium",
         "browser_version": "",
         "netlog": str(netlog_path),
     }
-    launch_options: dict[str, Any] = {
-        "headless": True,
-        "args": args,
-    }
-    if explicit_override:
-        launch_options["executable_path"] = executable
-
     try:
-        browser = playwright.chromium.launch(**launch_options)
+        browser = (
+            playwright.chromium.launch(
+                headless=True,
+                executable_path=executable,
+                args=args,
+            )
+            if executable
+            else playwright.chromium.launch(headless=True, args=args)
+        )
     except Exception as exc:
         raise _browser.MissingPlaywright(
             "preview_chromium_launch_failed: "
-            f"executable={executable}; netlog={netlog_path}; original_error={exc}"
+            f"executable={_LAST_PREVIEW_DIAGNOSTIC['browser_executable']}; "
+            f"netlog={netlog_path}; original_error={exc}"
         ) from exc
     _LAST_PREVIEW_DIAGNOSTIC["browser_version"] = _browser_version(browser)
     return browser
@@ -269,6 +237,5 @@ __all__ = [
     "collect_event_candidates",
     "_filtered_netlog_events",
     "_new_netlog_path",
-    "_preview_browser_choice",
     "_write_netlog_summary",
 ]
