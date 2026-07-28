@@ -40,9 +40,30 @@ def _preview_store(store: _review.EventReviewStore) -> bool:
     return store.root.name.startswith("infoscreen-event-preview-")
 
 
-def _new_netlog_path() -> Path:
+def _snap_name(executable: str) -> str:
+    path = Path(str(executable or ""))
+    parts = path.parts
+    if len(parts) >= 4 and parts[:3] == ("/", "snap", "bin"):
+        return parts[3]
+    if len(parts) >= 3 and parts[:2] == ("/", "snap"):
+        return parts[2]
+    return ""
+
+
+def _new_netlog_path(executable: str) -> Path:
     configured = str(os.environ.get("INFOSCREEN_PREVIEW_NETLOG_DIR") or "").strip()
-    root = Path(configured).expanduser() if configured else Path(tempfile.gettempdir())
+    if configured:
+        root = Path(configured).expanduser()
+    else:
+        snap_name = _snap_name(executable)
+        if snap_name:
+            # Strictly confined snaps have a private /tmp mount. A NetLog written to
+            # /tmp by Snap Chromium is therefore invisible to the host Python process.
+            # The snap's user-common directory is writable by Chromium and visible to
+            # the host service after the browser process exits.
+            root = Path.home() / "snap" / snap_name / "common" / "infoscreen-netlog"
+        else:
+            root = Path(tempfile.gettempdir())
     root.mkdir(parents=True, exist_ok=True)
     return root / (
         f"infoscreen-preview-netlog-{os.getpid()}-{uuid.uuid4().hex[:12]}.json"
@@ -140,7 +161,8 @@ def _launch_preview_chromium(playwright: Any):
 
     global _LAST_PREVIEW_DIAGNOSTIC
     _navigation.apply()
-    netlog_path = _new_netlog_path()
+    executable = _browser.find_browser_executable()
+    netlog_path = _new_netlog_path(executable)
     args = [
         "--no-sandbox",
         "--disable-dev-shm-usage",
@@ -148,7 +170,6 @@ def _launch_preview_chromium(playwright: Any):
         f"--log-net-log={netlog_path}",
         "--net-log-capture-mode=Default",
     ]
-    executable = _browser.find_browser_executable()
     _LAST_PREVIEW_DIAGNOSTIC = {
         "browser_executable": executable or "playwright-bundled-chromium",
         "browser_version": "",
@@ -215,5 +236,6 @@ __all__ = [
     "apply",
     "collect_event_candidates",
     "_filtered_netlog_events",
+    "_new_netlog_path",
     "_write_netlog_summary",
 ]
