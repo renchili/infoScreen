@@ -169,6 +169,7 @@ def test_pending_preview_uses_scoped_listing_runtime_without_detail_pages(
     )
     observed: dict[str, str] = {}
     runtime_names = (
+        "CARD_JS",
         "MAX_LISTING_PAGES",
         "LOAD_MORE_ROUNDS",
         "NAV_TIMEOUT_MS",
@@ -196,6 +197,7 @@ def test_pending_preview_uses_scoped_listing_runtime_without_detail_pages(
     )
 
     def fake_diagnostic_collect(temporary_store: EventReviewStore) -> ReviewState:
+        assert browser_runtime.CARD_JS == http1_browser.PREVIEW_CARD_JS
         assert browser_runtime.MAX_LISTING_PAGES == 1
         assert browser_runtime.LOAD_MORE_ROUNDS == 0
         assert browser_runtime.NAV_TIMEOUT_MS == http1_browser.PREVIEW_NAV_TIMEOUT_MS
@@ -231,12 +233,24 @@ def test_pending_preview_uses_scoped_listing_runtime_without_detail_pages(
         "detail_page_title": "",
     }
     assert preview.event_collection["preview_detail_mode"] == "listing_evidence_only"
-    assert preview.event_collection["preview_listing_mode"] == "single_page_initial_render"
+    assert preview.event_collection["preview_listing_mode"] == "single_page_linear_main_dom"
+    assert preview.event_collection["preview_card_mode"] == "cached_linear_main_content"
     assert event_review_module._detail_candidate is effective.detail_candidate
     assert {
         name: getattr(browser_runtime, name)
         for name in runtime_names
     } == original_runtime
+
+
+def test_preview_card_extractor_avoids_document_wide_rescoring() -> None:
+    script = http1_browser.PREVIEW_CARD_JS
+
+    assert 'document.querySelector("main")' in script
+    assert 'root.querySelectorAll("a[href]")' in script
+    assert 'document.querySelectorAll("a[href]")' not in script
+    assert "new WeakMap()" in script
+    assert "candidates.sort" not in script
+    assert "JSON.parse" not in script
 
 
 def test_review_scroll_guard_restores_the_operated_card() -> None:
