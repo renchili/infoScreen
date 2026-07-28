@@ -6,6 +6,7 @@ import tempfile
 import uuid
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from . import browser as _browser
 from . import event_review as _review
@@ -15,7 +16,9 @@ from . import resilient_navigation_authority as _navigation
 
 _APPLIED = False
 _BASE_COLLECT = None
+_PREVIEW_HEADLESS = True
 _LAST_PREVIEW_DIAGNOSTIC: dict[str, str] = {}
+_MBS_DOMAIN = "marinabaysands.com"
 _NETLOG_EVENT_TOKENS = (
     "HTTP2",
     "SPDY",
@@ -40,6 +43,37 @@ def _preview_store(store: _review.EventReviewStore) -> bool:
     return store.root.name.startswith("infoscreen-event-preview-")
 
 
+def _selected_listing_host(store: _review.EventReviewStore) -> str:
+    try:
+        state = store.load()
+    except Exception:
+        return ""
+    selected = [item for item in state.listing_pages if item.decision == "confirmed"]
+    if len(selected) != 1:
+        return ""
+    return (urlsplit(selected[0].url).hostname or "").lower().removeprefix("www.")
+
+
+def _requires_headed_preview(store: _review.EventReviewStore) -> bool:
+    """Use normal headed Snap Chromium for the MBS listing-page preview.
+
+    NetLog from the deployed Surface shows that MBS accepts the TLS/ALPN handshake and
+    HTTP/2 SETTINGS exchange, then resets stream 1 before response headers when the
+    installed Snap Chromium runs headless. Preview remains in the same Chromium and
+    Playwright pipeline; only the browser rendering mode changes for this source.
+    """
+
+    host = _selected_listing_host(store)
+    return host == _MBS_DOMAIN or host.endswith("." + _MBS_DOMAIN)
+
+
+def _graphical_session_available() -> bool:
+    return bool(
+        str(os.environ.get("DISPLAY") or "").strip()
+        or str(os.environ.get("WAYLAND_DISPLAY") or "").strip()
+    )
+
+
 def _snap_name(executable: str) -> str:
     path = Path(str(executable or ""))
     parts = path.parts
@@ -59,8 +93,6 @@ def _new_netlog_path(executable: str) -> Path:
         if snap_name:
             # Strictly confined snaps have a private /tmp mount. A NetLog written to
             # /tmp by Snap Chromium is therefore invisible to the host Python process.
-            # The snap's user-common directory is writable by Chromium and visible to
-            # the host service after the browser process exits.
             root = Path.home() / "snap" / snap_name / "common" / "infoscreen-netlog"
         else:
             root = Path(tempfile.gettempdir())
@@ -138,6 +170,7 @@ def _write_netlog_summary(diagnostic: dict[str, str]) -> str:
     summary: dict[str, Any] = {
         "browser_executable": diagnostic.get("browser_executable") or "",
         "browser_version": diagnostic.get("browser_version") or "",
+        "browser_mode": diagnostic.get("browser_mode") or "",
         "netlog": str(netlog_path),
         "events": [],
     }
@@ -157,12 +190,13 @@ def _write_netlog_summary(diagnostic: dict[str, str]) -> str:
 
 
 def _launch_preview_chromium(playwright: Any):
-    """Launch HTTP/2-capable Preview Chromium with readable-DOM recovery and NetLog."""
+    """Launch the installed Chromium with preview-specific mode and NetLog."""
 
     global _LAST_PREVIEW_DIAGNOSTIC
     _navigation.apply()
     executable = _browser.find_browser_executable()
     netlog_path = _new_netlog_path(executable)
+    mode = "headless" if _PREVIEW_HEADLESS else "headed"
     args = [
         "--no-sandbox",
         "--disable-dev-shm-usage",
@@ -170,38 +204,51 @@ def _launch_preview_chromium(playwright: Any):
         f"--log-net-log={netlog_path}",
         "--net-log-capture-mode=Default",
     ]
+    if not _PREVIEW_HEADLESS:
+        args.append("--start-minimized")
     _LAST_PREVIEW_DIAGNOSTIC = {
         "browser_executable": executable or "playwright-bundled-chromium",
         "browser_version": "",
+        "browser_mode": mode,
         "netlog": str(netlog_path),
     }
     try:
         browser = (
             playwright.chromium.launch(
-                headless=True,
+                headless=_PREVIEW_HEADLESS,
                 executable_path=executable,
                 args=args,
             )
             if executable
-            else playwright.chromium.launch(headless=True, args=args)
+            else playwright.chromium.launch(headless=_PREVIEW_HEADLESS, args=args)
         )
     except Exception as exc:
         raise _browser.MissingPlaywright(
             "preview_chromium_launch_failed: "
             f"executable={_LAST_PREVIEW_DIAGNOSTIC['browser_executable']}; "
-            f"netlog={netlog_path}; original_error={exc}"
+            f"mode={mode}; netlog={netlog_path}; original_error={exc}"
         ) from exc
     _LAST_PREVIEW_DIAGNOSTIC["browser_version"] = _browser_version(browser)
     return browser
 
 
 def collect_event_candidates(store: _review.EventReviewStore) -> _review.ReviewState:
-    global _LAST_PREVIEW_DIAGNOSTIC
+    global _LAST_PREVIEW_DIAGNOSTIC, _PREVIEW_HEADLESS
     if not _preview_store(store):
         return _BASE_COLLECT(store)
 
-    _LAST_PREVIEW_DIAGNOSTIC = {}
     original_launch = _browser.launch_chromium
+    original_headless = _PREVIEW_HEADLESS
+    _LAST_PREVIEW_DIAGNOSTIC = {}
+    _PREVIEW_HEADLESS = not _requires_headed_preview(store)
+    if not _PREVIEW_HEADLESS and not _graphical_session_available():
+        _PREVIEW_HEADLESS = original_headless
+        raise RuntimeError(
+            "MBS preview requires the existing Surface graphical session because the "
+            "deployed Snap Chromium is reset by the server in headless HTTP/2 mode; "
+            "DISPLAY and WAYLAND_DISPLAY are both missing from infoscreen-http.service"
+        )
+
     _browser.launch_chromium = _launch_preview_chromium
     try:
         return _BASE_COLLECT(store)
@@ -212,6 +259,7 @@ def collect_event_candidates(store: _review.EventReviewStore) -> _review.ReviewS
             str(exc),
             f"preview_browser={diagnostic.get('browser_executable') or 'unknown'}",
             f"preview_browser_version={diagnostic.get('browser_version') or 'unknown'}",
+            f"preview_browser_mode={diagnostic.get('browser_mode') or 'unknown'}",
             f"preview_netlog={diagnostic.get('netlog') or 'unavailable'}",
         ]
         if summary_path:
@@ -219,6 +267,7 @@ def collect_event_candidates(store: _review.EventReviewStore) -> _review.ReviewS
         raise RuntimeError(" | ".join(details)) from exc
     finally:
         _browser.launch_chromium = original_launch
+        _PREVIEW_HEADLESS = original_headless
 
 
 def apply() -> None:
@@ -237,5 +286,6 @@ __all__ = [
     "collect_event_candidates",
     "_filtered_netlog_events",
     "_new_netlog_path",
+    "_requires_headed_preview",
     "_write_netlog_summary",
 ]
