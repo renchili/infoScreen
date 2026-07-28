@@ -6,6 +6,25 @@ from . import browser as _browser
 
 _APPLIED = False
 
+PREVIEW_NAV_TIMEOUT_MS = 15_000
+PREVIEW_DOM_TIMEOUT_MS = 15_000
+PREVIEW_PREPARE_PAGE_JS = r"""
+async () => {
+  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const body = document.body;
+  if (!body) return {scrolls: 0, height: 0};
+
+  // Preview verifies that the selected URL exposes activity cards. It does not run
+  // the complete collector's 80-round expansion budget. One bottom scroll gives
+  // intersection observers and initial lazy-loaded cards a chance to render.
+  window.scrollTo(0, body.scrollHeight);
+  await sleep(700);
+  window.scrollTo(0, 0);
+  await sleep(150);
+  return {scrolls: 1, height: body.scrollHeight};
+}
+"""
+
 
 def _bind_final_browser_runtime_to_review() -> None:
     """Make Studio use the final browser rules, not import-time snapshots.
@@ -70,14 +89,11 @@ def _filter_final_expired_events(state, effective):
 def _bind_final_event_collector() -> None:
     """Pin every HTTP collection run to the final detail owner.
 
-    Normal confirmed-page collection keeps the final detail owner. An isolated
-    pre-confirmation preview is intentionally different: its purpose is to show
-    which activities the selected list page contains so the operator can decide
-    whether to confirm it. Preview therefore keeps the same listing/card/evidence
-    collector but does not open every detail page. The temporary-store prefix is
-    created only by ``serve_infoscreen.preview_event_candidates`` and all Review
-    mutations are serialized by the server lock, so the temporary binding cannot
-    leak into a normal persisted collection.
+    Normal confirmed-page collection keeps the final detail owner and its complete
+    listing-expansion budget. An isolated preview is intentionally narrower: it
+    proves that one selected URL exposes activity cards without opening every detail
+    page, traversing pagination, or inheriting the formal collector's 180-second
+    navigation waits and 80-round expansion ceiling.
     """
     from . import detail_date_authority as detail_dates
     from . import event_review as review
@@ -130,10 +146,29 @@ def _bind_final_event_collector() -> None:
             if preview_listing_only
             else effective.detail_candidate
         )
+
+        original_preview_runtime: dict[str, Any] = {}
+        if preview_listing_only:
+            for name in (
+                "MAX_LISTING_PAGES",
+                "LOAD_MORE_ROUNDS",
+                "NAV_TIMEOUT_MS",
+                "DOM_TIMEOUT_MS",
+                "PREPARE_PAGE_JS",
+            ):
+                original_preview_runtime[name] = getattr(_browser, name)
+            _browser.MAX_LISTING_PAGES = 1
+            _browser.LOAD_MORE_ROUNDS = 0
+            _browser.NAV_TIMEOUT_MS = PREVIEW_NAV_TIMEOUT_MS
+            _browser.DOM_TIMEOUT_MS = PREVIEW_DOM_TIMEOUT_MS
+            _browser.PREPARE_PAGE_JS = PREVIEW_PREPARE_PAGE_JS
+
         try:
             state = diagnostics.collect_event_candidates(store)
         finally:
             review._detail_candidate = effective.detail_candidate
+            for name, value in original_preview_runtime.items():
+                setattr(_browser, name, value)
 
         state = _filter_final_expired_events(state, effective)
         state.event_collection = {
@@ -143,6 +178,9 @@ def _bind_final_event_collector() -> None:
             "detail_owner_file": str(effective.__file__),
             "preview_detail_mode": (
                 "listing_evidence_only" if preview_listing_only else "full_detail"
+            ),
+            "preview_listing_mode": (
+                "single_page_initial_render" if preview_listing_only else "complete"
             ),
             "detail_page_requests_skipped": (
                 len(state.events) if preview_listing_only else 0
@@ -284,4 +322,9 @@ def apply() -> None:
     _APPLIED = True
 
 
-__all__ = ["apply"]
+__all__ = [
+    "PREVIEW_DOM_TIMEOUT_MS",
+    "PREVIEW_NAV_TIMEOUT_MS",
+    "PREVIEW_PREPARE_PAGE_JS",
+    "apply",
+]
