@@ -7,9 +7,11 @@ from .conftest import SURFACE, read_text
 
 sys.path.insert(0, str(SURFACE))
 import serve_infoscreen  # noqa: E402
+from local_events_runtime import browser as browser_runtime  # noqa: E402
 from local_events_runtime import detail_date_authority as detail_dates  # noqa: E402
 from local_events_runtime import event_review as event_review_module  # noqa: E402
 from local_events_runtime import event_review_diagnostics as diagnostics  # noqa: E402
+from local_events_runtime import http1_browser  # noqa: E402
 from local_events_runtime import review_effective_fields_authority as effective  # noqa: E402
 from local_events_runtime.event_review import (  # noqa: E402
     EventCandidate,
@@ -138,7 +140,7 @@ def test_pending_listing_preview_uses_isolated_confirmed_copy(
     assert persisted.model_dump(mode="json") == original.model_dump(mode="json")
 
 
-def test_pending_preview_uses_listing_evidence_without_opening_detail_pages(
+def test_pending_preview_uses_scoped_listing_runtime_without_detail_pages(
     monkeypatch,
     tmp_path,
 ) -> None:
@@ -166,6 +168,17 @@ def test_pending_preview_uses_listing_evidence_without_opening_detail_pages(
         "calendar-of-events/preview-only.html"
     )
     observed: dict[str, str] = {}
+    runtime_names = (
+        "MAX_LISTING_PAGES",
+        "LOAD_MORE_ROUNDS",
+        "NAV_TIMEOUT_MS",
+        "DOM_TIMEOUT_MS",
+        "PREPARE_PAGE_JS",
+    )
+    original_runtime = {
+        name: getattr(browser_runtime, name)
+        for name in runtime_names
+    }
 
     class NoDetailBrowserContext:
         def new_page(self):
@@ -183,6 +196,12 @@ def test_pending_preview_uses_listing_evidence_without_opening_detail_pages(
     )
 
     def fake_diagnostic_collect(temporary_store: EventReviewStore) -> ReviewState:
+        assert browser_runtime.MAX_LISTING_PAGES == 1
+        assert browser_runtime.LOAD_MORE_ROUNDS == 0
+        assert browser_runtime.NAV_TIMEOUT_MS == http1_browser.PREVIEW_NAV_TIMEOUT_MS
+        assert browser_runtime.DOM_TIMEOUT_MS == http1_browser.PREVIEW_DOM_TIMEOUT_MS
+        assert browser_runtime.PREPARE_PAGE_JS == http1_browser.PREVIEW_PREPARE_PAGE_JS
+
         result = event_review_module._detail_candidate(
             NoDetailBrowserContext(),
             {
@@ -212,7 +231,12 @@ def test_pending_preview_uses_listing_evidence_without_opening_detail_pages(
         "detail_page_title": "",
     }
     assert preview.event_collection["preview_detail_mode"] == "listing_evidence_only"
+    assert preview.event_collection["preview_listing_mode"] == "single_page_initial_render"
     assert event_review_module._detail_candidate is effective.detail_candidate
+    assert {
+        name: getattr(browser_runtime, name)
+        for name in runtime_names
+    } == original_runtime
 
 
 def test_review_scroll_guard_restores_the_operated_card() -> None:
