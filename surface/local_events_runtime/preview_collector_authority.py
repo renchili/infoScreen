@@ -14,10 +14,9 @@ PREVIEW_SETTLE_MS = 1_200
 MAX_PREVIEW_EVENTS = 40
 
 
-# Preview is deliberately not a reduced version of the formal collector. It performs
-# one bounded pass over the selected page's main content and returns only the fields
-# needed by the Review Studio preview. Selector auditing, full-page diagnostics,
-# pagination, structured-payload crawling, and detail-page navigation are excluded.
+# Preview performs one bounded pass over the selected page's main content. The same
+# evaluation returns both candidates and stage counts, so a zero result has an exact
+# page-scoped explanation without invoking the formal selector audit or full-page scan.
 PREVIEW_LISTING_JS = r"""
 async (args) => {
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -30,7 +29,21 @@ async (args) => {
     document.querySelector("[role='main']") || document.body;
   const maxEvents = Math.max(1, Math.min(Number(args.maxEvents || 40), 60));
 
-  if (!root) return [];
+  const emptyObserved = {
+    final_url: location.href,
+    page_title: clean(document.title),
+    body_text_length: 0,
+    visible_link_count: 0,
+    same_domain_link_count: 0,
+    detail_link_count: 0,
+    extracted_card_count: 0,
+    admitted_card_count: 0,
+    marked_card_count: 0,
+    cards_with_evidence: 0,
+    cards_with_selector: 0,
+    detail_link_examples: [],
+  };
+  if (!root) return {rows: [], observed: emptyObserved};
 
   window.scrollTo(0, root.scrollHeight || document.body.scrollHeight);
   await sleep(650);
@@ -48,7 +61,7 @@ async (args) => {
       Number(style.opacity || 1) !== 0 && rect.width >= 40 && rect.height >= 18;
   };
 
-  const officialUrl = raw => {
+  const allowedUrl = raw => {
     try {
       const url = new URL(raw, location.href);
       const host = url.hostname.replace(/^www\./, "").toLowerCase();
@@ -56,6 +69,17 @@ async (args) => {
         return "";
       }
       url.hash = "";
+      return url.href;
+    } catch (error) {
+      return "";
+    }
+  };
+
+  const officialDetailUrl = raw => {
+    const absolute = allowedUrl(raw);
+    if (!absolute) return "";
+    try {
+      const url = new URL(absolute);
       const path = decodeURIComponent(url.pathname).replace(/\/$/, "").toLowerCase();
       const listingPath = decodeURIComponent(listing.pathname).replace(/\/$/, "").toLowerCase();
       if (!path || path === listingPath) return "";
@@ -79,47 +103,93 @@ async (args) => {
     .filter((value, index, all) => all.indexOf(value) === index)
     .slice(0, 80);
 
+  const repeatedBoundary = element => {
+    const parent = element?.parentElement;
+    if (!parent || !root.contains(parent)) return false;
+    const siblings = Array.from(parent.children).filter(child =>
+      child.tagName === element.tagName && visible(child) && child.querySelector("a[href]")
+    );
+    if (siblings.length < 2 || siblings.length > 24) return false;
+    const classTokens = Array.from(element.classList || []).filter(token => token.length >= 3);
+    if (classTokens.some(token => siblings.filter(child => child.classList.contains(token)).length >= 2)) {
+      return true;
+    }
+    return siblings.filter(child => child.querySelector("h1,h2,h3,h4,h5,h6,img")).length >= 2;
+  };
+
   const nearestCard = anchor => {
     const explicit = anchor.closest(
       "article,li,[class*='card' i],[class*='tile' i],[class*='event' i]," +
       "[class*='programme' i],[class*='program' i],[class*='exhibition' i]," +
       "[class*='listing' i],[class*='result' i],[class*='item' i]"
     );
-    if (explicit && root.contains(explicit) && visible(explicit)) return explicit;
+    if (explicit && root.contains(explicit) && visible(explicit)) {
+      return {element: explicit, strong_boundary: true};
+    }
 
     let element = anchor;
-    for (let depth = 0; element && depth < 6; depth += 1) {
+    let fallback = null;
+    for (let depth = 0; element && depth < 7; depth += 1) {
       if (element === root.parentElement) break;
       if (visible(element)) {
-        const text = clean(element.innerText || element.textContent || "");
+        const cardText = clean(element.innerText || element.textContent || "");
         const rect = element.getBoundingClientRect();
-        if (text.length >= 12 && text.length <= 2200 && rect.height <= 1200) {
-          return element;
+        if (cardText.length >= 12 && cardText.length <= 2200 && rect.height <= 1200) {
+          if (repeatedBoundary(element)) {
+            return {element, strong_boundary: true};
+          }
+          fallback = fallback || {element, strong_boundary: false};
         }
       }
       if (element === root) break;
       element = element.parentElement;
     }
-    return null;
+    return fallback;
   };
 
   const rows = [];
   const seen = new Set();
-  for (const anchor of root.querySelectorAll("a[href]")) {
-    if (rows.length >= maxEvents || !visible(anchor)) continue;
-    const detailUrl = officialUrl(anchor.getAttribute("href"));
-    if (!detailUrl || seen.has(detailUrl)) continue;
+  const detailExamples = [];
+  const anchors = Array.from(root.querySelectorAll("a[href]"));
+  let visibleLinkCount = 0;
+  let sameDomainLinkCount = 0;
+  let detailLinkCount = 0;
+  let extractedCardCount = 0;
+  let admittedCardCount = 0;
 
-    const card = nearestCard(anchor);
-    if (!card) continue;
+  for (const anchor of anchors) {
+    if (!visible(anchor)) continue;
+    visibleLinkCount += 1;
+    if (allowedUrl(anchor.getAttribute("href"))) sameDomainLinkCount += 1;
+
+    const detailUrl = officialDetailUrl(anchor.getAttribute("href"));
+    if (!detailUrl) continue;
+    detailLinkCount += 1;
+    if (detailExamples.length < 5) {
+      detailExamples.push({
+        text: clean(anchor.innerText || anchor.textContent || anchor.getAttribute("aria-label")).slice(0, 160),
+        url: detailUrl,
+      });
+    }
+    if (rows.length >= maxEvents || seen.has(detailUrl)) continue;
+
+    const boundary = nearestCard(anchor);
+    if (!boundary?.element) continue;
+    extractedCardCount += 1;
+    const card = boundary.element;
     const lines = linesFor(card);
     const when = lines.find(scheduleLine) || "";
-    if (!when) continue;
 
     const heading = Array.from(card.querySelectorAll("h1,h2,h3,h4,h5,h6"))
       .map(element => clean(element.innerText || element.textContent || ""))
       .find(Boolean) || clean(anchor.innerText || anchor.textContent || anchor.getAttribute("aria-label"));
     if (!heading || heading.length > 240) continue;
+
+    // A rendered official list card with a usable title and official detail link is
+    // authoritative for membership. Date-less cards are valid when the DOM supplies a
+    // strong repeated/semantic card boundary; date and venue belong to detail authority.
+    if (!when && !boundary.strong_boundary) continue;
+    admittedCardCount += 1;
 
     const summary = lines.find(line =>
       line !== heading && line !== when && line.length >= 24 && line.length <= 360
@@ -150,7 +220,24 @@ async (args) => {
     });
     seen.add(detailUrl);
   }
-  return rows;
+
+  return {
+    rows,
+    observed: {
+      final_url: location.href,
+      page_title: clean(document.title),
+      body_text_length: clean(root.innerText || root.textContent || "").length,
+      visible_link_count: visibleLinkCount,
+      same_domain_link_count: sameDomainLinkCount,
+      detail_link_count: detailLinkCount,
+      extracted_card_count: extractedCardCount,
+      admitted_card_count: admittedCardCount,
+      marked_card_count: rows.length,
+      cards_with_evidence: rows.length,
+      cards_with_selector: rows.length,
+      detail_link_examples: detailExamples,
+    },
+  };
 }
 """
 
@@ -171,6 +258,44 @@ def _preview_store(store: _review.EventReviewStore) -> bool:
     return store.root.name.startswith("infoscreen-event-preview-")
 
 
+def _diagnostic(
+    listing: Any,
+    observed: dict[str, Any],
+    *,
+    final_url: str,
+    http_status: int | None,
+    candidate_count: int,
+) -> _diagnostics.ListingRecognitionDiagnostic:
+    diagnostic = _diagnostics.ListingRecognitionDiagnostic(
+        source_id=listing.source_id,
+        source_name=listing.source_name,
+        listing_url=listing.url,
+        final_url=str(observed.get("final_url") or final_url),
+        page_title=str(observed.get("page_title") or ""),
+        http_status=http_status,
+        body_text_length=max(0, int(observed.get("body_text_length") or 0)),
+        visible_link_count=max(0, int(observed.get("visible_link_count") or 0)),
+        same_domain_link_count=max(0, int(observed.get("same_domain_link_count") or 0)),
+        detail_link_count=max(0, int(observed.get("detail_link_count") or 0)),
+        extracted_card_count=max(0, int(observed.get("extracted_card_count") or 0)),
+        admitted_card_count=max(0, int(observed.get("admitted_card_count") or 0)),
+        marked_card_count=max(0, int(observed.get("marked_card_count") or 0)),
+        cards_with_evidence=max(0, int(observed.get("cards_with_evidence") or 0)),
+        cards_with_selector=max(0, int(observed.get("cards_with_selector") or 0)),
+        candidates_created=max(0, candidate_count),
+        detail_incomplete=max(0, candidate_count),
+        detail_link_examples=[
+            {
+                "text": str(item.get("text") or "")[:160],
+                "url": str(item.get("url") or "")[:2000],
+            }
+            for item in observed.get("detail_link_examples") or []
+            if isinstance(item, dict)
+        ][:5],
+    )
+    return _diagnostics._finish(diagnostic)
+
+
 def _collect_preview(store: _review.EventReviewStore) -> _review.ReviewState:
     state = store.load()
     confirmed = [item for item in state.listing_pages if item.decision == "confirmed"]
@@ -184,6 +309,7 @@ def _collect_preview(store: _review.EventReviewStore) -> _review.ReviewState:
 
     started = _review.utc_now()
     rows: list[dict[str, Any]] = []
+    observed: dict[str, Any] = {}
     final_url = listing.url
     http_status: int | None = None
 
@@ -209,22 +335,27 @@ def _collect_preview(store: _review.EventReviewStore) -> _review.ReviewState:
             final_url = str(page.url)
             if not _host_allowed(final_url, source):
                 raise ValueError("listing page redirected outside the source allow-list")
-            rows = page.evaluate(
+            payload = page.evaluate(
                 PREVIEW_LISTING_JS,
                 {
                     "allowedDomains": source.get("allowed_domains") or [],
                     "listingUrl": listing.url,
                     "maxEvents": MAX_PREVIEW_EVENTS,
                 },
-            ) or []
+            ) or {}
+            if isinstance(payload, dict):
+                rows = [item for item in payload.get("rows") or [] if isinstance(item, dict)]
+                observed = payload.get("observed") or {}
+            elif isinstance(payload, list):
+                # Preserve compatibility with an already-open operator session while the
+                # service is being restarted onto the object-shaped single-pass payload.
+                rows = [item for item in payload if isinstance(item, dict)]
         finally:
             browser.close()
 
     candidates: list[_review.EventCandidate] = []
     default_venue = str(source.get("default_venue") or source.get("name") or "")
     for index, raw in enumerate(rows):
-        if not isinstance(raw, dict):
-            continue
         detail_url = str(raw.get("detail_url") or "").strip()
         title = str(raw.get("title") or "").strip()
         if not title or not _host_allowed(detail_url, source):
@@ -251,7 +382,7 @@ def _collect_preview(store: _review.EventReviewStore) -> _review.ReviewState:
                 detail_page_title="",
                 evidence=_review.EventEvidence(
                     selector=str(raw.get("selector") or "preview-card"),
-                    selector_index=0,
+                    selector_index=index,
                     selector_match_count=1,
                     document_position={
                         key: int(document_position.get(key) or 0)
@@ -269,6 +400,13 @@ def _collect_preview(store: _review.EventReviewStore) -> _review.ReviewState:
             )
         )
 
+    diagnostic = _diagnostic(
+        listing,
+        observed,
+        final_url=final_url,
+        http_status=http_status,
+        candidate_count=len(candidates),
+    )
     return store.replace_events(
         candidates,
         {
@@ -277,12 +415,15 @@ def _collect_preview(store: _review.EventReviewStore) -> _review.ReviewState:
             "confirmed_listing_count": 1,
             "candidate_count": len(candidates),
             "preview_mode": "direct_single_page_main_content",
+            "preview_card_policy": "rendered_title_and_official_detail_link",
+            "preview_diagnostics_mode": "same_pass_main_content",
             "formal_collector_bypassed": True,
             "selector_audit_skipped": True,
-            "listing_diagnostics_skipped": True,
+            "listing_diagnostics_skipped": False,
             "detail_page_requests_skipped": len(candidates),
             "final_url": final_url,
             "http_status": http_status,
+            "listing_diagnostics": [diagnostic.model_dump(mode="json")],
             "errors": [],
         },
     )
