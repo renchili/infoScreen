@@ -21,6 +21,7 @@ PREVIEW_LISTING_JS = r"""
 async (args) => {
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   const clean = value => String(value || "").replace(/\s+/g, " ").trim();
+  const sourceId = clean(args.sourceId).toLowerCase();
   const allowed = (args.allowedDomains || [])
     .map(value => clean(value).replace(/^www\./, "").toLowerCase())
     .filter(Boolean);
@@ -103,6 +104,31 @@ async (args) => {
     .filter((value, index, all) => all.indexOf(value) === index)
     .slice(0, 80);
 
+  const genericLinkText = value => /^(?:view|view details?|details?|learn more|read more|find out more|explore|book now|buy tickets?|tickets?)$/i.test(clean(value));
+
+  const descriptiveAnchorTitle = anchor => {
+    const values = [
+      anchor.getAttribute("aria-label"),
+      anchor.innerText,
+      anchor.textContent,
+      anchor.querySelector("img[alt]")?.getAttribute("alt"),
+      anchor.getAttribute("title"),
+    ].map(clean);
+    return values.find(value =>
+      value.length >= 4 && value.length <= 240 && !genericLinkText(value)
+    ) || "";
+  };
+
+  const isArtScienceDetail = detailUrl => {
+    if (sourceId !== "artscience") return false;
+    try {
+      const path = decodeURIComponent(new URL(detailUrl).pathname).replace(/\/$/, "");
+      return /^\/museum\/(?:exhibitions|events|programmes|programs|experiences)\/[^/]+(?:\.html)?$/i.test(path);
+    } catch (error) {
+      return false;
+    }
+  };
+
   const repeatedBoundary = element => {
     const parent = element?.parentElement;
     if (!parent || !root.contains(parent)) return false;
@@ -165,30 +191,37 @@ async (args) => {
     const detailUrl = officialDetailUrl(anchor.getAttribute("href"));
     if (!detailUrl) continue;
     detailLinkCount += 1;
+    const directTitle = descriptiveAnchorTitle(anchor);
     if (detailExamples.length < 5) {
       detailExamples.push({
-        text: clean(anchor.innerText || anchor.textContent || anchor.getAttribute("aria-label")).slice(0, 160),
+        text: directTitle || clean(anchor.innerText || anchor.textContent || anchor.getAttribute("aria-label")).slice(0, 160),
         url: detailUrl,
       });
     }
     if (rows.length >= maxEvents || seen.has(detailUrl)) continue;
 
-    const boundary = nearestCard(anchor);
+    const artScienceTitledDetail = isArtScienceDetail(detailUrl) && Boolean(directTitle);
+    let boundary = nearestCard(anchor);
+    if (!boundary?.element && artScienceTitledDetail) {
+      boundary = {element: anchor, strong_boundary: true, source_specific: true};
+    }
     if (!boundary?.element) continue;
     extractedCardCount += 1;
     const card = boundary.element;
     const lines = linesFor(card);
     const when = lines.find(scheduleLine) || "";
 
-    const heading = Array.from(card.querySelectorAll("h1,h2,h3,h4,h5,h6"))
+    const cardHeading = Array.from(card.querySelectorAll("h1,h2,h3,h4,h5,h6"))
       .map(element => clean(element.innerText || element.textContent || ""))
-      .find(Boolean) || clean(anchor.innerText || anchor.textContent || anchor.getAttribute("aria-label"));
+      .find(value => value && !genericLinkText(value)) || "";
+    const heading = artScienceTitledDetail ? directTitle : (cardHeading || directTitle);
     if (!heading || heading.length > 240) continue;
 
     // A rendered official list card with a usable title and official detail link is
-    // authoritative for membership. Date-less cards are valid when the DOM supplies a
-    // strong repeated/semantic card boundary; date and venue belong to detail authority.
-    if (!when && !boundary.strong_boundary) continue;
+    // authoritative for membership. ArtScience exposes descriptive exhibition links in
+    // main content without the generic card/date structure used by other sources; the
+    // source-specific route plus descriptive link title is its bounded listing evidence.
+    if (!when && !boundary.strong_boundary && !artScienceTitledDetail) continue;
     admittedCardCount += 1;
 
     const summary = lines.find(line =>
@@ -203,7 +236,7 @@ async (args) => {
       where: "",
       summary,
       detail_url: detailUrl,
-      text: lines.join("\n"),
+      text: lines.join("\n") || heading,
       selector: `[data-infoscreen-preview-index="${index}"]`,
       document_position: {
         x: Math.round(rect.x + window.scrollX),
@@ -340,6 +373,7 @@ def _collect_preview(store: _review.EventReviewStore) -> _review.ReviewState:
                 {
                     "allowedDomains": source.get("allowed_domains") or [],
                     "listingUrl": listing.url,
+                    "sourceId": listing.source_id,
                     "maxEvents": MAX_PREVIEW_EVENTS,
                 },
             ) or {}
@@ -347,8 +381,6 @@ def _collect_preview(store: _review.EventReviewStore) -> _review.ReviewState:
                 rows = [item for item in payload.get("rows") or [] if isinstance(item, dict)]
                 observed = payload.get("observed") or {}
             elif isinstance(payload, list):
-                # Preserve compatibility with an already-open operator session while the
-                # service is being restarted onto the object-shaped single-pass payload.
                 rows = [item for item in payload if isinstance(item, dict)]
         finally:
             browser.close()
