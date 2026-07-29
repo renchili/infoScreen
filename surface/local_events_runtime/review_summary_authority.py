@@ -45,8 +45,14 @@ def _review_event(candidate: Any) -> dict[str, Any]:
 def _apply_review_authorities() -> None:
     from .artscience_preview_authority import apply as apply_artscience_preview
     from .preview_collector_authority import apply as apply_preview_collector
+    from .preview_event_selection_authority import (
+        apply as apply_preview_event_selection,
+    )
     from .preview_transport_authority import apply as apply_preview_transport
 
+    # Formal collection must be filtered by the operator's Preview decisions before
+    # source-specific Preview wrappers are composed over the diagnostics collector.
+    apply_preview_event_selection()
     apply_preview_collector()
     # Source-specific rendered-card recognition must wrap the direct collector before
     # transport selects headed/headless mode for the same installed Chromium process.
