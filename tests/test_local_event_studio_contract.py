@@ -38,14 +38,13 @@ def test_studio_preview_never_writes_list_page_decisions_and_keeps_its_diagnosti
     assert 'document.addEventListener("infoscreen:review-preview"' in diagnostics
 
 
-def test_isolated_preview_renders_temporary_candidates_without_event_review_actions() -> None:
+def test_isolated_preview_renders_temporary_candidates_before_operator_selection() -> None:
     preview = read_text("surface/web/assets/js/local_event_review_previews.js")
     html = read_text("surface/web/local-events/studio/index.html")
 
     assert 'function renderPreviewCandidatePanel(payload, url)' in preview
     assert 'document.getElementById("event-candidates")' in preview
     assert 'article.dataset.preview = "true"' in preview
-    assert 'TEMPORARY PREVIEW · NOT SAVED · Event review actions are disabled.' in preview
     assert 'renderPreviewCandidatePanel(payload, url);' in preview
     assert 'await reloadState();' not in preview[preview.index("async function collectPreview(card, button)"):preview.index("async function collectForGlobalInstitution(button)")]
     assert "/api/local-events/review/event-decision" not in preview
@@ -77,20 +76,24 @@ def test_temporary_preview_panel_survives_page_renders_until_formal_collection()
     )
 
 
-def test_preview_panel_exposes_list_decision_then_formal_event_collection() -> None:
+def test_preview_requires_every_candidate_to_be_real_event_or_not_event() -> None:
     workflow = read_text(
         "surface/web/assets/js/local_event_review_preview_workflow.js"
     )
     html = read_text("surface/web/local-events/studio/index.html")
 
-    assert 'button.textContent = label' in workflow
-    assert 'actionButton("CONFIRM LIST PAGE"' in workflow
-    assert 'actionButton("REJECT LIST PAGE"' in workflow
-    assert 'actionButton("COLLECT REAL EVENTS"' in workflow
+    assert 'const DECISION_KEY = "infoscreen.review.preview-event-decisions"' in workflow
+    assert 'actionButton("REAL EVENT"' in workflow
+    assert 'actionButton("NOT EVENT"' in workflow
+    assert 'actionButton("RESET"' in workflow
+    assert "if (pendingCount) return;" in workflow
+    assert "Preview candidates · select real events" in workflow
+    assert "REVIEW REQUIRED · Select REAL EVENT or NOT EVENT" in workflow
+    assert "CONFIRM ${realCount} REAL EVENT" in workflow
+    assert "COLLECT ${realCount} SELECTED REAL EVENT" in workflow
+    assert 'const PROTOCOL_PREFIX = "preview-review-v1:"' in workflow
     assert 'request("/api/local-events/review/listing-decision"' in workflow
     assert 'request("/api/local-events/review/collect-events"' in workflow
-    assert 'decision === "confirmed"' in workflow
-    assert 'container.querySelector(\'[data-preview="true"]\')' in workflow
     assert 'document.addEventListener("infoscreen:review-preview"' in workflow
     assert 'document.addEventListener("infoscreen:review-rendered"' in workflow
     assert (
