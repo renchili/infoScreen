@@ -38,7 +38,7 @@ def test_studio_preview_never_writes_list_page_decisions_and_keeps_its_diagnosti
     assert 'document.addEventListener("infoscreen:review-preview"' in diagnostics
 
 
-def test_isolated_preview_renders_temporary_candidates_without_review_actions() -> None:
+def test_isolated_preview_renders_temporary_candidates_without_event_review_actions() -> None:
     preview = read_text("surface/web/assets/js/local_event_review_previews.js")
     html = read_text("surface/web/local-events/studio/index.html")
 
@@ -74,4 +74,29 @@ def test_temporary_preview_panel_survives_page_renders_until_formal_collection()
     )
     assert html.index("local_event_review_previews.js") < html.index(
         "local_event_review_preview_persistence.js"
+    )
+
+
+def test_preview_panel_exposes_list_decision_then_formal_event_collection() -> None:
+    workflow = read_text(
+        "surface/web/assets/js/local_event_review_preview_workflow.js"
+    )
+    html = read_text("surface/web/local-events/studio/index.html")
+
+    assert 'button.textContent = label' in workflow
+    assert 'actionButton("CONFIRM LIST PAGE"' in workflow
+    assert 'actionButton("REJECT LIST PAGE"' in workflow
+    assert 'actionButton("COLLECT REAL EVENTS"' in workflow
+    assert 'request("/api/local-events/review/listing-decision"' in workflow
+    assert 'request("/api/local-events/review/collect-events"' in workflow
+    assert 'decision === "confirmed"' in workflow
+    assert 'container.querySelector(\'[data-preview="true"]\')' in workflow
+    assert 'document.addEventListener("infoscreen:review-preview"' in workflow
+    assert 'document.addEventListener("infoscreen:review-rendered"' in workflow
+    assert (
+        '<script src="/assets/js/local_event_review_preview_workflow.js" defer></script>'
+        in html
+    )
+    assert html.index("local_event_review_preview_persistence.js") < html.index(
+        "local_event_review_preview_workflow.js"
     )
