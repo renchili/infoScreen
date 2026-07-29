@@ -172,11 +172,12 @@ def _set_listing_decision(
 
 def _confirmed_selections(
     store: _review.EventReviewStore,
-) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
+) -> tuple[dict[str, set[str]], dict[str, set[str]], list[str]]:
     state = store.load()
     records = _load(store).get("listings", {})
     ids: dict[str, set[str]] = {}
     urls: dict[str, set[str]] = {}
+    skipped: list[str] = []
     for listing in (item for item in state.listing_pages if item.decision == "confirmed"):
         record = records.get(listing.url)
         decisions = record.get("decisions") if isinstance(record, dict) else None
@@ -186,21 +187,22 @@ def _confirmed_selections(
             if isinstance(row, dict) and row.get("decision") == "confirmed"
         ]
         if not selected:
-            raise ValueError(
-                f"confirmed List Page has no REAL EVENT selections: {listing.url}"
-            )
+            skipped.append(listing.url)
+            continue
         ids[listing.url] = {str(row.get("candidate_id") or "") for row in selected}
         urls[listing.url] = {
             _review.canonical_url(row.get("detail_url")) for row in selected
         }
-    return ids, urls
+    if not ids:
+        raise ValueError("no confirmed List Page has a committed REAL EVENT selection")
+    return ids, urls, skipped
 
 
 def collect_event_candidates(store: _review.EventReviewStore) -> _review.ReviewState:
     if store.root.name.startswith("infoscreen-event-preview-"):
         return _BASE_COLLECT(store)
 
-    selected_ids, selected_urls = _confirmed_selections(store)
+    selected_ids, selected_urls, skipped_listings = _confirmed_selections(store)
     original_listing_card = _source_overrides._listing_card
 
     def selected_listing_card(
@@ -235,15 +237,25 @@ def collect_event_candidates(store: _review.EventReviewStore) -> _review.ReviewS
     finally:
         _source_overrides._listing_card = original_listing_card
 
-    allowed = set().union(*selected_ids.values()) if selected_ids else set()
-    state.events = [item for item in state.events if item.candidate_id in allowed]
+    allowed_ids = set().union(*selected_ids.values()) if selected_ids else set()
+    allowed_urls = set().union(*selected_urls.values()) if selected_urls else set()
+    selected_events = []
     for item in state.events:
+        try:
+            canonical_detail = _review.canonical_url(item.detail_url)
+        except ValueError:
+            canonical_detail = ""
+        if item.candidate_id not in allowed_ids and canonical_detail not in allowed_urls:
+            continue
         item.decision = "confirmed"
         item.reviewed_at = _review.utc_now()
+        selected_events.append(item)
+    state.events = selected_events
     state.event_collection = {
         **state.event_collection,
         "preview_selection_policy": "confirmed_preview_events_only",
         "selected_real_event_count": len(state.events),
+        "confirmed_listings_without_real_event_selection": skipped_listings,
     }
     return store.save(state)
 
