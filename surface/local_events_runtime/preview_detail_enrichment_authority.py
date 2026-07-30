@@ -46,13 +46,16 @@ def _listing_card(candidate: _review.EventCandidate) -> dict[str, Any]:
 
 
 def _apply_detail(candidate: _review.EventCandidate, detail: dict[str, str]) -> None:
+    """Apply final fields while retaining the original list-card identity.
+
+    The official detail document may redirect to a public canonical URL. Preview
+    selection must still be able to match the original rendered list-card link before
+    formal collection opens that detail document, so candidate_id remains the identity
+    created from the listing href while detail_url becomes the final public URL.
+    """
+
     final_url = str(detail.get("detail_url") or candidate.detail_url).strip()
     candidate.detail_url = final_url
-    candidate.candidate_id = _review.stable_id(
-        candidate.source_id,
-        candidate.listing_url,
-        final_url,
-    )
     candidate.title = str(detail.get("title") or candidate.title).strip()[:300]
     candidate.when = str(detail.get("when") or candidate.when).strip()[:180]
     candidate.where = str(detail.get("where") or candidate.where).strip()[:300]
@@ -151,6 +154,20 @@ def enrich_preview_state(
     if not pending:
         return state
 
+    existing_listing_urls = state.event_collection.get(
+        "preview_candidate_listing_detail_urls"
+    )
+    listing_detail_urls = (
+        dict(existing_listing_urls)
+        if isinstance(existing_listing_urls, dict)
+        else {}
+    )
+    for candidate in pending:
+        listing_detail_urls.setdefault(
+            candidate.candidate_id,
+            str(candidate.detail_url or "").strip(),
+        )
+
     _effective.apply()
     sources = {
         str(source.get("id") or ""): source for source in store.inventory()
@@ -248,6 +265,7 @@ def enrich_preview_state(
         **state.event_collection,
         "preview_detail_mode": "official_detail_pages",
         "preview_detail_enrichment_entrypoint": "preview_collector._collect_preview",
+        "preview_candidate_listing_detail_urls": listing_detail_urls,
         "preview_detail_transport": (
             "fresh_browser_per_artscience_candidate"
             if isolated_browser_count
