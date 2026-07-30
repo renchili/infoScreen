@@ -2,6 +2,7 @@
 
 (() => {
   const STORAGE_KEY = "infoscreen.review.active-preview-panel";
+  const SNAPSHOT_VERSION = 2;
   const text = (value) => String(value || "").trim();
 
   function canonical(value) {
@@ -63,7 +64,7 @@
     if (!hasPreviewContent) return;
 
     const snapshot = {
-      version: 1,
+      version: SNAPSHOT_VERSION,
       url: canonical(url),
       captured_at: new Date().toISOString(),
       title: text(title?.textContent) || "Preview event candidates",
@@ -81,7 +82,10 @@
 
   function restore() {
     const snapshot = readStored();
-    if (!snapshot || snapshot.version !== 1 || !text(snapshot.url)) return false;
+    if (!snapshot || snapshot.version !== SNAPSHOT_VERSION || !text(snapshot.url)) {
+      if (snapshot) clearStored();
+      return false;
+    }
     if (!listingStillExists(snapshot.url)) return false;
 
     const container = document.getElementById("event-candidates");
