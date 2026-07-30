@@ -125,9 +125,10 @@ Operator review persistence is separate from the collector snapshot and kiosk ou
 
 ```text
 surface/.env/local_event_review/state.json
+surface/.env/local_event_review/preview_event_selections.json
 ```
 
-It contains candidate list pages and decisions, Event candidates and decisions, collection metadata, per-listing recognition diagnostics, and previously submitted DOM positions.
+`state.json` contains candidate list pages and decisions, Event candidates and decisions, collection metadata, per-listing recognition diagnostics, and previously submitted DOM positions. `preview_event_selections.json` contains the validated REAL EVENT / NOT EVENT decisions committed for each reviewed list page.
 
 The persistence files are separate, but confirmed and rejected Event decisions are authoritative inputs to the kiosk projection. The homepage must not independently choose stale collector fields when the same canonical detail URL has a reviewed decision.
 
@@ -136,17 +137,20 @@ The persistence files are separate, but confirmed and rejected Event decisions a
 ```text
 discover candidate list pages
   -> inspect candidate URL
-  -> optionally preview that saved page in any decision state
-  -> confirm/reject/reset list page
-  -> collect from all confirmed pages
-  -> inspect detail data and DOM evidence
-  -> confirm/reject/reset Event candidate
+  -> preview that saved page in any decision state
+  -> classify every Preview candidate as REAL EVENT or NOT EVENT
+  -> save the List Page decision and candidate selections together
+  -> collect selected REAL EVENT rows from confirmed pages
+  -> inspect persisted detail data and DOM evidence
+  -> confirm/reject/reset persisted Event candidate
   -> rebuild local_event_search_results.json from collector snapshot + Review state
 ```
 
-Preview is decision-independent. `POST /api/local-events/review/preview-events` copies the current Review state to a temporary store, keeps only the selected list page, marks only that temporary copy confirmed, clears copied Event candidates and feedback, and runs the same final collector/detail owner. The returned preview is browser-session evidence only. The saved list-page decision, persisted Event candidates, feedback, collection metadata, and real `state.json` are not changed.
+Preview collection is decision-independent. `POST /api/local-events/review/preview-events` copies the current Review state to a temporary store, keeps only the selected list page, marks only that temporary copy confirmed, clears copied Event candidates and feedback, and runs the final Preview collector/detail owner. The Preview request itself does not change the saved list-page decision, persisted Event candidates, feedback, collection metadata, `state.json`, or kiosk output.
 
-Normal collection remains separate: `POST /api/local-events/review/collect-events` reads all pages currently marked `confirmed`, persists the resulting Event candidates and diagnostics, and leaves list-page decisions unchanged.
+The browser keeps the active Preview panel and uncommitted candidate choices in `sessionStorage`. When the operator saves the List Page review, `POST /api/local-events/review/listing-decision` receives a `preview-review-v1:` payload containing every Preview candidate and its REAL EVENT / NOT EVENT decision. The backend validates the List Page identity, official-domain detail URLs, candidate identities, and complete decision set. It atomically replaces `preview_event_selections.json`, then writes the List Page decision; if that state write fails, the prior selection file is restored.
+
+Normal collection remains separate. `POST /api/local-events/review/collect-events` reads confirmed pages that have committed REAL EVENT selections, filters unselected list cards before detail navigation, persists only the selected Event candidates and diagnostics, marks those candidates confirmed, and leaves list-page decisions unchanged. A confirmed page without a committed REAL EVENT selection is not silently collected as an unrestricted page.
 
 Decision projection rules are:
 
@@ -180,12 +184,13 @@ select one global institution
   -> validate hostname against that institution's allowed_domains
   -> save or reset the page as pending review state
   -> display it immediately in the left-side list-page cards
-  -> optionally preview before deciding
-  -> confirm/reject/reset
-  -> include it in normal collection only when confirmed
+  -> preview before deciding
+  -> classify every candidate as REAL EVENT or NOT EVENT
+  -> confirm the page with at least one REAL EVENT, or reject it with none
+  -> include only committed REAL EVENT selections in normal collection
 ```
 
-Manual addition does not edit committed `event_sources.json` and does not automatically collect Events. It creates a review candidate only. The operator may run the isolated preview while the page is pending, rejected, or confirmed. Confirmation is required only for the normal persisted collection across confirmed pages.
+Manual addition does not edit committed `event_sources.json` and does not automatically collect Events. It creates a review candidate only. The operator may run the isolated preview while the page is pending, rejected, or confirmed. Preview itself does not mutate the real List Page decision; saving the reviewed candidate set and List Page decision is a separate explicit operation.
 
 When the same institution/URL already exists, manual addition resets it to `pending`, allowing the operator to reconsider a previously rejected or stale decision.
 
