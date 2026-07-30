@@ -260,6 +260,10 @@
     const rows = (payload.events || []).filter(
       (row) => canonical(row.listing_url) === expected,
     );
+    const rawListingDetailUrls = payload?.event_collection?.preview_candidate_listing_detail_urls;
+    const listingDetailUrls = rawListingDetailUrls && typeof rawListingDetailUrls === "object"
+      ? rawListingDetailUrls
+      : {};
 
     if (title) title.textContent = "Preview event candidates";
     if (hint) {
@@ -283,6 +287,10 @@
       article.dataset.candidateId = row.candidate_id || "";
       article.dataset.sourceId = row.source_id || "";
       article.dataset.preview = "true";
+      const listingDetailUrl = text(listingDetailUrls[row.candidate_id]);
+      article.dataset.listingDetailUrl = listingDetailUrl
+        ? canonical(listingDetailUrl)
+        : (row.detail_url ? canonical(row.detail_url) : "");
 
       const head = document.createElement("div");
       head.className = "card-head";
