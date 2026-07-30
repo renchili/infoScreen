@@ -36,14 +36,42 @@ def _load(store: _review.EventReviewStore) -> dict[str, Any]:
     return payload
 
 
-def _save(store: _review.EventReviewStore, payload: dict[str, Any]) -> None:
-    path = _selection_path(store)
+def _atomic_replace(path: Path, content: bytes) -> None:
     temporary = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
-    temporary.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    os.replace(temporary, path)
+    try:
+        temporary.write_bytes(content)
+        os.replace(temporary, path)
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _save(store: _review.EventReviewStore, payload: dict[str, Any]) -> None:
+    content = (json.dumps(payload, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+    _atomic_replace(_selection_path(store), content)
+
+
+def _selection_snapshot(store: _review.EventReviewStore) -> bytes | None:
+    try:
+        return _selection_path(store).read_bytes()
+    except FileNotFoundError:
+        return None
+
+
+def _restore_selection_snapshot(
+    store: _review.EventReviewStore,
+    snapshot: bytes | None,
+) -> None:
+    path = _selection_path(store)
+    if snapshot is not None:
+        _atomic_replace(path, snapshot)
+        return
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
 
 
 def _decode_protocol(value: str) -> dict[str, Any] | None:
@@ -147,8 +175,19 @@ def _set_listing_decision(
             "reviewed_at": _review.utc_now(),
             "decisions": rows,
         }
+        snapshot = _selection_snapshot(store)
         _save(store, selections)
-        return _BASE_SET_LISTING_DECISION(store, actual_id, decision)
+        try:
+            return _BASE_SET_LISTING_DECISION(store, actual_id, decision)
+        except Exception as exc:
+            try:
+                _restore_selection_snapshot(store, snapshot)
+            except Exception as rollback_exc:
+                raise RuntimeError(
+                    "List Page decision failed and Preview selection rollback also failed: "
+                    f"{rollback_exc}"
+                ) from exc
+            raise
 
     if decision == "confirmed":
         state = store.load()
