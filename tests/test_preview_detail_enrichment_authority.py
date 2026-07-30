@@ -24,6 +24,10 @@ DETAIL_URL = (
     "https://www.marinabaysands.com/museum/exhibitions/"
     "another-world-is-possible.html"
 )
+FINAL_DETAIL_URL = (
+    "https://www.marinabaysands.com/museum/exhibitions/"
+    "another-world-is-possible-canonical.html"
+)
 
 
 def _store(tmp_path) -> EventReviewStore:
@@ -197,7 +201,7 @@ def test_real_preview_entrypoint_reads_artscience_detail_page(monkeypatch, tmp_p
     def collect_detail(page, source, listing_url, detail_url):
         calls.append((page.marker, source, listing_url, detail_url))
         return {
-            "detail_url": DETAIL_URL,
+            "detail_url": FINAL_DETAIL_URL,
             "title": "Another World Is Possible",
             "when": "13 Sep 2025 – 22 Feb 2026",
             "where": "ArtScience Museum",
@@ -218,12 +222,17 @@ def test_real_preview_entrypoint_reads_artscience_detail_page(monkeypatch, tmp_p
     assert base_calls == [store]
     assert len(launches) == 1
     assert calls == [(launches[0], store.inventory()[0], LISTING_URL, DETAIL_URL)]
+    assert result.events[0].candidate_id == "old-preview-id-0"
+    assert result.events[0].detail_url == FINAL_DETAIL_URL
     assert result.events[0].detail_status == "collected"
     assert result.events[0].detail_error == ""
     assert result.events[0].when == "13 Sep 2025 – 22 Feb 2026"
     assert result.events[0].summary.startswith("An exhibition exploring")
     assert result.events[0].detail_page_title == "Another World Is Possible"
     assert result.event_collection["preview_detail_mode"] == "official_detail_pages"
+    assert result.event_collection["preview_candidate_listing_detail_urls"] == {
+        "old-preview-id-0": DETAIL_URL,
+    }
     assert result.event_collection["preview_detail_transport"] == (
         "fresh_browser_per_artscience_candidate"
     )
