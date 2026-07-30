@@ -61,14 +61,10 @@ def _protocol(payload: dict) -> str:
     return "preview-review-v1:" + token
 
 
-def test_preview_decisions_are_committed_atomically_with_list_page_confirmation(
-    monkeypatch,
-    tmp_path,
-) -> None:
-    store, listing = _store(tmp_path)
+def _review_payload(listing: ListingPageCandidate) -> dict:
     real_url = "https://www.marinabaysands.com/museum/exhibitions/into-the-ocean.html"
     rejected_url = "https://www.marinabaysands.com/museum/events/example.html"
-    payload = {
+    return {
         "listing_candidate_id": listing.candidate_id,
         "listing_url": listing.url,
         "decisions": [
@@ -84,6 +80,14 @@ def test_preview_decisions_are_committed_atomically_with_list_page_confirmation(
             },
         ],
     }
+
+
+def test_preview_decisions_are_committed_atomically_with_list_page_confirmation(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    store, listing = _store(tmp_path)
+    payload = _review_payload(listing)
     monkeypatch.setattr(
         authority,
         "_BASE_SET_LISTING_DECISION",
@@ -102,7 +106,26 @@ def test_preview_decisions_are_committed_atomically_with_list_page_confirmation(
         "confirmed",
         "rejected",
     ]
-    assert saved["decisions"][0]["detail_url"] == real_url
+    assert saved["decisions"][0]["detail_url"] == payload["decisions"][0]["detail_url"]
+
+
+def test_failed_list_page_write_rolls_back_preview_selection(monkeypatch, tmp_path) -> None:
+    store, listing = _store(tmp_path)
+
+    def fail_decision(*args, **kwargs):
+        raise RuntimeError("state write failed")
+
+    monkeypatch.setattr(authority, "_BASE_SET_LISTING_DECISION", fail_decision)
+
+    with pytest.raises(RuntimeError, match="state write failed"):
+        authority._set_listing_decision(
+            store,
+            _protocol(_review_payload(listing)),
+            "confirmed",
+        )
+
+    assert authority._selection_path(store).exists() is False
+    assert store.load().listing_pages[0].decision == "pending"
 
 
 def test_direct_list_page_confirmation_is_rejected_without_real_event_selection(
