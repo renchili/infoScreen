@@ -2,7 +2,6 @@
 
 (() => {
   const STATE_PATH = "/api/local-events/review/state";
-  const PREVIEW_STORAGE_KEY = "infoscreen.review.event-previews";
   let refreshTimer = 0;
   let lastPayload = null;
 
@@ -32,25 +31,7 @@
     return Array.isArray(rows) ? rows : [];
   }
 
-  function storedPreview(url) {
-    try {
-      const previews = JSON.parse(sessionStorage.getItem(PREVIEW_STORAGE_KEY) || "{}");
-      if (!previews || typeof previews !== "object") return null;
-      const expected = canonical(url);
-      for (const [key, value] of Object.entries(previews)) {
-        if (canonical(key) === expected && value && typeof value === "object") return value;
-      }
-    } catch {
-      return null;
-    }
-    return null;
-  }
-
   function diagnosticFor(payload, url) {
-    const stored = storedPreview(url);
-    if (stored?.diagnostic && typeof stored.diagnostic === "object") {
-      return stored.diagnostic;
-    }
     const expected = canonical(url);
     return diagnostics(payload).find((row) => canonical(row?.listing_url) === expected) || null;
   }
@@ -66,14 +47,6 @@
   }
 
   function missingDiagnosticReason(payload, url) {
-    const preview = storedPreview(url);
-    if (preview && Array.isArray(preview.events) && preview.events.length === 0) {
-      return {
-        code: "preview_diagnostic_missing",
-        reason: "The isolated preview returned zero candidates but did not include its page-scoped recognition diagnostic.",
-      };
-    }
-
     const collection = payload?.event_collection || {};
     const rows = diagnostics(payload);
     if (!text(collection.completed_at)) {
@@ -85,12 +58,12 @@
     if (!rows.length) {
       return {
         code: "backend_diagnostics_not_loaded",
-        reason: "The running Python backend completed the collection but did not return listing diagnostics. Update and restart infoscreen-http.service, then run PREVIEW EVENTS again.",
+        reason: "The running Python backend completed the preview but did not return listing diagnostics. Update and restart infoscreen-http.service, then run PREVIEW EVENTS again.",
       };
     }
     return {
       code: "diagnostic_scope_did_not_include_page",
-      reason: `The last persisted collection contains diagnostics, but not for ${url}. Run PREVIEW EVENTS on this exact list page again.`,
+      reason: `The last collection contains diagnostics, but not for ${url}. Run PREVIEW EVENTS on this exact list page again.`,
     };
   }
 
@@ -193,24 +166,16 @@
   function scheduleDiagnostics() {
     window.clearTimeout(refreshTimer);
     refreshTimer = window.setTimeout(() => {
-      // Listing cards are recreated whenever the main state refreshes. The isolated
-      // preview diagnostic lives in sessionStorage and takes precedence over persisted
-      // collection diagnostics for that exact URL.
+      // Listing cards are recreated whenever the main state refreshes. Fetch the
+      // persisted backend state again instead of repainting with the previous
+      // in-memory payload, otherwise a completed PREVIEW can keep showing the
+      // stale placeholder diagnostic.
       loadDiagnostics();
     }, 40);
   }
 
   document.addEventListener("infoscreen:review-state", (event) => {
     if (event.detail && typeof event.detail === "object") applyDiagnostics(event.detail);
-  });
-
-  document.addEventListener("infoscreen:review-preview", (event) => {
-    const url = text(event.detail?.url);
-    if (!url) return;
-    const card = [...document.querySelectorAll("#listing-pages > .card")]
-      .find((candidate) => canonical(listingUrl(candidate)) === canonical(url));
-    if (!card) return;
-    renderDiagnostic(card, event.detail?.diagnostic || null, lastPayload || {}, url);
   });
 
   document.addEventListener("DOMContentLoaded", () => {
