@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from . import browser as _browser
 from . import event_review as _review
 from . import http1_browser as _http1
+from . import preview_detail_enrichment_authority as _enrichment
+from . import preview_transport_authority as _transport
 
 _APPLIED = False
 _BASE_BIND = None
@@ -14,14 +17,41 @@ def _preview_store(store: _review.EventReviewStore) -> bool:
 
 
 def _keep_preview_candidates(state: Any, effective: Any):
-    """Preview is classification evidence, so do not hide expired real Events.
-
-    Formal collection still applies the normal active-event lifecycle filter. Preview must
-    show the actual official detail facts first so the operator can decide whether a List
-    Page contains real Events, including when reviewing an explicit archive page.
-    """
+    """Preview is classification evidence, so do not hide expired real Events."""
 
     return state
+
+
+def _enrich_final_preview(
+    store: _review.EventReviewStore,
+    state: _review.ReviewState,
+) -> _review.ReviewState:
+    """Guarantee that no listing-only row escapes the final HTTP handoff.
+
+    The normal composed Preview chain should enrich before transport returns. This final
+    guard handles any authority-order regression by reusing the exact same installed
+    Chromium and MBS headed policy while the result is still inside the server request.
+    """
+
+    if not any(_enrichment._needs_detail(candidate) for candidate in state.events):
+        return state
+
+    original_launch = _browser.launch_chromium
+    original_headless = _transport._PREVIEW_HEADLESS
+    _transport._PREVIEW_HEADLESS = not _transport._requires_headed_preview(store)
+    if not _transport._PREVIEW_HEADLESS and not _transport._graphical_session_available():
+        _transport._PREVIEW_HEADLESS = original_headless
+        raise RuntimeError(
+            "MBS preview detail enrichment requires the existing Surface graphical "
+            "session; DISPLAY and WAYLAND_DISPLAY are both missing"
+        )
+
+    _browser.launch_chromium = _transport._launch_preview_chromium
+    try:
+        return _enrichment.enrich_preview_state(store, state)
+    finally:
+        _browser.launch_chromium = original_launch
+        _transport._PREVIEW_HEADLESS = original_headless
 
 
 def _wrap_current_collector() -> None:
@@ -40,14 +70,16 @@ def _wrap_current_collector() -> None:
         finally:
             _http1._filter_final_expired_events = original_filter
 
-        # http1_browser's historical final wrapper labels every Preview as listing-only
-        # after the composed collector returns. Correct the final persisted metadata to
-        # match the official detail requests that preview_detail_enrichment_authority ran.
+        state = _enrich_final_preview(store, state)
+        remaining_listing_only = sum(
+            _enrichment._needs_detail(candidate) for candidate in state.events
+        )
         state.event_collection = {
             **state.event_collection,
             "preview_detail_mode": "official_detail_pages",
             "detail_page_requests_skipped": 0,
             "preview_expiry_policy": "retain_for_operator_review",
+            "listing_only_candidates_remaining": remaining_listing_only,
         }
         return store.save(state)
 
@@ -62,12 +94,7 @@ def _bind_final_event_collector() -> None:
 
 
 def apply() -> None:
-    """Patch the final HTTP handoff before http1_browser exports its collector.
-
-    review_summary_authority calls this while http1_browser.apply() is still composing the
-    runtime. The original final binder is retained, then its exported collector is wrapped
-    once so Preview detail enrichment and archive evidence survive the final handoff.
-    """
+    """Patch and verify the final HTTP Preview collector exported by bootstrap."""
 
     global _APPLIED, _BASE_BIND
     if not _APPLIED:
@@ -75,9 +102,8 @@ def apply() -> None:
         _http1._bind_final_event_collector = _bind_final_event_collector
         _APPLIED = True
 
-    # Re-application can happen after bootstrap in tests or authority refreshes.
     if _http1._APPLIED:
         _wrap_current_collector()
 
 
-__all__ = ["apply"]
+__all__ = ["apply", "_enrich_final_preview", "_wrap_current_collector"]
