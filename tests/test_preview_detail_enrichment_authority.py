@@ -47,7 +47,49 @@ def _store(tmp_path) -> EventReviewStore:
     return EventReviewStore(tmp_path / "infoscreen-event-preview-test", config)
 
 
-def _listing_only_state() -> ReviewState:
+def _candidate(index: int, detail_url: str) -> EventCandidate:
+    return EventCandidate(
+        candidate_id=f"old-preview-id-{index}",
+        source_id="artscience",
+        source_name="ArtScience Museum",
+        listing_url=LISTING_URL,
+        detail_url=detail_url,
+        title=f"ArtScience candidate {index}",
+        when="",
+        where="ArtScience Museum",
+        summary="View details",
+        detail_status="incomplete",
+        detail_error="preview_listing_evidence_only_missing_when",
+        detail_page_title="",
+        evidence=EventEvidence(
+            selector=f'[data-infoscreen-preview-index="{index}"]',
+            selector_index=index,
+            selector_match_count=1,
+            document_position={
+                "x": 152 + index * 296,
+                "y": 1633,
+                "width": 243,
+                "height": 76,
+            },
+            viewport_position={
+                "x": 152 + index * 296,
+                "y": 100,
+                "width": 243,
+                "height": 76,
+            },
+            page_index=0,
+            page_url=LISTING_URL,
+            text=f"ArtScience candidate {index}\nView details",
+        ),
+        collected_at="2026-07-30T00:00:00+00:00",
+    )
+
+
+def _listing_only_state(count: int = 1) -> ReviewState:
+    urls = [
+        DETAIL_URL,
+        "https://www.marinabaysands.com/museum/exhibitions/insects.html",
+    ]
     return ReviewState(
         listing_pages=[
             ListingPageCandidate(
@@ -60,77 +102,59 @@ def _listing_only_state() -> ReviewState:
                 discovered_at="2026-07-30T00:00:00+00:00",
             )
         ],
-        events=[
-            EventCandidate(
-                candidate_id="old-preview-id",
-                source_id="artscience",
-                source_name="ArtScience Museum",
-                listing_url=LISTING_URL,
-                detail_url=DETAIL_URL,
-                title="Another World Is Possible",
-                when="",
-                where="ArtScience Museum",
-                summary="Another World Is Possible\nView details",
-                detail_status="incomplete",
-                detail_error="preview_listing_evidence_only_missing_when",
-                detail_page_title="",
-                evidence=EventEvidence(
-                    selector='[data-infoscreen-preview-index="0"]',
-                    selector_index=0,
-                    selector_match_count=1,
-                    document_position={
-                        "x": 152,
-                        "y": 1633,
-                        "width": 243,
-                        "height": 76,
-                    },
-                    viewport_position={
-                        "x": 152,
-                        "y": 100,
-                        "width": 243,
-                        "height": 76,
-                    },
-                    page_index=0,
-                    page_url=LISTING_URL,
-                    text="Another World Is Possible\nView details",
-                ),
-                collected_at="2026-07-30T00:00:00+00:00",
-            )
-        ],
+        events=[_candidate(index, urls[index]) for index in range(count)],
         event_collection={
             "preview_mode": "direct_single_page_main_content",
-            "detail_page_requests_skipped": 1,
+            "detail_page_requests_skipped": count,
             "listing_diagnostics": [],
         },
     )
 
 
 def _install_fake_playwright(monkeypatch):
-    context = object()
+    launches = []
+
+    class Page:
+        def __init__(self, marker):
+            self.marker = marker
+            self.closed = False
+
+        def is_closed(self):
+            return self.closed
+
+        def close(self):
+            self.closed = True
+
+    class Context:
+        def __init__(self, marker):
+            self.marker = marker
+
+        def new_page(self):
+            return Page(self.marker)
+
+        def close(self):
+            return None
 
     class Browser:
+        def __init__(self, marker):
+            self.marker = marker
+
         def new_context(self, **kwargs):
             assert kwargs == {
                 "viewport": {"width": 1440, "height": 1000},
                 "device_scale_factor": 1,
             }
-
-            class Context:
-                marker = context
-
-                def close(self):
-                    return None
-
-            return Context()
+            return Context(self.marker)
 
         def close(self):
             return None
 
-    monkeypatch.setattr(
-        authority._browser,
-        "launch_chromium",
-        lambda playwright: Browser(),
-    )
+    def launch(_playwright):
+        marker = object()
+        launches.append(marker)
+        return Browser(marker)
+
+    monkeypatch.setattr(authority._browser, "launch_chromium", launch)
 
     sync_api = ModuleType("playwright.sync_api")
 
@@ -146,10 +170,10 @@ def _install_fake_playwright(monkeypatch):
     package.sync_api = sync_api
     monkeypatch.setitem(sys.modules, "playwright", package)
     monkeypatch.setitem(sys.modules, "playwright.sync_api", sync_api)
-    return context
+    return launches
 
 
-def test_real_preview_entrypoint_reads_official_detail_page(monkeypatch, tmp_path) -> None:
+def test_real_preview_entrypoint_reads_artscience_detail_page(monkeypatch, tmp_path) -> None:
     store = _store(tmp_path)
     state = _listing_only_state()
     base_calls = []
@@ -158,13 +182,20 @@ def test_real_preview_entrypoint_reads_official_detail_page(monkeypatch, tmp_pat
         "_BASE_PREVIEW_COLLECT",
         lambda actual: base_calls.append(actual) or state,
     )
-    expected_context = _install_fake_playwright(monkeypatch)
+    launches = _install_fake_playwright(monkeypatch)
     calls = []
 
     monkeypatch.setattr(authority._effective, "apply", lambda: None)
+    monkeypatch.setattr(
+        authority._effective,
+        "detail_candidate",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("ArtScience Preview must use its isolated detail owner")
+        ),
+    )
 
-    def detail_candidate(context, source, listing_url, detail_url, card):
-        calls.append((context.marker, source, listing_url, detail_url, card))
+    def collect_detail(page, source, listing_url, detail_url):
+        calls.append((page.marker, source, listing_url, detail_url))
         return {
             "detail_url": DETAIL_URL,
             "title": "Another World Is Possible",
@@ -173,36 +204,70 @@ def test_real_preview_entrypoint_reads_official_detail_page(monkeypatch, tmp_pat
             "summary": "An exhibition exploring how new worlds can be imagined.",
             "detail_status": "collected",
             "detail_error": "",
-            "detail_page_title": "Another World Is Possible | ArtScience Museum",
+            "detail_page_title": "Another World Is Possible",
         }
 
-    monkeypatch.setattr(authority._effective, "detail_candidate", detail_candidate)
+    monkeypatch.setattr(
+        authority._artscience_detail,
+        "collect_detail_candidate",
+        collect_detail,
+    )
 
     result = authority.collect_preview_with_details(store)
 
     assert base_calls == [store]
-    assert len(calls) == 1
-    assert calls[0][0] is expected_context
-    assert calls[0][1]["id"] == "artscience"
-    assert calls[0][2:4] == (LISTING_URL, DETAIL_URL)
-    assert calls[0][4] == {
-        "url": DETAIL_URL,
-        "headings": ["Another World Is Possible"],
-        "link_text": "Another World Is Possible",
-        "text_lines": ["Another World Is Possible"],
-        "text": "Another World Is Possible",
-    }
+    assert len(launches) == 1
+    assert calls == [(launches[0], store.inventory()[0], LISTING_URL, DETAIL_URL)]
     assert result.events[0].detail_status == "collected"
     assert result.events[0].detail_error == ""
     assert result.events[0].when == "13 Sep 2025 – 22 Feb 2026"
     assert result.events[0].summary.startswith("An exhibition exploring")
-    assert result.events[0].detail_page_title.startswith("Another World Is Possible")
+    assert result.events[0].detail_page_title == "Another World Is Possible"
     assert result.event_collection["preview_detail_mode"] == "official_detail_pages"
-    assert result.event_collection["preview_detail_enrichment_entrypoint"] == (
-        "preview_collector._collect_preview"
+    assert result.event_collection["preview_detail_transport"] == (
+        "fresh_browser_per_artscience_candidate"
     )
+    assert result.event_collection["preview_detail_isolated_browser_count"] == 1
     assert result.event_collection["detail_page_request_count"] == 1
     assert result.event_collection["detail_page_requests_skipped"] == 0
+
+
+def test_each_artscience_detail_uses_a_fresh_browser_process(monkeypatch, tmp_path) -> None:
+    store = _store(tmp_path)
+    state = _listing_only_state(count=2)
+    monkeypatch.setattr(authority, "_BASE_PREVIEW_COLLECT", lambda actual: state)
+    launches = _install_fake_playwright(monkeypatch)
+    page_markers = []
+
+    monkeypatch.setattr(authority._effective, "apply", lambda: None)
+
+    def collect_detail(page, source, listing_url, detail_url):
+        page_markers.append(page.marker)
+        return {
+            "detail_url": detail_url,
+            "title": detail_url.rsplit("/", 1)[-1],
+            "when": "1 Jan 2026 – 31 Dec 2026",
+            "where": "ArtScience Museum",
+            "summary": "Collected detail summary.",
+            "detail_status": "collected",
+            "detail_error": "",
+            "detail_page_title": detail_url.rsplit("/", 1)[-1],
+        }
+
+    monkeypatch.setattr(
+        authority._artscience_detail,
+        "collect_detail_candidate",
+        collect_detail,
+    )
+
+    result = authority.collect_preview_with_details(store)
+
+    assert len(launches) == 2
+    assert page_markers == launches
+    assert launches[0] is not launches[1]
+    assert result.event_collection["preview_detail_isolated_browser_count"] == 2
+    assert result.event_collection["detail_page_error_count"] == 0
+    assert all(event.detail_status == "collected" for event in result.events)
 
 
 def test_apply_replaces_the_actual_preview_function(monkeypatch) -> None:
