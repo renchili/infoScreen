@@ -84,8 +84,10 @@ def test_artscience_script_requires_positive_route_one_activity_and_rendered_tit
     assert "root.querySelectorAll(\"a[href]\")" in script
 
 
-def test_review_authority_composes_artscience_before_transport() -> None:
-    source = read_text("surface/local_events_runtime/review_summary_authority.py")
+def test_preview_pipeline_composes_artscience_before_transport() -> None:
+    source = read_text(
+        "surface/local_events_runtime/preview_final_detail_handoff_authority.py"
+    )
 
     collector = source.index("apply_preview_collector()")
     artscience_apply = source.index("apply_artscience_preview()")
