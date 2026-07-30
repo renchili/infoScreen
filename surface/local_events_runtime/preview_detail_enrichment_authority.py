@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from . import artscience_detail as _artscience_detail
 from . import browser as _browser
 from . import event_review as _review
 from . import event_review_diagnostics as _diagnostics
@@ -10,6 +11,7 @@ from . import review_effective_fields_authority as _effective
 
 _APPLIED = False
 _BASE_PREVIEW_COLLECT = None
+_ARTSCIENCE_SOURCE_ID = "artscience"
 
 
 def _preview_store(store: _review.EventReviewStore) -> bool:
@@ -94,6 +96,48 @@ def _refresh_diagnostics(state: _review.ReviewState) -> None:
     state.event_collection["listing_diagnostics"] = updated
 
 
+def _new_context(browser: Any) -> Any:
+    return browser.new_context(
+        viewport={"width": 1440, "height": 1000},
+        device_scale_factor=1,
+    )
+
+
+def _collect_artscience_detail(
+    playwright: Any,
+    source: dict[str, Any],
+    candidate: _review.EventCandidate,
+) -> dict[str, str]:
+    """Use one fresh browser process for one MBS detail document.
+
+    The deployed MBS session can load the first detail page and then return
+    ERR_HTTP2_PROTOCOL_ERROR for later pages when the same Chromium network process is
+    reused. A fresh headed Chromium process per detail page prevents those documents
+    from sharing the failing HTTP/2 connection while preserving the verified browser
+    transport and rendered-DOM authority.
+    """
+
+    browser = _browser.launch_chromium(playwright)
+    try:
+        context = _new_context(browser)
+        try:
+            page = context.new_page()
+            try:
+                return _artscience_detail.collect_detail_candidate(
+                    page,
+                    source,
+                    candidate.listing_url,
+                    candidate.detail_url,
+                )
+            finally:
+                if not page.is_closed():
+                    page.close()
+        finally:
+            context.close()
+    finally:
+        browser.close()
+
+
 def enrich_preview_state(
     store: _review.EventReviewStore,
     state: _review.ReviewState,
@@ -113,54 +157,68 @@ def enrich_preview_state(
     }
     errors: list[dict[str, str]] = []
     attempted = 0
+    isolated_browser_count = 0
+    used_artscience_owner = False
+    used_effective_owner = False
 
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as playwright:
-        browser = _browser.launch_chromium(playwright)
+        shared_browser = None
+        shared_context = None
         try:
-            context = browser.new_context(
-                viewport={"width": 1440, "height": 1000},
-                device_scale_factor=1,
-            )
-            try:
-                for candidate in pending:
-                    source = sources.get(candidate.source_id)
-                    if source is None:
-                        candidate.detail_status = "failed"
-                        candidate.detail_error = "source_not_found"
-                        errors.append(
-                            {
-                                "detail_url": candidate.detail_url,
-                                "error": "source_not_found",
-                            }
+            for candidate in pending:
+                source = sources.get(candidate.source_id)
+                if source is None:
+                    candidate.detail_status = "failed"
+                    candidate.detail_error = "source_not_found"
+                    errors.append(
+                        {
+                            "detail_url": candidate.detail_url,
+                            "error": "source_not_found",
+                        }
+                    )
+                    continue
+
+                attempted += 1
+                try:
+                    if candidate.source_id == _ARTSCIENCE_SOURCE_ID:
+                        used_artscience_owner = True
+                        isolated_browser_count += 1
+                        detail = _collect_artscience_detail(
+                            playwright,
+                            source,
+                            candidate,
                         )
-                        continue
-                    attempted += 1
-                    try:
+                    else:
+                        used_effective_owner = True
+                        if shared_browser is None:
+                            shared_browser = _browser.launch_chromium(playwright)
+                            shared_context = _new_context(shared_browser)
                         detail = _effective.detail_candidate(
-                            context,
+                            shared_context,
                             source,
                             candidate.listing_url,
                             candidate.detail_url,
                             _listing_card(candidate),
                         )
-                        _apply_detail(candidate, detail)
-                    except Exception as exc:
-                        candidate.detail_status = "failed"
-                        candidate.detail_error = (
-                            f"{type(exc).__name__}: {exc}"
-                        )[:500]
-                        errors.append(
-                            {
-                                "detail_url": candidate.detail_url,
-                                "error": candidate.detail_error,
-                            }
-                        )
-            finally:
-                context.close()
+                    _apply_detail(candidate, detail)
+                except Exception as exc:
+                    candidate.detail_status = "failed"
+                    candidate.detail_error = (
+                        f"{type(exc).__name__}: {exc}"
+                    )[:500]
+                    errors.append(
+                        {
+                            "detail_url": candidate.detail_url,
+                            "error": candidate.detail_error,
+                        }
+                    )
         finally:
-            browser.close()
+            if shared_context is not None:
+                shared_context.close()
+            if shared_browser is not None:
+                shared_browser.close()
 
     state.events = sorted(
         state.events,
@@ -172,17 +230,36 @@ def enrich_preview_state(
     )
     prior_attempts = int(state.event_collection.get("detail_page_request_count") or 0)
     prior_errors = state.event_collection.get("detail_page_errors")
+    combined_errors = [
+        *(prior_errors if isinstance(prior_errors, list) else []),
+        *errors,
+    ]
+    if used_artscience_owner and used_effective_owner:
+        owner_module = "mixed"
+        owner_name = "artscience_detail + review_effective_fields"
+    elif used_artscience_owner:
+        owner_module = _artscience_detail.collect_detail_candidate.__module__
+        owner_name = _artscience_detail.collect_detail_candidate.__qualname__
+    else:
+        owner_module = _effective.detail_candidate.__module__
+        owner_name = _effective.detail_candidate.__qualname__
+
     state.event_collection = {
         **state.event_collection,
         "preview_detail_mode": "official_detail_pages",
         "preview_detail_enrichment_entrypoint": "preview_collector._collect_preview",
+        "preview_detail_transport": (
+            "fresh_browser_per_artscience_candidate"
+            if isolated_browser_count
+            else "shared_browser_context"
+        ),
+        "preview_detail_isolated_browser_count": isolated_browser_count,
+        "preview_detail_owner_module": owner_module,
+        "preview_detail_owner_name": owner_name,
         "detail_page_request_count": prior_attempts + attempted,
         "detail_page_requests_skipped": 0,
-        "detail_page_error_count": len(errors),
-        "detail_page_errors": [
-            *(prior_errors if isinstance(prior_errors, list) else []),
-            *errors,
-        ],
+        "detail_page_error_count": len(combined_errors),
+        "detail_page_errors": combined_errors,
     }
     _refresh_diagnostics(state)
     return store.save(state)
