@@ -5,6 +5,7 @@ from typing import Any
 from . import browser as _browser
 from . import event_review as _review
 from . import event_review_diagnostics as _diagnostics
+from . import review_effective_fields_authority as _effective
 
 _APPLIED = False
 _BASE_COLLECT = None
@@ -89,6 +90,11 @@ def collect_event_candidates(store: _review.EventReviewStore) -> _review.ReviewS
     if not _preview_store(store) or not state.events:
         return state
 
+    # http1_browser's final handoff temporarily binds _review._detail_candidate to a
+    # listing-only Preview implementation. Preview enrichment must call the immutable
+    # final detail owner directly, otherwise an official detail URL is never opened and
+    # the result is downgraded to preview_listing_evidence_only_missing_when.
+    _effective.apply()
     sources = {
         str(source.get("id") or ""): source for source in store.inventory()
     }
@@ -119,9 +125,14 @@ def collect_event_candidates(store: _review.EventReviewStore) -> _review.ReviewS
                         continue
                     attempted += 1
                     try:
-                        detail = _review._detail_candidate(
+                        # Preview is the operator's evidence before REAL EVENT / NOT EVENT
+                        # selection. Always read the official detail page even when a list
+                        # card happens to contain a complete-looking date and venue.
+                        detail_source = dict(source)
+                        detail_source["review_detail_policy"] = "always"
+                        detail = _effective.detail_candidate(
                             context,
-                            source,
+                            detail_source,
                             candidate.listing_url,
                             candidate.detail_url,
                             _listing_card(candidate),
