@@ -72,7 +72,7 @@ def _listing_only_state() -> ReviewState:
                 where="ArtScience Museum",
                 summary="Another World Is Possible\nView details",
                 detail_status="incomplete",
-                detail_error="preview_listing_evidence_only",
+                detail_error="preview_listing_evidence_only_missing_when",
                 detail_page_title="",
                 evidence=EventEvidence(
                     selector='[data-infoscreen-preview-index="0"]',
@@ -149,7 +149,7 @@ def _install_fake_playwright(monkeypatch):
     return context
 
 
-def test_preview_reads_official_detail_page_before_real_event_review(
+def test_preview_reads_official_detail_page_through_final_detail_owner(
     monkeypatch,
     tmp_path,
 ) -> None:
@@ -159,8 +159,17 @@ def test_preview_reads_official_detail_page_before_real_event_review(
     expected_context = _install_fake_playwright(monkeypatch)
     calls = []
 
+    monkeypatch.setattr(authority._effective, "apply", lambda: None)
+    monkeypatch.setattr(
+        authority._review,
+        "_detail_candidate",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("mutable Preview listing-only binding must not be used")
+        ),
+    )
+
     def detail_candidate(context, source, listing_url, detail_url, card):
-        calls.append((context.marker, source["id"], listing_url, detail_url, card))
+        calls.append((context.marker, source, listing_url, detail_url, card))
         return {
             "detail_url": DETAIL_URL,
             "title": "Another World Is Possible",
@@ -172,13 +181,15 @@ def test_preview_reads_official_detail_page_before_real_event_review(
             "detail_page_title": "Another World Is Possible | ArtScience Museum",
         }
 
-    monkeypatch.setattr(authority._review, "_detail_candidate", detail_candidate)
+    monkeypatch.setattr(authority._effective, "detail_candidate", detail_candidate)
 
     result = authority.collect_event_candidates(store)
 
     assert len(calls) == 1
     assert calls[0][0] is expected_context
-    assert calls[0][1:4] == ("artscience", LISTING_URL, DETAIL_URL)
+    assert calls[0][1]["id"] == "artscience"
+    assert calls[0][1]["review_detail_policy"] == "always"
+    assert calls[0][2:4] == (LISTING_URL, DETAIL_URL)
     assert calls[0][4]["link_text"] == "Another World Is Possible"
     assert result.events[0].detail_status == "collected"
     assert result.events[0].detail_error == ""
