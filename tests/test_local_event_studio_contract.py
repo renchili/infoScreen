@@ -49,6 +49,10 @@ def test_isolated_preview_renders_temporary_candidates_before_operator_selection
     assert 'await reloadState();' not in preview[preview.index("async function collectPreview(card, button)"):preview.index("async function collectForGlobalInstitution(button)")]
     assert "/api/local-events/review/event-decision" not in preview
     assert "RELATED ACTIVITY" not in preview
+    assert "Review every candidate as REAL EVENT or NOT EVENT" in preview
+    assert "selections are not committed until the List Page review is saved" in preview
+    assert "cannot be reviewed until the list page is confirmed" not in preview
+    assert "Event review actions are disabled" not in preview
     assert 'id="event-candidates-title"' in html
     assert 'id="event-candidates-hint"' in html
 
