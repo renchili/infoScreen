@@ -263,7 +263,7 @@
 
     if (title) title.textContent = "Preview event candidates";
     if (hint) {
-      hint.textContent = "Temporary candidates from the selected list page. They are not saved and cannot be reviewed until the list page is confirmed and the formal Event collection runs.";
+      hint.textContent = "Temporary candidates from the selected list page. Review every candidate as REAL EVENT or NOT EVENT; choices are committed only when the List Page review is saved.";
     }
     count.textContent = String(rows.length);
     container.replaceChildren();
@@ -334,7 +334,7 @@
 
       const notice = document.createElement("div");
       notice.className = "snippet";
-      notice.textContent = "TEMPORARY PREVIEW · NOT SAVED · Event review actions are disabled.";
+      notice.textContent = "TEMPORARY PREVIEW · Choose REAL EVENT or NOT EVENT; selections are not committed until the List Page review is saved.";
       article.appendChild(notice);
       container.appendChild(article);
     });
