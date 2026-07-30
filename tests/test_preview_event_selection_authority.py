@@ -62,6 +62,10 @@ def _protocol(payload: dict) -> str:
 
 
 def _review_payload(listing: ListingPageCandidate) -> dict:
+    real_listing_url = (
+        "https://www.marinabaysands.com/museum/exhibitions/"
+        "into-the-ocean-redirect.html"
+    )
     real_url = "https://www.marinabaysands.com/museum/exhibitions/into-the-ocean.html"
     rejected_url = "https://www.marinabaysands.com/museum/events/example.html"
     return {
@@ -69,7 +73,12 @@ def _review_payload(listing: ListingPageCandidate) -> dict:
         "listing_url": listing.url,
         "decisions": [
             {
-                "candidate_id": stable_id("artscience", listing.url, real_url),
+                "candidate_id": stable_id(
+                    "artscience",
+                    listing.url,
+                    real_listing_url,
+                ),
+                "listing_detail_url": real_listing_url,
                 "detail_url": real_url,
                 "decision": "confirmed",
             },
@@ -106,7 +115,16 @@ def test_preview_decisions_are_committed_atomically_with_list_page_confirmation(
         "confirmed",
         "rejected",
     ]
+    assert saved["decisions"][0]["listing_detail_url"] == (
+        payload["decisions"][0]["listing_detail_url"]
+    )
     assert saved["decisions"][0]["detail_url"] == payload["decisions"][0]["detail_url"]
+
+    selected_ids, selected_urls, skipped = authority._confirmed_selections(store)
+    assert skipped == []
+    assert payload["decisions"][0]["candidate_id"] in selected_ids[listing.url]
+    assert payload["decisions"][0]["listing_detail_url"] in selected_urls[listing.url]
+    assert payload["decisions"][0]["detail_url"] in selected_urls[listing.url]
 
 
 def test_failed_list_page_write_rolls_back_preview_selection(monkeypatch, tmp_path) -> None:
