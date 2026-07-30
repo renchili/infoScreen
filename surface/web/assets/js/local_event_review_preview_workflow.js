@@ -104,12 +104,20 @@
     return canonical(card.querySelector(".card-head h3 a")?.href || "");
   }
 
+  function listingDetailUrl(card) {
+    const value = text(card.dataset.listingDetailUrl);
+    return value ? canonical(value) : detailUrl(card);
+  }
+
   function candidateRows() {
     return previewCards().map((card) => ({
       card,
       candidate_id: text(card.dataset.candidateId),
+      listing_detail_url: listingDetailUrl(card),
       detail_url: detailUrl(card),
-    })).filter((row) => row.candidate_id && row.detail_url);
+    })).filter((row) => (
+      row.candidate_id && row.listing_detail_url && row.detail_url
+    ));
   }
 
   function setCardDecision(card, decision) {
@@ -209,6 +217,7 @@
       listing_url: canonical(url),
       decisions: rows.map((row) => ({
         candidate_id: row.candidate_id,
+        listing_detail_url: row.listing_detail_url,
         detail_url: row.detail_url,
         decision: decisions[row.candidate_id],
       })),
