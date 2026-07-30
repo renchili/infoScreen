@@ -40,6 +40,25 @@ def test_openapi_covers_dashboard_mutations_and_actual_error_statuses() -> None:
     assert "sanitized" not in paths["/"]["get"]["description"].lower()
 
 
+def test_openapi_describes_preview_selection_commit_and_formal_collection_boundary() -> None:
+    paths = build_openapi()["paths"]
+    listing_decision = paths["/api/local-events/review/listing-decision"]["post"]
+    preview = paths["/api/local-events/review/preview-events"]["post"]
+    collection = paths["/api/local-events/review/collect-events"]["post"]
+
+    assert "preview-review-v1:" in listing_decision["description"]
+    assert "REAL EVENT / NOT EVENT" in listing_decision["description"]
+    assert "prior Preview selection file is restored" in listing_decision["description"]
+    assert "without changing persisted Review state" in preview["description"]
+    assert "browser-session drafts" in preview["description"]
+    assert collection["summary"] == (
+        "Collect selected REAL EVENT candidates from confirmed pages"
+    )
+    assert "filters unselected listing cards before detail navigation" in collection["description"]
+    assert "formal HTTP/1 Chromium policy" in collection["description"]
+    assert "Preview transport policy" not in collection["description"]
+
+
 def test_market_refresh_schema_contains_both_producer_outputs() -> None:
     payload = MarketRefreshResponse.model_validate(
         {
