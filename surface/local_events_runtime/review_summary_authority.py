@@ -45,6 +45,9 @@ def _review_event(candidate: Any) -> dict[str, Any]:
 def _apply_review_authorities() -> None:
     from .artscience_preview_authority import apply as apply_artscience_preview
     from .preview_collector_authority import apply as apply_preview_collector
+    from .preview_detail_enrichment_authority import (
+        apply as apply_preview_detail_enrichment,
+    )
     from .preview_event_selection_authority import (
         apply as apply_preview_event_selection,
     )
@@ -54,9 +57,13 @@ def _apply_review_authorities() -> None:
     # source-specific Preview wrappers are composed over the diagnostics collector.
     apply_preview_event_selection()
     apply_preview_collector()
-    # Source-specific rendered-card recognition must wrap the direct collector before
-    # transport selects headed/headless mode for the same installed Chromium process.
+    # Source-specific rendered-card recognition identifies official detail URLs first.
     apply_artscience_preview()
+    # Preview review requires the actual official detail fields. Selection controls must
+    # not downgrade candidates to listing-only evidence.
+    apply_preview_detail_enrichment()
+    # Transport remains outermost so both the listing and detail Chromium sessions use
+    # the verified headed policy for MBS on the deployed Surface.
     apply_preview_transport()
 
 
