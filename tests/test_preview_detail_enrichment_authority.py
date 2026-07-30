@@ -149,24 +149,19 @@ def _install_fake_playwright(monkeypatch):
     return context
 
 
-def test_preview_reads_official_detail_page_through_final_detail_owner(
-    monkeypatch,
-    tmp_path,
-) -> None:
+def test_real_preview_entrypoint_reads_official_detail_page(monkeypatch, tmp_path) -> None:
     store = _store(tmp_path)
     state = _listing_only_state()
-    monkeypatch.setattr(authority, "_BASE_COLLECT", lambda actual: state)
+    base_calls = []
+    monkeypatch.setattr(
+        authority,
+        "_BASE_PREVIEW_COLLECT",
+        lambda actual: base_calls.append(actual) or state,
+    )
     expected_context = _install_fake_playwright(monkeypatch)
     calls = []
 
     monkeypatch.setattr(authority._effective, "apply", lambda: None)
-    monkeypatch.setattr(
-        authority._review,
-        "_detail_candidate",
-        lambda *args, **kwargs: (_ for _ in ()).throw(
-            AssertionError("mutable Preview listing-only binding must not be used")
-        ),
-    )
 
     def detail_candidate(context, source, listing_url, detail_url, card):
         calls.append((context.marker, source, listing_url, detail_url, card))
@@ -183,36 +178,56 @@ def test_preview_reads_official_detail_page_through_final_detail_owner(
 
     monkeypatch.setattr(authority._effective, "detail_candidate", detail_candidate)
 
-    result = authority.collect_event_candidates(store)
+    result = authority.collect_preview_with_details(store)
 
+    assert base_calls == [store]
     assert len(calls) == 1
     assert calls[0][0] is expected_context
     assert calls[0][1]["id"] == "artscience"
-    assert calls[0][1]["review_detail_policy"] == "always"
     assert calls[0][2:4] == (LISTING_URL, DETAIL_URL)
-    assert calls[0][4]["link_text"] == "Another World Is Possible"
+    assert calls[0][4] == {
+        "url": DETAIL_URL,
+        "headings": ["Another World Is Possible"],
+        "link_text": "Another World Is Possible",
+        "text_lines": ["Another World Is Possible"],
+        "text": "Another World Is Possible",
+    }
     assert result.events[0].detail_status == "collected"
     assert result.events[0].detail_error == ""
     assert result.events[0].when == "13 Sep 2025 – 22 Feb 2026"
     assert result.events[0].summary.startswith("An exhibition exploring")
     assert result.events[0].detail_page_title.startswith("Another World Is Possible")
     assert result.event_collection["preview_detail_mode"] == "official_detail_pages"
+    assert result.event_collection["preview_detail_enrichment_entrypoint"] == (
+        "preview_collector._collect_preview"
+    )
     assert result.event_collection["detail_page_request_count"] == 1
     assert result.event_collection["detail_page_requests_skipped"] == 0
 
 
-def test_non_preview_collection_is_not_enriched_again(monkeypatch, tmp_path) -> None:
+def test_apply_replaces_the_actual_preview_function(monkeypatch) -> None:
+    original = object()
+    monkeypatch.setattr(authority, "_APPLIED", False)
+    monkeypatch.setattr(authority, "_BASE_PREVIEW_COLLECT", None)
+    monkeypatch.setattr(authority._preview, "_collect_preview", original)
+
+    authority.apply()
+
+    assert authority._BASE_PREVIEW_COLLECT is original
+    assert authority._preview._collect_preview is authority.collect_preview_with_details
+
+
+def test_non_preview_state_is_not_enriched(monkeypatch, tmp_path) -> None:
     config = tmp_path / "event_sources.json"
     config.write_text(json.dumps({"sources": []}), encoding="utf-8")
     store = EventReviewStore(tmp_path / "review", config)
     expected = ReviewState(event_collection={"formal": True})
-    monkeypatch.setattr(authority, "_BASE_COLLECT", lambda actual: expected)
     monkeypatch.setattr(
         authority._browser,
         "launch_chromium",
         lambda playwright: (_ for _ in ()).throw(
-            AssertionError("formal collection must not be enriched twice")
+            AssertionError("formal collection must not be enriched")
         ),
     )
 
-    assert authority.collect_event_candidates(store) is expected
+    assert authority.enrich_preview_state(store, expected) is expected
