@@ -15,24 +15,30 @@ def _preview_store(store: _review.EventReviewStore) -> bool:
     return store.root.name.startswith("infoscreen-event-preview-")
 
 
+def _needs_detail(candidate: _review.EventCandidate) -> bool:
+    """Return true only for a candidate still downgraded to listing evidence."""
+
+    return str(candidate.detail_error or "").startswith(
+        "preview_listing_evidence_only"
+    )
+
+
 def _listing_card(candidate: _review.EventCandidate) -> dict[str, Any]:
-    lines = [
-        value
-        for value in (
-            candidate.title,
-            candidate.when,
-            candidate.where,
-            candidate.summary,
-            candidate.evidence.text,
-        )
-        if str(value or "").strip()
-    ]
+    """Build deliberately incomplete listing evidence so the detail owner must navigate.
+
+    Passing the listing date, venue, summary, or full evidence text can make the formal
+    detail owner decide that the card is already complete and skip the official detail
+    URL. Preview review requires the actual detail document, so only identity/title
+    evidence is supplied here.
+    """
+
+    title = str(candidate.title or "").strip()
     return {
         "url": candidate.detail_url,
-        "headings": [candidate.title] if candidate.title else [],
-        "link_text": candidate.title,
-        "text_lines": lines,
-        "text": "\n".join(lines),
+        "headings": [title] if title else [],
+        "link_text": title,
+        "text_lines": [title] if title else [],
+        "text": title,
     }
 
 
@@ -85,15 +91,19 @@ def _refresh_diagnostics(state: _review.ReviewState) -> None:
     state.event_collection["listing_diagnostics"] = updated
 
 
-def collect_event_candidates(store: _review.EventReviewStore) -> _review.ReviewState:
-    state = _BASE_COLLECT(store)
+def enrich_preview_state(
+    store: _review.EventReviewStore,
+    state: _review.ReviewState,
+) -> _review.ReviewState:
+    """Replace remaining listing-only Preview rows with official detail-page fields."""
+
     if not _preview_store(store) or not state.events:
         return state
 
-    # http1_browser's final handoff temporarily binds _review._detail_candidate to a
-    # listing-only Preview implementation. Preview enrichment must call the immutable
-    # final detail owner directly, otherwise an official detail URL is never opened and
-    # the result is downgraded to preview_listing_evidence_only_missing_when.
+    pending = [candidate for candidate in state.events if _needs_detail(candidate)]
+    if not pending:
+        return state
+
     _effective.apply()
     sources = {
         str(source.get("id") or ""): source for source in store.inventory()
@@ -111,7 +121,7 @@ def collect_event_candidates(store: _review.EventReviewStore) -> _review.ReviewS
                 device_scale_factor=1,
             )
             try:
-                for candidate in state.events:
+                for candidate in pending:
                     source = sources.get(candidate.source_id)
                     if source is None:
                         candidate.detail_status = "failed"
@@ -125,14 +135,9 @@ def collect_event_candidates(store: _review.EventReviewStore) -> _review.ReviewS
                         continue
                     attempted += 1
                     try:
-                        # Preview is the operator's evidence before REAL EVENT / NOT EVENT
-                        # selection. Always read the official detail page even when a list
-                        # card happens to contain a complete-looking date and venue.
-                        detail_source = dict(source)
-                        detail_source["review_detail_policy"] = "always"
                         detail = _effective.detail_candidate(
                             context,
-                            detail_source,
+                            source,
                             candidate.listing_url,
                             candidate.detail_url,
                             _listing_card(candidate),
@@ -162,16 +167,26 @@ def collect_event_candidates(store: _review.EventReviewStore) -> _review.ReviewS
             event.evidence.document_position.get("y", 0),
         ),
     )
+    prior_attempts = int(state.event_collection.get("detail_page_request_count") or 0)
+    prior_errors = state.event_collection.get("detail_page_errors")
     state.event_collection = {
         **state.event_collection,
         "preview_detail_mode": "official_detail_pages",
-        "detail_page_request_count": attempted,
+        "detail_page_request_count": prior_attempts + attempted,
         "detail_page_requests_skipped": 0,
         "detail_page_error_count": len(errors),
-        "detail_page_errors": errors,
+        "detail_page_errors": [
+            *(prior_errors if isinstance(prior_errors, list) else []),
+            *errors,
+        ],
     }
     _refresh_diagnostics(state)
     return store.save(state)
+
+
+def collect_event_candidates(store: _review.EventReviewStore) -> _review.ReviewState:
+    state = _BASE_COLLECT(store)
+    return enrich_preview_state(store, state)
 
 
 def apply() -> None:
@@ -185,4 +200,9 @@ def apply() -> None:
     _APPLIED = True
 
 
-__all__ = ["apply", "collect_event_candidates"]
+__all__ = [
+    "apply",
+    "collect_event_candidates",
+    "enrich_preview_state",
+    "_needs_detail",
+]
