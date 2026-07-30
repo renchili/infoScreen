@@ -140,7 +140,7 @@ def test_pending_listing_preview_uses_isolated_confirmed_copy(
     assert persisted.model_dump(mode="json") == original.model_dump(mode="json")
 
 
-def test_pending_preview_uses_scoped_listing_runtime_without_detail_pages(
+def test_pending_preview_uses_scoped_listing_runtime_before_final_detail_handoff(
     monkeypatch,
     tmp_path,
 ) -> None:
@@ -183,7 +183,7 @@ def test_pending_preview_uses_scoped_listing_runtime_without_detail_pages(
 
     class NoDetailBrowserContext:
         def new_page(self):
-            raise AssertionError("pending preview must not open a detail page")
+            raise AssertionError("listing-stage Preview must not open a detail page")
 
     monkeypatch.setattr(
         detail_dates,
@@ -232,9 +232,11 @@ def test_pending_preview_uses_scoped_listing_runtime_without_detail_pages(
         "detail_error": "preview_listing_evidence_only",
         "detail_page_title": "",
     }
-    assert preview.event_collection["preview_detail_mode"] == "listing_evidence_only"
+    assert preview.event_collection["preview_detail_mode"] == "official_detail_pages"
     assert preview.event_collection["preview_listing_mode"] == "single_page_linear_main_dom"
     assert preview.event_collection["preview_card_mode"] == "cached_linear_main_content"
+    assert preview.event_collection["preview_expiry_policy"] == "retain_for_operator_review"
+    assert preview.event_collection["listing_only_candidates_remaining"] == 0
     assert event_review_module._detail_candidate is effective.detail_candidate
     assert {
         name: getattr(browser_runtime, name)
