@@ -132,20 +132,36 @@ def _validated_review(
             raise ValueError("invalid preview Event decision")
         candidate_id = str(raw.get("candidate_id") or "").strip()
         detail_url = _review.canonical_url(raw.get("detail_url"))
+        listing_detail_url = _review.canonical_url(
+            raw.get("listing_detail_url") or detail_url
+        )
         decision = str(raw.get("decision") or "").strip()
         if decision not in {"confirmed", "rejected"}:
             raise ValueError("every Preview candidate must be REAL EVENT or NOT EVENT")
         if not candidate_id or candidate_id in seen:
             raise ValueError("duplicate or missing Preview candidate identity")
+        if not _host_allowed(listing_detail_url, source):
+            raise ValueError(
+                "Preview candidate listing URL is outside the institution allow-list"
+            )
         if not _host_allowed(detail_url, source):
-            raise ValueError("Preview candidate detail URL is outside the institution allow-list")
-        expected = _review.stable_id(listing.source_id, listing.url, detail_url)
+            raise ValueError(
+                "Preview candidate detail URL is outside the institution allow-list"
+            )
+        expected = _review.stable_id(
+            listing.source_id,
+            listing.url,
+            listing_detail_url,
+        )
         if candidate_id != expected:
-            raise ValueError("Preview candidate identity does not match its official detail URL")
+            raise ValueError(
+                "Preview candidate identity does not match its official listing link"
+            )
         seen.add(candidate_id)
         rows.append(
             {
                 "candidate_id": candidate_id,
+                "listing_detail_url": listing_detail_url,
                 "detail_url": detail_url,
                 "decision": decision,
             }
@@ -229,9 +245,14 @@ def _confirmed_selections(
             skipped.append(listing.url)
             continue
         ids[listing.url] = {str(row.get("candidate_id") or "") for row in selected}
-        urls[listing.url] = {
-            _review.canonical_url(row.get("detail_url")) for row in selected
-        }
+        selected_urls: set[str] = set()
+        for row in selected:
+            final_url = _review.canonical_url(row.get("detail_url"))
+            listing_detail_url = _review.canonical_url(
+                row.get("listing_detail_url") or final_url
+            )
+            selected_urls.update((listing_detail_url, final_url))
+        urls[listing.url] = selected_urls
     if not ids:
         raise ValueError("no confirmed List Page has a committed REAL EVENT selection")
     return ids, urls, skipped
