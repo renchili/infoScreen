@@ -45,6 +45,8 @@ def test_isolated_preview_renders_temporary_candidates_before_operator_selection
     assert 'function renderPreviewCandidatePanel(payload, url)' in preview
     assert 'document.getElementById("event-candidates")' in preview
     assert 'article.dataset.preview = "true"' in preview
+    assert "preview_candidate_listing_detail_urls" in preview
+    assert "article.dataset.listingDetailUrl" in preview
     assert 'renderPreviewCandidatePanel(payload, url);' in preview
     assert 'await reloadState();' not in preview[preview.index("async function collectPreview(card, button)"):preview.index("async function collectForGlobalInstitution(button)")]
     assert "/api/local-events/review/event-decision" not in preview
@@ -96,6 +98,9 @@ def test_preview_requires_every_candidate_to_be_real_event_or_not_event() -> Non
     assert "CONFIRM ${realCount} REAL EVENT" in workflow
     assert "COLLECT ${realCount} SELECTED REAL EVENT" in workflow
     assert 'const PROTOCOL_PREFIX = "preview-review-v1:"' in workflow
+    assert "function listingDetailUrl(card)" in workflow
+    assert "listing_detail_url: listingDetailUrl(card)" in workflow
+    assert "listing_detail_url: row.listing_detail_url" in workflow
     assert 'request("/api/local-events/review/listing-decision"' in workflow
     assert 'request("/api/local-events/review/collect-events"' in workflow
     assert 'document.addEventListener("infoscreen:review-preview"' in workflow
