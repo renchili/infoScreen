@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import importlib.util
-import sys
-from types import ModuleType
+import io
+import json
+from urllib.error import HTTPError, URLError
 
 from .conftest import ROOT, read_text
 
@@ -24,87 +25,97 @@ def load_script():
     return module
 
 
-def test_script_calls_the_production_preview_function_without_copying_collection_logic(
-    monkeypatch,
-) -> None:
+def test_script_calls_running_preview_route_and_returns_raw_body(monkeypatch) -> None:
     script = load_script()
+    raw_body = b'{"ok":true,"preview":true,"events":[{"raw":"service"}]}'
     calls = []
-    store = object()
-    state_payload = {
-        "listing_pages": [],
-        "events": [
-            {
-                "detail_url": (
-                    "https://www.marinabaysands.com/museum/exhibitions/"
-                    "another-world-is-possible.html"
-                ),
-                "title": "raw production value",
-                "when": "raw production date value",
-                "detail_status": "raw production status",
-                "detail_error": "raw production error",
-            }
-        ],
-        "event_collection": {"raw": True},
-    }
 
-    class State:
-        def model_dump(self, *, mode):
-            assert mode == "json"
-            return state_payload
+    class Response:
+        status = 200
 
-    server = ModuleType("surface.serve_infoscreen")
-    server.review_store = lambda: store
+        def __enter__(self):
+            return self
 
-    def preview_event_candidates(actual_store, listing_url):
-        calls.append((actual_store, listing_url))
-        return State()
+        def __exit__(self, exc_type, exc, traceback):
+            return False
 
-    server.preview_event_candidates = preview_event_candidates
-    surface = ModuleType("surface")
-    surface.serve_infoscreen = server
-    monkeypatch.setitem(sys.modules, "surface", surface)
-    monkeypatch.setitem(sys.modules, "surface.serve_infoscreen", server)
+        def read(self):
+            return raw_body
 
-    payload, returncode = script.collect_payload(LISTING_URL)
+    def fake_urlopen(request, *, timeout):
+        calls.append((request, timeout))
+        return Response()
 
-    assert returncode == 0
-    assert calls == [(store, LISTING_URL)]
-    assert payload == {"ok": True, "preview": True, **state_payload}
+    monkeypatch.setattr(script, "urlopen", fake_urlopen)
+
+    body, status = script.fetch_raw_response(LISTING_URL)
+
+    assert body is raw_body
+    assert status == 200
+    assert len(calls) == 1
+    request, timeout = calls[0]
+    assert request.full_url == script.PREVIEW_URL
+    assert request.get_method() == "POST"
+    assert request.get_header("Content-type") == "application/json"
+    assert json.loads(request.data.decode("utf-8")) == {"listing_url": LISTING_URL}
+    assert timeout == script.PREVIEW_TIMEOUT_SECONDS
 
 
-def test_script_keeps_production_error_shapes(monkeypatch) -> None:
+def test_script_preserves_raw_http_error_response(monkeypatch) -> None:
     script = load_script()
-    surface = ModuleType("surface")
-    server = ModuleType("surface.serve_infoscreen")
-    server.review_store = lambda: object()
+    raw_body = b'{"ok":false,"error":"event_preview_collection_failed"}'
 
-    def preview_event_candidates(store, listing_url):
-        raise ValueError("listing page is not present in review state")
+    def fake_urlopen(request, *, timeout):
+        raise HTTPError(
+            request.full_url,
+            500,
+            "Internal Server Error",
+            {},
+            io.BytesIO(raw_body),
+        )
 
-    server.preview_event_candidates = preview_event_candidates
-    surface.serve_infoscreen = server
-    monkeypatch.setitem(sys.modules, "surface", surface)
-    monkeypatch.setitem(sys.modules, "surface.serve_infoscreen", server)
+    monkeypatch.setattr(script, "urlopen", fake_urlopen)
 
-    payload, returncode = script.collect_payload(LISTING_URL)
+    body, status = script.fetch_raw_response(LISTING_URL)
 
-    assert returncode == 2
+    assert body == raw_body
+    assert status == 500
+
+
+def test_script_reports_service_transport_failure_separately(monkeypatch) -> None:
+    script = load_script()
+
+    def fake_urlopen(request, *, timeout):
+        raise URLError("connection refused")
+
+    monkeypatch.setattr(script, "urlopen", fake_urlopen)
+
+    body, status = script.fetch_raw_response(LISTING_URL)
+    payload = json.loads(body.decode("utf-8"))
+
+    assert status == 0
     assert payload == {
         "ok": False,
-        "error": "event_preview_request_failed",
-        "detail": "listing page is not present in review state",
+        "error": "preview_service_unreachable",
+        "detail": "connection refused",
+        "service_url": script.PREVIEW_URL,
     }
 
 
-def test_script_is_a_thin_production_entrypoint() -> None:
+def test_script_is_only_a_raw_client_for_the_existing_service() -> None:
     source = read_text("scripts/collect_local_event_preview.py")
 
-    assert "from surface import serve_infoscreen as server" in source
-    assert "server.preview_event_candidates(" in source
-    assert "server.review_store()" in source
-    assert "state.model_dump(mode=\"json\")" in source
+    assert (
+        'PREVIEW_URL = "http://127.0.0.1:8765/api/local-events/review/preview-events"'
+        in source
+    )
+    assert "urlopen(request" in source
+    assert "response.read()" in source
+    assert "from surface" not in source
+    assert "serve_infoscreen" not in source
+    assert "preview_event_candidates" not in source
+    assert "collect_event_candidates" not in source
     assert "playwright" not in source
     assert "preview_listing_evidence_only" not in source
     assert "another-world-is-possible" not in source
-    assert "urllib" not in source
-    assert "requests" not in source
+    assert "json.loads" not in source
