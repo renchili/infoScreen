@@ -440,10 +440,34 @@ class Handler(SimpleHTTPRequestHandler):
 
         if path == "/api/local-events/review/discover-listings":
             try:
+                body = self.body_json()
+                source_id = str(body.get("source_id") or "").strip()
+                if not source_id:
+                    raise ValueError("source_id is required")
+                try:
+                    from .local_events_runtime.scoped_listing_collection import (
+                        collect_listing_pages_for_source,
+                    )
+                except ImportError:
+                    from local_events_runtime.scoped_listing_collection import (
+                        collect_listing_pages_for_source,
+                    )
                 with REVIEW_MUTATION_LOCK:
-                    state = collect_listing_pages(review_store())
+                    state = collect_listing_pages_for_source(
+                        review_store(),
+                        source_id,
+                    )
                 return self.send_json(
                     {"ok": True, **state.model_dump(mode="json")}
+                )
+            except ValueError as exc:
+                return self.send_json(
+                    {
+                        "ok": False,
+                        "error": "listing_page_collection_request_failed",
+                        "detail": str(exc),
+                    },
+                    400,
                 )
             except Exception as exc:
                 return self.send_json(

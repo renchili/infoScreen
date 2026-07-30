@@ -42,6 +42,37 @@ def _review_event(candidate: Any) -> dict[str, Any]:
     return event
 
 
+def _apply_review_authorities() -> None:
+    from .artscience_preview_authority import apply as apply_artscience_preview
+    from .preview_collector_authority import apply as apply_preview_collector
+    from .preview_detail_enrichment_authority import (
+        apply as apply_preview_detail_enrichment,
+    )
+    from .preview_event_selection_authority import (
+        apply as apply_preview_event_selection,
+    )
+    from .preview_final_detail_handoff_authority import (
+        apply as apply_preview_final_detail_handoff,
+    )
+    from .preview_transport_authority import apply as apply_preview_transport
+
+    # Formal collection must be filtered by the operator's Preview decisions before
+    # source-specific Preview wrappers are composed over the diagnostics collector.
+    apply_preview_event_selection()
+    apply_preview_collector()
+    # Source-specific rendered-card recognition identifies official detail URLs first.
+    apply_artscience_preview()
+    # Preview review requires the actual official detail fields. Selection controls must
+    # not downgrade candidates to listing-only evidence.
+    apply_preview_detail_enrichment()
+    # Transport remains outermost so both the listing and detail Chromium sessions use
+    # the verified headed policy for MBS on the deployed Surface.
+    apply_preview_transport()
+    # http1_browser binds one final exported collector after all authorities above. Patch
+    # that handoff now so it cannot downgrade enriched Preview rows or hide archive facts.
+    apply_preview_final_detail_handoff()
+
+
 def apply() -> None:
     """Make narrative detail text the only Review-authoritative summary."""
 
@@ -51,6 +82,7 @@ def apply() -> None:
         # publisher's base function. Re-applying the authority must restore the
         # product invariant without wrapping the function a second time.
         _publisher._review_event = _review_event
+        _apply_review_authorities()
         return
 
     # The canonical job calls this authority directly. Apply the detail authority
@@ -58,6 +90,7 @@ def apply() -> None:
     from .detail_summary_authority import apply as apply_detail_summary_authority
 
     apply_detail_summary_authority()
+    _apply_review_authorities()
     _BASE_REVIEW_EVENT = _publisher._review_event
     _publisher._review_event = _review_event
     _APPLIED = True

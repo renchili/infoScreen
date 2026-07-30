@@ -26,6 +26,17 @@
     }));
   }
 
+  function canonical(value) {
+    try {
+      const url = new URL(value, window.location.href);
+      url.hash = "";
+      if (url.pathname !== "/") url.pathname = url.pathname.replace(/\/$/, "");
+      return url.href;
+    } catch {
+      return text(value);
+    }
+  }
+
   function previews() {
     try {
       const value = JSON.parse(sessionStorage.getItem(PREVIEW_STORAGE_KEY) || "{}");
@@ -35,13 +46,27 @@
     }
   }
 
-  function savePreview(url, rows) {
+  function diagnosticFor(payload, url) {
+    const expected = canonical(url);
+    const rows = payload?.event_collection?.listing_diagnostics;
+    if (!Array.isArray(rows)) return null;
+    return rows.find((row) => canonical(row?.listing_url) === expected) || null;
+  }
+
+  function savePreview(url, rows, diagnostic) {
     const value = previews();
     value[url] = {
       collected_at: new Date().toISOString(),
       events: rows,
+      diagnostic: diagnostic && typeof diagnostic === "object" ? diagnostic : null,
     };
     sessionStorage.setItem(PREVIEW_STORAGE_KEY, JSON.stringify(value));
+  }
+
+  function publishPreview(url, diagnostic) {
+    document.dispatchEvent(new CustomEvent("infoscreen:review-preview", {
+      detail: { url, diagnostic },
+    }));
   }
 
   function listingUrl(card) {
@@ -92,7 +117,7 @@
 
   function normalizedPreviewRows(payload, url) {
     return (payload.events || [])
-      .filter((row) => text(row.listing_url) === url)
+      .filter((row) => canonical(row.listing_url) === canonical(url))
       .map((row) => ({
         title: text(row.title) || "Untitled candidate",
         when: text(row.when),
@@ -194,6 +219,129 @@
     box.innerHTML = '<div class="listing-event-preview-heading">EVENT PREVIEW · NOT COLLECTED</div>';
   }
 
+  function candidateMetaRow(label, value, useCode = false) {
+    const row = document.createElement("div");
+    const strong = document.createElement("strong");
+    strong.textContent = `${label}: `;
+    row.appendChild(strong);
+    const rendered = text(value) || "—";
+    if (useCode) {
+      const code = document.createElement("code");
+      code.textContent = rendered;
+      row.appendChild(code);
+    } else {
+      row.appendChild(document.createTextNode(rendered));
+    }
+    return row;
+  }
+
+  function positionText(position) {
+    const value = position || {};
+    return `x=${value.x ?? 0}, y=${value.y ?? 0}, w=${value.width ?? 0}, h=${value.height ?? 0}`;
+  }
+
+  function restoreCollectedPanelLabels() {
+    const title = document.getElementById("event-candidates-title");
+    const hint = document.getElementById("event-candidates-hint");
+    if (title) title.textContent = "Collected event candidates";
+    if (hint) {
+      hint.textContent = "Every candidate shows its source element, match index, document position, and detail-page result.";
+    }
+  }
+
+  function renderPreviewCandidatePanel(payload, url) {
+    const container = document.getElementById("event-candidates");
+    const count = document.getElementById("event-count");
+    const title = document.getElementById("event-candidates-title");
+    const hint = document.getElementById("event-candidates-hint");
+    if (!container || !count) return;
+
+    const expected = canonical(url);
+    const rows = (payload.events || []).filter(
+      (row) => canonical(row.listing_url) === expected,
+    );
+
+    if (title) title.textContent = "Preview event candidates";
+    if (hint) {
+      hint.textContent = "Temporary candidates from the selected list page. They are not saved and cannot be reviewed until the list page is confirmed and the formal Event collection runs.";
+    }
+    count.textContent = String(rows.length);
+    container.replaceChildren();
+
+    if (!rows.length) {
+      const empty = document.createElement("div");
+      empty.className = "empty";
+      empty.textContent = "No Event candidates were returned by this isolated preview.";
+      container.appendChild(empty);
+      return;
+    }
+
+    rows.forEach((row) => {
+      const evidence = row.evidence || {};
+      const article = document.createElement("article");
+      article.className = "card pending";
+      article.dataset.candidateId = row.candidate_id || "";
+      article.dataset.sourceId = row.source_id || "";
+      article.dataset.preview = "true";
+
+      const head = document.createElement("div");
+      head.className = "card-head";
+      const heading = document.createElement("h3");
+      if (row.detail_url) {
+        const link = document.createElement("a");
+        link.href = row.detail_url;
+        link.target = "_blank";
+        link.rel = "noopener";
+        link.textContent = text(row.title) || "Untitled candidate";
+        heading.appendChild(link);
+      } else {
+        heading.textContent = text(row.title) || "Untitled candidate";
+      }
+      const previewBadge = document.createElement("span");
+      previewBadge.className = "badge pending";
+      previewBadge.textContent = "preview";
+      head.append(heading, previewBadge);
+
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      meta.append(
+        candidateMetaRow("Institution", row.source_name || row.source_id),
+        candidateMetaRow("Detail status", row.detail_status),
+        candidateMetaRow("When", row.when),
+        candidateMetaRow("Where", row.where),
+        candidateMetaRow("Detail page title", row.detail_page_title),
+        candidateMetaRow("Listing page", row.listing_url, true),
+        candidateMetaRow("Source element", evidence.selector, true),
+        candidateMetaRow(
+          "Element match",
+          `${Number(evidence.selector_index ?? 0) + 1} of ${evidence.selector_match_count ?? 1}`,
+        ),
+        candidateMetaRow("Document position", positionText(evidence.document_position)),
+        candidateMetaRow("Listing page index", evidence.page_index ?? 0),
+      );
+      if (row.detail_error) {
+        meta.appendChild(candidateMetaRow("Detail issue", row.detail_error));
+      }
+
+      article.append(head, meta);
+      const visibleText = row.summary || evidence.text;
+      if (visibleText) {
+        const snippet = document.createElement("div");
+        snippet.className = "snippet";
+        snippet.textContent = visibleText;
+        article.appendChild(snippet);
+      }
+
+      const notice = document.createElement("div");
+      notice.className = "snippet";
+      notice.textContent = "TEMPORARY PREVIEW · NOT SAVED · Event review actions are disabled.";
+      article.appendChild(notice);
+      container.appendChild(article);
+    });
+
+    window.InfoScreenReviewContext?.applyFilters?.();
+  }
+
   function setGlobalStatus(message, kind) {
     const status = document.getElementById("global-status");
     if (!status) return;
@@ -230,16 +378,18 @@
     try {
       const payload = await collectPreviewPage(url);
       const rows = normalizedPreviewRows(payload, url);
-      savePreview(url, rows);
+      const diagnostic = diagnosticFor(payload, url);
+      savePreview(url, rows, diagnostic);
       if (card.isConnected) {
         renderPreviewRows(card, rows, { collectedAt: new Date().toISOString() });
       }
+      renderPreviewCandidatePanel(payload, url);
+      publishPreview(url, diagnostic);
 
       setGlobalStatus(
         `${rows.length} EVENT CANDIDATE${rows.length === 1 ? "" : "S"} RETURNED FOR THIS LIST PAGE`,
         rows.length ? "ok" : "error",
       );
-      await reloadState();
     } catch (error) {
       if (card.isConnected) {
         renderPreviewRows(card, [], { error: text(error.message || error) });
@@ -321,6 +471,7 @@
     enhanceListingCards();
 
     document.addEventListener("infoscreen:review-rendered", () => {
+      restoreCollectedPanelLabels();
       enhanceListingCards();
       window.InfoScreenReviewContext?.applyFilters?.();
     });

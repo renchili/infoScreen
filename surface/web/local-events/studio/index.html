@@ -47,16 +47,16 @@
             <h2>Event list pages</h2>
             <span id="listing-count" class="counter">0</span>
           </div>
-          <p class="hint">Preview any saved list page before or after deciding. A pending page shows PREVIEW BEFORE CONFIRM. Preview collects only that page in an isolated temporary Review state and never changes its saved decision, Event candidates, feedback, or Review state.</p>
+          <p class="hint">Collect candidate list pages for one selected institution, Preview each candidate, then confirm only the pages that should feed the formal Event collection.</p>
           <div id="listing-pages" class="cards"></div>
         </section>
 
         <section>
           <div class="section-title">
-            <h2>Collected event candidates</h2>
+            <h2 id="event-candidates-title">Collected event candidates</h2>
             <span id="event-count" class="counter">0</span>
           </div>
-          <p class="hint">Every candidate shows its source element, match index, document position, and detail-page result.</p>
+          <p id="event-candidates-hint" class="hint">Every candidate shows its source element, match index, document position, and detail-page result.</p>
           <div id="event-candidates" class="cards"></div>
         </section>
       </div>
@@ -99,8 +99,11 @@
   <script src="/assets/js/local_event_review_scroll_guard.js"></script>
   <script src="/assets/js/local_event_studio.js" defer></script>
   <script src="/assets/js/local_event_review_filters.js" defer></script>
+  <script src="/assets/js/local_event_review_scoped_listing_collection.js" defer></script>
   <script src="/assets/js/local_event_review_manual_listing.js" defer></script>
   <script src="/assets/js/local_event_review_previews.js" defer></script>
+  <script src="/assets/js/local_event_review_preview_persistence.js" defer></script>
+  <script src="/assets/js/local_event_review_preview_workflow.js" defer></script>
   <script src="/assets/js/local_event_review_diagnostics.js" defer></script>
 </body>
 </html>
