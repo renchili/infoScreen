@@ -102,7 +102,7 @@ def test_formal_collection_keeps_normal_expiry_handoff(monkeypatch, tmp_path) ->
     assert store.saved == []
 
 
-def test_review_bootstrap_patches_final_handoff_after_detail_transport() -> None:
+def test_review_bootstrap_delegates_preview_pipeline_to_final_handoff() -> None:
     summary = read_text("surface/local_events_runtime/review_summary_authority.py")
     handoff = read_text(
         "surface/local_events_runtime/preview_final_detail_handoff_authority.py"
@@ -111,12 +111,23 @@ def test_review_bootstrap_patches_final_handoff_after_detail_transport() -> None
         "surface/local_events_runtime/preview_detail_enrichment_authority.py"
     )
 
-    assert "apply_preview_detail_enrichment()" in summary
-    assert "apply_preview_transport()" in summary
-    assert "apply_preview_final_detail_handoff()" in summary
-    assert summary.index("apply_preview_detail_enrichment()") < summary.index(
-        "apply_preview_transport()"
-    ) < summary.index("apply_preview_final_detail_handoff()")
+    assert "apply_preview_pipeline()" in summary
+    assert "apply_preview_event_selection()" not in summary
+    assert "apply_preview_collector()" not in summary
+    assert "apply_artscience_preview()" not in summary
+    assert "apply_preview_detail_enrichment()" not in summary
+    assert "apply_preview_transport()" not in summary
+
+    assert "apply_preview_event_selection()" in handoff
+    assert "apply_preview_collector()" in handoff
+    assert "apply_artscience_preview()" in handoff
+    assert "apply_preview_detail_enrichment()" in handoff
+    assert "apply_preview_transport()" in handoff
+    assert handoff.index("apply_preview_event_selection()") < handoff.index(
+        "apply_preview_collector()"
+    ) < handoff.index("apply_artscience_preview()") < handoff.index(
+        "apply_preview_detail_enrichment()"
+    ) < handoff.index("apply_preview_transport()")
     assert "_BASE_BIND()" in handoff
     assert "_http1._filter_final_expired_events = _keep_preview_candidates" in handoff
     assert "state = _enrich_final_preview(store, state)" in handoff

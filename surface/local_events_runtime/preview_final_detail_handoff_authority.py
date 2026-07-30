@@ -106,4 +106,43 @@ def apply() -> None:
         _wrap_current_collector()
 
 
-__all__ = ["apply", "_enrich_final_preview", "_wrap_current_collector"]
+def apply_preview_pipeline() -> None:
+    """Install the complete Preview pipeline in its established order.
+
+    This function centralizes composition only. Each existing authority still owns its
+    current behavior, state, compatibility entrypoints, and idempotent apply guard.
+    """
+
+    from .artscience_preview_authority import apply as apply_artscience_preview
+    from .preview_collector_authority import apply as apply_preview_collector
+    from .preview_detail_enrichment_authority import (
+        apply as apply_preview_detail_enrichment,
+    )
+    from .preview_event_selection_authority import (
+        apply as apply_preview_event_selection,
+    )
+    from .preview_transport_authority import apply as apply_preview_transport
+
+    # Formal collection must be filtered by the operator's Preview decisions before
+    # source-specific Preview wrappers are composed over the diagnostics collector.
+    apply_preview_event_selection()
+    apply_preview_collector()
+    # Source-specific rendered-card recognition identifies official detail URLs first.
+    apply_artscience_preview()
+    # Preview review requires the actual official detail fields. Selection controls must
+    # not downgrade candidates to listing-only evidence.
+    apply_preview_detail_enrichment()
+    # Transport remains outermost so both the listing and detail Chromium sessions use
+    # the verified headed policy for MBS on the deployed Surface.
+    apply_preview_transport()
+    # Patch the final HTTP handoff last so enriched Preview rows cannot be downgraded or
+    # hidden by the base expiry filter.
+    apply()
+
+
+__all__ = [
+    "apply",
+    "apply_preview_pipeline",
+    "_enrich_final_preview",
+    "_wrap_current_collector",
+]
