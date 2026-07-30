@@ -5,10 +5,11 @@ from typing import Any
 from . import browser as _browser
 from . import event_review as _review
 from . import event_review_diagnostics as _diagnostics
+from . import preview_collector_authority as _preview
 from . import review_effective_fields_authority as _effective
 
 _APPLIED = False
-_BASE_COLLECT = None
+_BASE_PREVIEW_COLLECT = None
 
 
 def _preview_store(store: _review.EventReviewStore) -> bool:
@@ -24,12 +25,12 @@ def _needs_detail(candidate: _review.EventCandidate) -> bool:
 
 
 def _listing_card(candidate: _review.EventCandidate) -> dict[str, Any]:
-    """Build deliberately incomplete listing evidence so the detail owner must navigate.
+    """Force the final detail owner to read the official detail document.
 
-    Passing the listing date, venue, summary, or full evidence text can make the formal
-    detail owner decide that the card is already complete and skip the official detail
-    URL. Preview review requires the actual detail document, so only identity/title
-    evidence is supplied here.
+    Supplying listing dates, venue, summary, or the full evidence text may make the
+    normal detail owner treat a list card as complete. Preview exists so the operator
+    can review the actual official detail facts before selecting REAL EVENT / NOT EVENT,
+    therefore only identity and title evidence are passed here.
     """
 
     title = str(candidate.title or "").strip()
@@ -56,7 +57,9 @@ def _apply_detail(candidate: _review.EventCandidate, detail: dict[str, str]) -> 
     candidate.summary = str(detail.get("summary") or candidate.summary).strip()[:500]
     candidate.detail_status = str(detail.get("detail_status") or "failed")
     candidate.detail_error = str(detail.get("detail_error") or "").strip()[:500]
-    candidate.detail_page_title = str(detail.get("detail_page_title") or "").strip()[:300]
+    candidate.detail_page_title = str(
+        detail.get("detail_page_title") or ""
+    ).strip()[:300]
 
 
 def _refresh_diagnostics(state: _review.ReviewState) -> None:
@@ -95,7 +98,7 @@ def enrich_preview_state(
     store: _review.EventReviewStore,
     state: _review.ReviewState,
 ) -> _review.ReviewState:
-    """Replace remaining listing-only Preview rows with official detail-page fields."""
+    """Replace every remaining listing-only Preview row with detail-page fields."""
 
     if not _preview_store(store) or not state.events:
         return state
@@ -172,6 +175,7 @@ def enrich_preview_state(
     state.event_collection = {
         **state.event_collection,
         "preview_detail_mode": "official_detail_pages",
+        "preview_detail_enrichment_entrypoint": "preview_collector._collect_preview",
         "detail_page_request_count": prior_attempts + attempted,
         "detail_page_requests_skipped": 0,
         "detail_page_error_count": len(errors),
@@ -184,25 +188,43 @@ def enrich_preview_state(
     return store.save(state)
 
 
-def collect_event_candidates(store: _review.EventReviewStore) -> _review.ReviewState:
-    state = _BASE_COLLECT(store)
+def collect_preview_with_details(
+    store: _review.EventReviewStore,
+) -> _review.ReviewState:
+    """Run the real Preview collector, then enrich before it can return upstream."""
+
+    state = _BASE_PREVIEW_COLLECT(store)
     return enrich_preview_state(store, state)
 
 
-def apply() -> None:
-    global _APPLIED, _BASE_COLLECT
-    if _APPLIED:
-        _diagnostics.collect_event_candidates = collect_event_candidates
-        return
+def collect_event_candidates(store: _review.EventReviewStore) -> _review.ReviewState:
+    """Compatibility entrypoint retained for final-handoff guards and tests."""
 
-    _BASE_COLLECT = _diagnostics.collect_event_candidates
-    _diagnostics.collect_event_candidates = collect_event_candidates
-    _APPLIED = True
+    if _preview_store(store):
+        return collect_preview_with_details(store)
+    return _preview._BASE_COLLECT(store)
+
+
+def apply() -> None:
+    """Patch the exact function that creates preview_listing_evidence_only rows.
+
+    Wrapping event_review_diagnostics is order-sensitive because several authorities
+    replace that exported function. preview_collector_authority.collect_event_candidates
+    resolves its module-global _collect_preview at call time, so replacing that function
+    is the stable point shared by every HTTP and test entrypoint.
+    """
+
+    global _APPLIED, _BASE_PREVIEW_COLLECT
+    if not _APPLIED:
+        _BASE_PREVIEW_COLLECT = _preview._collect_preview
+        _APPLIED = True
+    _preview._collect_preview = collect_preview_with_details
 
 
 __all__ = [
     "apply",
     "collect_event_candidates",
+    "collect_preview_with_details",
     "enrich_preview_state",
     "_needs_detail",
 ]
