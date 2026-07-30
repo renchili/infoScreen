@@ -2,7 +2,7 @@
 
 (() => {
   const STORAGE_KEY = "infoscreen.review.active-preview-panel";
-  const SNAPSHOT_VERSION = 4;
+  const SNAPSHOT_VERSION = 5;
   const text = (value) => String(value || "").trim();
 
   function canonical(value) {
