@@ -1,6 +1,6 @@
 # InfoScreen requirement clarifications
 
-This document records requirement areas that are easy to misread and the evidence needed to accept their implementation. It is organised by product requirement rather than conversation history.
+This document records requirement areas that are easy to misread, the operational evidence needed to diagnose failures, and the evidence needed to accept their implementation. It is organised by product requirement rather than conversation history.
 
 ## Visual language
 
@@ -28,45 +28,45 @@ Static CSS evidence must contain no full-screen scanline or repeating-grid overl
 
 ### Easy-to-make interpretation
 
-The Surface can act as a second Calendar client, any Python runtime can export EventKit, or copying directly to the final file is safe enough.
+The Surface can act as a second Calendar client, any Python runtime can export EventKit, copying directly to the final file is safe enough, or a `SCHEDULE FAIL` ticker can be repaired by refreshing the kiosk page without finding the failed producer stage.
 
 ### Why it fails
 
-macOS Calendar/EventKit owns accounts, permissions, and authoritative event state. A Python runtime without `import EventKit` cannot export Calendar data. Direct replacement during transfer can expose a partially written JSON file.
+macOS Calendar/EventKit owns accounts, permissions, and authoritative event state. A Python runtime without `import EventKit` cannot export Calendar data. Direct replacement during transfer can expose a partially written JSON file. A freshness failure on the Surface does not identify whether configuration loading, EventKit export, local JSON validation, SSH, upload, atomic publication, or remote validation failed. When logging starts only after machine configuration is loaded, early failures can leave no usable diagnostic record.
 
 ### Correct requirement interpretation
 
-Calendar follows EventKit -> Mac export -> temporary remote upload -> atomic remote rename -> Surface runtime JSON -> browser.
+Calendar follows EventKit -> Mac export -> validated local JSON -> temporary remote upload -> atomic remote rename -> validated Surface runtime JSON -> browser. A failed run is diagnosed from its first failed named stage, not from repeated page refreshes or file age alone.
 
 ### Required implementation
 
-Probe EventKit-capable Python, keep machine settings in uncommitted `mac/local.env`, and publish to `~/infoscreen/surface/.env/schedule.json` through a temporary file in the same remote directory.
+Probe EventKit-capable Python, keep machine settings in uncommitted `mac/local.env`, and publish to `~/infoscreen/surface/.env/schedule.json` through a temporary file in the same remote directory. `mac/sync_schedule.sh` must start logging before it reads `local.env`, record each stage, trap command failures with the exit code, line, and command, validate both local and published JSON, and write the latest machine-readable outcome to `~/Library/Logs/infoscreen-sync/schedule_sync_status.json`. The complete chronological log remains `~/Library/Logs/infoscreen-sync/push_schedule.log`.
 
 ### Acceptance evidence
 
-Show unattended LaunchAgent execution, a changed Surface file, current HTTP modification time, visible Calendar output, and a sync script that uploads to a temporary name before `mv` publishes the final file.
+Show unattended LaunchAgent execution, a changed Surface file, current HTTP modification time, visible Calendar output, and a sync script that uploads to a temporary name before `mv` publishes the final file. Failure evidence must identify one exact stage such as `load configuration`, `export EventKit schedule`, `validate local schedule JSON`, `ensure Surface runtime directory`, `upload temporary schedule`, `publish schedule atomically`, or `verify published schedule`. Injected or observed failures before and after configuration loading must both leave a readable log and an `ERR` status record.
 
 ## Runtime freshness and refresh layers
 
 ### Easy-to-make interpretation
 
-One online indicator, one generic refresh interval, or frequent whole-page rebuilding proves all data is current.
+One online indicator, one generic refresh interval, frequent whole-page rebuilding, or the Sync ticker’s `FAIL` label alone explains why data did not update.
 
 ### Why it fails
 
-The server can remain online while individual files are stale, missing, or unreachable. Producer refresh, browser data reload, visual rotation, dashboard filtering, and operator-state refresh are different operations. Rebuilding the Studio repeatedly also destroys scroll context.
+The server can remain online while individual files are stale, missing, or unreachable. Producer refresh, browser data reload, visual rotation, dashboard filtering, and operator-state refresh are different operations. Rebuilding the Studio repeatedly also destroys scroll context. The ticker proves a freshness or reachability failure, but it does not identify the producer exit result, provider exception, retained last-success time, malformed JSON, missing runtime file, or HTTP payload actually being served.
 
 ### Correct requirement interpretation
 
-The Sync ticker observes per-file `Last-Modified`. The Calendar board rotates every seven seconds but reloads Schedule data independently. The Local Event Studio refreshes only on initial load, explicit operations, manual reload, and return to the browser tab.
+The Sync ticker observes per-file `Last-Modified`. The Calendar board rotates every seven seconds but reloads Schedule data independently. The Local Event Studio refreshes only on initial load, explicit operations, manual reload, and return to the browser tab. When Schedule, Weather, or Market shows `FAIL`, diagnosis combines the producer result, recent producer output, runtime-file validity and metadata, and the HTTP response currently seen by the browser.
 
 ### Required implementation
 
-Keep per-file freshness checks, reload Schedule data without reloading the page, remove idle Studio polling, emit one completed-render event, and restore one stable card anchor or scroll position after that render.
+Keep per-file freshness checks, reload Schedule data without reloading the page, remove idle Studio polling, emit one completed-render event, and restore one stable card anchor or scroll position after that render. Weather and Market producers must log timestamped `component` and `state` fields, preserve distinct `last_attempt_at` and `last_success_at` values, retain the provider exception in the runtime payload, and exit non-zero when a required live-data component fails. `scripts/infoscreen_status.sh` must expose producer results and exit status, recent producer output, timer state, runtime-file age and JSON validity, `status`, `error`, `updated_at`, `last_attempt_at`, `last_success_at`, and the Schedule/Weather/Market HTTP payloads.
 
 ### Acceptance evidence
 
-Leave the Studio idle and during a long operation: it must not flash repeatedly or lose scroll. Static source must not contain `setInterval(loadState, 3000)` or a global timer monkey patch that recognises a magic 3000-millisecond interval.
+Leave the Studio idle and during a long operation: it must not flash repeatedly or lose scroll. Static source must not contain `setInterval(loadState, 3000)` or a global timer monkey patch that recognises a magic 3000-millisecond interval. For a live-data failure, evidence must show a non-zero producer result, a timestamped component failure line, an `ERR` runtime payload with the provider error, an unchanged last-success timestamp, and matching status-script and HTTP observations. For a successful later run, the result returns to success and `last_success_at` advances.
 
 ## Local Events source-specific collection
 
