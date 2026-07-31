@@ -38,7 +38,7 @@ class Store:
         return state
 
 
-def test_preview_handoff_enriches_listing_only_archive_event_before_return(
+def test_preview_handoff_preserves_archive_detail_result_before_return(
     monkeypatch,
     tmp_path,
 ) -> None:
@@ -56,7 +56,7 @@ def test_preview_handoff_enriches_listing_only_archive_event_before_return(
         },
     )
     filter_calls = []
-    enrichment_calls = []
+    verification_calls = []
     manifest_calls = []
 
     def expiring_filter(actual, effective):
@@ -70,8 +70,8 @@ def test_preview_handoff_enriches_listing_only_archive_event_before_return(
         result.event_collection["detail_page_requests_skipped"] = len(result.events)
         return result
 
-    def enrich(store, actual):
-        enrichment_calls.append((store, actual))
+    def verify(store, actual):
+        verification_calls.append((store, actual))
         event.when = "13 Sep 2025 – 22 Feb 2026"
         event.detail_error = ""
         event.detail_page_title = "Another World Is Possible | ArtScience Museum"
@@ -87,7 +87,7 @@ def test_preview_handoff_enriches_listing_only_archive_event_before_return(
 
     monkeypatch.setattr(http1, "_filter_final_expired_events", expiring_filter)
     monkeypatch.setattr(review, "collect_event_candidates", final_http_collector)
-    monkeypatch.setattr(authority, "_enrich_final_preview", enrich)
+    monkeypatch.setattr(authority, "_enrich_final_preview", verify)
     monkeypatch.setattr(
         authority._selection,
         "invalidate_preview_manifest",
@@ -104,7 +104,7 @@ def test_preview_handoff_enriches_listing_only_archive_event_before_return(
     result = review.collect_event_candidates(store)
 
     assert filter_calls == []
-    assert enrichment_calls == [(store, state)]
+    assert verification_calls == [(store, state)]
     assert manifest_calls == [
         ("invalidate", store.listing.url),
         ("issue", store.listing, state),
@@ -125,7 +125,7 @@ def test_preview_handoff_enriches_listing_only_archive_event_before_return(
     assert http1._filter_final_expired_events is expiring_filter
 
 
-def test_final_handoff_rejects_listing_only_rows_without_second_browser(
+def test_final_handoff_rejects_listing_only_rows_without_opening_a_browser(
     tmp_path,
 ) -> None:
     pending = SimpleNamespace(
@@ -134,16 +134,16 @@ def test_final_handoff_rejects_listing_only_rows_without_second_browser(
     state = SimpleNamespace(events=[pending], event_collection={})
     store = Store(tmp_path / "infoscreen-event-preview-incomplete")
 
-    with pytest.raises(RuntimeError, match="request-local browser session"):
+    with pytest.raises(RuntimeError, match="direct collector"):
         authority._enrich_final_preview(store, state)
 
     source = inspect.getsource(authority._enrich_final_preview)
     assert "launch_chromium" not in source
     assert "_launch_preview_chromium" not in source
-    assert "run Preview again" in source
+    assert "direct collector" in source
 
 
-def test_final_handoff_accepts_fully_enriched_rows(tmp_path) -> None:
+def test_final_handoff_accepts_fully_collected_rows(tmp_path) -> None:
     complete = SimpleNamespace(detail_error="")
     state = SimpleNamespace(events=[complete], event_collection={})
     store = Store(tmp_path / "infoscreen-event-preview-complete")
@@ -168,52 +168,59 @@ def test_formal_collection_keeps_normal_expiry_handoff(monkeypatch, tmp_path) ->
     assert store.saved == []
 
 
-def test_review_bootstrap_delegates_preview_pipeline_to_final_handoff() -> None:
+def test_review_bootstrap_uses_direct_preview_detail_collector() -> None:
     summary = read_text("surface/local_events_runtime/review_summary_authority.py")
     handoff = read_text(
         "surface/local_events_runtime/preview_final_detail_handoff_authority.py"
     )
-    session = read_text(
-        "surface/local_events_runtime/preview_browser_session_authority.py"
-    )
-    enrichment = read_text(
-        "surface/local_events_runtime/preview_detail_enrichment_authority.py"
+    direct = read_text(
+        "surface/local_events_runtime/preview_direct_detail_collector_authority.py"
     )
 
     assert "apply_preview_pipeline()" in summary
     assert "apply_preview_event_selection()" not in summary
     assert "apply_preview_collector()" not in summary
     assert "apply_artscience_preview()" not in summary
-    assert "apply_preview_detail_enrichment()" not in summary
+    assert "apply_preview_direct_details()" not in summary
     assert "apply_preview_transport()" not in summary
 
-    assert "install_transport_apply_hook()" in handoff
+    assert "install_transport_apply_hook" not in handoff
+    assert "preview_browser_session_authority" not in handoff
     assert "apply_preview_event_selection()" in handoff
     assert "apply_preview_collector()" in handoff
     assert "apply_artscience_preview()" in handoff
-    assert "apply_preview_detail_enrichment()" in handoff
+    assert "apply_preview_direct_details()" in handoff
+    assert "apply_preview_detail_enrichment()" not in handoff
     assert "apply_preview_transport()" in handoff
     assert handoff.index("apply_preview_event_selection()") < handoff.index(
         "apply_preview_collector()"
     ) < handoff.index("apply_artscience_preview()") < handoff.index(
-        "apply_preview_detail_enrichment()"
+        "apply_preview_direct_details()"
     ) < handoff.index("apply_preview_transport()")
+
     assert "_BASE_BIND()" in handoff
     assert "_http1._filter_final_expired_events = _keep_preview_candidates" in handoff
     invalidate_call = "_selection.invalidate_preview_manifest(listing.url)"
-    enrich_call = "state = _enrich_final_preview(store, state)"
+    verify_call = "state = _enrich_final_preview(store, state)"
     issue_call = "state = _selection.issue_preview_manifest(listing, state)"
     assert invalidate_call in handoff
-    assert enrich_call in handoff
+    assert verify_call in handoff
     assert issue_call in handoff
-    assert handoff.index(invalidate_call) < handoff.index(enrich_call) < handoff.index(
+    assert handoff.index(invalidate_call) < handoff.index(verify_call) < handoff.index(
         issue_call
     )
     assert '"listing_only_candidates_remaining"' in handoff
-    assert "_enrich_remaining_preview_details(store, state)" in session
-    assert session.index("_enrich_remaining_preview_details(store, state)") < session.index(
-        "_normalise_transport_metadata(state)"
-    )
-    assert "def enrich_preview_state(" in enrichment
-    assert "preview_listing_evidence_only" in enrichment
-    assert '"text_lines": [title] if title else []' in enrichment
+
+    assert "def collect_preview(" in direct
+    assert "with sync_playwright() as playwright:" in direct
+    assert "browser = _browser.launch_chromium(playwright)" in direct
+    assert "context = browser.new_context(" in direct
+    assert "listing_page = context.new_page()" in direct
+    assert "detail = _collect_detail(context, source, listing, raw)" in direct
+    assert direct.index("listing_page.goto(") < direct.index(
+        "detail = _collect_detail(context, source, listing, raw)"
+    ) < direct.index("context.close()") < direct.index("browser.close()")
+    assert "_preview._collect_preview = collect_preview" in direct
+    assert "--disable-http2" not in direct
+    assert "ContextVar" not in direct
+    assert "launch_or_borrow" not in direct
