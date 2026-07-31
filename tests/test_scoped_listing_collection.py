@@ -91,6 +91,22 @@ def _saved_selection(listing: ListingPageCandidate) -> dict:
     }
 
 
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (None, 21_600),
+        ("", 21_600),
+        ("invalid", 21_600),
+        ("-1", 60),
+        ("59", 60),
+        ("60", 60),
+        ("3600", 3600),
+    ],
+)
+def test_preview_manifest_ttl_parser_is_safe(raw, expected) -> None:
+    assert selection._preview_manifest_ttl_seconds(raw) == expected
+
+
 def test_collection_discovers_only_selected_institution_before_confirmation(
     monkeypatch,
     tmp_path,
@@ -157,8 +173,10 @@ def test_collection_discovers_only_selected_institution_before_confirmation(
 
 
 def test_retired_discovery_page_clears_selection_and_requires_new_preview(
+    monkeypatch,
     tmp_path,
 ) -> None:
+    monkeypatch.setattr(selection, "_PREVIEW_MANIFESTS", {})
     store = _store(tmp_path)
     configured = _listing(
         "alpha",
@@ -230,6 +248,7 @@ def test_retired_selection_is_restored_when_review_state_save_fails(
     monkeypatch,
     tmp_path,
 ) -> None:
+    monkeypatch.setattr(selection, "_PREVIEW_MANIFESTS", {})
     store = _store(tmp_path)
     configured = _listing(
         "alpha",
