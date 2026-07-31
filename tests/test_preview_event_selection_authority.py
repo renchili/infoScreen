@@ -14,6 +14,8 @@ sys.path.insert(0, str(SURFACE))
 
 from local_events_runtime import preview_event_selection_authority as authority  # noqa: E402
 from local_events_runtime.event_review import (  # noqa: E402
+    EventCandidate,
+    EventEvidence,
     EventReviewStore,
     ListingPageCandidate,
     ReviewState,
@@ -57,6 +59,7 @@ def _store(tmp_path) -> tuple[EventReviewStore, ListingPageCandidate]:
         discovered_at=utc_now(),
     )
     store.save(ReviewState(listing_pages=[listing]))
+    authority.invalidate_preview_manifest(listing_url)
     return store, listing
 
 
@@ -66,7 +69,7 @@ def _protocol(payload: dict) -> str:
     return "preview-review-v1:" + token
 
 
-def _review_payload(listing: ListingPageCandidate) -> dict:
+def _raw_review_payload(listing: ListingPageCandidate) -> dict:
     real_listing_url = (
         "https://www.marinabaysands.com/museum/exhibitions/"
         "into-the-ocean-redirect.html"
@@ -96,6 +99,69 @@ def _review_payload(listing: ListingPageCandidate) -> dict:
     }
 
 
+def _preview_state(
+    listing: ListingPageCandidate,
+    payload: dict,
+) -> ReviewState:
+    mapping: dict[str, str] = {}
+    events: list[EventCandidate] = []
+    for index, row in enumerate(payload["decisions"]):
+        candidate_id = str(row["candidate_id"])
+        listing_detail_url = str(
+            row.get("listing_detail_url") or row["detail_url"]
+        )
+        mapping[candidate_id] = listing_detail_url
+        events.append(
+            EventCandidate(
+                candidate_id=candidate_id,
+                source_id=listing.source_id,
+                source_name=listing.source_name,
+                listing_url=listing.url,
+                detail_url=str(row["detail_url"]),
+                title=f"Preview Event {index + 1}",
+                detail_status="collected",
+                evidence=EventEvidence(
+                    selector="article.event-card",
+                    selector_index=index,
+                    selector_match_count=len(payload["decisions"]),
+                    document_position={
+                        "x": 0,
+                        "y": index * 100,
+                        "width": 800,
+                        "height": 80,
+                    },
+                    viewport_position={
+                        "x": 0,
+                        "y": index * 100,
+                        "width": 800,
+                        "height": 80,
+                    },
+                    page_index=0,
+                    page_url=listing.url,
+                    text=f"Preview Event {index + 1}",
+                ),
+                collected_at=utc_now(),
+            )
+        )
+    return ReviewState(
+        listing_pages=[listing.model_copy(update={"decision": "confirmed"})],
+        events=events,
+        event_collection={
+            "preview_candidate_listing_detail_urls": mapping,
+        },
+    )
+
+
+def _review_payload(
+    store: EventReviewStore,
+    listing: ListingPageCandidate,
+) -> dict:
+    payload = _raw_review_payload(listing)
+    authority.issue_preview_manifest(listing, _preview_state(listing, payload))
+    assert listing.url in authority._PREVIEW_MANIFESTS
+    return payload
+
+
 def _original_base_decision():
     saved = authority._BASE_SET_LISTING_DECISION
     if saved is not None and saved is not authority._set_listing_decision:
@@ -119,7 +185,7 @@ def test_preview_decisions_are_committed_with_same_request_rollback(
     tmp_path,
 ) -> None:
     store, listing = _store(tmp_path)
-    payload = _review_payload(listing)
+    payload = _review_payload(store, listing)
     _install_base_decision(monkeypatch)
 
     state = authority._set_listing_decision(
@@ -129,6 +195,7 @@ def test_preview_decisions_are_committed_with_same_request_rollback(
     )
 
     assert state.listing_pages[0].decision == "confirmed"
+    assert listing.url not in authority._PREVIEW_MANIFESTS
     saved = authority._load(store)["listings"][listing.url]
     assert [row["decision"] for row in saved["decisions"]] == [
         "confirmed",
@@ -151,6 +218,7 @@ def test_failed_list_page_write_rolls_back_new_preview_selection(
     tmp_path,
 ) -> None:
     store, listing = _store(tmp_path)
+    payload = _review_payload(store, listing)
 
     def fail_decision(*args, **kwargs):
         raise RuntimeError("state write failed")
@@ -160,12 +228,13 @@ def test_failed_list_page_write_rolls_back_new_preview_selection(
     with pytest.raises(RuntimeError, match="state write failed"):
         authority._set_listing_decision(
             store,
-            _protocol(_review_payload(listing)),
+            _protocol(payload),
             "confirmed",
         )
 
     assert authority._selection_path(store).exists() is False
     assert store.load().listing_pages[0].decision == "pending"
+    assert listing.url in authority._PREVIEW_MANIFESTS
 
 
 def test_failed_plain_reset_restores_existing_preview_selection(
@@ -176,7 +245,7 @@ def test_failed_plain_reset_restores_existing_preview_selection(
     _install_base_decision(monkeypatch)
     authority._set_listing_decision(
         store,
-        _protocol(_review_payload(listing)),
+        _protocol(_review_payload(store, listing)),
         "confirmed",
     )
     snapshot = authority._selection_path(store).read_bytes()
@@ -202,14 +271,16 @@ def test_plain_reset_or_reject_discards_stale_real_event_selection(
     _install_base_decision(monkeypatch)
     authority._set_listing_decision(
         store,
-        _protocol(_review_payload(listing)),
+        _protocol(_review_payload(store, listing)),
         "confirmed",
     )
+    authority.issue_preview_manifest(listing, _preview_state(listing, _raw_review_payload(listing)))
 
     state = authority._set_listing_decision(store, listing.candidate_id, decision)
 
     assert state.listing_pages[0].decision == decision
     assert listing.url not in authority._load(store)["listings"]
+    assert listing.url not in authority._PREVIEW_MANIFESTS
     with pytest.raises(ValueError, match="REAL EVENT / NOT EVENT"):
         authority._set_listing_decision(store, listing.candidate_id, "confirmed")
 
@@ -222,8 +293,13 @@ def test_readding_same_page_starts_fresh_review_without_stale_selection(
     _install_base_decision(monkeypatch)
     authority._set_listing_decision(
         store,
-        _protocol(_review_payload(listing)),
+        _protocol(_review_payload(store, listing)),
         "confirmed",
+    )
+    current = store.load().listing_pages[0]
+    authority.issue_preview_manifest(
+        current,
+        _preview_state(current, _raw_review_payload(current)),
     )
 
     state = add_manual_listing(
@@ -233,6 +309,7 @@ def test_readding_same_page_starts_fresh_review_without_stale_selection(
 
     assert state.listing_pages[0].decision == "pending"
     assert listing.url not in authority._load(store)["listings"]
+    assert listing.url not in authority._PREVIEW_MANIFESTS
     with pytest.raises(ValueError, match="REAL EVENT / NOT EVENT"):
         authority._set_listing_decision(store, listing.candidate_id, "confirmed")
 
@@ -248,16 +325,73 @@ def test_direct_list_page_confirmation_is_rejected_without_real_event_selection(
         authority._set_listing_decision(store, listing.candidate_id, "confirmed")
 
 
+def test_preview_review_requires_latest_server_manifest(tmp_path) -> None:
+    store, listing = _store(tmp_path)
+
+    with pytest.raises(ValueError, match="manifest is missing"):
+        authority._validated_review(
+            store,
+            _raw_review_payload(listing),
+            "confirmed",
+        )
+
+
+def test_preview_review_rejects_omitted_candidate(tmp_path) -> None:
+    store, listing = _store(tmp_path)
+    payload = _review_payload(store, listing)
+    payload["decisions"].pop()
+
+    with pytest.raises(ValueError, match="candidate set is incomplete"):
+        authority._validated_review(store, payload, "confirmed")
+
+
+def test_preview_review_rejects_changed_final_url(tmp_path) -> None:
+    store, listing = _store(tmp_path)
+    payload = _review_payload(store, listing)
+    payload["decisions"][0]["detail_url"] = (
+        "https://www.marinabaysands.com/museum/exhibitions/other-public-url.html"
+    )
+
+    with pytest.raises(ValueError, match="candidate set is incomplete"):
+        authority._validated_review(store, payload, "confirmed")
+
+
+def test_preview_review_rejects_expired_manifest(tmp_path) -> None:
+    store, listing = _store(tmp_path)
+    payload = _review_payload(store, listing)
+    authority._PREVIEW_MANIFESTS[listing.url]["expires_at"] = 0
+
+    with pytest.raises(ValueError, match="manifest expired"):
+        authority._validated_review(store, payload, "confirmed")
+    assert listing.url not in authority._PREVIEW_MANIFESTS
+
+
+def test_preview_review_rejects_manifest_after_listing_state_changes(tmp_path) -> None:
+    store, listing = _store(tmp_path)
+    payload = _review_payload(store, listing)
+    state = store.load()
+    state.listing_pages[0].reviewed_at = utc_now()
+    store.save(state)
+
+    with pytest.raises(ValueError, match="state changed after Preview"):
+        authority._validated_review(store, payload, "confirmed")
+    assert listing.url not in authority._PREVIEW_MANIFESTS
+
+
 def test_preview_review_rejects_pending_list_page_decision(tmp_path) -> None:
     store, listing = _store(tmp_path)
 
     with pytest.raises(ValueError, match="must confirm or reject"):
-        authority._validated_review(store, _review_payload(listing), "pending")
+        authority._validated_review(
+            store,
+            _review_payload(store, listing),
+            "pending",
+        )
 
 
 def test_preview_review_rejects_unclassified_candidate(tmp_path) -> None:
     store, listing = _store(tmp_path)
-    payload = _review_payload(listing)
+    payload = _review_payload(store, listing)
     payload["decisions"][0]["decision"] = "pending"
 
     with pytest.raises(ValueError, match="every Preview candidate"):
@@ -266,7 +400,7 @@ def test_preview_review_rejects_unclassified_candidate(tmp_path) -> None:
 
 def test_preview_review_rejects_duplicate_candidate_identity(tmp_path) -> None:
     store, listing = _store(tmp_path)
-    payload = _review_payload(listing)
+    payload = _review_payload(store, listing)
     payload["decisions"].append(copy.deepcopy(payload["decisions"][0]))
 
     with pytest.raises(ValueError, match="duplicate or missing"):
@@ -275,7 +409,7 @@ def test_preview_review_rejects_duplicate_candidate_identity(tmp_path) -> None:
 
 def test_preview_review_rejects_mismatched_candidate_identity(tmp_path) -> None:
     store, listing = _store(tmp_path)
-    payload = _review_payload(listing)
+    payload = _review_payload(store, listing)
     payload["decisions"][0]["candidate_id"] = "wrong-candidate"
 
     with pytest.raises(ValueError, match="does not match"):
@@ -285,12 +419,12 @@ def test_preview_review_rejects_mismatched_candidate_identity(tmp_path) -> None:
 def test_preview_review_rejects_original_or_final_url_outside_allow_list(tmp_path) -> None:
     store, listing = _store(tmp_path)
 
-    original = _review_payload(listing)
+    original = _review_payload(store, listing)
     original["decisions"][0]["listing_detail_url"] = "https://example.com/original"
     with pytest.raises(ValueError, match="listing URL is outside"):
         authority._validated_review(store, original, "confirmed")
 
-    final = _review_payload(listing)
+    final = _review_payload(store, listing)
     final["decisions"][0]["detail_url"] = "https://example.com/final"
     with pytest.raises(ValueError, match="detail URL is outside"):
         authority._validated_review(store, final, "confirmed")
@@ -299,12 +433,12 @@ def test_preview_review_rejects_original_or_final_url_outside_allow_list(tmp_pat
 def test_list_page_decision_must_agree_with_real_event_count(tmp_path) -> None:
     store, listing = _store(tmp_path)
 
-    no_real = _review_payload(listing)
+    no_real = _review_payload(store, listing)
     no_real["decisions"][0]["decision"] = "rejected"
     with pytest.raises(ValueError, match="without a REAL EVENT"):
         authority._validated_review(store, no_real, "confirmed")
 
-    has_real = _review_payload(listing)
+    has_real = _review_payload(store, listing)
     with pytest.raises(ValueError, match="rejected List Page"):
         authority._validated_review(store, has_real, "rejected")
 
@@ -323,6 +457,7 @@ def test_legacy_selected_row_without_listing_detail_url_uses_final_url(tmp_path)
             }
         ],
     }
+    authority.issue_preview_manifest(listing, _preview_state(listing, payload))
 
     _, _, rows = authority._validated_review(store, payload, "confirmed")
 
