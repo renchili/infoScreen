@@ -50,6 +50,7 @@ def add_manual_listing(
 
     Manual pages remain review candidates. They are not written into committed source
     configuration and do not become collection inputs until the operator confirms them.
+    Re-adding a page starts a fresh review and invalidates its prior Preview selections.
     """
 
     source = store.source(request.source_id.strip())
@@ -90,7 +91,25 @@ def add_manual_listing(
         state.listing_pages,
         key=lambda item: (item.source_name.casefold(), item.url),
     )
-    return store.save(state)
+
+    from .preview_event_selection_authority import (
+        _discard_listing_selection,
+        _restore_selection_snapshot,
+    )
+
+    snapshot, selection_changed = _discard_listing_selection(store, url)
+    try:
+        return store.save(state)
+    except Exception as exc:
+        if selection_changed:
+            try:
+                _restore_selection_snapshot(store, snapshot)
+            except Exception as rollback_exc:
+                raise RuntimeError(
+                    "manual List Page reset failed and Preview selection rollback also "
+                    f"failed: {rollback_exc}"
+                ) from exc
+        raise
 
 
 def _replace_listing_pages_preserving_manual(
