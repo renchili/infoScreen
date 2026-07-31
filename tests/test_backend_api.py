@@ -42,15 +42,38 @@ def test_openapi_covers_dashboard_mutations_and_actual_error_statuses() -> None:
 
 def test_openapi_describes_preview_selection_commit_and_formal_collection_boundary() -> None:
     paths = build_openapi()["paths"]
+    discovery = paths["/api/local-events/review/discover-listings"]["post"]
+    manual = paths["/api/local-events/review/listing-page"]["post"]
     listing_decision = paths["/api/local-events/review/listing-decision"]["post"]
     preview = paths["/api/local-events/review/preview-events"]["post"]
     collection = paths["/api/local-events/review/collect-events"]["post"]
 
     assert "preview-review-v1:" in listing_decision["description"]
     assert "REAL EVENT / NOT EVENT" in listing_decision["description"]
+    assert "latest unexpired process-local server Preview manifest" in (
+        listing_decision["description"]
+    )
+    assert "service restart, expiry, newer Preview" in listing_decision["description"]
+    assert "manual re-add, or discovery retirement requires a new Preview" in (
+        listing_decision["description"]
+    )
     assert "prior Preview selection file is restored" in listing_decision["description"]
-    assert "without changing persisted Review state" in preview["description"]
+    assert "manifest remains available for retry" in listing_decision["description"]
+
+    assert "process-local manifest" in preview["description"]
+    assert "21,600-second lifetime" in preview["description"]
+    assert "INFOSCREEN_PREVIEW_MANIFEST_TTL_SECONDS" in preview["description"]
+    assert "does not change persisted Review state" in preview["description"]
     assert "browser-session drafts" in preview["description"]
+    assert "must be Previewed again" in preview["description"]
+
+    assert "retired together with its committed Preview selection" in (
+        discovery["description"]
+    )
+    assert "failed Review-state write restores" in discovery["description"]
+    assert "removes its old committed Preview selection" in manual["description"]
+    assert "process-local manifest" in manual["description"]
+
     assert collection["summary"] == (
         "Collect selected REAL EVENT candidates from confirmed pages"
     )
