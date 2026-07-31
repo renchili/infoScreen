@@ -141,11 +141,12 @@ def _host_allowed(url: str, source: dict[str, Any]) -> bool:
 
 
 def _listing_revision(listing: _review.ListingPageCandidate) -> str:
+    """Revision shared by the real page and its temporary confirmed Preview copy."""
+
     payload = json.dumps(
         {
             "candidate_id": listing.candidate_id,
             "url": listing.url,
-            "decision": listing.decision,
             "discovered_at": listing.discovered_at,
             "reviewed_at": listing.reviewed_at,
         },
