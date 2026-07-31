@@ -117,9 +117,11 @@
       candidate_id: text(card.dataset.candidateId),
       listing_detail_url: listingDetailUrl(card),
       detail_url: detailUrl(card),
-    })).filter((row) => (
-      row.candidate_id && row.listing_detail_url && row.detail_url
-    ));
+    }));
+  }
+
+  function completeCandidateRow(row) {
+    return Boolean(row.candidate_id && row.listing_detail_url && row.detail_url);
   }
 
   function setCardDecision(card, decision) {
@@ -238,7 +240,9 @@
     const card = listingCard(url);
     const rows = candidateRows();
     const decisions = decisionsFor(url);
-    if (!card || !rows.length) return;
+    if (!card || !rows.length || rows.some((row) => !completeCandidateRow(row))) {
+      return;
+    }
 
     button.disabled = true;
     setGlobalStatus("SAVING PREVIEW EVENT REVIEW", "warn");
@@ -299,6 +303,30 @@
       return;
     }
 
+    let workflow = document.getElementById("preview-real-workflow");
+    if (!workflow) {
+      workflow = document.createElement("div");
+      workflow.id = "preview-real-workflow";
+      workflow.className = "actions";
+      container.before(workflow);
+    }
+    workflow.replaceChildren();
+
+    const invalidCount = rows.filter((row) => !completeCandidateRow(row)).length;
+    if (invalidCount) {
+      const title = document.getElementById("event-candidates-title");
+      const hint = document.getElementById("event-candidates-hint");
+      if (title) title.textContent = "Preview candidates · invalid identity data";
+      if (hint) {
+        hint.textContent = `${invalidCount} CANDIDATE${invalidCount === 1 ? "" : "S"} MISSING IDENTITY OR DETAIL URL`;
+      }
+      const explanation = document.createElement("div");
+      explanation.className = "snippet";
+      explanation.textContent = "PREVIEW DATA INVALID · Re-run Preview before saving this List Page review.";
+      workflow.appendChild(explanation);
+      return;
+    }
+
     const decisions = decisionsFor(expected);
     rows.forEach((row) => installCandidateActions(
       expected,
@@ -320,15 +348,6 @@
     if (hint) {
       hint.textContent = `${realCount} REAL EVENT · ${rejectedCount} NOT EVENT · ${pendingCount} UNREVIEWED`;
     }
-
-    let workflow = document.getElementById("preview-real-workflow");
-    if (!workflow) {
-      workflow = document.createElement("div");
-      workflow.id = "preview-real-workflow";
-      workflow.className = "actions";
-      container.before(workflow);
-    }
-    workflow.replaceChildren();
 
     const explanation = document.createElement("div");
     explanation.className = "snippet";
