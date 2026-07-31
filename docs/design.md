@@ -94,22 +94,21 @@ The official list proves activity membership. The detail page is authoritative f
 
 ### 6.3 HTTP protocol policy
 
-The Surface observed `ERR_HTTP2_PROTOCOL_ERROR` while Chromium opened official Event sites. The supported collection entrypoints apply:
+The Surface observed `ERR_HTTP2_PROTOCOL_ERROR` while Chromium opened official Event sites. The supported formal collection entrypoints apply:
 
 ```text
 surface/local_events_runtime/http1_browser.py
 ```
 
-before importing collector code. The patched Chromium launch always includes:
+before importing collector code. Chromium launched by scoped discovery, confirmed-page formal collection, scheduled collection, and direct search starts with:
 
 ```text
 --disable-http2
 ```
 
-There is no initial HTTP/2 navigation and no retry that switches browser instances or protocols. This applies to:
+There is no HTTP/2-first attempt and no protocol retry loop on those paths.
 
-- Local Event Studio discovery and Event collection through `surface/serve_infoscreen.py`;
-- scheduled and HTTP-triggered Local Events through `surface/search_local_events.py`.
+Isolated Preview is a deliberate exception. `preview_direct_detail_collector_authority.py` owns one Playwright manager, one Chromium process, and one browser context for the selected listing plus all admitted detail pages. `preview_transport_authority.py` may run Marina Bay Sands Preview in headed mode and records NetLog diagnostics, but it does not force HTTP/1 or otherwise alter Chromium protocol negotiation.
 
 ### 6.4 Positive Event intent
 
@@ -151,9 +150,9 @@ discover candidate list pages
 
 When scoped discovery removes a non-manual List Page, it removes that URL’s committed Preview selection before saving the new Review state. If the state write fails, the previous selection file is restored. After a successful state write, the process-local Preview manifest is invalidated. A later discovery of the same URL therefore starts without an eligible old selection and must be Previewed again.
 
-Preview collection is decision-independent. `POST /api/local-events/review/preview-events` copies the current Review state to a temporary store, keeps only the selected list page, marks only that temporary copy confirmed, clears copied Event candidates and feedback, and runs the final Preview collector/detail owner. The Preview request itself does not change the saved list-page decision, persisted Event candidates, feedback, collection metadata, `state.json`, or kiosk output.
+Preview collection is decision-independent. `POST /api/local-events/review/preview-events` copies the current Review state to a temporary store, keeps only the selected list page, marks only that temporary copy confirmed, clears copied Event candidates and feedback, and runs the direct Preview collector/detail owner. The Preview request itself does not change the saved list-page decision, persisted Event candidates, feedback, collection metadata, `state.json`, or kiosk output.
 
-One Preview request owns one real HTTP/1 Chromium process. Listing collection and detail enrichment may enter separate short-lived Playwright managers, but they borrow the same request-local browser lease; nested close calls do not close the real browser. Any final listing-only detail fallback runs before that lease is released. The returned metadata records `preview_browser_process_count: 1`, `preview_browser_reuse: listing_and_details`, and `preview_detail_transport: single_http1_browser_process`. If a listing-only candidate still reaches the final HTTP handoff, the request fails with guidance to run Preview again rather than launching a second Chromium and returning misleading metadata.
+One Preview request owns one real Chromium process and one browser context. The direct collector opens the selected listing page, extracts rendered candidate cards, then opens every admitted official detail page through the same context before closing the browser once. The returned metadata records `preview_browser_process_count: 1`, `preview_browser_reuse: listing_and_details`, `preview_detail_context_count: 1`, and `preview_detail_transport: same_browser_context`. If listing-only evidence still reaches the final HTTP handoff, the request fails instead of opening a second browser or issuing a manifest from incomplete detail results.
 
 The browser keeps the active Preview panel and uncommitted candidate choices in `sessionStorage`. The final Preview handoff first invalidates any older manifest, completes detail enrichment and redirect handling, then issues the exact candidate manifest returned to the browser. When the operator saves the List Page review, `POST /api/local-events/review/listing-decision` receives a `preview-review-v1:` payload containing every Preview candidate and its REAL EVENT / NOT EVENT decision. The backend validates the List Page identity, official-domain detail URLs, candidate identities, and exact equality with the latest unexpired server manifest. Browser drafts may remain visible after the manifest becomes invalid, but submission then fails with guidance to run Preview again. The backend atomically replaces `preview_event_selections.json`, then writes the List Page decision; if that state write fails, the prior selection file is restored and the still-valid manifest remains available for retry.
 
@@ -285,8 +284,8 @@ The Sync ticker is an observer, not a scheduler. It performs `HEAD` requests and
 - A manually supplied list page outside the configured institution allow-list is rejected before persistence.
 - A retired discovery page cannot retain a committed Preview selection; failed Review-state persistence restores the previous selection bytes.
 - An expired, missing, superseded, or revision-mismatched Preview manifest rejects submission and tells the operator to run Preview again.
-- Preview listing and detail reads share one request-local HTTP/1 Chromium process; an incomplete final detail handoff fails instead of launching a second process.
-- HTTP/2 is disabled before Chromium collection begins, so `ERR_HTTP2_PROTOCOL_ERROR` is not handled by a second retry flow.
+- Isolated Preview listing and detail reads share one Chromium process and one context; incomplete final detail results fail instead of opening a second process.
+- Formal discovery and collection disable HTTP/2 before Chromium starts; isolated Preview keeps normal protocol negotiation and may use headed Chromium for Marina Bay Sands.
 - A dashboard filter with no matches displays an empty filtered state without changing or deleting the underlying runtime events.
 - A Review projection failure must leave the previous kiosk primary intact because both collector and display writes are atomic.
 - Market, Weather, News, and photo manifest producers use temporary files and atomic replacement.
