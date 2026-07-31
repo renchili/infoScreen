@@ -6,6 +6,7 @@ from . import browser as _browser
 from . import event_review as _review
 from . import http1_browser as _http1
 from . import preview_detail_enrichment_authority as _enrichment
+from . import preview_event_selection_authority as _selection
 from . import preview_transport_authority as _transport
 
 _APPLIED = False
@@ -54,6 +55,13 @@ def _enrich_final_preview(
         _transport._PREVIEW_HEADLESS = original_headless
 
 
+def _preview_listing(store: _review.EventReviewStore) -> _review.ListingPageCandidate:
+    state = store.load()
+    if len(state.listing_pages) != 1:
+        raise RuntimeError("isolated Preview must contain exactly one List Page")
+    return state.listing_pages[0]
+
+
 def _wrap_current_collector() -> None:
     base_collect = _review.collect_event_candidates
     if getattr(base_collect, "_infoscreen_preview_final_detail_handoff", False):
@@ -62,6 +70,12 @@ def _wrap_current_collector() -> None:
     def collect_event_candidates(store: _review.EventReviewStore):
         if not _preview_store(store):
             return base_collect(store)
+
+        listing = _preview_listing(store)
+        # A failed or newer Preview must never leave an older candidate set eligible
+        # for submission. The replacement manifest is issued only after final detail
+        # enrichment and redirect handling have completed.
+        _selection.invalidate_preview_manifest(listing.url)
 
         original_filter = _http1._filter_final_expired_events
         _http1._filter_final_expired_events = _keep_preview_candidates
@@ -81,6 +95,7 @@ def _wrap_current_collector() -> None:
             "preview_expiry_policy": "retain_for_operator_review",
             "listing_only_candidates_remaining": remaining_listing_only,
         }
+        state = _selection.issue_preview_manifest(listing, state)
         return store.save(state)
 
     collect_event_candidates._infoscreen_preview_final_detail_handoff = True
@@ -136,7 +151,8 @@ def apply_preview_pipeline() -> None:
     # the verified headed policy for MBS on the deployed Surface.
     apply_preview_transport()
     # Patch the final HTTP handoff last so enriched Preview rows cannot be downgraded or
-    # hidden by the base expiry filter.
+    # hidden by the base expiry filter. This owner also records the exact final Preview
+    # candidate set used by the subsequent List Page review request.
     apply()
 
 
