@@ -48,5 +48,5 @@ def test_live_data_failure_records_attempt_and_fails_the_service() -> None:
     assert 'payload["last_success_at"] = payload.get("updated_at") or attempt_at' in live
     assert '"status": "ERR"' in live
     assert 'retained_updated_at=payload.get("updated_at")' in live
-    assert 'log("live-data", "failure"' in live
+    assert '"live-data",\n        "failure",' in live
     assert "raise SystemExit(1)" in live
