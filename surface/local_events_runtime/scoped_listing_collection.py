@@ -153,6 +153,25 @@ def _merge_selected_source(
         for item in previous_selected.values()
         if item.candidate_id not in present and item.link_text == MANUAL_LINK_TEXT
     )
+    removed_urls = sorted(
+        item.url
+        for item in previous_selected.values()
+        if item.candidate_id not in present and item.link_text != MANUAL_LINK_TEXT
+    )
+
+    from . import preview_event_selection_authority as selection
+
+    selection_snapshot = selection._selection_snapshot(store)
+    selection_changed = False
+    if removed_urls:
+        selections = selection._load(store)
+        listings = selections.setdefault("listings", {})
+        for url in removed_urls:
+            if url in listings:
+                del listings[url]
+                selection_changed = True
+        if selection_changed:
+            selection._save(store, selections)
 
     state.listing_pages = sorted(
         [item for item in state.listing_pages if item.source_id != source_id]
@@ -160,7 +179,23 @@ def _merge_selected_source(
         key=lambda item: (item.source_name.casefold(), item.url),
     )
     state.listing_collection = collection
-    return store.save(state)
+    try:
+        saved = store.save(state)
+    except Exception as exc:
+        if selection_changed:
+            try:
+                selection._restore_selection_snapshot(store, selection_snapshot)
+            except Exception as rollback_exc:
+                raise RuntimeError(
+                    "List Page discovery state write failed and retired Preview "
+                    "selection rollback also failed: "
+                    f"{rollback_exc}"
+                ) from exc
+        raise
+
+    for url in removed_urls:
+        selection.invalidate_preview_manifest(url)
+    return saved
 
 
 def collect_listing_pages_for_source(
