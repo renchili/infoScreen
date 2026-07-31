@@ -95,11 +95,12 @@ def add_manual_listing(
     from .preview_event_selection_authority import (
         _discard_listing_selection,
         _restore_selection_snapshot,
+        invalidate_preview_manifest,
     )
 
     snapshot, selection_changed = _discard_listing_selection(store, url)
     try:
-        return store.save(state)
+        saved = store.save(state)
     except Exception as exc:
         if selection_changed:
             try:
@@ -110,6 +111,8 @@ def add_manual_listing(
                     f"failed: {rollback_exc}"
                 ) from exc
         raise
+    invalidate_preview_manifest(url)
+    return saved
 
 
 def _replace_listing_pages_preserving_manual(
