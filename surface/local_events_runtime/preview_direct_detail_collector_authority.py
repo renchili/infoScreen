@@ -39,12 +39,18 @@ def _matching_rendered_anchor(listing_page: Any, raw: dict[str, Any]) -> Any:
         raise ValueError("preview card is missing selector or detail URL")
 
     cards = listing_page.locator(selector)
-    if cards.count() != 1:
+    match_count = cards.count()
+    if match_count != 1:
         raise ValueError(
-            f"rendered_preview_card_match_count_{cards.count()} for {selector}"
+            f"rendered_preview_card_match_count_{match_count} for {selector}"
         )
 
     target_key = _url_key(str(listing_page.url), detail_url)
+    if cards.evaluate("element => element.matches('a[href]')"):
+        href = str(cards.get_attribute("href") or "").strip()
+        if href and _url_key(str(listing_page.url), href) == target_key:
+            return cards
+
     anchors = cards.locator("a[href]")
     for index in range(anchors.count()):
         anchor = anchors.nth(index)
@@ -80,15 +86,18 @@ def _restore_listing_page(
     """Return the real browser tab to the rendered List Page for the next click."""
 
     expected = _url_key(listing.url, listing.url)
-    try:
-        listing_page.go_back(
-            wait_until="domcontentloaded",
-            timeout=_preview.PREVIEW_PAGE_TIMEOUT_MS,
-        )
-    except Exception:
-        pass
+    current = _url_key(str(listing_page.url), str(listing_page.url))
+    if current != expected:
+        try:
+            listing_page.go_back(
+                wait_until="domcontentloaded",
+                timeout=_preview.PREVIEW_PAGE_TIMEOUT_MS,
+            )
+        except Exception:
+            pass
 
-    if _url_key(str(listing_page.url), str(listing_page.url)) != expected:
+    current = _url_key(str(listing_page.url), str(listing_page.url))
+    if current != expected:
         response = listing_page.goto(
             listing.url,
             wait_until="domcontentloaded",
@@ -157,7 +166,11 @@ def _read_clicked_artscience_detail(
             requested_url,
         )
     finally:
-        _restore_listing_page(listing_page, source, listing)
+        if not listing_page.is_closed():
+            current = _url_key(str(listing_page.url), str(listing_page.url))
+            expected = _url_key(listing.url, listing.url)
+            if current != expected:
+                _restore_listing_page(listing_page, source, listing)
 
 
 def _collect_detail(
@@ -278,6 +291,8 @@ def collect_preview(store: _review.EventReviewStore) -> _review.ReviewState:
                         if not title or not _preview._host_allowed(detail_url, source):
                             continue
                         detail_attempts += 1
+                        if listing.source_id == _ARTSCIENCE_SOURCE_ID:
+                            detail_clicks += 1
                         try:
                             detail = _collect_detail(
                                 context,
@@ -286,8 +301,6 @@ def collect_preview(store: _review.EventReviewStore) -> _review.ReviewState:
                                 listing,
                                 raw,
                             )
-                            if listing.source_id == _ARTSCIENCE_SOURCE_ID:
-                                detail_clicks += 1
                         except Exception as exc:
                             error = f"{type(exc).__name__}: {exc}"[:500]
                             detail = _failed_detail(raw, default_venue, error)
