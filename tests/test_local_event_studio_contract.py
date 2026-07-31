@@ -102,6 +102,9 @@ def test_preview_requires_every_candidate_to_be_real_event_or_not_event() -> Non
     assert "function listingDetailUrl(card)" in workflow
     assert "listing_detail_url: listingDetailUrl(card)" in workflow
     assert "listing_detail_url: row.listing_detail_url" in workflow
+    assert "function completeCandidateRow(row)" in workflow
+    assert "rows.some((row) => !completeCandidateRow(row))" in workflow
+    assert "PREVIEW DATA INVALID" in workflow
     assert 'const raw = text(value);' in preview
     assert 'if (!raw) return "";' in preview
     assert 'const raw = text(value);' in workflow
