@@ -60,14 +60,17 @@ def test_openapi_describes_preview_selection_commit_and_formal_collection_bounda
     assert "prior Preview selection file is restored" in listing_decision["description"]
     assert "manifest remains available for retry" in listing_decision["description"]
 
-    assert "one request-local Chromium process" in preview["description"]
-    assert "--disable-http2" in preview["description"]
-    assert "same browser lease" in preview["description"]
-    assert "closed exactly once" in preview["description"]
-    assert "fails instead of launching a second browser" in preview["description"]
+    assert "one Playwright, Chromium, and browser-context lifecycle" in (
+        preview["description"]
+    )
+    assert "same context" in preview["description"]
+    assert "closes the real browser once" in preview["description"]
+    assert "does not force HTTP/1" in preview["description"]
+    assert "protocol negotiation" in preview["description"]
+    assert "fails rather than opening a second browser" in preview["description"]
     assert "preview_browser_process_count=1" in preview["description"]
     assert "preview_browser_reuse=listing_and_details" in preview["description"]
-    assert "preview_detail_transport=single_http1_browser_process" in (
+    assert "preview_detail_transport=same_browser_context" in (
         preview["description"]
     )
     assert "process-local manifest" in preview["description"]
@@ -76,7 +79,7 @@ def test_openapi_describes_preview_selection_commit_and_formal_collection_bounda
     assert "does not change persisted Review state" in preview["description"]
     assert "browser-session drafts" in preview["description"]
     assert "must be Previewed again" in preview["description"]
-    assert "browser-session" in preview["responses"]["500"]["description"]
+    assert "browser lifecycle" in preview["responses"]["500"]["description"]
     assert "final-detail invariant" in preview["responses"]["500"]["description"]
 
     assert "retired together with its committed Preview selection" in (
