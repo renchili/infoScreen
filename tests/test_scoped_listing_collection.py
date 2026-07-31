@@ -132,6 +132,21 @@ def test_collection_discovers_only_selected_institution_before_confirmation(
     assert state.listing_collection["source_id"] == "alpha"
 
 
+def test_retired_discovery_pages_clear_preview_selection_with_rollback() -> None:
+    source = inspect.getsource(scoped._merge_selected_source)
+
+    assert "removed_urls = sorted(" in source
+    assert "item.link_text != MANUAL_LINK_TEXT" in source
+    assert "selection_snapshot = selection._selection_snapshot(store)" in source
+    assert "del listings[url]" in source
+    assert "selection._save(store, selections)" in source
+    assert "selection._restore_selection_snapshot(store, selection_snapshot)" in source
+    assert "selection.invalidate_preview_manifest(url)" in source
+    assert source.index("selection._save(store, selections)") < source.index(
+        "saved = store.save(state)"
+    ) < source.index("selection.invalidate_preview_manifest(url)")
+
+
 def test_scoped_discovery_never_waits_for_network_idle() -> None:
     source = inspect.getsource(scoped._discover_home_links)
 
