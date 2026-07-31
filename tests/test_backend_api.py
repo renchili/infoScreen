@@ -60,12 +60,24 @@ def test_openapi_describes_preview_selection_commit_and_formal_collection_bounda
     assert "prior Preview selection file is restored" in listing_decision["description"]
     assert "manifest remains available for retry" in listing_decision["description"]
 
+    assert "one request-local Chromium process" in preview["description"]
+    assert "--disable-http2" in preview["description"]
+    assert "same browser lease" in preview["description"]
+    assert "closed exactly once" in preview["description"]
+    assert "fails instead of launching a second browser" in preview["description"]
+    assert "preview_browser_process_count=1" in preview["description"]
+    assert "preview_browser_reuse=listing_and_details" in preview["description"]
+    assert "preview_detail_transport=single_http1_browser_process" in (
+        preview["description"]
+    )
     assert "process-local manifest" in preview["description"]
     assert "21,600-second lifetime" in preview["description"]
     assert "INFOSCREEN_PREVIEW_MANIFEST_TTL_SECONDS" in preview["description"]
     assert "does not change persisted Review state" in preview["description"]
     assert "browser-session drafts" in preview["description"]
     assert "must be Previewed again" in preview["description"]
+    assert "browser-session" in preview["responses"]["500"]["description"]
+    assert "final-detail invariant" in preview["responses"]["500"]["description"]
 
     assert "retired together with its committed Preview selection" in (
         discovery["description"]
