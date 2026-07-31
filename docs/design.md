@@ -130,12 +130,15 @@ surface/.env/local_event_review/preview_event_selections.json
 
 `state.json` contains candidate list pages and decisions, Event candidates and decisions, collection metadata, per-listing recognition diagnostics, and previously submitted DOM positions. `preview_event_selections.json` contains the validated REAL EVENT / NOT EVENT decisions committed for each reviewed list page.
 
+The exact candidate set returned by the latest successful Preview is a separate process-local manifest owned by `preview_event_selection_authority.py`. It is not written to either Review JSON file. The manifest records candidate identity, original listing link, final redirected/public URL, the List Page revision, and an expiry. Its default lifetime is 21,600 seconds and can be changed with `INFOSCREEN_PREVIEW_MANIFEST_TTL_SECONDS`, with a minimum of 60 seconds. A service restart, expiry, newer Preview, List Page state change, reset, rejection, manual re-add, or discovery retirement invalidates the manifest and requires a fresh Preview before saving candidate decisions.
+
 The persistence files are separate, but confirmed and rejected Event decisions are authoritative inputs to the kiosk projection. The homepage must not independently choose stale collector fields when the same canonical detail URL has a reviewed decision.
 
 ### 7.1 System-discovered flow
 
 ```text
 discover candidate list pages
+  -> retire no-longer-discovered non-manual pages and their committed Preview selections
   -> inspect candidate URL
   -> preview that saved page in any decision state
   -> classify every Preview candidate as REAL EVENT or NOT EVENT
@@ -146,9 +149,11 @@ discover candidate list pages
   -> rebuild local_event_search_results.json from collector snapshot + Review state
 ```
 
+When scoped discovery removes a non-manual List Page, it removes that URL’s committed Preview selection before saving the new Review state. If the state write fails, the previous selection file is restored. After a successful state write, the process-local Preview manifest is invalidated. A later discovery of the same URL therefore starts without an eligible old selection and must be Previewed again.
+
 Preview collection is decision-independent. `POST /api/local-events/review/preview-events` copies the current Review state to a temporary store, keeps only the selected list page, marks only that temporary copy confirmed, clears copied Event candidates and feedback, and runs the final Preview collector/detail owner. The Preview request itself does not change the saved list-page decision, persisted Event candidates, feedback, collection metadata, `state.json`, or kiosk output.
 
-The browser keeps the active Preview panel and uncommitted candidate choices in `sessionStorage`. When the operator saves the List Page review, `POST /api/local-events/review/listing-decision` receives a `preview-review-v1:` payload containing every Preview candidate and its REAL EVENT / NOT EVENT decision. The backend validates the List Page identity, official-domain detail URLs, candidate identities, and complete decision set. It atomically replaces `preview_event_selections.json`, then writes the List Page decision; if that state write fails, the prior selection file is restored.
+The browser keeps the active Preview panel and uncommitted candidate choices in `sessionStorage`. The final Preview handoff first invalidates any older manifest, completes detail enrichment and redirect handling, then issues the exact candidate manifest returned to the browser. When the operator saves the List Page review, `POST /api/local-events/review/listing-decision` receives a `preview-review-v1:` payload containing every Preview candidate and its REAL EVENT / NOT EVENT decision. The backend validates the List Page identity, official-domain detail URLs, candidate identities, and exact equality with the latest unexpired server manifest. Browser drafts may remain visible after the manifest becomes invalid, but submission then fails with guidance to run Preview again. The backend atomically replaces `preview_event_selections.json`, then writes the List Page decision; if that state write fails, the prior selection file is restored and the still-valid manifest remains available for retry.
 
 Normal collection remains separate. `POST /api/local-events/review/collect-events` reads confirmed pages that have committed REAL EVENT selections, filters unselected list cards before detail navigation, persists only the selected Event candidates and diagnostics, marks those candidates confirmed, and leaves list-page decisions unchanged. A confirmed page without a committed REAL EVENT selection is not silently collected as an unrestricted page.
 
@@ -183,6 +188,7 @@ select one global institution
   -> validate configured institution
   -> validate hostname against that institution's allowed_domains
   -> save or reset the page as pending review state
+  -> discard its previous committed Preview selection and process-local manifest
   -> display it immediately in the left-side list-page cards
   -> preview before deciding
   -> classify every candidate as REAL EVENT or NOT EVENT
@@ -192,7 +198,7 @@ select one global institution
 
 Manual addition does not edit committed `event_sources.json` and does not automatically collect Events. It creates a review candidate only. The operator may run the isolated preview while the page is pending, rejected, or confirmed. Preview itself does not mutate the real List Page decision; saving the reviewed candidate set and List Page decision is a separate explicit operation.
 
-When the same institution/URL already exists, manual addition resets it to `pending`, allowing the operator to reconsider a previously rejected or stale decision.
+When the same institution/URL already exists, manual addition resets it to `pending`, discards any old Preview selection and manifest, and requires a new Preview before confirmation.
 
 ### 7.3 Zero-result diagnostics
 
@@ -275,6 +281,8 @@ The Sync ticker is an observer, not a scheduler. It performs `HEAD` requests and
 - A partial Local Event run does not replace a larger verified collector snapshot.
 - A zero-result review page records the first failed recognition stage.
 - A manually supplied list page outside the configured institution allow-list is rejected before persistence.
+- A retired discovery page cannot retain a committed Preview selection; failed Review-state persistence restores the previous selection bytes.
+- An expired, missing, superseded, or revision-mismatched Preview manifest rejects submission and tells the operator to run Preview again.
 - HTTP/2 is disabled before Chromium collection begins, so `ERR_HTTP2_PROTOCOL_ERROR` is not handled by a second retry flow.
 - A dashboard filter with no matches displays an empty filtered state without changing or deleting the underlying runtime events.
 - A Review projection failure must leave the previous kiosk primary intact because both collector and display writes are atomic.
