@@ -208,9 +208,11 @@ def apply() -> None:
     if not _APPLIED:
         _BASE_BROWSER_LAUNCH = _browser.launch_chromium
         _APPLIED = True
-    # Re-application must restore the global lease launcher after any temporary owner
-    # composition or test replacement, without capturing the lease as its own fallback.
+    # Re-application must restore both browser owners after temporary composition or
+    # test replacement. event_review imported launch_chromium by value, so rebinding only
+    # the browser module would leave the real listing collector outside the lease.
     _browser.launch_chromium = launch_or_borrow
+    _review.launch_chromium = launch_or_borrow
     _transport._launch_preview_chromium = launch_preview_chromium
     _transport.collect_event_candidates = collect_event_candidates
     _transport._diagnostics.collect_event_candidates = collect_event_candidates
