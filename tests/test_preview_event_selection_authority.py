@@ -248,6 +248,13 @@ def test_direct_list_page_confirmation_is_rejected_without_real_event_selection(
         authority._set_listing_decision(store, listing.candidate_id, "confirmed")
 
 
+def test_preview_review_rejects_pending_list_page_decision(tmp_path) -> None:
+    store, listing = _store(tmp_path)
+
+    with pytest.raises(ValueError, match="must confirm or reject"):
+        authority._validated_review(store, _review_payload(listing), "pending")
+
+
 def test_preview_review_rejects_unclassified_candidate(tmp_path) -> None:
     store, listing = _store(tmp_path)
     payload = _review_payload(listing)
