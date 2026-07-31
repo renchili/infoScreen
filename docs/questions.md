@@ -116,31 +116,39 @@ A date-less list card with one official detail link must be admitted and enriche
 
 ### Easy-to-make interpretation
 
-The operator can only accept or reject URLs discovered by the system, a correct URL must be added by editing committed configuration, or a manually added page cannot be inspected until it is confirmed.
+The operator can only accept or reject URLs discovered by the system, a correct URL must be added by editing committed configuration, a manually added page cannot be inspected until it is confirmed, or a browser-restored Preview panel is sufficient proof that its candidate set is still current.
 
 ### Why it fails
 
-Automated discovery can return the wrong page, and some institutions expose a shared or non-obvious entrypoint that cannot be discovered reliably. Without a manual input, the user cannot correct the workflow. Requiring confirmation before preview forces a decision before the operator can inspect the Event evidence used to make that decision.
+Automated discovery can return the wrong page, and some institutions expose a shared or non-obvious entrypoint that cannot be discovered reliably. Without a manual input, the user cannot correct the workflow. Requiring confirmation before preview forces a decision before the operator can inspect the Event evidence used to make that decision. Browser session state can outlive a service restart, manifest expiry, newer Preview, or List Page revision change and therefore cannot be the server’s candidate-set authority.
 
 ### Correct requirement interpretation
 
-The Studio lets the user select one global institution, enter a correct official Event list URL, save it into review state as pending, preview that saved page without changing its decision, classify every Preview candidate as REAL EVENT or NOT EVENT, then save the complete selection set together with the List Page decision. Normal persisted collection requires a confirmed page with committed REAL EVENT selections and collects only those selected rows.
+The Studio lets the user select one global institution, enter a correct official Event list URL, save it into review state as pending, preview that saved page without changing its decision, classify every Preview candidate as REAL EVENT or NOT EVENT, then save the complete selection set together with the List Page decision. The submitted identities and original/final URLs must exactly match the latest unexpired server Preview manifest for the unchanged List Page revision. Normal persisted collection requires a confirmed page with committed REAL EVENT selections and collects only those selected rows.
 
 ### Required implementation
 
-Provide an always-visible URL field and `ADD LIST PAGE` button. Send `source_id` and `url` to `POST /api/local-events/review/listing-page`. Validate the configured institution and its allowed domains. Save the page as `pending`; do not collect automatically and do not edit committed `event_sources.json`.
+Provide an always-visible URL field and `ADD LIST PAGE` button. Send `source_id` and `url` to `POST /api/local-events/review/listing-page`. Validate the configured institution and its allowed domains. Save the page as `pending`; do not collect automatically and do not edit committed `event_sources.json`. Adding the same URL again must discard its old committed Preview selection and process-local manifest before starting a fresh pending review, with selection rollback if the Review-state write fails.
 
-Expose isolated preview for every saved decision state. `POST /api/local-events/review/preview-events` must receive the saved `listing_url`, copy Review state into a temporary store, keep only that list page, mark only the temporary copy confirmed, clear copied Event candidates and feedback, run the final collector, and return the temporary result. It must not call the list-decision API or change persisted Review state.
+Expose isolated preview for every saved decision state. `POST /api/local-events/review/preview-events` must receive the saved `listing_url`, copy Review state into a temporary store, keep only that list page, mark only the temporary copy confirmed, clear copied Event candidates and feedback, run the final collector and final detail/redirect owner, and return the temporary result. It must not call the list-decision API or change persisted Review state.
 
-The Studio must require a decision for every returned Preview candidate. It sends the complete set to `POST /api/local-events/review/listing-decision` in the `preview-review-v1:` envelope, including the original candidate identity, original `listing_detail_url`, final redirected/public `detail_url`, and REAL EVENT / NOT EVENT decision. The backend stores that set in `preview_event_selections.json`, writes the List Page decision, and restores the prior selection file when the state write raises.
+After final detail enrichment and redirect handling, the server records the exact returned candidate IDs, original `listing_detail_url` values, final `detail_url` values, and List Page revision in a process-local manifest. The default lifetime is 21,600 seconds, configurable through `INFOSCREEN_PREVIEW_MANIFEST_TTL_SECONDS` with a 60-second minimum. A service restart, expiry, newer Preview, List Page state change, reset, rejection, manual re-add, or discovery retirement invalidates the manifest and requires another Preview.
 
-Adding the same institution/URL again resets it to `pending`, allowing a rejected or stale decision to be reconsidered. `POST /api/local-events/review/collect-events` remains the persisted path, but it admits only committed REAL EVENT selections from pages currently marked `confirmed`.
+The Studio must require a decision for every returned Preview candidate. It sends the complete set to `POST /api/local-events/review/listing-decision` in the `preview-review-v1:` envelope, including the original candidate identity, original `listing_detail_url`, final redirected/public `detail_url`, and REAL EVENT / NOT EVENT decision. The backend compares the submitted set with the latest eligible manifest, stores the reviewed set in `preview_event_selections.json`, writes the List Page decision, and restores the prior selection file when the state write raises. A failed state write keeps the manifest available for retry.
+
+Scoped discovery must retire no-longer-discovered non-manual pages together with their committed Preview selections. It removes the selection before writing the new Review state, restores the prior selection bytes if that write fails, and invalidates the process-local manifest only after success. A later discovery of the same URL must therefore start without an eligible old selection and require a fresh Preview.
+
+`POST /api/local-events/review/collect-events` remains the persisted path, but it admits only committed REAL EVENT selections from pages currently marked `confirmed`.
 
 ### Acceptance evidence
 
 Select an institution, add a valid allowed-domain URL, observe it immediately in the left-side list as pending, and preview it before confirmation. The preview must return only that page’s candidates while the persisted page decision, Event candidates, feedback, collection metadata, `state.json`, and `preview_event_selections.json` remain byte-for-byte or model-equivalent to their pre-preview state.
 
-Classify every candidate, save the List Page review, and verify the committed selection set and List Page decision agree. Confirming requires at least one REAL EVENT; rejecting forbids a REAL EVENT. Formal collection must open and persist only selected REAL EVENT candidates, including a selected candidate whose original list link redirects to a different final public URL. Invalid institution, malformed URL, disallowed domain, missing preview URL, unknown preview URL, incomplete candidate decisions, duplicate identities, mismatched identities, and disallowed original or final detail URLs must fail without leaving a partial saved review.
+Classify every candidate, save the List Page review, and verify the committed selection set and List Page decision agree. Confirming requires at least one REAL EVENT; rejecting forbids a REAL EVENT. Formal collection must open and persist only selected REAL EVENT candidates, including a selected candidate whose original list link redirects to a different final public URL.
+
+Invalid institution, malformed URL, disallowed domain, missing preview URL, unknown preview URL, missing/expired/superseded manifest, List Page revision mismatch, incomplete candidate set, duplicate identities, mismatched identities, changed original/final URLs, and disallowed original or final detail URLs must fail without leaving a partial saved review. A failed List Page state write must restore the prior selection and permit retry against the same manifest.
+
+A discovery-retirement fixture must prove that a no-longer-discovered non-manual page loses its committed selection and manifest, while a manually added page remains. A forced Review-state save failure must restore the old selection. If the retired URL later reappears, ordinary confirmation must fail until a new Preview selection is committed.
 
 ## Local Events positive Event intent
 
@@ -256,15 +264,15 @@ Tests and runtime evidence must cover verified-to-partial transitions, timed-out
 
 ### Easy-to-make interpretation
 
-The Studio can display corrected fields while the kiosk continues rendering a separate collector row, or a preview may temporarily rewrite the selected or unrelated list-page decisions and restore them later.
+The Studio can display corrected fields while the kiosk continues rendering a separate collector row, a preview may temporarily rewrite the selected or unrelated list-page decisions and restore them later, or any browser-restored Preview panel may be submitted without proving it is the server’s latest candidate set.
 
 ### Why it fails
 
-That creates multiple visible truths and makes Review state vulnerable to interruption. A failed client rollback can leave one or more pages in the wrong decision state. Requiring confirmation before preview also couples evidence gathering to a persisted review mutation.
+That creates multiple visible truths and makes Review state vulnerable to interruption. A failed client rollback can leave one or more pages in the wrong decision state. Requiring confirmation before preview also couples evidence gathering to a persisted review mutation. Trusting stale browser state permits omitted, changed, or retired candidates to be committed.
 
 ### Correct requirement interpretation
 
-Review state and collector output may be stored separately, but the kiosk primary is one deterministic projection. Preview is an isolated, decision-independent read/collection operation. Normal Event collection persists only committed REAL EVENT selections from confirmed pages.
+Review state and collector output may be stored separately, but the kiosk primary is one deterministic projection. Preview is an isolated, decision-independent read/collection operation. Candidate submission must equal the latest unexpired process-local server Preview manifest. Normal Event collection persists only committed REAL EVENT selections from confirmed pages.
 
 ### Required implementation
 
@@ -272,7 +280,9 @@ Persist producer output to `local_event_collector_results.json`. Build `local_ev
 
 Preview must use `/api/local-events/review/preview-events`, must not call the list-decision API, and must not publish to the kiosk. The server must create an isolated temporary Review store containing only the selected page, confirmed only inside that copy, with copied Events and feedback cleared. The real Review state remains untouched even when preview collection fails.
 
-The Preview panel must preserve original list-card identity separately from the final redirected/public detail URL. Saving the List Page review validates and stores every candidate decision. Formal collection must prefilter unselected list cards before detail navigation, retain only results matching the selected identity or original/final URL, and never treat a confirmed page as unrestricted merely because it has no saved selection record.
+The final Preview handoff must invalidate the old manifest before collection and issue the new manifest only after detail enrichment and redirect handling. The Preview panel must preserve original list-card identity separately from the final redirected/public detail URL. Saving the List Page review validates every candidate decision against that manifest. Formal collection must prefilter unselected list cards before detail navigation, retain only results matching the selected identity or original/final URL, and never treat a confirmed page as unrestricted merely because it has no saved selection record.
+
+List Page lifecycle owners must remove stale authority: RESET, REJECT, manual re-add, and discovery retirement clear committed selection state and invalidate the manifest. State-write failures restore the previous selection bytes before returning an error.
 
 ### Acceptance evidence
 
@@ -280,7 +290,9 @@ A fixture with stale collector fields and a confirmed candidate sharing the same
 
 A separate pending-page fixture must prove that preview succeeds before confirmation, the temporary collector sees one confirmed page, and persisted list decisions, Event candidates, feedback, collection metadata, selection state, and kiosk output do not change. Frontend source must contain the isolated preview endpoint and no temporary list-decision writes or confirmation gate.
 
-A selection fixture must prove that incomplete decisions cannot confirm a page, unselected list cards are rejected before detail navigation, selected rows are persisted as confirmed, and a redirected selected candidate remains linked to the original candidate identity while matching its final public URL after enrichment.
+A selection fixture must prove that incomplete decisions cannot confirm a page, the submitted exact set must equal the latest server manifest, expired/restarted/revision-changed submissions require a new Preview, unselected list cards are rejected before detail navigation, selected rows are persisted as confirmed, and a redirected selected candidate remains linked to the original candidate identity while matching its final public URL after enrichment.
+
+A discovery lifecycle fixture must prove that retired non-manual pages cannot leave an old selection eligible for reuse when the same URL later appears again.
 
 ## Dashboard Local Events filtering and collection boundary
 
