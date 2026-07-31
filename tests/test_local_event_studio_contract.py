@@ -83,6 +83,7 @@ def test_temporary_preview_panel_survives_page_renders_until_formal_collection()
 
 
 def test_preview_requires_every_candidate_to_be_real_event_or_not_event() -> None:
+    preview = read_text("surface/web/assets/js/local_event_review_previews.js")
     workflow = read_text(
         "surface/web/assets/js/local_event_review_preview_workflow.js"
     )
@@ -101,6 +102,10 @@ def test_preview_requires_every_candidate_to_be_real_event_or_not_event() -> Non
     assert "function listingDetailUrl(card)" in workflow
     assert "listing_detail_url: listingDetailUrl(card)" in workflow
     assert "listing_detail_url: row.listing_detail_url" in workflow
+    assert 'const raw = text(value);' in preview
+    assert 'if (!raw) return "";' in preview
+    assert 'const raw = text(value);' in workflow
+    assert 'if (!raw) return "";' in workflow
     assert 'request("/api/local-events/review/listing-decision"' in workflow
     assert 'request("/api/local-events/review/collect-events"' in workflow
     assert 'document.addEventListener("infoscreen:review-preview"' in workflow
