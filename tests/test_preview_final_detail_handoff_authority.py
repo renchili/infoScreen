@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import inspect
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+
+import pytest
 
 from .conftest import SURFACE, read_text
 
@@ -122,6 +125,32 @@ def test_preview_handoff_enriches_listing_only_archive_event_before_return(
     assert http1._filter_final_expired_events is expiring_filter
 
 
+def test_final_handoff_rejects_listing_only_rows_without_second_browser(
+    tmp_path,
+) -> None:
+    pending = SimpleNamespace(
+        detail_error="preview_listing_evidence_only_missing_when"
+    )
+    state = SimpleNamespace(events=[pending], event_collection={})
+    store = Store(tmp_path / "infoscreen-event-preview-incomplete")
+
+    with pytest.raises(RuntimeError, match="request-local browser session"):
+        authority._enrich_final_preview(store, state)
+
+    source = inspect.getsource(authority._enrich_final_preview)
+    assert "launch_chromium" not in source
+    assert "_launch_preview_chromium" not in source
+    assert "run Preview again" in source
+
+
+def test_final_handoff_accepts_fully_enriched_rows(tmp_path) -> None:
+    complete = SimpleNamespace(detail_error="")
+    state = SimpleNamespace(events=[complete], event_collection={})
+    store = Store(tmp_path / "infoscreen-event-preview-complete")
+
+    assert authority._enrich_final_preview(store, state) is state
+
+
 def test_formal_collection_keeps_normal_expiry_handoff(monkeypatch, tmp_path) -> None:
     expected = object()
     calls = []
@@ -144,6 +173,9 @@ def test_review_bootstrap_delegates_preview_pipeline_to_final_handoff() -> None:
     handoff = read_text(
         "surface/local_events_runtime/preview_final_detail_handoff_authority.py"
     )
+    session = read_text(
+        "surface/local_events_runtime/preview_browser_session_authority.py"
+    )
     enrichment = read_text(
         "surface/local_events_runtime/preview_detail_enrichment_authority.py"
     )
@@ -155,6 +187,7 @@ def test_review_bootstrap_delegates_preview_pipeline_to_final_handoff() -> None:
     assert "apply_preview_detail_enrichment()" not in summary
     assert "apply_preview_transport()" not in summary
 
+    assert "install_transport_apply_hook()" in handoff
     assert "apply_preview_event_selection()" in handoff
     assert "apply_preview_collector()" in handoff
     assert "apply_artscience_preview()" in handoff
@@ -177,6 +210,10 @@ def test_review_bootstrap_delegates_preview_pipeline_to_final_handoff() -> None:
         issue_call
     )
     assert '"listing_only_candidates_remaining"' in handoff
+    assert "_enrich_remaining_preview_details(store, state)" in session
+    assert session.index("_enrich_remaining_preview_details(store, state)") < session.index(
+        "_normalise_transport_metadata(state)"
+    )
     assert "def enrich_preview_state(" in enrichment
     assert "preview_listing_evidence_only" in enrichment
     assert '"text_lines": [title] if title else []' in enrichment
