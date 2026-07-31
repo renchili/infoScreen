@@ -77,6 +77,13 @@ if [ "$LOG_FILE" != "$PRECONFIG_LOG_FILE" ]; then
   exec >> "$LOG_FILE" 2>&1
 fi
 
+if [ -z "$SURFACE_HOST" ]; then
+  detail="SURFACE_HOST is required. Run: bash mac/scripts/setup-schedule-sync.sh --host <surface-ip> --user <ssh-user>"
+  echo "ERROR: $detail" >&2
+  write_local_status "ERR" "$detail" || true
+  exit 1
+fi
+
 : "${SURFACE_HOST:?SURFACE_HOST is required. Run: bash mac/scripts/setup-schedule-sync.sh --host <surface-ip> --user <ssh-user>}"
 
 case "$REMOTE_SCHEDULE_JSON" in
