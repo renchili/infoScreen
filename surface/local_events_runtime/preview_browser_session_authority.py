@@ -89,7 +89,7 @@ def _normalise_transport_metadata(state: _review.ReviewState) -> _review.ReviewS
 
 
 def collect_event_candidates(store: _review.EventReviewStore) -> _review.ReviewState:
-    """Run the complete Preview pipeline through one browser process."""
+    """Run the complete Preview pipeline through one owned Playwright/browser session."""
 
     if not _transport._preview_store(store):
         return _transport._BASE_COLLECT(store)
@@ -112,40 +112,50 @@ def collect_event_candidates(store: _review.EventReviewStore) -> _review.ReviewS
     actual_browser: Any | None = None
     lease: PreviewBrowserLease | None = None
 
-    def launch_once(playwright: Any) -> PreviewBrowserLease:
-        nonlocal actual_browser, lease
-        if lease is None:
-            actual_browser = launch_preview_chromium(playwright)
-            lease = PreviewBrowserLease(actual_browser)
-        return lease
+    from playwright.sync_api import sync_playwright
 
-    _browser.launch_chromium = launch_once
     try:
-        state = _transport._BASE_COLLECT(store)
-        state = _normalise_transport_metadata(state)
-        return store.save(state)
-    except Exception as exc:
-        diagnostic = dict(_transport._LAST_PREVIEW_DIAGNOSTIC)
-        summary_path = _transport._write_netlog_summary(diagnostic)
-        details = [
-            str(exc),
-            f"preview_browser={diagnostic.get('browser_executable') or 'unknown'}",
-            f"preview_browser_version={diagnostic.get('browser_version') or 'unknown'}",
-            f"preview_browser_mode={diagnostic.get('browser_mode') or 'unknown'}",
-            f"preview_browser_reuse={diagnostic.get('browser_reuse') or 'unknown'}",
-            f"preview_netlog={diagnostic.get('netlog') or 'unavailable'}",
-        ]
-        if summary_path:
-            details.append(f"preview_netlog_summary={summary_path}")
-        raise RuntimeError(" | ".join(details)) from exc
+        # The listing collector and detail enrichment each enter their own temporary
+        # sync_playwright() block. The actual browser must be owned by a longer-lived
+        # Playwright connection surrounding both blocks, otherwise the first temporary
+        # block tears down the connection before detail enrichment starts.
+        with sync_playwright() as owner_playwright:
+
+            def launch_once(_temporary_playwright: Any) -> PreviewBrowserLease:
+                nonlocal actual_browser, lease
+                if lease is None:
+                    actual_browser = launch_preview_chromium(owner_playwright)
+                    lease = PreviewBrowserLease(actual_browser)
+                return lease
+
+            _browser.launch_chromium = launch_once
+            try:
+                state = _transport._BASE_COLLECT(store)
+                state = _normalise_transport_metadata(state)
+                return store.save(state)
+            except Exception as exc:
+                diagnostic = dict(_transport._LAST_PREVIEW_DIAGNOSTIC)
+                summary_path = _transport._write_netlog_summary(diagnostic)
+                details = [
+                    str(exc),
+                    f"preview_browser={diagnostic.get('browser_executable') or 'unknown'}",
+                    f"preview_browser_version={diagnostic.get('browser_version') or 'unknown'}",
+                    f"preview_browser_mode={diagnostic.get('browser_mode') or 'unknown'}",
+                    f"preview_browser_reuse={diagnostic.get('browser_reuse') or 'unknown'}",
+                    f"preview_netlog={diagnostic.get('netlog') or 'unavailable'}",
+                ]
+                if summary_path:
+                    details.append(f"preview_netlog_summary={summary_path}")
+                raise RuntimeError(" | ".join(details)) from exc
+            finally:
+                if actual_browser is not None:
+                    try:
+                        actual_browser.close()
+                    except Exception:
+                        pass
     finally:
         _browser.launch_chromium = original_launch
         _transport._PREVIEW_HEADLESS = original_headless
-        if actual_browser is not None:
-            try:
-                actual_browser.close()
-            except Exception:
-                pass
 
 
 def apply() -> None:
