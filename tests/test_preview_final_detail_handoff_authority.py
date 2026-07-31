@@ -17,6 +17,18 @@ class Store:
     def __init__(self, root: Path) -> None:
         self.root = root
         self.saved = []
+        self.listing = SimpleNamespace(
+            candidate_id="preview-listing",
+            source_id="artscience",
+            source_name="ArtScience Museum",
+            url="https://www.marinabaysands.com/museum/whats-on.html",
+            decision="confirmed",
+            discovered_at="2026-07-31T00:00:00+00:00",
+            reviewed_at=None,
+        )
+
+    def load(self):
+        return SimpleNamespace(listing_pages=[self.listing])
 
     def save(self, state):
         self.saved.append(state)
@@ -42,6 +54,7 @@ def test_preview_handoff_enriches_listing_only_archive_event_before_return(
     )
     filter_calls = []
     enrichment_calls = []
+    manifest_calls = []
 
     def expiring_filter(actual, effective):
         filter_calls.append(actual)
@@ -62,9 +75,26 @@ def test_preview_handoff_enriches_listing_only_archive_event_before_return(
         actual.event_collection["detail_page_request_count"] = 1
         return actual
 
+    def issue_manifest(listing, actual):
+        manifest_calls.append(("issue", listing, actual))
+        actual.event_collection["preview_selection_manifest_policy"] = (
+            "latest_server_preview_exact_set"
+        )
+        return actual
+
     monkeypatch.setattr(http1, "_filter_final_expired_events", expiring_filter)
     monkeypatch.setattr(review, "collect_event_candidates", final_http_collector)
     monkeypatch.setattr(authority, "_enrich_final_preview", enrich)
+    monkeypatch.setattr(
+        authority._selection,
+        "invalidate_preview_manifest",
+        lambda url: manifest_calls.append(("invalidate", url)),
+    )
+    monkeypatch.setattr(
+        authority._selection,
+        "issue_preview_manifest",
+        issue_manifest,
+    )
 
     authority._wrap_current_collector()
     store = Store(tmp_path / "infoscreen-event-preview-archive")
@@ -72,6 +102,10 @@ def test_preview_handoff_enriches_listing_only_archive_event_before_return(
 
     assert filter_calls == []
     assert enrichment_calls == [(store, state)]
+    assert manifest_calls == [
+        ("invalidate", store.listing.url),
+        ("issue", store.listing, state),
+    ]
     assert len(result.events) == 1
     assert result.events[0].when == "13 Sep 2025 – 22 Feb 2026"
     assert result.events[0].detail_error == ""
@@ -81,6 +115,9 @@ def test_preview_handoff_enriches_listing_only_archive_event_before_return(
     assert result.event_collection["detail_page_requests_skipped"] == 0
     assert result.event_collection["listing_only_candidates_remaining"] == 0
     assert result.event_collection["preview_expiry_policy"] == "retain_for_operator_review"
+    assert result.event_collection["preview_selection_manifest_policy"] == (
+        "latest_server_preview_exact_set"
+    )
     assert store.saved == [result]
     assert http1._filter_final_expired_events is expiring_filter
 
@@ -130,7 +167,12 @@ def test_review_bootstrap_delegates_preview_pipeline_to_final_handoff() -> None:
     ) < handoff.index("apply_preview_transport()")
     assert "_BASE_BIND()" in handoff
     assert "_http1._filter_final_expired_events = _keep_preview_candidates" in handoff
+    assert "_selection.invalidate_preview_manifest(listing.url)" in handoff
     assert "state = _enrich_final_preview(store, state)" in handoff
+    assert "state = _selection.issue_preview_manifest(listing, state)" in handoff
+    assert handoff.index("invalidate_preview_manifest") < handoff.index(
+        "_enrich_final_preview"
+    ) < handoff.index("issue_preview_manifest")
     assert '"listing_only_candidates_remaining"' in handoff
     assert "def enrich_preview_state(" in enrichment
     assert "preview_listing_evidence_only" in enrichment
