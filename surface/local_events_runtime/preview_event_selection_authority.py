@@ -138,6 +138,11 @@ def _validated_review(
     payload: dict[str, Any],
     listing_decision: str,
 ) -> tuple[str, str, list[dict[str, str]]]:
+    if listing_decision not in {"confirmed", "rejected"}:
+        raise ValueError(
+            "a Preview Event review must confirm or reject the List Page"
+        )
+
     listing_candidate_id = str(payload.get("listing_candidate_id") or "").strip()
     listing_url = _review.canonical_url(payload.get("listing_url"))
     state = store.load()
