@@ -4,6 +4,8 @@ import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
+import pytest
+
 from .conftest import SURFACE
 
 sys.path.insert(0, str(SURFACE))
@@ -13,6 +15,7 @@ from local_events_runtime import preview_browser_session_authority as authority 
 
 class StoredState:
     def __init__(self) -> None:
+        self.events = []
         self.event_collection = {
             "preview_detail_context_count": 1,
             "preview_detail_isolated_browser_count": 2,
@@ -77,6 +80,7 @@ def test_preview_listing_and_details_borrow_one_request_local_browser(
     browser_launches = []
     fallback_launches = []
     borrowed_browsers = []
+    final_detail_guards = []
 
     class PlaywrightContext:
         def __init__(self, owner):
@@ -148,7 +152,20 @@ def test_preview_listing_and_details_borrow_one_request_local_browser(
 
         return StoredState()
 
+    def final_detail_guard(store, state):
+        session = authority._CURRENT_SESSION.get()
+        final_detail_guards.append(session)
+        assert session is not None
+        assert session.browser is browser
+        assert browser.close_count == 0
+        return state
+
     monkeypatch.setattr(authority._transport, "_BASE_COLLECT", base_collect)
+    monkeypatch.setattr(
+        authority,
+        "_enrich_remaining_preview_details",
+        final_detail_guard,
+    )
     store = Store()
 
     state = authority.collect_event_candidates(store)
@@ -160,6 +177,7 @@ def test_preview_listing_and_details_borrow_one_request_local_browser(
     assert len(borrowed_browsers) == 2
     assert all(isinstance(item, authority.PreviewBrowserLease) for item in borrowed_browsers)
     assert borrowed_browsers[0] is borrowed_browsers[1]
+    assert len(final_detail_guards) == 1
     assert browser.close_count == 1
     assert authority._CURRENT_SESSION.get() is None
     assert store.saved == [state]
@@ -170,6 +188,53 @@ def test_preview_listing_and_details_borrow_one_request_local_browser(
     )
     assert state.event_collection["preview_detail_context_count"] == 1
     assert "preview_detail_isolated_browser_count" not in state.event_collection
+
+
+def test_final_detail_fallback_requires_active_request_session(monkeypatch) -> None:
+    candidate = SimpleNamespace(
+        detail_error="preview_listing_evidence_only_missing_when"
+    )
+    state = SimpleNamespace(events=[candidate], event_collection={})
+
+    from local_events_runtime import preview_detail_enrichment_authority as enrichment
+
+    monkeypatch.setattr(enrichment, "_needs_detail", lambda item: True)
+
+    with pytest.raises(RuntimeError, match="active request-local browser session"):
+        authority._enrich_remaining_preview_details(Store(), state)
+
+
+def test_final_detail_fallback_uses_active_request_session(monkeypatch) -> None:
+    candidate = SimpleNamespace(
+        detail_error="preview_listing_evidence_only_missing_when"
+    )
+    state = SimpleNamespace(events=[candidate], event_collection={})
+    expected = SimpleNamespace(events=[], event_collection={})
+    browser = object()
+    session = authority.PreviewBrowserSession(
+        browser=browser,
+        lease=authority.PreviewBrowserLease(browser),
+    )
+    calls = []
+
+    from local_events_runtime import preview_detail_enrichment_authority as enrichment
+
+    monkeypatch.setattr(enrichment, "_needs_detail", lambda item: True)
+
+    def enrich(store, actual):
+        calls.append((store, actual, authority._CURRENT_SESSION.get()))
+        return expected
+
+    monkeypatch.setattr(enrichment, "enrich_preview_state", enrich)
+    store = Store()
+    token = authority._CURRENT_SESSION.set(session)
+    try:
+        result = authority._enrich_remaining_preview_details(store, state)
+    finally:
+        authority._CURRENT_SESSION.reset(token)
+
+    assert result is expected
+    assert calls == [(store, state, session)]
 
 
 def test_non_preview_launch_uses_the_original_browser_launcher(monkeypatch) -> None:
