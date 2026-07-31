@@ -44,6 +44,17 @@ WEATHER_CODE = {
 }
 
 
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def log(component: str, state: str, **fields) -> None:
+    parts = [f"ts={utc_now()}", f"component={component}", f"state={state}"]
+    for key, value in fields.items():
+        parts.append(f"{key}={json.dumps(value, ensure_ascii=False)}")
+    print(" ".join(parts), flush=True)
+
+
 def read_json(path, default):
     try:
         return json.loads(path.read_text(encoding="utf-8"))
@@ -254,7 +265,7 @@ def fetch_weather():
     feels = current.get("apparent_temperature")
     humidity = current.get("relative_humidity_2m")
     return {
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": utc_now(),
         "location": "Singapore",
         "source": "open-meteo",
         "status": "OK" if temp is not None else "ERR",
@@ -266,36 +277,114 @@ def fetch_weather():
     }
 
 
-def write_weather():
+def write_weather() -> bool:
+    attempt_at = utc_now()
+    log("weather", "start", provider="open-meteo", output=str(WEATHER))
     try:
         payload = fetch_weather()
+        payload["last_attempt_at"] = attempt_at
+        payload["last_success_at"] = payload.get("updated_at") or attempt_at
+        payload.pop("error", None)
+        ok = payload.get("status") == "OK"
     except Exception as exc:
         old = read_json(WEATHER, {})
+        last_success_at = old.get("last_success_at") or old.get("updated_at")
         payload = {
             **old,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "last_attempt_at": attempt_at,
             "location": old.get("location") or "Singapore",
             "source": "open-meteo",
             "status": "ERR",
-            "error": str(exc)[-500:],
+            "error": f"{type(exc).__name__}: {exc}"[-500:],
         }
+        if last_success_at:
+            payload["last_success_at"] = last_success_at
+        ok = False
+
     atomic_write_json(WEATHER, payload)
-    print(f"weather updated status={payload.get('status')} -> {WEATHER}")
+    if ok:
+        log(
+            "weather",
+            "success",
+            updated_at=payload.get("updated_at"),
+            temp_c=payload.get("temp_c"),
+            output=str(WEATHER),
+        )
+    else:
+        log(
+            "weather",
+            "failure",
+            error=payload.get("error") or "weather payload did not contain temperature",
+            retained_updated_at=payload.get("updated_at"),
+            output=str(WEATHER),
+        )
+    return ok
 
 
-def write_market():
+def write_market() -> bool:
+    attempt_at = utc_now()
     symbols = load_symbols()
+    log("market", "start", symbols=symbols, output=str(MARKET))
+    old = read_json(MARKET, {})
     items = [quote_one(symbol) for symbol in symbols]
-    ok_count = sum(1 for item in items if item.get("price") != "N/A")
-    payload = {"updated_at": datetime.now(timezone.utc).isoformat(), "source": "nasdaq+cnbc+stooq+yahoo", "symbols": symbols, "status": "OK" if ok_count else "ERR", "error": None if ok_count else "all quote providers failed", "items": items}
+    live_count = sum(
+        1
+        for item in items
+        if item.get("price") != "N/A"
+        and item.get("provider") not in {"stale-cache", "none"}
+    )
+    stale_count = sum(1 for item in items if item.get("provider") == "stale-cache")
+    ok = live_count > 0
+    last_success_at = attempt_at if ok else old.get("last_success_at") or old.get("updated_at")
+    payload = {
+        "updated_at": attempt_at if ok else old.get("updated_at"),
+        "last_attempt_at": attempt_at,
+        "last_success_at": last_success_at,
+        "source": "nasdaq+cnbc+stooq+yahoo",
+        "symbols": symbols,
+        "status": "OK" if ok else "ERR",
+        "error": None if ok else "all live quote providers failed",
+        "live_count": live_count,
+        "stale_count": stale_count,
+        "items": items,
+    }
     atomic_write_json(MARKET, payload)
-    print(f"market updated status={payload['status']} ok={ok_count}/{len(symbols)} symbols={','.join(symbols)} -> {MARKET}")
+    if ok:
+        log(
+            "market",
+            "success",
+            live_count=live_count,
+            stale_count=stale_count,
+            symbols=symbols,
+            output=str(MARKET),
+        )
+    else:
+        log(
+            "market",
+            "failure",
+            live_count=live_count,
+            stale_count=stale_count,
+            error=payload["error"],
+            output=str(MARKET),
+        )
+    return ok
 
 
 def main() -> None:
     ENV_DIR.mkdir(exist_ok=True)
-    write_weather()
-    write_market()
+    log("live-data", "start", env_dir=str(ENV_DIR))
+    weather_ok = write_weather()
+    market_ok = write_market()
+    if weather_ok and market_ok:
+        log("live-data", "success", weather="OK", market="OK")
+        return
+    log(
+        "live-data",
+        "failure",
+        weather="OK" if weather_ok else "ERR",
+        market="OK" if market_ok else "ERR",
+    )
+    raise SystemExit(1)
 
 
 if __name__ == "__main__":
