@@ -95,26 +95,22 @@ ARTSCIENCE_DETAIL_FIELDS_JS = r"""
 """
 
 
-def collect_detail_candidate(
-    page: Any,
-    source: dict[str, Any],
-    listing_url: str,
-    raw_url: str,
-) -> dict[str, str]:
-    """Read one ArtScience detail page without sharing its browser connection."""
-
+def _safe_requested_url(listing_url: str, raw_url: str) -> str:
     requested_url = _provenance.listing_detail_url(listing_url, raw_url)
     if not requested_url:
         raise ValueError("detail URL is not a safe HTTP(S) target from the listing")
+    return requested_url
 
-    response = page.goto(
-        requested_url,
-        wait_until="commit",
-        timeout=_detail_navigation.DETAIL_COMMIT_TIMEOUT_MS,
-    )
-    if response is not None and response.status >= 400:
-        raise ValueError(f"detail_http_status_{response.status}")
 
+def read_loaded_detail_candidate(
+    page: Any,
+    source: dict[str, Any],
+    listing_url: str,
+    requested_url: str,
+) -> dict[str, str]:
+    """Parse an ArtScience page already opened by a rendered browser interaction."""
+
+    requested_url = _safe_requested_url(listing_url, requested_url)
     try:
         page.wait_for_function(
             ARTSCIENCE_DETAIL_READY_JS,
@@ -158,8 +154,28 @@ def collect_detail_candidate(
     }
 
 
+def collect_detail_candidate(
+    page: Any,
+    source: dict[str, Any],
+    listing_url: str,
+    raw_url: str,
+) -> dict[str, str]:
+    """Navigate directly for non-Preview callers, then parse the loaded page."""
+
+    requested_url = _safe_requested_url(listing_url, raw_url)
+    response = page.goto(
+        requested_url,
+        wait_until="commit",
+        timeout=_detail_navigation.DETAIL_COMMIT_TIMEOUT_MS,
+    )
+    if response is not None and response.status >= 400:
+        raise ValueError(f"detail_http_status_{response.status}")
+    return read_loaded_detail_candidate(page, source, listing_url, requested_url)
+
+
 __all__ = [
     "ARTSCIENCE_DETAIL_FIELDS_JS",
     "ARTSCIENCE_DETAIL_READY_JS",
     "collect_detail_candidate",
+    "read_loaded_detail_candidate",
 ]
