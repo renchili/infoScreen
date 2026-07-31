@@ -2,12 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from . import browser as _browser
 from . import event_review as _review
 from . import http1_browser as _http1
 from . import preview_detail_enrichment_authority as _enrichment
 from . import preview_event_selection_authority as _selection
-from . import preview_transport_authority as _transport
 
 _APPLIED = False
 _BASE_BIND = None
@@ -27,32 +25,23 @@ def _enrich_final_preview(
     store: _review.EventReviewStore,
     state: _review.ReviewState,
 ) -> _review.ReviewState:
-    """Guarantee that no listing-only row escapes the final HTTP handoff.
+    """Fail closed if a listing-only row escaped the request-local browser session.
 
-    The normal composed Preview chain should enrich before transport returns. This final
-    guard handles any authority-order regression by reusing the exact same installed
-    Chromium and MBS headed policy while the result is still inside the server request.
+    The single-browser session owner performs the final detail fallback before closing
+    Chromium. Reopening a browser here would violate the one-process Preview contract
+    while returning misleading transport metadata, so the final HTTP handoff verifies
+    the invariant instead of silently starting a second browser.
     """
 
-    if not any(_enrichment._needs_detail(candidate) for candidate in state.events):
-        return state
-
-    original_launch = _browser.launch_chromium
-    original_headless = _transport._PREVIEW_HEADLESS
-    _transport._PREVIEW_HEADLESS = not _transport._requires_headed_preview(store)
-    if not _transport._PREVIEW_HEADLESS and not _transport._graphical_session_available():
-        _transport._PREVIEW_HEADLESS = original_headless
+    remaining = sum(
+        _enrichment._needs_detail(candidate) for candidate in state.events
+    )
+    if remaining:
         raise RuntimeError(
-            "MBS preview detail enrichment requires the existing Surface graphical "
-            "session; DISPLAY and WAYLAND_DISPLAY are both missing"
+            "Preview detail enrichment remained incomplete after the request-local "
+            f"browser session ({remaining} candidate(s)); run Preview again"
         )
-
-    _browser.launch_chromium = _transport._launch_preview_chromium
-    try:
-        return _enrichment.enrich_preview_state(store, state)
-    finally:
-        _browser.launch_chromium = original_launch
-        _transport._PREVIEW_HEADLESS = original_headless
+    return state
 
 
 def _preview_listing(store: _review.EventReviewStore) -> _review.ListingPageCandidate:
