@@ -19,9 +19,29 @@ _BASE_SET_LISTING_DECISION = None
 _BASE_COLLECT = None
 _PROTOCOL_PREFIX = "preview-review-v1:"
 _SELECTION_FILE = "preview_event_selections.json"
-_PREVIEW_MANIFEST_TTL_SECONDS = max(
-    60,
-    int(os.environ.get("INFOSCREEN_PREVIEW_MANIFEST_TTL_SECONDS", "21600")),
+_PREVIEW_MANIFEST_TTL_ENV = "INFOSCREEN_PREVIEW_MANIFEST_TTL_SECONDS"
+_DEFAULT_PREVIEW_MANIFEST_TTL_SECONDS = 21_600
+_MIN_PREVIEW_MANIFEST_TTL_SECONDS = 60
+
+
+def _preview_manifest_ttl_seconds(value: object) -> int:
+    """Parse the optional manifest TTL without making service import fragile."""
+
+    raw = str(value or "").strip()
+    if not raw:
+        return _DEFAULT_PREVIEW_MANIFEST_TTL_SECONDS
+    try:
+        parsed = int(raw)
+    except ValueError:
+        return _DEFAULT_PREVIEW_MANIFEST_TTL_SECONDS
+    return max(_MIN_PREVIEW_MANIFEST_TTL_SECONDS, parsed)
+
+
+_PREVIEW_MANIFEST_TTL_SECONDS = _preview_manifest_ttl_seconds(
+    os.environ.get(
+        _PREVIEW_MANIFEST_TTL_ENV,
+        str(_DEFAULT_PREVIEW_MANIFEST_TTL_SECONDS),
+    )
 )
 _PREVIEW_MANIFESTS: dict[str, dict[str, Any]] = {}
 
@@ -540,6 +560,7 @@ __all__ = [
     "_decode_protocol",
     "_discard_listing_selection",
     "_load",
+    "_preview_manifest_ttl_seconds",
     "_restore_selection_snapshot",
     "_set_listing_decision",
 ]
