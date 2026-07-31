@@ -4,10 +4,13 @@ import inspect
 import json
 import sys
 
+import pytest
+
 from .conftest import SURFACE, read_text
 
 sys.path.insert(0, str(SURFACE))
 
+from local_events_runtime import preview_event_selection_authority as selection  # noqa: E402
 from local_events_runtime import scoped_listing_collection as scoped  # noqa: E402
 from local_events_runtime.event_review import (  # noqa: E402
     EventReviewStore,
@@ -65,6 +68,27 @@ def _listing(
         decision=decision,
         discovered_at="2026-07-29T00:00:00+00:00",
     )
+
+
+def _saved_selection(listing: ListingPageCandidate) -> dict:
+    detail_url = listing.url.rstrip("/") + "/event-one"
+    return {
+        "listing_candidate_id": listing.candidate_id,
+        "listing_url": listing.url,
+        "reviewed_at": "2026-07-29T01:00:00+00:00",
+        "decisions": [
+            {
+                "candidate_id": stable_id(
+                    listing.source_id,
+                    listing.url,
+                    detail_url,
+                ),
+                "listing_detail_url": detail_url,
+                "detail_url": detail_url,
+                "decision": "confirmed",
+            }
+        ],
+    }
 
 
 def test_collection_discovers_only_selected_institution_before_confirmation(
@@ -130,6 +154,122 @@ def test_collection_discovers_only_selected_institution_before_confirmation(
         "single_institution_before_confirmation"
     )
     assert state.listing_collection["source_id"] == "alpha"
+
+
+def test_retired_discovery_page_clears_selection_and_requires_new_preview(
+    tmp_path,
+) -> None:
+    store = _store(tmp_path)
+    configured = _listing(
+        "alpha",
+        "Alpha Museum",
+        "https://alpha.example/events",
+    )
+    retired = _listing(
+        "alpha",
+        "Alpha Museum",
+        "https://alpha.example/retired-programmes",
+        decision="confirmed",
+        origin="discovered",
+    )
+    manual = _listing(
+        "alpha",
+        "Alpha Museum",
+        "https://alpha.example/operator-list",
+        origin="discovered",
+        link_text=MANUAL_LINK_TEXT,
+    )
+    store.save(ReviewState(listing_pages=[configured, retired, manual]))
+    selection._save(
+        store,
+        {
+            "schema_version": 1,
+            "listings": {
+                retired.url: _saved_selection(retired),
+                manual.url: _saved_selection(manual),
+            },
+        },
+    )
+    selection._PREVIEW_MANIFESTS[retired.url] = {"candidate": "stale"}
+
+    state = scoped._merge_selected_source(
+        store,
+        "alpha",
+        {configured.candidate_id: configured},
+        {"scope": "test"},
+    )
+
+    assert retired.url not in {row.url for row in state.listing_pages}
+    assert manual.url in {row.url for row in state.listing_pages}
+    saved = selection._load(store)["listings"]
+    assert retired.url not in saved
+    assert manual.url in saved
+    assert retired.url not in selection._PREVIEW_MANIFESTS
+
+    reappeared = retired.model_copy(
+        update={"decision": "pending", "reviewed_at": None}
+    )
+    scoped._merge_selected_source(
+        store,
+        "alpha",
+        {
+            configured.candidate_id: configured,
+            reappeared.candidate_id: reappeared,
+        },
+        {"scope": "test-reappeared"},
+    )
+    with pytest.raises(ValueError, match="REAL EVENT / NOT EVENT"):
+        selection._set_listing_decision(
+            store,
+            reappeared.candidate_id,
+            "confirmed",
+        )
+
+
+def test_retired_selection_is_restored_when_review_state_save_fails(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    store = _store(tmp_path)
+    configured = _listing(
+        "alpha",
+        "Alpha Museum",
+        "https://alpha.example/events",
+    )
+    retired = _listing(
+        "alpha",
+        "Alpha Museum",
+        "https://alpha.example/retired-programmes",
+        decision="confirmed",
+        origin="discovered",
+    )
+    store.save(ReviewState(listing_pages=[configured, retired]))
+    selection._save(
+        store,
+        {
+            "schema_version": 1,
+            "listings": {retired.url: _saved_selection(retired)},
+        },
+    )
+    snapshot = selection._selection_path(store).read_bytes()
+    selection._PREVIEW_MANIFESTS[retired.url] = {"candidate": "retryable"}
+
+    def fail_save(state):
+        raise RuntimeError("state write failed")
+
+    monkeypatch.setattr(store, "save", fail_save)
+
+    with pytest.raises(RuntimeError, match="state write failed"):
+        scoped._merge_selected_source(
+            store,
+            "alpha",
+            {configured.candidate_id: configured},
+            {"scope": "test"},
+        )
+
+    assert selection._selection_path(store).read_bytes() == snapshot
+    assert retired.url in selection._PREVIEW_MANIFESTS
+    assert retired.url in {row.url for row in store.load().listing_pages}
 
 
 def test_retired_discovery_pages_clear_preview_selection_with_rollback() -> None:
