@@ -222,13 +222,13 @@ serve_infoscreen.py
   -> surface/.env/local_event_search_results.json
 ```
 
-The supported wrapper applies `surface/local_events_runtime/http1_browser.py` before importing the collector. Every Chromium instance launched through that path starts with:
+The supported wrapper applies `surface/local_events_runtime/http1_browser.py` before importing the collector. Chromium launched by this formal collection path starts with:
 
 ```text
 --disable-http2
 ```
 
-There is no HTTP/2-first attempt and no protocol retry loop.
+There is no HTTP/2-first attempt and no protocol retry loop on this path.
 
 This endpoint is an explicit producer trigger for operator or direct API use. The dashboard institution/keyword filter does not call it.
 
@@ -267,7 +267,7 @@ The response includes sources, list-page candidates, Event candidates, feedback 
 POST /api/local-events/review/discover-listings
 ```
 
-The request must contain the selected configured `source_id`. The endpoint opens only that institution’s home page with Playwright and persists its configured and discovered candidate list pages. The server applies `--disable-http2` before importing the review collector.
+The request must contain the selected configured `source_id`. The endpoint opens only that institution’s home page with Playwright and persists its configured and discovered candidate list pages. Scoped discovery uses the formal browser policy and starts Chromium with `--disable-http2`.
 
 A previous non-manual page that is no longer configured or discovered is retired. Its committed entry is removed from `preview_event_selections.json` before the new `state.json` is saved. If the state write fails, the previous selection bytes are restored. After a successful state write, its process-local Preview manifest is invalidated. Manually added pages are preserved by scoped discovery.
 
@@ -374,7 +374,7 @@ Content-Type: application/json
 
 The requested URL must already exist in Review state. Its current decision may be `pending`, `confirmed`, or `rejected`.
 
-Preview is isolated and uses one real Chromium process for the complete request:
+Preview is isolated and uses one direct browser lifecycle:
 
 ```text
 load real Review state
@@ -384,26 +384,30 @@ load real Review state
   -> clear copied Event candidates, feedback, and Event collection metadata
   -> save the copy under a temporary Review root
   -> invalidate the older process-local manifest for this List Page
-  -> launch one request-local Chromium process with --disable-http2
-  -> collect the listing and enrich detail pages through the same browser lease
-  -> run any final listing-only detail fallback before releasing that lease
+  -> start one Playwright manager, one Chromium process, and one browser context
+  -> open the selected listing page in that context
+  -> extract rendered title + official-detail-link candidates
+  -> open every admitted official detail page in the same context
+  -> preserve original list-card identity while recording final redirected URLs
+  -> close the context and real browser once
   -> verify no listing-only candidate remains
-  -> complete redirect and detail enrichment
   -> issue a new exact process-local candidate manifest
-  -> close the one real Chromium process
   -> return the temporary result
   -> delete the temporary root
 ```
 
-Nested listing/detail Playwright managers borrow the request lease. Their `browser.close()` calls are no-ops for the lease; the request owner closes the real browser exactly once. The temporary response metadata records:
+Preview transport may run Marina Bay Sands in headed mode and records NetLog diagnostics. Unlike scoped discovery, confirmed-page formal collection, and scheduled/direct collection, isolated Preview does not force HTTP/1 or alter Chromium protocol negotiation.
+
+The temporary response metadata records:
 
 ```text
 preview_browser_process_count: 1
 preview_browser_reuse: listing_and_details
-preview_detail_transport: single_http1_browser_process
+preview_detail_context_count: 1
+preview_detail_transport: same_browser_context
 ```
 
-If a candidate still carries listing-only detail evidence after the request-local browser session, Preview fails with HTTP `500` and guidance to run Preview again. The server does not start a second Chromium while claiming one process.
+If a candidate still carries listing-only evidence after the direct collector completes, Preview fails with HTTP `500`. The server does not start a second browser or issue a manifest from incomplete detail results.
 
 Preview does not call the list-decision endpoint and does not change:
 
@@ -418,7 +422,7 @@ Preview does not call the list-decision endpoint and does not change:
 
 The response keeps the original list-card `candidate_id`, reports the final redirected/public `detail_url`, and exposes `event_collection.preview_candidate_listing_detail_urls` so the Studio can submit both identities later. It also records manifest policy, candidate count, and expiry metadata in the temporary response collection metadata.
 
-The Studio stores the rendered panel and draft choices in `sessionStorage`; those browser-session drafts are not committed until the List Page review request succeeds. They may remain visible after the process-local manifest expires or disappears, but saving then fails and requires a new Preview. A missing or unknown `listing_url` returns HTTP `400`; collection, browser-session, or final-detail invariant failure returns HTTP `500`.
+The Studio stores the rendered panel and draft choices in `sessionStorage`; those browser-session drafts are not committed until the List Page review request succeeds. They may remain visible after the process-local manifest expires or disappears, but saving then fails and requires a new Preview. A missing or unknown `listing_url` returns HTTP `400`; collection, browser-lifecycle, or final-detail invariant failure returns HTTP `500`.
 
 ### Collect selected REAL EVENT candidates from confirmed pages
 
@@ -472,7 +476,7 @@ The downloadable Chrome Helper, extension files, ZIP generation, and remote `fee
 | Review page load or return to tab | `GET /api/local-events/review/state` | None | Render once, then restore card anchor or scroll position |
 | Discover list pages | `POST /api/local-events/review/discover-listings` | Persist selected-institution pages; retire vanished non-manual pages and their old selection state with rollback | Reload list cards |
 | Add list page | `POST /api/local-events/review/listing-page` | Persist one pending page; reset old selection/manifest for the same URL | Reload list cards |
-| Preview any saved list page | `POST /api/local-events/review/preview-events` | Use one request-local HTTP/1 Chromium process for listing/detail reads, issue an exact process-local manifest, and make no persisted mutation | Display candidates and keep draft choices in the browser session |
+| Preview any saved list page | `POST /api/local-events/review/preview-events` | Use one Chromium process and context for listing/detail reads, issue an exact process-local manifest, and make no persisted mutation | Display candidates and keep draft choices in the browser session |
 | Save List Page review | `POST /api/local-events/review/listing-decision` | Validate the exact latest manifest; persist the complete Preview selection set and List Page decision with exception rollback | Refresh Review cards or instruct the user to Preview again |
 | Collect confirmed selections | `POST /api/local-events/review/collect-events` | Persist selected REAL EVENT candidates and diagnostics from confirmed pages | Refresh Review cards |
 | Review Event decision | `POST /api/local-events/review/event-decision` | Persist decision and rebuild kiosk primary | Refresh Review cards |
