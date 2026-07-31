@@ -74,6 +74,36 @@ def _restore_selection_snapshot(
         pass
 
 
+def _discard_listing_selection(
+    store: _review.EventReviewStore,
+    listing_url: str,
+) -> tuple[bytes | None, bool]:
+    """Remove one stale selection record and return rollback material."""
+
+    selections = _load(store)
+    listings = selections.setdefault("listings", {})
+    if listing_url not in listings:
+        return _selection_snapshot(store), False
+    snapshot = _selection_snapshot(store)
+    del listings[listing_url]
+    _save(store, selections)
+    return snapshot, True
+
+
+def _rollback_selection_after_failure(
+    store: _review.EventReviewStore,
+    snapshot: bytes | None,
+    exc: Exception,
+) -> None:
+    try:
+        _restore_selection_snapshot(store, snapshot)
+    except Exception as rollback_exc:
+        raise RuntimeError(
+            "List Page decision failed and Preview selection rollback also failed: "
+            f"{rollback_exc}"
+        ) from exc
+
+
 def _decode_protocol(value: str) -> dict[str, Any] | None:
     raw = str(value or "")
     if not raw.startswith(_PROTOCOL_PREFIX):
@@ -196,23 +226,18 @@ def _set_listing_decision(
         try:
             return _BASE_SET_LISTING_DECISION(store, actual_id, decision)
         except Exception as exc:
-            try:
-                _restore_selection_snapshot(store, snapshot)
-            except Exception as rollback_exc:
-                raise RuntimeError(
-                    "List Page decision failed and Preview selection rollback also failed: "
-                    f"{rollback_exc}"
-                ) from exc
+            _rollback_selection_after_failure(store, snapshot, exc)
             raise
 
+    state = store.load()
+    listing = next(
+        (item for item in state.listing_pages if item.candidate_id == candidate_id),
+        None,
+    )
+    if listing is None:
+        raise ValueError("listing candidate not found")
+
     if decision == "confirmed":
-        state = store.load()
-        listing = next(
-            (item for item in state.listing_pages if item.candidate_id == candidate_id),
-            None,
-        )
-        if listing is None:
-            raise ValueError("listing candidate not found")
         record = _load(store).get("listings", {}).get(listing.url)
         decisions = record.get("decisions") if isinstance(record, dict) else None
         if not isinstance(decisions, list) or not any(
@@ -222,7 +247,15 @@ def _set_listing_decision(
             raise ValueError(
                 "Preview every candidate and select REAL EVENT / NOT EVENT before confirming this List Page"
             )
-    return _BASE_SET_LISTING_DECISION(store, candidate_id, decision)
+        return _BASE_SET_LISTING_DECISION(store, candidate_id, decision)
+
+    snapshot, changed = _discard_listing_selection(store, listing.url)
+    try:
+        return _BASE_SET_LISTING_DECISION(store, candidate_id, decision)
+    except Exception as exc:
+        if changed:
+            _rollback_selection_after_failure(store, snapshot, exc)
+        raise
 
 
 def _confirmed_selections(
@@ -338,6 +371,8 @@ __all__ = [
     "apply",
     "collect_event_candidates",
     "_decode_protocol",
+    "_discard_listing_selection",
     "_load",
+    "_restore_selection_snapshot",
     "_set_listing_decision",
 ]
