@@ -27,13 +27,15 @@
   }
 
   function canonical(value) {
+    const raw = text(value);
+    if (!raw) return "";
     try {
-      const url = new URL(value, window.location.href);
+      const url = new URL(raw, window.location.href);
       url.hash = "";
       if (url.pathname !== "/") url.pathname = url.pathname.replace(/\/$/, "");
       return url.href;
     } catch {
-      return text(value);
+      return raw;
     }
   }
 
