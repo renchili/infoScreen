@@ -98,6 +98,26 @@ def launch_or_borrow(playwright: Any):
     return _BASE_BROWSER_LAUNCH(playwright)
 
 
+def _enrich_remaining_preview_details(
+    store: _review.EventReviewStore,
+    state: _review.ReviewState,
+) -> _review.ReviewState:
+    """Resolve final listing-only rows while the request browser lease is active."""
+
+    from . import preview_detail_enrichment_authority as enrichment
+
+    if not any(
+        enrichment._needs_detail(candidate)
+        for candidate in getattr(state, "events", [])
+    ):
+        return state
+    if _CURRENT_SESSION.get() is None:
+        raise RuntimeError(
+            "Preview detail fallback requires the active request-local browser session"
+        )
+    return enrichment.enrich_preview_state(store, state)
+
+
 def _normalise_transport_metadata(state: _review.ReviewState) -> _review.ReviewState:
     metadata = dict(state.event_collection)
     metadata.pop("preview_detail_isolated_browser_count", None)
@@ -146,6 +166,10 @@ def collect_event_candidates(store: _review.EventReviewStore) -> _review.ReviewS
             )
             try:
                 state = _transport._BASE_COLLECT(store)
+                # Keep the final authority-order guard inside this lease. Running it
+                # after the outer collector returns would launch a second Chromium while
+                # still reporting one process for the Preview request.
+                state = _enrich_remaining_preview_details(store, state)
                 state = _normalise_transport_metadata(state)
                 return store.save(state)
             except Exception as exc:
