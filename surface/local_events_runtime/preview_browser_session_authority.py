@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextvars import ContextVar
+from dataclasses import dataclass
 from typing import Any
 
 from . import browser as _browser
@@ -9,6 +11,7 @@ from . import preview_transport_authority as _transport
 _APPLIED = False
 _HOOKED = False
 _BASE_TRANSPORT_APPLY = None
+_BASE_BROWSER_LAUNCH = None
 
 
 class PreviewBrowserLease:
@@ -24,17 +27,16 @@ class PreviewBrowserLease:
         return None
 
 
-class BorrowedPlaywright:
-    """Yield the request-owned Playwright instance without stopping it on exit."""
+@dataclass(frozen=True)
+class PreviewBrowserSession:
+    browser: Any
+    lease: PreviewBrowserLease
 
-    def __init__(self, playwright: Any):
-        self._playwright = playwright
 
-    def __enter__(self) -> Any:
-        return self._playwright
-
-    def __exit__(self, exc_type, exc, traceback) -> bool:
-        return False
+_CURRENT_SESSION: ContextVar[PreviewBrowserSession | None] = ContextVar(
+    "infoscreen_preview_browser_session",
+    default=None,
+)
 
 
 def launch_preview_chromium(playwright: Any):
@@ -87,27 +89,31 @@ def launch_preview_chromium(playwright: Any):
     return browser
 
 
+def launch_or_borrow(playwright: Any):
+    """Borrow the current Preview browser or use the normal launcher elsewhere."""
+
+    session = _CURRENT_SESSION.get()
+    if session is not None:
+        return session.lease
+    return _BASE_BROWSER_LAUNCH(playwright)
+
+
 def _normalise_transport_metadata(state: _review.ReviewState) -> _review.ReviewState:
     metadata = dict(state.event_collection)
-    isolated_contexts = int(
-        metadata.pop("preview_detail_isolated_browser_count", 0) or 0
-    )
+    metadata.pop("preview_detail_isolated_browser_count", None)
     metadata["preview_browser_process_count"] = 1
     metadata["preview_browser_reuse"] = "listing_and_details"
     metadata["preview_detail_transport"] = "single_http1_browser_process"
-    if isolated_contexts:
-        metadata["preview_detail_isolated_context_count"] = isolated_contexts
     state.event_collection = metadata
     return state
 
 
 def collect_event_candidates(store: _review.EventReviewStore) -> _review.ReviewState:
-    """Run the complete Preview pipeline through one Playwright/browser owner."""
+    """Run the complete Preview pipeline through one request-local browser lease."""
 
     if not _transport._preview_store(store):
         return _transport._BASE_COLLECT(store)
 
-    original_launch = _browser.launch_chromium
     original_headless = _transport._PREVIEW_HEADLESS
     _transport._LAST_PREVIEW_DIAGNOSTIC = {}
     _transport._PREVIEW_HEADLESS = not _transport._requires_headed_preview(store)
@@ -122,31 +128,22 @@ def collect_event_candidates(store: _review.EventReviewStore) -> _review.ReviewS
             "and WAYLAND_DISPLAY are both missing from infoscreen-http.service"
         )
 
+    from playwright.sync_api import sync_playwright
+
     actual_browser: Any | None = None
-    lease: PreviewBrowserLease | None = None
-
-    from playwright import sync_api
-
-    original_sync_playwright = sync_api.sync_playwright
-
+    session_token = None
     try:
-        # The direct listing collector and detail enrichment both import
-        # sync_playwright() inside their functions. During this request they borrow one
-        # outer owner instead of starting and stopping separate Playwright connections.
-        with original_sync_playwright() as owner_playwright:
-
-            def borrow_owner() -> BorrowedPlaywright:
-                return BorrowedPlaywright(owner_playwright)
-
-            def launch_once(_borrowed_playwright: Any) -> PreviewBrowserLease:
-                nonlocal actual_browser, lease
-                if lease is None:
-                    actual_browser = launch_preview_chromium(owner_playwright)
-                    lease = PreviewBrowserLease(actual_browser)
-                return lease
-
-            sync_api.sync_playwright = borrow_owner
-            _browser.launch_chromium = launch_once
+        # The listing collector and detail enrichment may each create a short-lived
+        # Playwright manager. Their browser launches resolve through the ContextVar lease,
+        # while this outer manager remains the sole owner of the real Chromium process.
+        with sync_playwright() as owner_playwright:
+            actual_browser = launch_preview_chromium(owner_playwright)
+            session_token = _CURRENT_SESSION.set(
+                PreviewBrowserSession(
+                    browser=actual_browser,
+                    lease=PreviewBrowserLease(actual_browser),
+                )
+            )
             try:
                 state = _transport._BASE_COLLECT(store)
                 state = _normalise_transport_metadata(state)
@@ -166,26 +163,31 @@ def collect_event_candidates(store: _review.EventReviewStore) -> _review.ReviewS
                     details.append(f"preview_netlog_summary={summary_path}")
                 raise RuntimeError(" | ".join(details)) from exc
             finally:
-                sync_api.sync_playwright = original_sync_playwright
+                if session_token is not None:
+                    _CURRENT_SESSION.reset(session_token)
+                    session_token = None
                 if actual_browser is not None:
                     try:
                         actual_browser.close()
                     except Exception:
                         pass
     finally:
-        _browser.launch_chromium = original_launch
+        if session_token is not None:
+            _CURRENT_SESSION.reset(session_token)
         _transport._PREVIEW_HEADLESS = original_headless
-        sync_api.sync_playwright = original_sync_playwright
 
 
 def apply() -> None:
-    """Replace the existing Preview transport at its diagnostics export point."""
+    """Install request-local browser reuse after Preview transport composition."""
 
-    global _APPLIED
+    global _APPLIED, _BASE_BROWSER_LAUNCH
+    if not _APPLIED:
+        _BASE_BROWSER_LAUNCH = _browser.launch_chromium
+        _browser.launch_chromium = launch_or_borrow
+        _APPLIED = True
     _transport._launch_preview_chromium = launch_preview_chromium
     _transport.collect_event_candidates = collect_event_candidates
     _transport._diagnostics.collect_event_candidates = collect_event_candidates
-    _APPLIED = True
 
 
 def install_transport_apply_hook() -> None:
@@ -207,10 +209,11 @@ def install_transport_apply_hook() -> None:
 
 
 __all__ = [
-    "BorrowedPlaywright",
     "PreviewBrowserLease",
+    "PreviewBrowserSession",
     "apply",
     "collect_event_candidates",
     "install_transport_apply_hook",
+    "launch_or_borrow",
     "launch_preview_chromium",
 ]
