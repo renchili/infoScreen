@@ -109,7 +109,7 @@ Surface or Ubuntu device
 | Market and Weather | `infoscreen-live-data.timer` or Market refresh | `market.json`, `weather.json` | `dashboard.js` |
 | Multilingual News | `infoscreen-event-stream.timer` | `event_stream.json` | `local_event_card.js` |
 | Local Events | `infoscreen-local-events.timer` or explicit collection API | `local_event_search_results.json`, `/api/local-events/search` | `local_event_card.js` |
-| Local Event review | Operator actions | `/api/local-events/review/*`, `local_event_review/state.json` | Local Event Studio scripts |
+| Local Event review | Operator actions | `/api/local-events/review/*`, `local_event_review/state.json`, `local_event_review/preview_event_selections.json` | Local Event Studio scripts |
 | Calendar | Mac LaunchAgent | `schedule.json` | `calendar_board.js` |
 | Photos | Manual photo builder | `photos.json`, `/public_photos/*` | `local_event_card.js` |
 | Sync status | Browser `HEAD` checks | Runtime endpoints | `local_event_card.js` |
@@ -163,14 +163,24 @@ systemctl --user restart infoscreen-http.service
 1. Select the global institution used to filter the visible Review cards.
 2. Click `COLLECT LIST PAGES`.
 3. Inspect a candidate URL. A pending card exposes `PREVIEW BEFORE CONFIRM`; confirmed and rejected cards expose `PREVIEW EVENTS`.
-4. Use preview whenever page-specific evidence is needed. Preview works before or after a decision and never changes the saved list-page decision or persisted Review state.
-5. Choose `CONFIRM LIST PAGE`, `REJECT`, or `RESET`.
-6. Click `COLLECT EVENTS FROM CONFIRMED PAGES` to refresh and persist Events from all confirmed pages.
-7. Review each Event and choose `RELATED ACTIVITY`, `NOT RELATED`, or `RESET`.
+4. Preview the page and classify every returned candidate as `REAL EVENT` or `NOT EVENT`. Preview works before or after a saved List Page decision and does not mutate persisted Review state by itself.
+5. When every candidate is classified, confirm the List Page with its REAL EVENT selections, or reject the List Page when no candidate is a real Event. The complete selection set and List Page decision are committed by the same request.
+6. After confirmation, use the page-level `COLLECT … SELECTED REAL EVENT(S)` action or the global `COLLECT EVENTS FROM CONFIRMED PAGES` action. Formal collection admits only committed REAL EVENT selections from confirmed pages and excludes unselected candidates before detail navigation.
+7. Review each persisted Event and choose `RELATED ACTIVITY`, `NOT RELATED`, or `RESET`.
 
-Preview and normal collection are separate operations. `POST /api/local-events/review/preview-events` copies Review state into an isolated temporary store, keeps only the selected page, marks only that temporary copy confirmed, clears copied Events and feedback, and returns temporary candidates. It does not call the list-decision API, modify `surface/.env/local_event_review/state.json`, rebuild the kiosk projection, or alter other page decisions.
+Preview and normal collection are separate operations. `POST /api/local-events/review/preview-events` copies Review state into an isolated temporary store, keeps only the selected page, marks only that temporary copy confirmed, clears copied Events and feedback, and returns temporary candidates. It does not call the list-decision API, modify persisted review files, rebuild the kiosk projection, or alter other page decisions. The Studio keeps the temporary panel and draft choices in `sessionStorage` until the List Page review is saved or the formal collection clears them.
 
-Normal `POST /api/local-events/review/collect-events` reads all pages currently marked confirmed and persists their Event candidates and diagnostics. A listing card needs a usable title and one official detail link. The list card itself does not need to repeat date or venue. The collector follows detail pages for title, date/time, location, summary, and detail status.
+A Preview review is encoded in the existing `preview-review-v1:` `candidate_id` envelope sent to `POST /api/local-events/review/listing-decision`. Each row carries the original list-card `candidate_id`, the original `listing_detail_url`, the final redirected/public `detail_url`, and the operator decision. The backend validates the complete set before persisting it.
+
+The committed selection state is stored at:
+
+```text
+surface/.env/local_event_review/preview_event_selections.json
+```
+
+The selection file is atomically replaced before the List Page state write. If that state write raises, the previous selection file is restored or the newly created file is removed. This is exception rollback inside one request; it is not a cross-file transaction that can guarantee recovery from an abrupt process crash between the two writes.
+
+Normal `POST /api/local-events/review/collect-events` reads confirmed pages with committed REAL EVENT selections. It filters the original list-card links before opening detail pages, then retains only results matching the selected candidate identity, original link, or final redirected/public URL. A listing card needs a usable title and one official detail link. The list card itself does not need to repeat date or venue. The collector follows admitted detail pages for title, date/time, location, summary, and detail status.
 
 Every Event candidate shows its originating list URL, DOM selector, selector match number, listing page index, document position, detail URL, and detail result.
 
@@ -182,9 +192,9 @@ The manual input is directly below the top collection toolbar.
 2. Paste the correct official Event list URL into `Add an official Event list page to the selected global institution`.
 3. Click `ADD LIST PAGE`.
 4. The page is saved as `pending` and appears in the left-side Event list pages.
-5. Use `PREVIEW BEFORE CONFIRM` when evidence is needed before deciding.
-6. Confirm, reject, or reset the page.
-7. A confirmed page is included the next time `COLLECT EVENTS FROM CONFIRMED PAGES` runs.
+5. Use `PREVIEW BEFORE CONFIRM` and classify every candidate as `REAL EVENT` or `NOT EVENT`.
+6. Confirm the page with at least one committed REAL EVENT selection, or reject it when no candidate is a real Event.
+7. Formal collection includes only that page’s committed REAL EVENT selections while the page remains confirmed.
 
 The backend validates that:
 
@@ -192,7 +202,7 @@ The backend validates that:
 - the URL is absolute HTTP/HTTPS;
 - the hostname is within that institution’s `allowed_domains`.
 
-Manual addition does not modify committed `event_sources.json` and does not collect Events automatically. Adding the same URL again resets it to `pending` for re-review. Isolated preview remains available in `pending`, `confirmed`, and `rejected` states; only normal persisted collection requires confirmation.
+Manual addition does not modify committed `event_sources.json` and does not collect Events automatically. Adding the same URL again resets it to `pending` for re-review. Isolated preview remains available in `pending`, `confirmed`, and `rejected` states; normal persisted collection requires both a confirmed page and a committed REAL EVENT selection.
 
 ### Zero-result diagnostics
 
@@ -225,6 +235,7 @@ Review state is stored under:
 
 ```text
 surface/.env/local_event_review/state.json
+surface/.env/local_event_review/preview_event_selections.json
 ```
 
 ## Local Events collection policy
@@ -348,10 +359,11 @@ python3 -m json.tool surface/.env/local_event_search_results.json | less
 python3 -m json.tool surface/.env/local_event_search_results.partial.json | less
 ```
 
-When a Studio preview fails, inspect `event_collection.listing_diagnostics` in the returned preview payload. The persisted state remains at:
+When a Studio preview fails, inspect `event_collection.listing_diagnostics` in the returned preview payload. Persisted Review state remains at:
 
 ```text
 surface/.env/local_event_review/state.json
+surface/.env/local_event_review/preview_event_selections.json
 ```
 
 A failure before DOM parsing should be shown as a page/navigation error. Missing date on the listing card is not a rejection reason.
