@@ -176,7 +176,9 @@ systemctl --user restart infoscreen-http.service
 6. After confirmation, use the page-level `COLLECT … SELECTED REAL EVENT(S)` action or the global `COLLECT EVENTS FROM CONFIRMED PAGES` action. Formal collection admits only committed REAL EVENT selections from confirmed pages and excludes unselected candidates before detail navigation.
 7. Review each persisted Event and choose `RELATED ACTIVITY`, `NOT RELATED`, or `RESET`.
 
-Preview and normal collection are separate operations. `POST /api/local-events/review/preview-events` copies Review state into an isolated temporary store, keeps only the selected page, marks only that temporary copy confirmed, clears copied Events and feedback, completes the final collector, detail enrichment, and redirect handling, then records the exact returned candidate set in a process-local manifest. It does not call the list-decision API, modify persisted review files, rebuild the kiosk projection, or alter other page decisions.
+Preview and normal collection are separate operations. `POST /api/local-events/review/preview-events` copies Review state into an isolated temporary store, keeps only the selected page, marks only that temporary copy confirmed, clears copied Events and feedback, then uses the direct Preview collector to open the selected listing and all admitted official detail pages in one Playwright manager, one Chromium process, and one browser context. It preserves original list-card identity across redirects, closes the real browser once, and records the exact final candidate set in a process-local manifest. It does not call the list-decision API, modify persisted review files, rebuild the kiosk projection, or alter other page decisions.
+
+A successful Preview reports `preview_browser_process_count: 1`, `preview_browser_reuse: listing_and_details`, `preview_detail_context_count: 1`, and `preview_detail_transport: same_browser_context`. If listing-only evidence remains after the direct collector, Preview fails instead of starting a second browser or issuing a manifest from incomplete detail results.
 
 The Studio keeps the temporary panel and draft choices in `sessionStorage`. Browser-restored panel HTML and choices are drafts only; they are not candidate-set authority. A service restart, manifest expiry, newer Preview, List Page state change, reset, rejection, manual re-add, or discovery retirement invalidates the server manifest. Saving a stale draft then fails with guidance to run Preview again.
 
@@ -222,13 +224,13 @@ A zero result must show the exact failed recognition stage rather than only `0 E
 
 ### HTTP/2 handling
 
-System collection does not first try HTTP/2 and then retry. The supported entrypoints apply:
+Formal discovery and collection do not first try HTTP/2 and then retry. Their supported entrypoints apply:
 
 ```text
 surface/local_events_runtime/http1_browser.py
 ```
 
-before collector imports, and every patched Chromium launch includes:
+before collector imports, and Chromium on those paths includes:
 
 ```text
 --disable-http2
@@ -236,8 +238,10 @@ before collector imports, and every patched Chromium launch includes:
 
 This applies to:
 
-- Studio discovery, isolated preview, and confirmed-page Event collection through `surface/serve_infoscreen.py`;
+- Studio list-page discovery and confirmed-page formal Event collection through `surface/serve_infoscreen.py`;
 - scheduled and HTTP-triggered Local Events through `surface/search_local_events.py`.
+
+Isolated Preview is a separate path. `preview_direct_detail_collector_authority.py` uses one Chromium process and context for listing and detail reads. `preview_transport_authority.py` may run Marina Bay Sands Preview in headed mode and records NetLog diagnostics, but it does not force HTTP/1 or otherwise alter Chromium protocol negotiation.
 
 ### Interactive browser feedback status
 
@@ -375,7 +379,7 @@ python3 -m json.tool surface/.env/local_event_search_results.json | less
 python3 -m json.tool surface/.env/local_event_search_results.partial.json | less
 ```
 
-When a Studio preview fails, inspect `event_collection.listing_diagnostics` in the returned preview payload. Persisted Review state remains at:
+When a Studio preview fails, inspect `event_collection.listing_diagnostics`, `detail_page_errors`, and the Preview browser/NetLog details returned in the error. Persisted Review state remains at:
 
 ```text
 surface/.env/local_event_review/state.json
