@@ -129,6 +129,7 @@ def apply_preview_pipeline() -> None:
     """
 
     from .artscience_preview_authority import apply as apply_artscience_preview
+    from .preview_browser_session_authority import install_transport_apply_hook
     from .preview_collector_authority import apply as apply_preview_collector
     from .preview_detail_enrichment_authority import (
         apply as apply_preview_detail_enrichment,
@@ -137,6 +138,12 @@ def apply_preview_pipeline() -> None:
         apply as apply_preview_event_selection,
     )
     from .preview_transport_authority import apply as apply_preview_transport
+
+    # Register the single-browser transport before the established pipeline applies its
+    # outer transport wrapper. The hook preserves the complete base chain, then replaces
+    # only the final Preview transport with one HTTP/1 Chromium lease shared by listing
+    # and detail reads.
+    install_transport_apply_hook()
 
     # Formal collection must be filtered by the operator's Preview decisions before
     # source-specific Preview wrappers are composed over the diagnostics collector.
