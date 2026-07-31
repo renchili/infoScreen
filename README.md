@@ -68,6 +68,14 @@ surface/conf/market_config.default.json
 surface/conf/event_sources.json
 ```
 
+The process-local lifetime of the latest exact Local Event Preview candidate manifest can be changed with:
+
+```text
+INFOSCREEN_PREVIEW_MANIFEST_TTL_SECONDS
+```
+
+The default is 21,600 seconds and the minimum accepted value is 60 seconds. This manifest is memory state, not a JSON file, and disappears when the HTTP service restarts.
+
 Do not commit runtime JSON, logs, debug captures, personal photos, SSH details, or machine-local environment files.
 
 ## Product areas
@@ -109,7 +117,7 @@ Surface or Ubuntu device
 | Market and Weather | `infoscreen-live-data.timer` or Market refresh | `market.json`, `weather.json` | `dashboard.js` |
 | Multilingual News | `infoscreen-event-stream.timer` | `event_stream.json` | `local_event_card.js` |
 | Local Events | `infoscreen-local-events.timer` or explicit collection API | `local_event_search_results.json`, `/api/local-events/search` | `local_event_card.js` |
-| Local Event review | Operator actions | `/api/local-events/review/*`, `local_event_review/state.json`, `local_event_review/preview_event_selections.json` | Local Event Studio scripts |
+| Local Event review | Operator actions | `/api/local-events/review/*`, `local_event_review/state.json`, `local_event_review/preview_event_selections.json`, process-local latest Preview manifest | Local Event Studio scripts |
 | Calendar | Mac LaunchAgent | `schedule.json` | `calendar_board.js` |
 | Photos | Manual photo builder | `photos.json`, `/public_photos/*` | `local_event_card.js` |
 | Sync status | Browser `HEAD` checks | Runtime endpoints | `local_event_card.js` |
@@ -161,16 +169,18 @@ systemctl --user restart infoscreen-http.service
 ### Review system-collected list pages and Events
 
 1. Select the global institution used to filter the visible Review cards.
-2. Click `COLLECT LIST PAGES`.
+2. Click `COLLECT LIST PAGES`. A previously discovered non-manual page that is no longer found is retired together with its committed Preview selection. A manually added page is preserved.
 3. Inspect a candidate URL. A pending card exposes `PREVIEW BEFORE CONFIRM`; confirmed and rejected cards expose `PREVIEW EVENTS`.
-4. Preview the page and classify every returned candidate as `REAL EVENT` or `NOT EVENT`. Preview works before or after a saved List Page decision and does not mutate persisted Review state by itself.
-5. When every candidate is classified, confirm the List Page with its REAL EVENT selections, or reject the List Page when no candidate is a real Event. The complete selection set and List Page decision are committed by the same request.
+4. Preview the page and classify every returned candidate as `REAL EVENT` or `NOT EVENT`. Preview works before or after a saved List Page decision and does not mutate persisted Review files by itself.
+5. When every candidate is classified, confirm the List Page with its REAL EVENT selections, or reject the List Page when no candidate is a real Event. The complete selection set and List Page decision are committed by the same request only when the submitted candidate identities and original/final URLs exactly match the latest unexpired server Preview manifest.
 6. After confirmation, use the page-level `COLLECT … SELECTED REAL EVENT(S)` action or the global `COLLECT EVENTS FROM CONFIRMED PAGES` action. Formal collection admits only committed REAL EVENT selections from confirmed pages and excludes unselected candidates before detail navigation.
 7. Review each persisted Event and choose `RELATED ACTIVITY`, `NOT RELATED`, or `RESET`.
 
-Preview and normal collection are separate operations. `POST /api/local-events/review/preview-events` copies Review state into an isolated temporary store, keeps only the selected page, marks only that temporary copy confirmed, clears copied Events and feedback, and returns temporary candidates. It does not call the list-decision API, modify persisted review files, rebuild the kiosk projection, or alter other page decisions. The Studio keeps the temporary panel and draft choices in `sessionStorage` until the List Page review is saved or the formal collection clears them.
+Preview and normal collection are separate operations. `POST /api/local-events/review/preview-events` copies Review state into an isolated temporary store, keeps only the selected page, marks only that temporary copy confirmed, clears copied Events and feedback, completes the final collector, detail enrichment, and redirect handling, then records the exact returned candidate set in a process-local manifest. It does not call the list-decision API, modify persisted review files, rebuild the kiosk projection, or alter other page decisions.
 
-A Preview review is encoded in the existing `preview-review-v1:` `candidate_id` envelope sent to `POST /api/local-events/review/listing-decision`. Each row carries the original list-card `candidate_id`, the original `listing_detail_url`, the final redirected/public `detail_url`, and the operator decision. The backend validates the complete set before persisting it.
+The Studio keeps the temporary panel and draft choices in `sessionStorage`. Browser-restored panel HTML and choices are drafts only; they are not candidate-set authority. A service restart, manifest expiry, newer Preview, List Page state change, reset, rejection, manual re-add, or discovery retirement invalidates the server manifest. Saving a stale draft then fails with guidance to run Preview again.
+
+A Preview review is encoded in the existing `preview-review-v1:` `candidate_id` envelope sent to `POST /api/local-events/review/listing-decision`. Each row carries the original list-card `candidate_id`, the original `listing_detail_url`, the final redirected/public `detail_url`, and the operator decision. The backend validates the allow-list and stable identity, then compares the complete submitted set with the latest eligible manifest before persisting it.
 
 The committed selection state is stored at:
 
@@ -178,7 +188,9 @@ The committed selection state is stored at:
 surface/.env/local_event_review/preview_event_selections.json
 ```
 
-The selection file is atomically replaced before the List Page state write. If that state write raises, the previous selection file is restored or the newly created file is removed. This is exception rollback inside one request; it is not a cross-file transaction that can guarantee recovery from an abrupt process crash between the two writes.
+The latest exact Preview manifest is not stored in this file. It remains in the HTTP process for the configured TTL and is invalidated after a successful decision write.
+
+The selection file is atomically replaced before the List Page state write. If that state write raises, the previous selection file is restored or the newly created file is removed, and the current manifest remains available for retry. This is exception rollback inside one request; it is not a cross-file transaction that can guarantee recovery from an abrupt process crash between the two writes.
 
 Normal `POST /api/local-events/review/collect-events` reads confirmed pages with committed REAL EVENT selections. It filters the original list-card links before opening detail pages, then retains only results matching the selected candidate identity, original link, or final redirected/public URL. A listing card needs a usable title and one official detail link. The list card itself does not need to repeat date or venue. The collector follows admitted detail pages for title, date/time, location, summary, and detail status.
 
@@ -191,7 +203,7 @@ The manual input is directly below the top collection toolbar.
 1. Select exactly one value in `Global institution`.
 2. Paste the correct official Event list URL into `Add an official Event list page to the selected global institution`.
 3. Click `ADD LIST PAGE`.
-4. The page is saved as `pending` and appears in the left-side Event list pages.
+4. The page is saved as `pending` and appears in the left-side Event list pages. Re-adding the same URL clears its old committed Preview selection and process-local manifest.
 5. Use `PREVIEW BEFORE CONFIRM` and classify every candidate as `REAL EVENT` or `NOT EVENT`.
 6. Confirm the page with at least one committed REAL EVENT selection, or reject it when no candidate is a real Event.
 7. Formal collection includes only that page’s committed REAL EVENT selections while the page remains confirmed.
@@ -202,7 +214,7 @@ The backend validates that:
 - the URL is absolute HTTP/HTTPS;
 - the hostname is within that institution’s `allowed_domains`.
 
-Manual addition does not modify committed `event_sources.json` and does not collect Events automatically. Adding the same URL again resets it to `pending` for re-review. Isolated preview remains available in `pending`, `confirmed`, and `rejected` states; normal persisted collection requires both a confirmed page and a committed REAL EVENT selection.
+Manual addition does not modify committed `event_sources.json` and does not collect Events automatically. Adding the same URL again resets it to `pending` for re-review and requires a fresh Preview. If the Review-state write fails after the old selection was removed, the previous selection file is restored. Isolated preview remains available in `pending`, `confirmed`, and `rejected` states; normal persisted collection requires both a confirmed page and a committed REAL EVENT selection.
 
 ### Zero-result diagnostics
 
@@ -237,6 +249,8 @@ Review state is stored under:
 surface/.env/local_event_review/state.json
 surface/.env/local_event_review/preview_event_selections.json
 ```
+
+The latest exact Preview manifest is process-local and therefore has no third file path.
 
 ## Local Events collection policy
 
@@ -333,6 +347,8 @@ When dependencies and unit files are already installed:
 systemctl --user restart infoscreen-http.service
 ```
 
+Restarting `infoscreen-http.service` invalidates all process-local Preview manifests. Any Preview panel restored from browser session storage must be collected again before its decisions can be saved.
+
 ## Operation and troubleshooting
 
 Check deployment:
@@ -365,6 +381,8 @@ When a Studio preview fails, inspect `event_collection.listing_diagnostics` in t
 surface/.env/local_event_review/state.json
 surface/.env/local_event_review/preview_event_selections.json
 ```
+
+When saving reports that the Preview manifest is missing, expired, superseded, or no longer matches the List Page, run `PREVIEW BEFORE CONFIRM` or `PREVIEW EVENTS` again and repeat the candidate classifications. The browser may still show an old panel because that panel is only a session draft.
 
 A failure before DOM parsing should be shown as a page/navigation error. Missing date on the listing card is not a rejection reason.
 
