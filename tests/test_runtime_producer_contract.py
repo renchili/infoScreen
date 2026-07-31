@@ -38,3 +38,15 @@ def test_runtime_producers_use_atomic_file_replacement() -> None:
     assert "atomic_write_json(MARKET, payload)" in live
     assert "atomic_write_json(OUT, payload)" in news
     assert "atomic_write_json(OUT_JSON, payload)" in photos
+
+
+def test_live_data_failure_records_attempt_and_fails_the_service() -> None:
+    live = read_text("surface/fetch_live_data.py")
+
+    assert 'def log(component: str, state: str, **fields) -> None:' in live
+    assert 'payload["last_attempt_at"] = attempt_at' in live
+    assert 'payload["last_success_at"] = payload.get("updated_at") or attempt_at' in live
+    assert '"status": "ERR"' in live
+    assert 'retained_updated_at=payload.get("updated_at")' in live
+    assert 'log("live-data", "failure"' in live
+    assert "raise SystemExit(1)" in live
