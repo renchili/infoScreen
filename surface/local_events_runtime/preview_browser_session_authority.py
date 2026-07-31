@@ -7,6 +7,8 @@ from . import event_review as _review
 from . import preview_transport_authority as _transport
 
 _APPLIED = False
+_HOOKED = False
+_BASE_TRANSPORT_APPLY = None
 
 
 class PreviewBrowserLease:
@@ -152,13 +154,32 @@ def apply() -> None:
     global _APPLIED
     _transport._launch_preview_chromium = launch_preview_chromium
     _transport.collect_event_candidates = collect_event_candidates
-    _transport.apply()
+    _transport._diagnostics.collect_event_candidates = collect_event_candidates
     _APPLIED = True
+
+
+def install_transport_apply_hook() -> None:
+    """Apply only after the established Preview pipeline has composed its base chain."""
+
+    global _HOOKED, _BASE_TRANSPORT_APPLY
+    if _HOOKED:
+        return
+    _BASE_TRANSPORT_APPLY = _transport.apply
+
+    def apply_transport_with_single_session() -> None:
+        _BASE_TRANSPORT_APPLY()
+        apply()
+
+    _transport.apply = apply_transport_with_single_session
+    _HOOKED = True
+    if _transport._APPLIED:
+        apply()
 
 
 __all__ = [
     "PreviewBrowserLease",
     "apply",
     "collect_event_candidates",
+    "install_transport_apply_hook",
     "launch_preview_chromium",
 ]
