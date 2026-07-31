@@ -194,7 +194,7 @@ def test_real_preview_entrypoint_reads_artscience_detail_page(monkeypatch, tmp_p
         authority._effective,
         "detail_candidate",
         lambda *args, **kwargs: (_ for _ in ()).throw(
-            AssertionError("ArtScience Preview must use its isolated detail owner")
+            AssertionError("ArtScience Preview must use its source detail owner")
         ),
     )
 
@@ -233,15 +233,13 @@ def test_real_preview_entrypoint_reads_artscience_detail_page(monkeypatch, tmp_p
     assert result.event_collection["preview_candidate_listing_detail_urls"] == {
         "old-preview-id-0": DETAIL_URL,
     }
-    assert result.event_collection["preview_detail_transport"] == (
-        "fresh_browser_per_artscience_candidate"
-    )
-    assert result.event_collection["preview_detail_isolated_browser_count"] == 1
+    assert result.event_collection["preview_detail_transport"] == "shared_browser_context"
+    assert result.event_collection["preview_detail_context_count"] == 1
     assert result.event_collection["detail_page_request_count"] == 1
     assert result.event_collection["detail_page_requests_skipped"] == 0
 
 
-def test_each_artscience_detail_uses_a_fresh_browser_process(monkeypatch, tmp_path) -> None:
+def test_all_artscience_details_share_one_browser_context(monkeypatch, tmp_path) -> None:
     store = _store(tmp_path)
     state = _listing_only_state(count=2)
     monkeypatch.setattr(authority, "_BASE_PREVIEW_COLLECT", lambda actual: state)
@@ -271,10 +269,10 @@ def test_each_artscience_detail_uses_a_fresh_browser_process(monkeypatch, tmp_pa
 
     result = authority.collect_preview_with_details(store)
 
-    assert len(launches) == 2
-    assert page_markers == launches
-    assert launches[0] is not launches[1]
-    assert result.event_collection["preview_detail_isolated_browser_count"] == 2
+    assert len(launches) == 1
+    assert page_markers == [launches[0], launches[0]]
+    assert result.event_collection["preview_detail_transport"] == "shared_browser_context"
+    assert result.event_collection["preview_detail_context_count"] == 1
     assert result.event_collection["detail_page_error_count"] == 0
     assert all(event.detail_status == "collected" for event in result.events)
 
