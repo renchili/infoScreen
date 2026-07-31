@@ -248,6 +248,26 @@ def test_non_preview_launch_uses_the_original_browser_launcher(monkeypatch) -> N
     assert calls == [playwright]
 
 
+def test_reapply_restores_the_global_lease_launcher(monkeypatch) -> None:
+    fallback = lambda playwright: playwright
+    replacement = object()
+
+    monkeypatch.setattr(authority, "_APPLIED", True)
+    monkeypatch.setattr(authority, "_BASE_BROWSER_LAUNCH", fallback)
+    monkeypatch.setattr(authority._browser, "launch_chromium", replacement)
+
+    authority.apply()
+
+    assert authority._BASE_BROWSER_LAUNCH is fallback
+    assert authority._browser.launch_chromium is authority.launch_or_borrow
+    assert authority._transport._launch_preview_chromium is (
+        authority.launch_preview_chromium
+    )
+    assert authority._transport.collect_event_candidates is (
+        authority.collect_event_candidates
+    )
+
+
 def test_transport_hook_runs_after_existing_preview_composition(monkeypatch) -> None:
     calls = []
 
