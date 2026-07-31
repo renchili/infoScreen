@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -17,6 +19,11 @@ _BASE_SET_LISTING_DECISION = None
 _BASE_COLLECT = None
 _PROTOCOL_PREFIX = "preview-review-v1:"
 _SELECTION_FILE = "preview_event_selections.json"
+_PREVIEW_MANIFEST_TTL_SECONDS = max(
+    60,
+    int(os.environ.get("INFOSCREEN_PREVIEW_MANIFEST_TTL_SECONDS", "21600")),
+)
+_PREVIEW_MANIFESTS: dict[str, dict[str, Any]] = {}
 
 
 def _selection_path(store: _review.EventReviewStore) -> Path:
@@ -133,6 +140,131 @@ def _host_allowed(url: str, source: dict[str, Any]) -> bool:
     )
 
 
+def _listing_revision(listing: _review.ListingPageCandidate) -> str:
+    payload = json.dumps(
+        {
+            "candidate_id": listing.candidate_id,
+            "url": listing.url,
+            "decision": listing.decision,
+            "discovered_at": listing.discovered_at,
+            "reviewed_at": listing.reviewed_at,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _manifest_candidate_rows(
+    listing_url: str,
+    state: _review.ReviewState,
+) -> list[dict[str, str]]:
+    raw_listing_urls = state.event_collection.get(
+        "preview_candidate_listing_detail_urls"
+    )
+    listing_urls = raw_listing_urls if isinstance(raw_listing_urls, dict) else {}
+    rows: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for candidate in state.events:
+        if _review.canonical_url(candidate.listing_url) != listing_url:
+            raise ValueError("Preview returned a candidate from another List Page")
+        candidate_id = str(candidate.candidate_id or "").strip()
+        if not candidate_id or candidate_id in seen:
+            raise ValueError("Preview returned duplicate or missing candidate identity")
+        final_url = _review.canonical_url(candidate.detail_url)
+        listing_detail_url = _review.canonical_url(
+            listing_urls.get(candidate_id) or final_url
+        )
+        seen.add(candidate_id)
+        rows.append(
+            {
+                "candidate_id": candidate_id,
+                "listing_detail_url": listing_detail_url,
+                "detail_url": final_url,
+            }
+        )
+    return sorted(
+        rows,
+        key=lambda row: (
+            row["candidate_id"],
+            row["listing_detail_url"],
+            row["detail_url"],
+        ),
+    )
+
+
+def invalidate_preview_manifest(listing_url: str) -> None:
+    """Invalidate the process-local candidate manifest for one List Page."""
+
+    try:
+        canonical = _review.canonical_url(listing_url)
+    except ValueError:
+        return
+    _PREVIEW_MANIFESTS.pop(canonical, None)
+
+
+def issue_preview_manifest(
+    listing: _review.ListingPageCandidate,
+    state: _review.ReviewState,
+) -> _review.ReviewState:
+    """Record the exact candidate set returned by the latest successful Preview.
+
+    The manifest is process-local and never writes Review state. A server restart,
+    expiry, List Page state change, reset, or newer Preview requires the operator to
+    Preview again before committing candidate decisions.
+    """
+
+    listing_url = _review.canonical_url(listing.url)
+    invalidate_preview_manifest(listing_url)
+    rows = _manifest_candidate_rows(listing_url, state)
+    if not rows:
+        return state
+
+    now = time.time()
+    expires_at = now + _PREVIEW_MANIFEST_TTL_SECONDS
+    _PREVIEW_MANIFESTS[listing_url] = {
+        "listing_candidate_id": listing.candidate_id,
+        "listing_url": listing_url,
+        "listing_revision": _listing_revision(listing),
+        "issued_at": now,
+        "expires_at": expires_at,
+        "candidates": rows,
+    }
+    state.event_collection = {
+        **state.event_collection,
+        "preview_selection_manifest_policy": "latest_server_preview_exact_set",
+        "preview_selection_manifest_candidate_count": len(rows),
+        "preview_selection_manifest_expires_at_epoch": int(expires_at),
+    }
+    return state
+
+
+def _preview_manifest(
+    listing: _review.ListingPageCandidate,
+) -> dict[str, Any]:
+    listing_url = _review.canonical_url(listing.url)
+    manifest = _PREVIEW_MANIFESTS.get(listing_url)
+    if not isinstance(manifest, dict):
+        raise ValueError(
+            "Preview candidate manifest is missing; run Preview again before saving"
+        )
+    if float(manifest.get("expires_at") or 0) <= time.time():
+        invalidate_preview_manifest(listing_url)
+        raise ValueError(
+            "Preview candidate manifest expired; run Preview again before saving"
+        )
+    if manifest.get("listing_candidate_id") != listing.candidate_id:
+        invalidate_preview_manifest(listing_url)
+        raise ValueError("Preview candidate manifest does not match the List Page")
+    if manifest.get("listing_revision") != _listing_revision(listing):
+        invalidate_preview_manifest(listing_url)
+        raise ValueError(
+            "List Page state changed after Preview; run Preview again before saving"
+        )
+    return manifest
+
+
 def _validated_review(
     store: _review.EventReviewStore,
     payload: dict[str, Any],
@@ -202,6 +334,27 @@ def _validated_review(
             }
         )
 
+    manifest = _preview_manifest(listing)
+    submitted = sorted(
+        [
+            {
+                "candidate_id": row["candidate_id"],
+                "listing_detail_url": row["listing_detail_url"],
+                "detail_url": row["detail_url"],
+            }
+            for row in rows
+        ],
+        key=lambda row: (
+            row["candidate_id"],
+            row["listing_detail_url"],
+            row["detail_url"],
+        ),
+    )
+    if submitted != manifest.get("candidates"):
+        raise ValueError(
+            "Preview candidate set is incomplete or no longer current; run Preview again"
+        )
+
     real_count = sum(row["decision"] == "confirmed" for row in rows)
     if listing_decision == "confirmed" and real_count == 0:
         raise ValueError("a List Page cannot be confirmed without a REAL EVENT selection")
@@ -229,10 +382,12 @@ def _set_listing_decision(
         snapshot = _selection_snapshot(store)
         _save(store, selections)
         try:
-            return _BASE_SET_LISTING_DECISION(store, actual_id, decision)
+            state = _BASE_SET_LISTING_DECISION(store, actual_id, decision)
         except Exception as exc:
             _rollback_selection_after_failure(store, snapshot, exc)
             raise
+        invalidate_preview_manifest(listing_url)
+        return state
 
     state = store.load()
     listing = next(
@@ -252,15 +407,19 @@ def _set_listing_decision(
             raise ValueError(
                 "Preview every candidate and select REAL EVENT / NOT EVENT before confirming this List Page"
             )
-        return _BASE_SET_LISTING_DECISION(store, candidate_id, decision)
+        state = _BASE_SET_LISTING_DECISION(store, candidate_id, decision)
+        invalidate_preview_manifest(listing.url)
+        return state
 
     snapshot, changed = _discard_listing_selection(store, listing.url)
     try:
-        return _BASE_SET_LISTING_DECISION(store, candidate_id, decision)
+        state = _BASE_SET_LISTING_DECISION(store, candidate_id, decision)
     except Exception as exc:
         if changed:
             _rollback_selection_after_failure(store, snapshot, exc)
         raise
+    invalidate_preview_manifest(listing.url)
+    return state
 
 
 def _confirmed_selections(
@@ -375,6 +534,8 @@ def apply() -> None:
 __all__ = [
     "apply",
     "collect_event_candidates",
+    "invalidate_preview_manifest",
+    "issue_preview_manifest",
     "_decode_protocol",
     "_discard_listing_selection",
     "_load",
