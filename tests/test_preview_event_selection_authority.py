@@ -96,11 +96,21 @@ def _review_payload(listing: ListingPageCandidate) -> dict:
     }
 
 
+def _original_base_decision():
+    saved = authority._BASE_SET_LISTING_DECISION
+    if saved is not None and saved is not authority._set_listing_decision:
+        return saved
+    current = EventReviewStore.set_listing_decision
+    if current is authority._set_listing_decision:
+        raise AssertionError("original List Page decision owner is unavailable")
+    return current
+
+
 def _install_base_decision(monkeypatch) -> None:
     monkeypatch.setattr(
         authority,
         "_BASE_SET_LISTING_DECISION",
-        EventReviewStore.set_listing_decision,
+        _original_base_decision(),
     )
 
 
