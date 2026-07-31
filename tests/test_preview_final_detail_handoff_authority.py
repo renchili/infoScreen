@@ -167,12 +167,15 @@ def test_review_bootstrap_delegates_preview_pipeline_to_final_handoff() -> None:
     ) < handoff.index("apply_preview_transport()")
     assert "_BASE_BIND()" in handoff
     assert "_http1._filter_final_expired_events = _keep_preview_candidates" in handoff
-    assert "_selection.invalidate_preview_manifest(listing.url)" in handoff
-    assert "state = _enrich_final_preview(store, state)" in handoff
-    assert "state = _selection.issue_preview_manifest(listing, state)" in handoff
-    assert handoff.index("invalidate_preview_manifest") < handoff.index(
-        "_enrich_final_preview"
-    ) < handoff.index("issue_preview_manifest")
+    invalidate_call = "_selection.invalidate_preview_manifest(listing.url)"
+    enrich_call = "state = _enrich_final_preview(store, state)"
+    issue_call = "state = _selection.issue_preview_manifest(listing, state)"
+    assert invalidate_call in handoff
+    assert enrich_call in handoff
+    assert issue_call in handoff
+    assert handoff.index(invalidate_call) < handoff.index(enrich_call) < handoff.index(
+        issue_call
+    )
     assert '"listing_only_candidates_remaining"' in handoff
     assert "def enrich_preview_state(" in enrichment
     assert "preview_listing_evidence_only" in enrichment
