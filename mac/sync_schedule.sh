@@ -3,6 +3,23 @@ set -Eeuo pipefail
 
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
+usage() {
+  cat <<'EOF'
+Usage:
+  bash mac/sync_schedule.sh \
+    --surface-host <ssh-host> \
+    --surface-user <ssh-user> \
+    --remote-path <remote-schedule-path> \
+    [--python <python-with-eventkit>] \
+    [--local-json <filename>] \
+    [--log-dir <directory>]
+
+Command-line arguments are the authoritative runtime configuration. Legacy
+mac/local.env and environment variables are read only as backward-compatible
+fallbacks for manual execution.
+EOF
+}
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_FILE="$SCRIPT_DIR/local.env"
 DEFAULT_LOG_DIR="$HOME/Library/Logs/infoscreen-sync"
@@ -11,9 +28,13 @@ PRECONFIG_LOG_FILE="$DEFAULT_LOG_DIR/push_schedule.log"
 mkdir -p "$DEFAULT_LOG_DIR"
 exec >> "$PRECONFIG_LOG_FILE" 2>&1
 
-CURRENT_STAGE="load configuration"
+CURRENT_STAGE="load legacy configuration"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
-LOG_DIR="$DEFAULT_LOG_DIR"
+SURFACE_USER="${SURFACE_USER:-rody}"
+SURFACE_HOST="${SURFACE_HOST:-}"
+LOCAL_SCHEDULE_JSON="${LOCAL_SCHEDULE_JSON:-schedule.json}"
+REMOTE_SCHEDULE_JSON="${REMOTE_SCHEDULE_JSON:-}"
+LOG_DIR="${LOG_DIR:-$DEFAULT_LOG_DIR}"
 LOG_FILE="$PRECONFIG_LOG_FILE"
 STATUS_FILE="$DEFAULT_LOG_DIR/schedule_sync_status.json"
 
@@ -55,9 +76,9 @@ trap 'on_error "$?" "$LINENO" "$BASH_COMMAND"' ERR
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] start"
 echo "SCRIPT_DIR=$SCRIPT_DIR"
-echo "CONFIG_FILE=$CONFIG_FILE"
 
 if [ -r "$CONFIG_FILE" ]; then
+  # Legacy fallback only. setup-schedule-sync.sh no longer creates this file.
   # shellcheck disable=SC1090
   source "$CONFIG_FILE"
 fi
@@ -66,11 +87,81 @@ PYTHON_BIN="${PYTHON_BIN:-python3}"
 SURFACE_USER="${SURFACE_USER:-rody}"
 SURFACE_HOST="${SURFACE_HOST:-}"
 LOCAL_SCHEDULE_JSON="${LOCAL_SCHEDULE_JSON:-schedule.json}"
-REMOTE_SCHEDULE_JSON="${REMOTE_SCHEDULE_JSON:-~/infoscreen/surface/.env/schedule.json}"
+REMOTE_SCHEDULE_JSON="${REMOTE_SCHEDULE_JSON:-}"
 LOG_DIR="${LOG_DIR:-$DEFAULT_LOG_DIR}"
+
+CURRENT_STAGE="parse arguments"
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --surface-host|--host)
+      if [ "$#" -lt 2 ] || [ -z "${2:-}" ]; then
+        echo "ERROR: $1 requires a value" >&2
+        usage >&2
+        exit 2
+      fi
+      SURFACE_HOST="$2"
+      shift 2
+      ;;
+    --surface-user|--user)
+      if [ "$#" -lt 2 ] || [ -z "${2:-}" ]; then
+        echo "ERROR: $1 requires a value" >&2
+        usage >&2
+        exit 2
+      fi
+      SURFACE_USER="$2"
+      shift 2
+      ;;
+    --remote-path)
+      if [ "$#" -lt 2 ] || [ -z "${2:-}" ]; then
+        echo "ERROR: $1 requires a value" >&2
+        usage >&2
+        exit 2
+      fi
+      REMOTE_SCHEDULE_JSON="$2"
+      shift 2
+      ;;
+    --python)
+      if [ "$#" -lt 2 ] || [ -z "${2:-}" ]; then
+        echo "ERROR: $1 requires a value" >&2
+        usage >&2
+        exit 2
+      fi
+      PYTHON_BIN="$2"
+      shift 2
+      ;;
+    --local-json)
+      if [ "$#" -lt 2 ] || [ -z "${2:-}" ]; then
+        echo "ERROR: $1 requires a value" >&2
+        usage >&2
+        exit 2
+      fi
+      LOCAL_SCHEDULE_JSON="$2"
+      shift 2
+      ;;
+    --log-dir)
+      if [ "$#" -lt 2 ] || [ -z "${2:-}" ]; then
+        echo "ERROR: $1 requires a value" >&2
+        usage >&2
+        exit 2
+      fi
+      LOG_DIR="$2"
+      shift 2
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "ERROR: unknown argument: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+REMOTE_SCHEDULE_JSON="${REMOTE_SCHEDULE_JSON:-~/infoscreen/surface/.env/schedule.json}"
 LOG_FILE="$LOG_DIR/push_schedule.log"
 STATUS_FILE="$LOG_DIR/schedule_sync_status.json"
-
 mkdir -p "$LOG_DIR"
 
 if [ "$LOG_FILE" != "$PRECONFIG_LOG_FILE" ]; then
@@ -78,7 +169,7 @@ if [ "$LOG_FILE" != "$PRECONFIG_LOG_FILE" ]; then
 fi
 
 if [ -z "$SURFACE_HOST" ]; then
-  detail="SURFACE_HOST is required. Run: bash mac/scripts/setup-schedule-sync.sh --host <surface-ip> --user <ssh-user>"
+  detail="SURFACE_HOST is required. Pass --surface-host <surface-ip> or reinstall the LaunchAgent."
   echo "ERROR: $detail" >&2
   write_local_status "ERR" "$detail" || true
   exit 1
@@ -86,17 +177,30 @@ fi
 
 : "${SURFACE_HOST:?SURFACE_HOST is required. Run: bash mac/scripts/setup-schedule-sync.sh --host <surface-ip> --user <ssh-user>}"
 
+if [[ ! "$SURFACE_USER" =~ ^[A-Za-z0-9._-]+$ ]]; then
+  echo "ERROR: unsafe Surface user: $SURFACE_USER" >&2
+  exit 1
+fi
+
+if [[ ! "$SURFACE_HOST" =~ ^[A-Za-z0-9._:-]+$ ]]; then
+  echo "ERROR: unsafe Surface host: $SURFACE_HOST" >&2
+  exit 1
+fi
+
 case "$REMOTE_SCHEDULE_JSON" in
-  ~/*)
-    REMOTE_RELATIVE_JSON="${REMOTE_SCHEDULE_JSON#~/}"
+  /*)
+    REMOTE_RELATIVE_JSON="$REMOTE_SCHEDULE_JSON"
+    ;;
+  "~/"*)
+    REMOTE_RELATIVE_JSON="${REMOTE_SCHEDULE_JSON#\~/}"
     ;;
   *)
-    echo "ERROR: REMOTE_SCHEDULE_JSON must be a path below the remote home directory, beginning with ~/" >&2
+    echo "ERROR: REMOTE_SCHEDULE_JSON must be an absolute path or begin with ~/" >&2
     exit 1
     ;;
 esac
 
-if [[ ! "$REMOTE_RELATIVE_JSON" =~ ^[A-Za-z0-9._/-]+$ ]] || [[ "$REMOTE_RELATIVE_JSON" == *".."* ]]; then
+if [[ ! "$REMOTE_RELATIVE_JSON" =~ ^/?[A-Za-z0-9._/-]+$ ]] || [[ "$REMOTE_RELATIVE_JSON" == *".."* ]]; then
   echo "ERROR: unsafe REMOTE_SCHEDULE_JSON: $REMOTE_SCHEDULE_JSON" >&2
   exit 1
 fi
@@ -108,6 +212,7 @@ echo "PYTHON_BIN=$PYTHON_BIN"
 echo "SURFACE_HOST=$SURFACE_HOST"
 echo "SURFACE_USER=$SURFACE_USER"
 echo "REMOTE_SCHEDULE_JSON=$REMOTE_SCHEDULE_JSON"
+echo "CONFIG_SOURCE=arguments-with-legacy-fallback"
 
 cd "$SCRIPT_DIR"
 
