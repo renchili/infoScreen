@@ -143,8 +143,8 @@ def apply_preview_pipeline() -> None:
     # Preview review requires the actual official detail fields. Selection controls must
     # not downgrade candidates to listing-only evidence.
     apply_preview_detail_enrichment()
-    # Transport remains outermost so both the listing and detail Chromium sessions use
-    # the verified headed policy for MBS on the deployed Surface.
+    # Transport remains outermost so the listing and detail operations share the same
+    # verified HTTP/1 Chromium process and MBS headed policy on the deployed Surface.
     apply_preview_transport()
     # Patch the final HTTP handoff last so enriched Preview rows cannot be downgraded or
     # hidden by the base expiry filter. This owner also records the exact final Preview
