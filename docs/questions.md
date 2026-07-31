@@ -130,9 +130,11 @@ The Studio lets the user select one global institution, enter a correct official
 
 Provide an always-visible URL field and `ADD LIST PAGE` button. Send `source_id` and `url` to `POST /api/local-events/review/listing-page`. Validate the configured institution and its allowed domains. Save the page as `pending`; do not collect automatically and do not edit committed `event_sources.json`. Adding the same URL again must discard its old committed Preview selection and process-local manifest before starting a fresh pending review, with selection rollback if the Review-state write fails.
 
-Expose isolated preview for every saved decision state. `POST /api/local-events/review/preview-events` must receive the saved `listing_url`, copy Review state into a temporary store, keep only that list page, mark only the temporary copy confirmed, clear copied Event candidates and feedback, run the final collector and final detail/redirect owner, and return the temporary result. It must not call the list-decision API or change persisted Review state.
+Expose isolated preview for every saved decision state. `POST /api/local-events/review/preview-events` must receive the saved `listing_url`, copy Review state into a temporary store, keep only that list page, mark only the temporary copy confirmed, clear copied Event candidates and feedback, and return the temporary result without changing persisted Review state.
 
-After final detail enrichment and redirect handling, the server records the exact returned candidate IDs, original `listing_detail_url` values, final `detail_url` values, and List Page revision in a process-local manifest. The default lifetime is 21,600 seconds, configurable through `INFOSCREEN_PREVIEW_MANIFEST_TTL_SECONDS` with a 60-second minimum. A service restart, expiry, newer Preview, List Page state change, reset, rejection, manual re-add, or discovery retirement invalidates the manifest and requires another Preview.
+The direct Preview owner must use one Playwright manager, one Chromium process, and one browser context for the selected listing and every admitted official detail page. It must preserve the original list-card identity when a detail page redirects, close the real browser once, and fail rather than start a second browser if listing-only evidence remains after the direct collector completes. Successful metadata must report `preview_browser_process_count: 1`, `preview_browser_reuse: listing_and_details`, `preview_detail_context_count: 1`, and `preview_detail_transport: same_browser_context`.
+
+After final detail collection and redirect handling, the server records the exact returned candidate IDs, original `listing_detail_url` values, final `detail_url` values, and List Page revision in a process-local manifest. The default lifetime is 21,600 seconds, configurable through `INFOSCREEN_PREVIEW_MANIFEST_TTL_SECONDS` with a 60-second minimum. A service restart, expiry, newer Preview, List Page state change, reset, rejection, manual re-add, or discovery retirement invalidates the manifest and requires another Preview.
 
 The Studio must require a decision for every returned Preview candidate. It sends the complete set to `POST /api/local-events/review/listing-decision` in the `preview-review-v1:` envelope, including the original candidate identity, original `listing_detail_url`, final redirected/public `detail_url`, and REAL EVENT / NOT EVENT decision. The backend compares the submitted set with the latest eligible manifest, stores the reviewed set in `preview_event_selections.json`, writes the List Page decision, and restores the prior selection file when the state write raises. A failed state write keeps the manifest available for retry.
 
@@ -143,6 +145,8 @@ Scoped discovery must retire no-longer-discovered non-manual pages together with
 ### Acceptance evidence
 
 Select an institution, add a valid allowed-domain URL, observe it immediately in the left-side list as pending, and preview it before confirmation. The preview must return only that page’s candidates while the persisted page decision, Event candidates, feedback, collection metadata, `state.json`, and `preview_event_selections.json` remain byte-for-byte or model-equivalent to their pre-preview state.
+
+A direct-collector fixture must prove that the listing page and detail pages are opened through the same browser context, the browser is launched and closed once, final redirected URLs retain the original candidate identity, and the final handoff rejects any remaining listing-only candidate without opening another browser.
 
 Classify every candidate, save the List Page review, and verify the committed selection set and List Page decision agree. Confirming requires at least one REAL EVENT; rejecting forbids a REAL EVENT. Formal collection must open and persist only selected REAL EVENT candidates, including a selected candidate whose original list link redirects to a different final public URL.
 
@@ -198,23 +202,23 @@ A zero-result collection must show a stable `reason_code`, reason text, stage co
 
 ### Easy-to-make interpretation
 
-The collector should first try normal Chromium HTTP/2 navigation, catch `ERR_HTTP2_PROTOCOL_ERROR`, then retry with another browser or protocol.
+Every Local Event browser path must either use HTTP/2 first and retry, or every path must be forced to HTTP/1 regardless of its deployed evidence.
 
 ### Why it fails
 
-That approach doubles navigation behavior, complicates diagnostics, and still starts every collection with the known failing protocol.
+An HTTP/2-first retry doubles formal navigation behavior and hides the first failure. Conversely, forcing isolated Marina Bay Sands Preview to HTTP/1 contradicts the deployed headed-browser/NetLog evidence and changes the direct Preview transport unnecessarily.
 
 ### Correct requirement interpretation
 
-The supported collection entrypoints disable HTTP/2 before Chromium launches. No HTTP/2-first request and no protocol retry loop should occur.
+Scoped discovery, confirmed-page formal collection, scheduled collection, and direct search disable HTTP/2 before Chromium launches and do not retry protocols. Isolated Preview is a separate direct collector: it uses one browser/context lifecycle, may run Marina Bay Sands headed, records NetLog diagnostics, and keeps normal Chromium protocol negotiation.
 
 ### Required implementation
 
-Apply `surface/local_events_runtime/http1_browser.py` before importing collection code in both `surface/serve_infoscreen.py` and `surface/search_local_events.py`. Every patched Chromium launch must include `--disable-http2`.
+Apply `surface/local_events_runtime/http1_browser.py` before formal collection code in `surface/serve_infoscreen.py` and `surface/search_local_events.py`. Formal-path Chromium launches include `--disable-http2`. `preview_direct_detail_collector_authority.py` must not add a second protocol owner, retry loop, or `--disable-http2`; `preview_transport_authority.py` owns Preview mode and diagnostics only.
 
 ### Acceptance evidence
 
-Runtime process/launch evidence must show `--disable-http2` on Studio collection and scheduled/HTTP-triggered Local Event collection. A failing navigation must be reported as its direct error, not as a hidden first-attempt/retry sequence.
+Static and runtime evidence must distinguish the paths. Formal discovery/collection process arguments show `--disable-http2` and no hidden retry. Isolated Preview shows one browser/context lifecycle, normal protocol negotiation, the required headed mode for Marina Bay Sands when applicable, and NetLog diagnostics on failure.
 
 ## Generated helper and archive boundary
 
@@ -280,7 +284,7 @@ Persist producer output to `local_event_collector_results.json`. Build `local_ev
 
 Preview must use `/api/local-events/review/preview-events`, must not call the list-decision API, and must not publish to the kiosk. The server must create an isolated temporary Review store containing only the selected page, confirmed only inside that copy, with copied Events and feedback cleared. The real Review state remains untouched even when preview collection fails.
 
-The final Preview handoff must invalidate the old manifest before collection and issue the new manifest only after detail enrichment and redirect handling. The Preview panel must preserve original list-card identity separately from the final redirected/public detail URL. Saving the List Page review validates every candidate decision against that manifest. Formal collection must prefilter unselected list cards before detail navigation, retain only results matching the selected identity or original/final URL, and never treat a confirmed page as unrestricted merely because it has no saved selection record.
+The direct Preview collector must complete listing recognition and detail reads in one browser/context lifecycle. The final Preview handoff must invalidate the old manifest before collection, reject remaining listing-only evidence, and issue the new manifest only after detail collection and redirect handling. The Preview panel must preserve original list-card identity separately from the final redirected/public detail URL. Saving the List Page review validates every candidate decision against that manifest. Formal collection must prefilter unselected list cards before detail navigation, retain only results matching the selected identity or original/final URL, and never treat a confirmed page as unrestricted merely because it has no saved selection record.
 
 List Page lifecycle owners must remove stale authority: RESET, REJECT, manual re-add, and discovery retirement clear committed selection state and invalidate the manifest. State-write failures restore the previous selection bytes before returning an error.
 
@@ -290,7 +294,9 @@ A fixture with stale collector fields and a confirmed candidate sharing the same
 
 A separate pending-page fixture must prove that preview succeeds before confirmation, the temporary collector sees one confirmed page, and persisted list decisions, Event candidates, feedback, collection metadata, selection state, and kiosk output do not change. Frontend source must contain the isolated preview endpoint and no temporary list-decision writes or confirmation gate.
 
-A selection fixture must prove that incomplete decisions cannot confirm a page, the submitted exact set must equal the latest server manifest, expired/restarted/revision-changed submissions require a new Preview, unselected list cards are rejected before detail navigation, selected rows are persisted as confirmed, and a redirected selected candidate remains linked to the original candidate identity while matching its final public URL after enrichment.
+A selection fixture must prove that incomplete decisions cannot confirm a page, the submitted exact set must equal the latest server manifest, expired/restarted/revision-changed submissions require a new Preview, unselected list cards are rejected before detail navigation, selected rows are persisted as confirmed, and a redirected selected candidate remains linked to the original candidate identity while matching its final public URL after detail collection.
+
+A direct Preview fixture must prove one Playwright/browser/context lifecycle, listing-before-detail order, no second browser fallback, and manifest issuance only after the final-detail invariant passes.
 
 A discovery lifecycle fixture must prove that retired non-manual pages cannot leave an old selection eligible for reuse when the same URL later appears again.
 
