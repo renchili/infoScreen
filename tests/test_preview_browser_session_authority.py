@@ -171,7 +171,7 @@ def test_preview_listing_and_details_borrow_one_request_local_browser(
     state = authority.collect_event_candidates(store)
 
     assert entered == owners
-    assert exited == owners
+    assert exited == [owners[1], owners[2], owners[0]]
     assert browser_launches == [owners[0]]
     assert fallback_launches == []
     assert len(borrowed_browsers) == 2
