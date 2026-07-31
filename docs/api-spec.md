@@ -251,13 +251,15 @@ surface/.env/local_event_review/preview_event_selections.json
 
 `state.json` owns List Page candidates, persisted Event candidates, operator Event decisions, feedback, and collection metadata. `preview_event_selections.json` owns the complete REAL EVENT / NOT EVENT selection set committed for each reviewed List Page.
 
+The exact candidate set from the latest successful Preview is not a third persistence file. It is a process-local manifest containing the List Page identity/revision and every returned candidate’s identity, original listing link, and final redirected/public URL. It defaults to a 21,600-second lifetime, can be configured with `INFOSCREEN_PREVIEW_MANIFEST_TTL_SECONDS`, and has a 60-second minimum. A service restart removes all manifests.
+
 ### Read review state
 
 ```http
 GET /api/local-events/review/state
 ```
 
-The response includes sources, list-page candidates, Event candidates, feedback records, list collection metadata, Event collection metadata, and per-listing diagnostics. The committed Preview selection file is an internal collection policy input and is not emitted as a separate public response model.
+The response includes sources, list-page candidates, Event candidates, feedback records, list collection metadata, Event collection metadata, and per-listing diagnostics. The committed Preview selection file is an internal collection policy input and is not emitted as a separate public response model. The process-local Preview manifest is also not returned by this endpoint.
 
 ### Discover candidate list pages
 
@@ -265,7 +267,11 @@ The response includes sources, list-page candidates, Event candidates, feedback 
 POST /api/local-events/review/discover-listings
 ```
 
-This opens configured institution home pages with Playwright and persists candidate list pages. The server applies `--disable-http2` before importing the review collector.
+The request must contain the selected configured `source_id`. The endpoint opens only that institution’s home page with Playwright and persists its configured and discovered candidate list pages. The server applies `--disable-http2` before importing the review collector.
+
+A previous non-manual page that is no longer configured or discovered is retired. Its committed entry is removed from `preview_event_selections.json` before the new `state.json` is saved. If the state write fails, the previous selection bytes are restored. After a successful state write, its process-local Preview manifest is invalidated. Manually added pages are preserved by scoped discovery.
+
+If a retired URL is discovered again later, it is a fresh pending candidate without an eligible old selection. It must be Previewed and classified again before confirmation.
 
 ### Add one correct official list page manually
 
@@ -288,6 +294,8 @@ Rules:
 - the hostname must match that institution’s `allowed_domains`;
 - the page is stored in review state as `pending`;
 - adding an existing page resets it to `pending`;
+- resetting an existing URL removes its old committed Preview selection and process-local manifest;
+- if the Review-state write fails after selection removal, the previous selection file is restored;
 - the operation does not edit committed `event_sources.json`;
 - the operation does not collect Events automatically;
 - the saved page may be previewed while `pending`, `confirmed`, or `rejected`;
@@ -302,7 +310,7 @@ POST /api/local-events/review/listing-decision
 Content-Type: application/json
 ```
 
-A plain List Page decision keeps the existing request shape:
+A plain List Page decision keeps the existing compatibility request shape:
 
 ```json
 {
@@ -311,7 +319,7 @@ A plain List Page decision keeps the existing request shape:
 }
 ```
 
-A plain `confirmed` decision is accepted only when that List Page already has a committed REAL EVENT selection record. The Studio normally commits a fresh Preview review by encoding the complete selection payload inside the existing `candidate_id` field:
+A plain `confirmed` decision is accepted only when that List Page already has a committed REAL EVENT selection record. The Studio commits a fresh Preview review by encoding the complete selection payload inside the existing `candidate_id` field:
 
 ```text
 preview-review-v1:<base64url JSON without padding>
@@ -337,13 +345,19 @@ Decoded payload:
 Rules:
 
 - every Preview candidate must appear exactly once and be classified as REAL EVENT (`confirmed`) or NOT EVENT (`rejected`);
+- the submitted candidate IDs, original `listing_detail_url` values, and final `detail_url` values must exactly equal the latest unexpired server Preview manifest;
+- the List Page revision must still equal the revision captured by that manifest;
 - a confirmed List Page requires at least one REAL EVENT;
 - a rejected List Page cannot contain a REAL EVENT;
 - both original and final URLs must match the institution allow-list;
 - `candidate_id` is validated against the original `listing_detail_url` and therefore remains stable across redirects;
 - legacy rows without `listing_detail_url` fall back to `detail_url`.
 
-The selection file is atomically replaced first, followed by the List Page state write. If the state write raises, the previous selection bytes are restored or the newly created selection file is removed. This is same-request exception rollback, not a cross-file transaction that guarantees recovery from an abrupt process crash between the writes.
+A service restart, manifest expiry, newer Preview, List Page state change, reset, rejection, manual re-add, or discovery retirement requires a new Preview. Browser-restored HTML and `sessionStorage` choices are drafts only and do not replace the server manifest.
+
+The selection file is atomically replaced first, followed by the List Page state write. If the state write raises, the previous selection bytes are restored or the newly created selection file is removed, and the current manifest remains available for retry. After a successful decision write, the manifest is invalidated. This is same-request exception rollback, not a cross-file transaction that guarantees recovery from an abrupt process crash between the writes.
+
+A missing, expired, superseded, revision-mismatched, incomplete, or changed candidate set returns HTTP `400` with guidance to run Preview again.
 
 ### Preview one saved list page without changing its decision
 
@@ -369,7 +383,10 @@ load real Review state
   -> mark only the temporary copy confirmed
   -> clear copied Event candidates, feedback, and Event collection metadata
   -> save the copy under a temporary Review root
+  -> invalidate the older process-local manifest for this List Page
   -> run the same final Event collector and detail owner
+  -> complete redirect and detail enrichment
+  -> issue a new exact process-local candidate manifest
   -> return the temporary result
   -> delete the temporary root
 ```
@@ -385,7 +402,9 @@ Preview does not call the list-decision endpoint and does not change:
 - `surface/.env/local_event_review/preview_event_selections.json`;
 - the kiosk projection.
 
-The response keeps the original list-card `candidate_id`, reports the final redirected/public `detail_url`, and exposes `event_collection.preview_candidate_listing_detail_urls` so the Studio can submit both identities later. The Studio stores the rendered panel and draft choices in `sessionStorage`; those browser-session drafts are not committed until the List Page review request succeeds. A missing or unknown `listing_url` returns HTTP `400`; collection failure returns HTTP `500`.
+The response keeps the original list-card `candidate_id`, reports the final redirected/public `detail_url`, and exposes `event_collection.preview_candidate_listing_detail_urls` so the Studio can submit both identities later. It also records manifest policy, candidate count, and expiry metadata in the temporary response collection metadata.
+
+The Studio stores the rendered panel and draft choices in `sessionStorage`; those browser-session drafts are not committed until the List Page review request succeeds. They may remain visible after the process-local manifest expires or disappears, but saving then fails and requires a new Preview. A missing or unknown `listing_url` returns HTTP `400`; collection failure returns HTTP `500`.
 
 ### Collect selected REAL EVENT candidates from confirmed pages
 
@@ -437,9 +456,10 @@ The downloadable Chrome Helper, extension files, ZIP generation, and remote `fee
 | Local Event dashboard filter | Existing `GET /api/local-events/search` payload only | None | Filter rows in browser memory |
 | Explicit Local Event collection | `POST /api/local-events/search` | Run source-specific collector, write collector snapshot, project Review state | Return refreshed kiosk primary |
 | Review page load or return to tab | `GET /api/local-events/review/state` | None | Render once, then restore card anchor or scroll position |
-| Add list page | `POST /api/local-events/review/listing-page` | Persist one pending page | Reload list cards |
-| Preview any saved list page | `POST /api/local-events/review/preview-events` | Collect one temporary isolated copy; no persisted mutation | Display candidates and keep draft choices in the browser session |
-| Save List Page review | `POST /api/local-events/review/listing-decision` | Persist the complete Preview selection set and List Page decision with exception rollback | Refresh Review cards |
+| Discover list pages | `POST /api/local-events/review/discover-listings` | Persist selected-institution pages; retire vanished non-manual pages and their old selection state with rollback | Reload list cards |
+| Add list page | `POST /api/local-events/review/listing-page` | Persist one pending page; reset old selection/manifest for the same URL | Reload list cards |
+| Preview any saved list page | `POST /api/local-events/review/preview-events` | Collect one isolated copy and issue an exact process-local manifest; no persisted mutation | Display candidates and keep draft choices in the browser session |
+| Save List Page review | `POST /api/local-events/review/listing-decision` | Validate the exact latest manifest; persist the complete Preview selection set and List Page decision with exception rollback | Refresh Review cards or instruct the user to Preview again |
 | Collect confirmed selections | `POST /api/local-events/review/collect-events` | Persist selected REAL EVENT candidates and diagnostics from confirmed pages | Refresh Review cards |
 | Review Event decision | `POST /api/local-events/review/event-decision` | Persist decision and rebuild kiosk primary | Refresh Review cards |
 | Sync observation | `HEAD` four runtime paths | None | Compute `AGE` and status |
