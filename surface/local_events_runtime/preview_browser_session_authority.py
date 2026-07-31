@@ -24,6 +24,19 @@ class PreviewBrowserLease:
         return None
 
 
+class BorrowedPlaywright:
+    """Yield the request-owned Playwright instance without stopping it on exit."""
+
+    def __init__(self, playwright: Any):
+        self._playwright = playwright
+
+    def __enter__(self) -> Any:
+        return self._playwright
+
+    def __exit__(self, exc_type, exc, traceback) -> bool:
+        return False
+
+
 def launch_preview_chromium(playwright: Any):
     """Launch the deployed Preview browser with the repository HTTP/1 policy."""
 
@@ -89,7 +102,7 @@ def _normalise_transport_metadata(state: _review.ReviewState) -> _review.ReviewS
 
 
 def collect_event_candidates(store: _review.EventReviewStore) -> _review.ReviewState:
-    """Run the complete Preview pipeline through one owned Playwright/browser session."""
+    """Run the complete Preview pipeline through one Playwright/browser owner."""
 
     if not _transport._preview_store(store):
         return _transport._BASE_COLLECT(store)
@@ -112,22 +125,27 @@ def collect_event_candidates(store: _review.EventReviewStore) -> _review.ReviewS
     actual_browser: Any | None = None
     lease: PreviewBrowserLease | None = None
 
-    from playwright.sync_api import sync_playwright
+    from playwright import sync_api
+
+    original_sync_playwright = sync_api.sync_playwright
 
     try:
-        # The listing collector and detail enrichment each enter their own temporary
-        # sync_playwright() block. The actual browser must be owned by a longer-lived
-        # Playwright connection surrounding both blocks, otherwise the first temporary
-        # block tears down the connection before detail enrichment starts.
-        with sync_playwright() as owner_playwright:
+        # The direct listing collector and detail enrichment both import
+        # sync_playwright() inside their functions. During this request they borrow one
+        # outer owner instead of starting and stopping separate Playwright connections.
+        with original_sync_playwright() as owner_playwright:
 
-            def launch_once(_temporary_playwright: Any) -> PreviewBrowserLease:
+            def borrow_owner() -> BorrowedPlaywright:
+                return BorrowedPlaywright(owner_playwright)
+
+            def launch_once(_borrowed_playwright: Any) -> PreviewBrowserLease:
                 nonlocal actual_browser, lease
                 if lease is None:
                     actual_browser = launch_preview_chromium(owner_playwright)
                     lease = PreviewBrowserLease(actual_browser)
                 return lease
 
+            sync_api.sync_playwright = borrow_owner
             _browser.launch_chromium = launch_once
             try:
                 state = _transport._BASE_COLLECT(store)
@@ -148,6 +166,7 @@ def collect_event_candidates(store: _review.EventReviewStore) -> _review.ReviewS
                     details.append(f"preview_netlog_summary={summary_path}")
                 raise RuntimeError(" | ".join(details)) from exc
             finally:
+                sync_api.sync_playwright = original_sync_playwright
                 if actual_browser is not None:
                     try:
                         actual_browser.close()
@@ -156,6 +175,7 @@ def collect_event_candidates(store: _review.EventReviewStore) -> _review.ReviewS
     finally:
         _browser.launch_chromium = original_launch
         _transport._PREVIEW_HEADLESS = original_headless
+        sync_api.sync_playwright = original_sync_playwright
 
 
 def apply() -> None:
@@ -187,6 +207,7 @@ def install_transport_apply_hook() -> None:
 
 
 __all__ = [
+    "BorrowedPlaywright",
     "PreviewBrowserLease",
     "apply",
     "collect_event_candidates",
