@@ -25,21 +25,15 @@ def _enrich_final_preview(
     store: _review.EventReviewStore,
     state: _review.ReviewState,
 ) -> _review.ReviewState:
-    """Fail closed if a listing-only row escaped the request-local browser session.
-
-    The single-browser session owner performs the final detail fallback before closing
-    Chromium. Reopening a browser here would violate the one-process Preview contract
-    while returning misleading transport metadata, so the final HTTP handoff verifies
-    the invariant instead of silently starting a second browser.
-    """
+    """Verify that the direct Preview collector returned final detail results."""
 
     remaining = sum(
         _enrichment._needs_detail(candidate) for candidate in state.events
     )
     if remaining:
         raise RuntimeError(
-            "Preview detail enrichment remained incomplete after the request-local "
-            f"browser session ({remaining} candidate(s)); run Preview again"
+            "Preview detail collection remained listing-only after the direct collector "
+            f"completed ({remaining} candidate(s))"
         )
     return state
 
@@ -63,7 +57,7 @@ def _wrap_current_collector() -> None:
         listing = _preview_listing(store)
         # A failed or newer Preview must never leave an older candidate set eligible
         # for submission. The replacement manifest is issued only after final detail
-        # enrichment and redirect handling have completed.
+        # collection and redirect handling have completed.
         _selection.invalidate_preview_manifest(listing.url)
 
         original_filter = _http1._filter_final_expired_events
@@ -111,44 +105,33 @@ def apply() -> None:
 
 
 def apply_preview_pipeline() -> None:
-    """Install the complete Preview pipeline in its established order.
-
-    This function centralizes composition only. Each existing authority still owns its
-    current behavior, state, compatibility entrypoints, and idempotent apply guard.
-    """
+    """Install the complete Preview pipeline in its established order."""
 
     from .artscience_preview_authority import apply as apply_artscience_preview
-    from .preview_browser_session_authority import install_transport_apply_hook
     from .preview_collector_authority import apply as apply_preview_collector
-    from .preview_detail_enrichment_authority import (
-        apply as apply_preview_detail_enrichment,
+    from .preview_direct_detail_collector_authority import (
+        apply as apply_preview_direct_details,
     )
     from .preview_event_selection_authority import (
         apply as apply_preview_event_selection,
     )
     from .preview_transport_authority import apply as apply_preview_transport
 
-    # Register the single-browser transport before the established pipeline applies its
-    # outer transport wrapper. The hook preserves the complete base chain, then replaces
-    # only the final Preview transport with one HTTP/1 Chromium lease shared by listing
-    # and detail reads.
-    install_transport_apply_hook()
-
     # Formal collection must be filtered by the operator's Preview decisions before
     # source-specific Preview wrappers are composed over the diagnostics collector.
     apply_preview_event_selection()
     apply_preview_collector()
-    # Source-specific rendered-card recognition identifies official detail URLs first.
+    # Source-specific rendered-card recognition supplies the list-page extraction JS.
     apply_artscience_preview()
-    # Preview review requires the actual official detail fields. Selection controls must
-    # not downgrade candidates to listing-only evidence.
-    apply_preview_detail_enrichment()
-    # Transport remains outermost so the listing and detail operations share the same
-    # verified HTTP/1 Chromium process and MBS headed policy on the deployed Surface.
+    # The exact Preview entrypoint owns listing and detail navigation in one existing
+    # Playwright/browser/context lifecycle. No second browser, browser lease, HTTP/2
+    # override, or post-collector detail session is installed.
+    apply_preview_direct_details()
+    # Transport remains outermost only to choose the deployed headed Chromium mode and
+    # record NetLog diagnostics for MBS. It does not alter the negotiated HTTP protocol.
     apply_preview_transport()
-    # Patch the final HTTP handoff last so enriched Preview rows cannot be downgraded or
-    # hidden by the base expiry filter. This owner also records the exact final Preview
-    # candidate set used by the subsequent List Page review request.
+    # Patch the final HTTP handoff last so Preview candidates remain visible even when
+    # their official date range has expired and can still be classified by the operator.
     apply()
 
 
