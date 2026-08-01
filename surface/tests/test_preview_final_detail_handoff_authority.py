@@ -199,7 +199,13 @@ def test_review_bootstrap_uses_direct_preview_detail_collector() -> None:
     ) < handoff.index("apply_preview_transport()")
 
     assert "_BASE_BIND()" in handoff
-    assert "_http1._filter_final_expired_events = _keep_preview_candidates" in handoff
+    assert "patched = _patch_expiry_filters(base_collect)" in handoff
+    assert (
+        'namespace["_filter_final_expired_events"] = _keep_preview_candidates'
+        in handoff
+    )
+    assert "_restore_expiry_filters(patched)" in handoff
+    assert '"preview_expiry_policy": "retain_for_operator_review"' in handoff
     invalidate_call = "_selection.invalidate_preview_manifest(listing.url)"
     verify_call = "state = _enrich_final_preview(store, state)"
     issue_call = "state = _selection.issue_preview_manifest(listing, state)"
