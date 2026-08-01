@@ -24,12 +24,19 @@ def _listing_card(raw: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _new_context(browser: Any) -> Any:
+    return browser.new_context(
+        viewport={"width": 1440, "height": 1200},
+        device_scale_factor=1,
+    )
+
+
 def _open_page_like_listing(
     context: Any,
     url: str,
     error_prefix: str,
 ) -> tuple[Any, Any]:
-    """Create a fresh Page and make its first navigation exactly like the List Page."""
+    """Create a fresh Page and make its first navigation like the List Page."""
 
     page = context.new_page()
     try:
@@ -48,13 +55,59 @@ def _open_page_like_listing(
         raise
 
 
+def _close_browser_document(
+    browser: Any | None,
+    context: Any | None,
+    page: Any | None,
+) -> None:
+    if page is not None:
+        try:
+            if not page.is_closed():
+                page.close()
+        except Exception:
+            pass
+    if context is not None:
+        try:
+            context.close()
+        except Exception:
+            pass
+    if browser is not None:
+        try:
+            browser.close()
+        except Exception:
+            pass
+
+
+def _open_browser_document_like_listing(
+    playwright: Any,
+    url: str,
+    error_prefix: str,
+) -> tuple[Any, Any, Any, Any]:
+    """Open one URL with the exact process/context/page lifecycle used by Listing."""
+
+    browser = _browser.launch_chromium(playwright)
+    context = None
+    page = None
+    try:
+        context = _new_context(browser)
+        page, response = _open_page_like_listing(
+            context,
+            url,
+            error_prefix,
+        )
+        return browser, context, page, response
+    except Exception:
+        _close_browser_document(browser, context, page)
+        raise
+
+
 def _collect_artscience_detail(
     context: Any,
     source: dict[str, Any],
     listing: _review.ListingPageCandidate,
     raw: dict[str, Any],
 ) -> dict[str, str]:
-    """Open one Detail as a fresh Page, matching the working List Page lifecycle."""
+    """Open and parse one ArtScience Detail inside the supplied browser context."""
 
     requested_url = str(raw.get("detail_url") or "").strip()
     if not requested_url or not _preview._host_allowed(requested_url, source):
@@ -81,17 +134,47 @@ def _collect_artscience_detail(
             detail_page.close()
 
 
+def _collect_artscience_detail_in_fresh_browser(
+    playwright: Any,
+    source: dict[str, Any],
+    listing: _review.ListingPageCandidate,
+    raw: dict[str, Any],
+) -> dict[str, str]:
+    """Run one Detail as the first MBS document in a new sequential browser."""
+
+    browser = _browser.launch_chromium(playwright)
+    context = None
+    try:
+        context = _new_context(browser)
+        return _collect_artscience_detail(
+            context,
+            source,
+            listing,
+            raw,
+        )
+    finally:
+        _close_browser_document(browser, context, None)
+
+
 def _collect_detail(
-    context: Any,
+    playwright: Any,
+    shared_context: Any | None,
     source: dict[str, Any],
     listing: _review.ListingPageCandidate,
     raw: dict[str, Any],
 ) -> dict[str, str]:
     if listing.source_id == _ARTSCIENCE_SOURCE_ID:
-        return _collect_artscience_detail(context, source, listing, raw)
+        return _collect_artscience_detail_in_fresh_browser(
+            playwright,
+            source,
+            listing,
+            raw,
+        )
 
+    if shared_context is None:
+        raise RuntimeError("shared detail context is unavailable")
     return _effective.detail_candidate(
-        context,
+        shared_context,
         source,
         listing.url,
         str(raw.get("detail_url") or "").strip(),
@@ -131,7 +214,7 @@ def _payload_rows(payload: Any) -> tuple[list[dict[str, Any]], dict[str, Any]]:
 
 
 def collect_preview(store: _review.EventReviewStore) -> _review.ReviewState:
-    """Collect the List Page and each Detail via fresh Pages in one browser context."""
+    """Collect Listing and ArtScience Details in sequential browser processes."""
 
     state = store.load()
     confirmed = [item for item in state.listing_pages if item.decision == "confirmed"]
@@ -151,79 +234,97 @@ def collect_preview(store: _review.EventReviewStore) -> _review.ReviewState:
     http_status: int | None = None
     detail_errors: list[dict[str, str]] = []
     detail_attempts = 0
-    fresh_detail_pages = 0
+    fresh_detail_browsers = 0
     default_venue = str(source.get("default_venue") or source.get("name") or "")
 
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as playwright:
-        browser = _browser.launch_chromium(playwright)
+        listing_browser = None
+        listing_context = None
+        listing_page = None
         try:
-            context = browser.new_context(
-                viewport={"width": 1440, "height": 1200},
-                device_scale_factor=1,
+            (
+                listing_browser,
+                listing_context,
+                listing_page,
+                response,
+            ) = _open_browser_document_like_listing(
+                playwright,
+                listing.url,
+                "listing",
             )
-            try:
-                listing_page, response = _open_page_like_listing(
-                    context,
-                    listing.url,
-                    "listing",
+            if response is not None:
+                http_status = int(response.status)
+            final_url = str(listing_page.url)
+            if not _preview._host_allowed(final_url, source):
+                raise ValueError(
+                    "listing page redirected outside the source allow-list"
                 )
+
+            payload = listing_page.evaluate(
+                _preview.PREVIEW_LISTING_JS,
+                {
+                    "allowedDomains": source.get("allowed_domains") or [],
+                    "listingUrl": listing.url,
+                    "sourceId": listing.source_id,
+                    "maxEvents": _preview.MAX_PREVIEW_EVENTS,
+                },
+            ) or {}
+            rows, observed = _payload_rows(payload)
+
+            if listing.source_id == _ARTSCIENCE_SOURCE_ID:
+                # Detail must be the first MBS document in a new Chromium process.
+                # Close the Listing process before starting the first Detail process.
+                _close_browser_document(
+                    listing_browser,
+                    listing_context,
+                    listing_page,
+                )
+                listing_browser = None
+                listing_context = None
+                listing_page = None
+            else:
+                if not listing_page.is_closed():
+                    listing_page.close()
+                listing_page = None
+
+            for raw in rows:
+                detail_url = str(raw.get("detail_url") or "").strip()
+                title = str(raw.get("title") or "").strip()
+                if not title or not _preview._host_allowed(detail_url, source):
+                    continue
+
+                detail_attempts += 1
+                if listing.source_id == _ARTSCIENCE_SOURCE_ID:
+                    fresh_detail_browsers += 1
                 try:
-                    if response is not None:
-                        http_status = int(response.status)
-                    final_url = str(listing_page.url)
-                    if not _preview._host_allowed(final_url, source):
-                        raise ValueError(
-                            "listing page redirected outside the source allow-list"
-                        )
-                    payload = listing_page.evaluate(
-                        _preview.PREVIEW_LISTING_JS,
+                    detail = _collect_detail(
+                        playwright,
+                        listing_context,
+                        source,
+                        listing,
+                        raw,
+                    )
+                except Exception as exc:
+                    error = f"{type(exc).__name__}: {exc}"[:500]
+                    detail = _failed_detail(raw, default_venue, error)
+
+                raw["_detail"] = detail
+                detail_error = str(detail.get("detail_error") or "").strip()
+                if detail_error:
+                    detail_errors.append(
                         {
-                            "allowedDomains": source.get("allowed_domains") or [],
-                            "listingUrl": listing.url,
-                            "sourceId": listing.source_id,
-                            "maxEvents": _preview.MAX_PREVIEW_EVENTS,
-                        },
-                    ) or {}
-                    rows, observed = _payload_rows(payload)
-                finally:
-                    if not listing_page.is_closed():
-                        listing_page.close()
-
-                for raw in rows:
-                    detail_url = str(raw.get("detail_url") or "").strip()
-                    title = str(raw.get("title") or "").strip()
-                    if not title or not _preview._host_allowed(detail_url, source):
-                        continue
-
-                    detail_attempts += 1
-                    if listing.source_id == _ARTSCIENCE_SOURCE_ID:
-                        fresh_detail_pages += 1
-                    try:
-                        detail = _collect_detail(
-                            context,
-                            source,
-                            listing,
-                            raw,
-                        )
-                    except Exception as exc:
-                        error = f"{type(exc).__name__}: {exc}"[:500]
-                        detail = _failed_detail(raw, default_venue, error)
-
-                    raw["_detail"] = detail
-                    detail_error = str(detail.get("detail_error") or "").strip()
-                    if detail_error:
-                        detail_errors.append(
-                            {
-                                "detail_url": detail_url,
-                                "error": detail_error[:500],
-                            }
-                        )
-            finally:
-                context.close()
+                            "detail_url": detail_url,
+                            "error": detail_error[:500],
+                        }
+                    )
         finally:
-            browser.close()
+            _close_browser_document(
+                listing_browser,
+                listing_context,
+                listing_page,
+            )
 
     candidates: list[_review.EventCandidate] = []
     listing_detail_urls: dict[str, str] = {}
@@ -310,6 +411,7 @@ def collect_preview(store: _review.EventReviewStore) -> _review.ReviewState:
     )
     diagnostic = _diagnostics._finish(diagnostic)
 
+    artscience = listing.source_id == _ARTSCIENCE_SOURCE_ID
     return store.replace_events(
         candidates,
         {
@@ -328,15 +430,27 @@ def collect_preview(store: _review.EventReviewStore) -> _review.ReviewState:
                 "preview_collector._collect_preview"
             ),
             "preview_detail_navigation": (
-                "fresh_page_first_goto_as_listing"
-                if listing.source_id == _ARTSCIENCE_SOURCE_ID
+                "fresh_browser_first_goto_as_listing"
+                if artscience
                 else "detail_owner_navigation"
             ),
-            "preview_detail_fresh_page_count": fresh_detail_pages,
-            "preview_detail_transport": "same_browser_context",
-            "preview_browser_process_count": 1,
-            "preview_browser_reuse": "one_browser_fresh_pages",
-            "preview_detail_context_count": 1,
+            "preview_detail_fresh_browser_count": fresh_detail_browsers,
+            "preview_detail_transport": (
+                "sequential_browser_processes"
+                if artscience
+                else "same_browser_context"
+            ),
+            "preview_browser_process_count": (
+                1 + fresh_detail_browsers if artscience else 1
+            ),
+            "preview_browser_reuse": (
+                "single_playwright_sequential_browsers"
+                if artscience
+                else "listing_and_details"
+            ),
+            "preview_detail_context_count": (
+                fresh_detail_browsers if artscience else 1
+            ),
             "preview_candidate_listing_detail_urls": listing_detail_urls,
             "detail_page_request_count": detail_attempts,
             "detail_page_requests_skipped": 0,
@@ -362,5 +476,7 @@ __all__ = [
     "apply",
     "collect_preview",
     "_collect_artscience_detail",
+    "_collect_artscience_detail_in_fresh_browser",
+    "_open_browser_document_like_listing",
     "_open_page_like_listing",
 ]
