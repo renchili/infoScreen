@@ -22,10 +22,11 @@ DETAIL_URL = (
 
 class Page:
     def __init__(self) -> None:
-        self.url = LISTING_URL
+        self.url = "about:blank"
         self.goto_calls = []
         self.wait_calls = []
         self.front_calls = 0
+        self.close_calls = 0
 
     def goto(self, url, *, wait_until, timeout):
         self.goto_calls.append((url, wait_until, timeout))
@@ -39,20 +40,27 @@ class Page:
         self.front_calls += 1
 
     def is_closed(self):
-        return False
+        return self.close_calls > 0
 
-    def evaluate(self, script, args):
-        return {"rows": [], "observed": {}}
+    def close(self):
+        self.close_calls += 1
 
 
-def test_artscience_detail_uses_the_exact_listing_navigation_operation(
+class Context:
+    def __init__(self) -> None:
+        self.pages = []
+
+    def new_page(self):
+        page = Page()
+        self.pages.append(page)
+        return page
+
+
+def test_listing_and_detail_each_use_a_fresh_page_first_navigation(
     monkeypatch,
 ) -> None:
-    page = Page()
-    listing = SimpleNamespace(
-        source_id="artscience",
-        url=LISTING_URL,
-    )
+    context = Context()
+    listing = SimpleNamespace(source_id="artscience", url=LISTING_URL)
     source = {
         "allowed_domains": ["marinabaysands.com"],
         "default_venue": "ArtScience Museum",
@@ -72,44 +80,49 @@ def test_artscience_detail_uses_the_exact_listing_navigation_operation(
         "detail_page_title": "Another World Is Possible",
     }
 
+    listing_page, _response = authority._open_page_like_listing(
+        context,
+        LISTING_URL,
+        "listing",
+    )
     monkeypatch.setattr(
         authority._artscience_detail,
         "read_loaded_detail_candidate",
         lambda actual_page, actual_source, listing_url, requested_url: parsed,
     )
-    monkeypatch.setattr(authority, "_mark_listing_page", lambda *args: None)
 
-    result = authority._read_artscience_detail_like_listing(
-        page,
+    result = authority._collect_artscience_detail(
+        context,
         source,
         listing,
         raw,
     )
 
+    assert len(context.pages) == 2
+    detail_page = context.pages[1]
     expected = (
         "domcontentloaded",
         authority._preview.PREVIEW_PAGE_TIMEOUT_MS,
     )
-    assert page.goto_calls == [
-        (DETAIL_URL, *expected),
-        (LISTING_URL, *expected),
-    ]
-    assert page.wait_calls == [
-        authority._preview.PREVIEW_SETTLE_MS,
-        authority._preview.PREVIEW_SETTLE_MS,
-    ]
-    assert page.front_calls == 1
+    assert listing_page.goto_calls == [(LISTING_URL, *expected)]
+    assert detail_page.goto_calls == [(DETAIL_URL, *expected)]
+    assert listing_page.url == LISTING_URL
+    assert detail_page.front_calls == 1
+    assert detail_page.close_calls == 1
     assert result is parsed
 
 
-def test_listing_style_navigation_does_not_use_click_or_commit_wait() -> None:
-    helper_source = inspect.getsource(authority._goto_like_listing)
-    detail_source = inspect.getsource(authority._read_artscience_detail_like_listing)
+def test_artscience_detail_does_not_reuse_listing_page_or_click() -> None:
+    helper_source = inspect.getsource(authority._open_page_like_listing)
+    detail_source = inspect.getsource(authority._collect_artscience_detail)
 
+    assert "context.new_page()" in helper_source
     assert ".goto(" in helper_source
     assert 'wait_until="domcontentloaded"' in helper_source
-    assert "_goto_like_listing(" in detail_source
+    assert "_open_page_like_listing(" in detail_source
     assert ".click(" not in detail_source
     assert "expect_navigation" not in detail_source
+    assert "go_back" not in detail_source
+    assert "listing_page" not in detail_source
     assert 'wait_until="commit"' not in helper_source
     assert 'wait_until="commit"' not in detail_source
