@@ -39,7 +39,7 @@ Static frontend assets are served from `surface/web/` through `SimpleHTTPRequest
 ## 3. Runtime JSON reads
 
 | Method | Path | Runtime file | Primary caller | Producer |
-| --- | --- | --- | --- |
+| --- | --- | --- | --- | --- |
 | `GET`, `HEAD` | `/schedule.json` | `schedule.json` | `calendar_board.js`, Sync ticker | Mac EventKit export and atomic remote publish |
 | `GET`, `HEAD` | `/weather.json` | `weather.json` | `dashboard.js`, Sync ticker | `fetch_live_data.py` |
 | `GET`, `HEAD` | `/market.json` | `market.json` | `dashboard.js`, Sync ticker | `fetch_live_data.py` |
@@ -390,6 +390,7 @@ load real Review state
   -> open every admitted official detail page in the same context
   -> preserve original list-card identity while recording final redirected URLs
   -> close the context and real browser once
+  -> retain expired official candidates for operator classification
   -> verify no listing-only candidate remains
   -> issue a new exact process-local candidate manifest
   -> return the temporary result
@@ -405,7 +406,10 @@ preview_browser_process_count: 1
 preview_browser_reuse: listing_and_details
 preview_detail_context_count: 1
 preview_detail_transport: same_browser_context
+preview_expiry_policy: retain_for_operator_review
 ```
+
+The expiry override is limited to the isolated Preview result because Preview is classification evidence. The executing final-expiry filter is restored before the request returns. Formal persisted collection and kiosk publication keep the normal expiry policy.
 
 If a candidate still carries listing-only evidence after the direct collector completes, Preview fails with HTTP `500`. The server does not start a second browser or issue a manifest from incomplete detail results.
 
@@ -476,7 +480,7 @@ The downloadable Chrome Helper, extension files, ZIP generation, and remote `fee
 | Review page load or return to tab | `GET /api/local-events/review/state` | None | Render once, then restore card anchor or scroll position |
 | Discover list pages | `POST /api/local-events/review/discover-listings` | Persist selected-institution pages; retire vanished non-manual pages and their old selection state with rollback | Reload list cards |
 | Add list page | `POST /api/local-events/review/listing-page` | Persist one pending page; reset old selection/manifest for the same URL | Reload list cards |
-| Preview any saved list page | `POST /api/local-events/review/preview-events` | Use one Chromium process and context for listing/detail reads, issue an exact process-local manifest, and make no persisted mutation | Display candidates and keep draft choices in the browser session |
+| Preview any saved list page | `POST /api/local-events/review/preview-events` | Use one Chromium process and context for listing/detail reads, retain expired candidates for classification, issue an exact process-local manifest, and make no persisted mutation | Display candidates and keep draft choices in the browser session |
 | Save List Page review | `POST /api/local-events/review/listing-decision` | Validate the exact latest manifest; persist the complete Preview selection set and List Page decision with exception rollback | Refresh Review cards or instruct the user to Preview again |
 | Collect confirmed selections | `POST /api/local-events/review/collect-events` | Persist selected REAL EVENT candidates and diagnostics from confirmed pages | Refresh Review cards |
 | Review Event decision | `POST /api/local-events/review/event-decision` | Persist decision and rebuild kiosk primary | Refresh Review cards |
