@@ -43,10 +43,12 @@ def _review_event(candidate: Any) -> dict[str, Any]:
 
 
 def _apply_review_authorities() -> None:
-    """Install the Preview pipeline through its explicit composition owner."""
+    """Install the Review expiry rule and explicit Preview composition owner."""
 
+    from .review_expiry_authority import apply as apply_review_expiry_authority
     from .preview_final_detail_handoff_authority import apply_preview_pipeline
 
+    apply_review_expiry_authority()
     apply_preview_pipeline()
 
 
