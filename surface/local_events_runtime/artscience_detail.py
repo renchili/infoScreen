@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from . import extract as _extract
@@ -19,6 +20,26 @@ ARTSCIENCE_DETAIL_READY_JS = r"""
     document.readyState === "complete" &&
     text.length >= 200
   );
+}
+"""
+
+
+ARTSCIENCE_BROWSER_ERROR_JS = r"""
+() => {
+  const clean = value => String(value || "").replace(/\s+/g, " ").trim();
+  const title = clean(document.title);
+  const body = clean(document.body ? (document.body.innerText || document.body.textContent || "") : "");
+  const url = String(location.href || "");
+  const codeMatch = body.match(/\b(?:ERR|DNS_PROBE)_[A-Z0-9_]+\b/i);
+  const titleError = /(?:this site can.?t be reached|site can.?t be reached|webpage is not available|page isn.?t working|page is not working|aw, snap)/i.test(title);
+  const bodyError = /(?:this site can.?t be reached|site can.?t be reached|webpage is not available|page isn.?t working|page is not working|aw, snap)/i.test(body);
+  return {
+    is_error: url.startsWith("chrome-error://") || titleError || bodyError || Boolean(codeMatch),
+    url,
+    title,
+    error_code: codeMatch ? codeMatch[0].toUpperCase() : "",
+    body: body.slice(0, 800),
+  };
 }
 """
 
@@ -95,11 +116,64 @@ ARTSCIENCE_DETAIL_FIELDS_JS = r"""
 """
 
 
+_BROWSER_ERROR_TITLE_RE = re.compile(
+    r"(?:this site can.?t be reached|site can.?t be reached|webpage is not available|"
+    r"page isn.?t working|page is not working|aw, snap)",
+    re.I,
+)
+_BROWSER_ERROR_CODE_RE = re.compile(r"\b(?:ERR|DNS_PROBE)_[A-Z0-9_]+\b", re.I)
+
+
 def _safe_requested_url(listing_url: str, raw_url: str) -> str:
     requested_url = _provenance.listing_detail_url(listing_url, raw_url)
     if not requested_url:
         raise ValueError("detail URL is not a safe HTTP(S) target from the listing")
     return requested_url
+
+
+def _loaded_browser_error(page: Any, requested_url: str) -> str:
+    """Return a precise Chrome error-page diagnostic, or an empty string."""
+
+    payload: dict[str, Any] = {}
+    try:
+        raw = page.evaluate(ARTSCIENCE_BROWSER_ERROR_JS) or {}
+        if isinstance(raw, dict):
+            payload = raw
+    except Exception:
+        payload = {}
+
+    page_url = str(payload.get("url") or getattr(page, "url", "") or "").strip()
+    try:
+        page_title = _extract.clean(payload.get("title") or page.title() or "")
+    except Exception:
+        page_title = _extract.clean(payload.get("title") or "")
+    body = _extract.clean(payload.get("body") or "")
+    code = _extract.clean(payload.get("error_code") or "")
+    if not code:
+        match = _BROWSER_ERROR_CODE_RE.search(body)
+        code = match.group(0).upper() if match else ""
+
+    is_error = bool(
+        payload.get("is_error")
+        or page_url.startswith("chrome-error://")
+        or _BROWSER_ERROR_TITLE_RE.search(page_title)
+        or _BROWSER_ERROR_TITLE_RE.search(body)
+        or code
+    )
+    if not is_error:
+        return ""
+
+    parts = ["browser_error_page"]
+    if code:
+        parts.append(f"error_code={code}")
+    if page_title:
+        parts.append(f"title={page_title}")
+    if page_url:
+        parts.append(f"page_url={page_url}")
+    parts.append(f"requested_url={requested_url}")
+    if body:
+        parts.append(f"body={body[:180]}")
+    return "; ".join(parts)[:500]
 
 
 def read_loaded_detail_candidate(
@@ -111,6 +185,11 @@ def read_loaded_detail_candidate(
     """Parse an ArtScience page already opened by a rendered browser interaction."""
 
     requested_url = _safe_requested_url(listing_url, requested_url)
+
+    browser_error = _loaded_browser_error(page, requested_url)
+    if browser_error:
+        raise RuntimeError(browser_error)
+
     try:
         page.wait_for_function(
             ARTSCIENCE_DETAIL_READY_JS,
@@ -118,6 +197,10 @@ def read_loaded_detail_candidate(
         )
     except Exception:
         pass
+
+    browser_error = _loaded_browser_error(page, requested_url)
+    if browser_error:
+        raise RuntimeError(browser_error)
 
     payload = page.evaluate(ARTSCIENCE_DETAIL_FIELDS_JS) or {}
     if not isinstance(payload, dict):
@@ -174,6 +257,7 @@ def collect_detail_candidate(
 
 
 __all__ = [
+    "ARTSCIENCE_BROWSER_ERROR_JS",
     "ARTSCIENCE_DETAIL_FIELDS_JS",
     "ARTSCIENCE_DETAIL_READY_JS",
     "collect_detail_candidate",
