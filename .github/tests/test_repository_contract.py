@@ -198,6 +198,30 @@ def test_document_roles_are_distinct() -> None:
     assert "## Validation boundaries" in explanations
 
 
+def test_documented_paths_and_runtime_boundaries_match_current_owners() -> None:
+    readme = read_text("README.md")
+    design = read_text("docs/design.md")
+    api = read_text("docs/api-spec.md")
+    questions = read_text("docs/questions.md")
+    dashboard = read_text("surface/web/assets/js/dashboard.js")
+    index = read_text("surface/web/index.html")
+
+    assert "`scripts/infoscreen_status.sh`" not in questions
+    assert "`surface/scripts/infoscreen_status.sh`" in questions
+
+    for document in (design, api, questions):
+        assert "preview_expiry_policy" in document
+        assert "retain_for_operator_review" in document
+        assert "normal expiry" in document
+
+    assert "browser-generated demo values" in readme
+    assert "static kiosk labels" in readme
+    assert "function updateDemoMetrics()" in dashboard
+    assert "Math.random()" in dashboard
+    for label in ("POWER", "DISPLAY", "NETWORK"):
+        assert f'<div class="stat-label">{label}</div>' in index
+
+
 def test_documented_systemd_job_cadence_matches_units() -> None:
     live_service = read_text(
         "surface/deploy/systemd/user/infoscreen-live-data.service"
