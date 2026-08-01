@@ -28,23 +28,23 @@ Static CSS evidence must contain no full-screen scanline or repeating-grid overl
 
 ### Easy-to-make interpretation
 
-The Surface can act as a second Calendar client, any Python runtime can export EventKit, copying directly to the final file is safe enough, or a `SCHEDULE FAIL` ticker can be repaired by refreshing the kiosk page without finding the failed producer stage.
+Calendar sync settings can be supplied with one-off shell environment assignments whenever the script is run, the remote Schedule target must begin with `~/`, or a successful upload is enough even when the already-open kiosk page keeps displaying the previous Schedule payload.
 
 ### Why it fails
 
-macOS Calendar/EventKit owns accounts, permissions, and authoritative event state. A Python runtime without `import EventKit` cannot export Calendar data. Direct replacement during transfer can expose a partially written JSON file. A freshness failure on the Surface does not identify whether configuration loading, EventKit export, local JSON validation, SSH, upload, atomic publication, or remote validation failed. When logging starts only after machine configuration is loaded, early failures can leave no usable diagnostic record.
+A prefix such as `REMOTE_SCHEDULE_JSON=... bash mac/sync_schedule.sh` applies only to that one process. A later LaunchAgent run does not inherit values assigned in a terminal session. The remote target may also be a valid absolute path below the SSH user's home directory, so rejecting every path except `~/...` can stop an otherwise correct unattended sync before EventKit export or upload begins. Producer refresh and browser refresh are separate layers: replacing `schedule.json` does not help an already-open page unless the Calendar browser owner reloads that file independently.
 
 ### Correct requirement interpretation
 
-Calendar follows EventKit -> Mac export -> validated local JSON -> temporary remote upload -> atomic remote rename -> validated Surface runtime JSON -> browser. A failed run is diagnosed from its first failed named stage, not from repeated page refreshes or file age alone.
+macOS Calendar/EventKit remains authoritative. The setup command persists the resolved Python executable, Surface host, SSH user, remote Schedule path, local JSON name, and log directory in the LaunchAgent `ProgramArguments`. Those explicit arguments are the authoritative unattended runtime configuration. The sync script accepts either an absolute remote path or a `~/` home-relative path, validates and publishes the JSON atomically, and the Calendar board reloads Schedule data without requiring a full-page refresh.
 
 ### Required implementation
 
-Probe EventKit-capable Python, keep machine settings in uncommitted `mac/local.env`, and publish to `~/infoscreen/surface/.env/schedule.json` through a temporary file in the same remote directory. `mac/sync_schedule.sh` must start logging before it reads `local.env`, record each stage, trap command failures with the exit code, line, and command, validate both local and published JSON, and write the latest machine-readable outcome to `~/Library/Logs/infoscreen-sync/schedule_sync_status.json`. The complete chronological log remains `~/Library/Logs/infoscreen-sync/push_schedule.log`.
+`mac/scripts/setup-schedule-sync.sh` must serialize the resolved values into the LaunchAgent argument list. `mac/local.env` may be read only as migration input for an older installation; it must not remain a runtime dependency for future LaunchAgent executions. `mac/sync_schedule.sh` must parse explicit arguments, accept safe absolute and `~/` remote paths, export EventKit data, validate the local JSON, upload to a temporary remote name, rename atomically, verify the published JSON, and record the final stage. The browser Calendar owner must poll or otherwise reload `schedule.json` independently of page reload and visual rotation.
 
 ### Acceptance evidence
 
-Show unattended LaunchAgent execution, a changed Surface file, current HTTP modification time, visible Calendar output, and a sync script that uploads to a temporary name before `mv` publishes the final file. Failure evidence must identify one exact stage such as `load configuration`, `export EventKit schedule`, `validate local schedule JSON`, `ensure Surface runtime directory`, `upload temporary schedule`, `publish schedule atomically`, or `verify published schedule`. Injected or observed failures before and after configuration loading must both leave a readable log and an `ERR` status record.
+Static evidence must show the Schedule values in LaunchAgent `ProgramArguments`, command-line arguments taking precedence over compatibility environment values, support for both absolute and `~/` remote paths, atomic remote publication, and independent browser Schedule reload. Device evidence must show an unattended LaunchAgent run with exit code `0`, a changed and valid remote `schedule.json`, and the new Calendar content appearing in an already-open kiosk page without a forced page refresh. A one-off environment-prefixed manual invocation is not evidence that unattended configuration is persisted.
 
 ## Runtime freshness and refresh layers
 
