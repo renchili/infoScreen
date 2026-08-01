@@ -56,6 +56,8 @@ Calendar visual rotation remains separate from data reload. The board rotates lo
 
 Each visible mount has one renderer owner. Producer jobs write authoritative runtime files. Browser scripts render those files and send explicit mutations. Asynchronous scripts must not overwrite another owner’s final DOM.
 
+`surface/web/assets/js/dashboard.js` owns the clock, Market, Weather, and browser-generated CPU/MEM/DSK/NET demo meters. Those meters are not host telemetry. The POWER/DISPLAY/NETWORK values in `surface/web/index.html` are static kiosk labels.
+
 `surface/web/assets/js/local_event_card.js` owns both rendering the kiosk Local Events card and filtering its already-loaded rows. Collection remains owned by the producer job and explicit collection API, not by the dashboard filter dialog.
 
 The left dashboard column has three explicit rows for Market, Local Events, and the Sync ticker. The Local Event panel is not placed in the fixed ticker row.
@@ -153,6 +155,8 @@ When scoped discovery removes a non-manual List Page, it removes that URL’s co
 Preview collection is decision-independent. `POST /api/local-events/review/preview-events` copies the current Review state to a temporary store, keeps only the selected list page, marks only that temporary copy confirmed, clears copied Event candidates and feedback, and runs the direct Preview collector/detail owner. The Preview request itself does not change the saved list-page decision, persisted Event candidates, feedback, collection metadata, `state.json`, or kiosk output.
 
 One Preview request owns one real Chromium process and one browser context. The direct collector opens the selected listing page, extracts rendered candidate cards, then opens every admitted official detail page through the same context before closing the browser once. The returned metadata records `preview_browser_process_count: 1`, `preview_browser_reuse: listing_and_details`, `preview_detail_context_count: 1`, and `preview_detail_transport: same_browser_context`. If listing-only evidence still reaches the final HTTP handoff, the request fails instead of opening a second browser or issuing a manifest from incomplete detail results.
+
+Preview is classification evidence, so its final handoff bypasses the executing expired-event filter only for the isolated Preview result. Expired official candidates remain visible for operator classification, and the response records `preview_expiry_policy: retain_for_operator_review`. The original expiry filter is restored before the request returns; formal persisted collection and kiosk publication keep the normal expiry policy.
 
 The browser keeps the active Preview panel and uncommitted candidate choices in `sessionStorage`. The final Preview handoff first invalidates any older manifest, completes detail enrichment and redirect handling, then issues the exact candidate manifest returned to the browser. When the operator saves the List Page review, `POST /api/local-events/review/listing-decision` receives a `preview-review-v1:` payload containing every Preview candidate and its REAL EVENT / NOT EVENT decision. The backend validates the List Page identity, official-domain detail URLs, candidate identities, and exact equality with the latest unexpired server manifest. Browser drafts may remain visible after the manifest becomes invalid, but submission then fails with guidance to run Preview again. The backend atomically replaces `preview_event_selections.json`, then writes the List Page decision; if that state write fails, the prior selection file is restored and the still-valid manifest remains available for retry.
 
@@ -285,6 +289,7 @@ The Sync ticker is an observer, not a scheduler. It performs `HEAD` requests and
 - A retired discovery page cannot retain a committed Preview selection; failed Review-state persistence restores the previous selection bytes.
 - An expired, missing, superseded, or revision-mismatched Preview manifest rejects submission and tells the operator to run Preview again.
 - Isolated Preview listing and detail reads share one Chromium process and one context; incomplete final detail results fail instead of opening a second process.
+- Preview retains expired official candidates only for classification; formal collection and kiosk publication retain normal expiry filtering.
 - Formal discovery and collection disable HTTP/2 before Chromium starts; isolated Preview keeps normal protocol negotiation and may use headed Chromium for Marina Bay Sands.
 - A dashboard filter with no matches displays an empty filtered state without changing or deleting the underlying runtime events.
 - A Review projection failure must leave the previous kiosk primary intact because both collector and display writes are atomic.
