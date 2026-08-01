@@ -66,7 +66,7 @@ Repository-wide material may remain outside device directories only when it genu
 - architecture, API, and requirement documentation;
 - agent rules and reusable skills;
 - Git and GitHub control files;
-- CI workflow orchestration and CI-only helpers.
+- CI workflow orchestration, repository contract tests, and CI-only helpers.
 
 A file is not repository-wide merely because it is a test, script, installer, configuration file, or deployment file.
 
@@ -99,18 +99,9 @@ pyproject.toml
 
 unless a future explicit project decision establishes that they are genuinely repository-wide and updates this rule, the project plan, enforcement, documentation, and callers together.
 
-### Known legacy layout violations
+### Completed ownership migration
 
-The current repository still contains historical root paths that were incorrectly legitimized by the previous generated rule:
-
-```text
-deploy/
-scripts/
-tests/
-pyproject.toml
-```
-
-Their existence is not architectural authority. They must be classified and migrated by owner:
+The historical root ownership buckets were removed and their contents were classified by active owner:
 
 ```text
 deploy/ Surface systemd and installer content
@@ -120,21 +111,24 @@ scripts/ Surface operational content
   -> surface/scripts/
 
 scripts/ CI-only content
-  -> .github/scripts/ or another explicit CI-owned path
+  -> .github/scripts/
 
 tests/ Surface tests and fixtures
   -> surface/tests/
 
-tests/ Mac tests and fixtures
+tests/ Mac tests
   -> mac/tests/
 
+repository-wide contract tests
+  -> .github/tests/
+
 root pytest configuration
-  -> the owning test surface or explicit CI configuration; it must not remain at root merely for convenience
+  -> .github/pytest.ini
 ```
 
-Do not move the whole directory blindly. Classify every file by active caller and platform first. A migration must update imports, relative paths, workflows, shell callers, installer paths, test discovery, documentation, `.gitignore`, `.githooks/pre-commit`, and repository path checks in the same complete change set.
+The obsolete duplicate `scripts/setup_surface_go.sh` was removed rather than preserved under a new name.
 
-Until that migration is complete, do not cite the legacy paths as the correct layout and do not add new files to them except as part of the migration or a user-approved urgent compatibility repair.
+The migration also updated workflows, installers, test discovery, documentation, `.gitignore`, `.githooks/pre-commit`, and repository path checks. Do not restore compatibility copies at the old root paths. New files must be placed directly with their Surface, Mac, CI, or genuinely repository-wide owner.
 
 ## Runtime-state boundary
 
@@ -163,9 +157,9 @@ surface/jobs/local_event_search.py   Local Events job entrypoint
 surface/local_events_runtime/        canonical Local Events collection and extraction library
 surface/conf/                        committed configuration
 surface/web/                         static frontend
-surface/deploy/                      Surface systemd units and installer after migration
-surface/scripts/                     Surface operator and diagnostic scripts after migration
-surface/tests/                       Surface test definitions and fixtures after migration
+surface/deploy/                      Surface systemd units and installer
+surface/scripts/                     Surface operator and diagnostic scripts
+surface/tests/                       Surface test definitions and fixtures
 surface/.env/                        uncommitted runtime and personal state
 ```
 
@@ -218,6 +212,8 @@ surface/tests/fixtures/
 ```
 
 Mac Schedule and LaunchAgent tests belong under `mac/tests/`.
+
+Repository-wide path, documentation, and workflow contract tests belong under `.github/tests/`. Shared pytest discovery and marker configuration belongs in `.github/pytest.ini`.
 
 Tests must not require external network access. Tests that need runtime data must use committed fixtures and copy them into a temporary or ignored runtime directory.
 
