@@ -14,6 +14,8 @@ The project has three user-facing pages:
 
 The Surface or Ubuntu device serves the pages and stores runtime JSON. A Mac is only required when macOS Calendar data should appear on the dashboard.
 
+InfoScreen is not a cloud dashboard or a host-monitoring system. Local Events come from curated official sources, Calendar authority remains on the Mac, the CPU/MEM/DSK/NET meters are browser-generated demo values, and POWER/DISPLAY/NETWORK are static kiosk labels rather than Surface telemetry.
+
 ## 2. Start the project
 
 ### 2.1 Minimal local start
@@ -121,7 +123,7 @@ Market / Weather / News / Local Events producers
 
 macOS Calendar / EventKit
   -> Mac Schedule sync
-  -> Surface schedule.json
+  -> surface/.env/schedule.json
   -> dashboard Calendar area
 
 Local photos
