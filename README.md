@@ -392,14 +392,22 @@ A failure before DOM parsing should be shown as a page/navigation error. Missing
 
 ## Calendar sync
 
+Run on the Mac that owns the Calendar accounts:
+
 ```bash
 cd ~/infoscreen
 bash mac/scripts/setup-schedule-sync.sh \
   --host <surface-ip-or-hostname> \
   --user <surface-ssh-user> \
-  --remote-path '~/infoscreen/surface/.env/schedule.json' \
+  --remote-path /home/<surface-ssh-user>/infoscreen/surface/.env/schedule.json \
   --interval 120
 ```
+
+The setup command resolves an EventKit-capable Python and stores the Python path, Surface host, SSH user, remote Schedule path, local JSON name, and log directory directly in the LaunchAgent `ProgramArguments`. These values are not supplied by transient shell environment assignments during unattended runs. Re-run the setup command when any of those values changes.
+
+`--remote-path` accepts either a safe absolute path or a `~/` path relative to the remote SSH user's home directory. `mac/local.env` is supported only as migration input for older installations and is not required by subsequent LaunchAgent executions.
+
+Each successful run exports Calendar data, validates the local JSON, uploads a temporary remote file, renames it atomically to `schedule.json`, and verifies the published JSON. The Calendar board reloads Schedule data independently, so new Calendar content appears in an already-open kiosk page without a full-page refresh.
 
 The Surface does not generate Calendar data.
 
