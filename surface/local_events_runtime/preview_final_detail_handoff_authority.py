@@ -5,6 +5,7 @@ from . import event_review_diagnostics as _diagnostics
 from . import http1_browser as _http1
 from . import preview_detail_enrichment_authority as _enrichment
 from . import preview_event_selection_authority as _selection
+from . import review_effective_fields_authority as _effective
 
 _APPLIED = False
 _BASE_BIND = None
@@ -12,6 +13,50 @@ _BASE_BIND = None
 
 def _preview_store(store: _review.EventReviewStore) -> bool:
     return store.root.name.startswith("infoscreen-event-preview-")
+
+
+def _bind_preview_store_replace_events() -> None:
+    """Keep expired candidates only in the isolated Preview store.
+
+    The effective-fields lifecycle owner normally removes expired candidates inside
+    ``EventReviewStore.replace_events``. That is correct for persisted/formal Review
+    collection, but Preview needs those candidates as classification evidence.
+
+    Replace the effective module's public binding, not only the class attribute, so
+    later calls to ``_effective.apply()`` keep reinstalling this conditional owner.
+    """
+
+    current = _effective.replace_events
+    if getattr(current, "_infoscreen_preview_retains_expired", False):
+        _review.EventReviewStore.replace_events = current
+        return
+
+    if not _effective._APPLIED:
+        _effective.apply()
+        current = _effective.replace_events
+
+    formal_replace = current
+
+    def replace_events(
+        store: _review.EventReviewStore,
+        candidates: list[_review.EventCandidate],
+        collection: dict,
+    ) -> _review.ReviewState:
+        if not _preview_store(store):
+            return formal_replace(store, candidates, collection)
+
+        base_replace = _effective._BASE_REPLACE_EVENTS
+        if base_replace is None:
+            raise RuntimeError("Preview base replace-events binding is unavailable")
+        metadata = dict(collection)
+        metadata["candidate_count"] = len(candidates)
+        metadata.pop("expired_candidate_count", None)
+        return base_replace(store, list(candidates), metadata)
+
+    replace_events._infoscreen_preview_retains_expired = True
+    replace_events._infoscreen_formal_replace_events = formal_replace
+    _effective.replace_events = replace_events
+    _review.EventReviewStore.replace_events = replace_events
 
 
 def _enrich_final_preview(
@@ -63,6 +108,8 @@ def _collect_preview_without_formal_expiry_filter(
 
 
 def _wrap_current_collector() -> None:
+    _bind_preview_store_replace_events()
+
     base_collect = _review.collect_event_candidates
     if getattr(base_collect, "_infoscreen_preview_final_detail_handoff", False):
         return
@@ -112,6 +159,7 @@ def apply() -> None:
         _http1._bind_final_event_collector = _bind_final_event_collector
         _APPLIED = True
 
+    _bind_preview_store_replace_events()
     if _http1._APPLIED:
         _wrap_current_collector()
 
@@ -141,14 +189,14 @@ def apply_preview_pipeline() -> None:
     # Transport remains outermost only to choose the deployed headed Chromium mode and
     # record NetLog diagnostics for MBS. It does not alter the negotiated HTTP protocol.
     apply_preview_transport()
-    # Bind the public HTTP collector last. Preview enters the diagnostics Preview chain
-    # directly; formal collection keeps the normal final expiry filter.
+    # Bind the Preview-specific store lifecycle and public HTTP collector last.
     apply()
 
 
 __all__ = [
     "apply",
     "apply_preview_pipeline",
+    "_bind_preview_store_replace_events",
     "_collect_preview_without_formal_expiry_filter",
     "_enrich_final_preview",
     "_wrap_current_collector",
