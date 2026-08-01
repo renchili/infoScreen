@@ -45,6 +45,72 @@ def _preview_listing(store: _review.EventReviewStore) -> _review.ListingPageCand
     return state.listing_pages[0]
 
 
+def _collector_chain(root: Any):
+    """Yield every callable reachable through the installed collector wrappers."""
+
+    pending = [root]
+    seen: set[int] = set()
+    while pending:
+        current = pending.pop()
+        if not callable(current) or id(current) in seen:
+            continue
+        seen.add(id(current))
+        yield current
+
+        for attribute in ("_infoscreen_base_collect", "__wrapped__", "func"):
+            nested = getattr(current, attribute, None)
+            if callable(nested):
+                pending.append(nested)
+
+        for value in getattr(current, "__defaults__", None) or ():
+            if callable(value):
+                pending.append(value)
+        for value in (getattr(current, "__kwdefaults__", None) or {}).values():
+            if callable(value):
+                pending.append(value)
+
+        for cell in getattr(current, "__closure__", None) or ():
+            try:
+                value = cell.cell_contents
+            except ValueError:
+                continue
+            if callable(value):
+                pending.append(value)
+
+
+def _patch_expiry_filters(root: Any) -> list[tuple[dict[str, Any], Any]]:
+    """Patch the actual inner collector globals that execute expiry filtering."""
+
+    patched: list[tuple[dict[str, Any], Any]] = []
+    seen_globals: set[int] = set()
+    for collector in _collector_chain(root):
+        namespace = getattr(collector, "__globals__", None)
+        code = getattr(collector, "__code__", None)
+        if not isinstance(namespace, dict) or code is None:
+            continue
+        if "_filter_final_expired_events" not in code.co_names:
+            continue
+        if "_filter_final_expired_events" not in namespace:
+            continue
+        namespace_id = id(namespace)
+        if namespace_id in seen_globals:
+            continue
+        seen_globals.add(namespace_id)
+        patched.append((namespace, namespace["_filter_final_expired_events"]))
+        namespace["_filter_final_expired_events"] = _keep_preview_candidates
+
+    if not patched:
+        raise RuntimeError(
+            "Preview collector chain does not expose the executing expiry filter"
+        )
+    return patched
+
+
+def _restore_expiry_filters(patched: list[tuple[dict[str, Any], Any]]) -> None:
+    for namespace, original in reversed(patched):
+        namespace["_filter_final_expired_events"] = original
+
+
 def _wrap_current_collector() -> None:
     base_collect = _review.collect_event_candidates
     if getattr(base_collect, "_infoscreen_preview_final_detail_handoff", False):
@@ -60,23 +126,11 @@ def _wrap_current_collector() -> None:
         # collection and redirect handling have completed.
         _selection.invalidate_preview_manifest(listing.url)
 
-        # Patch the exact globals used by the bound collector closure. Replacing the
-        # separately imported _http1 module attribute is not sufficient when the
-        # deployed collector was bound from another module instance/import path.
-        collector_globals = getattr(base_collect, "__globals__", None)
-        if not isinstance(collector_globals, dict):
-            raise RuntimeError("Preview collector has no writable global namespace")
-        if "_filter_final_expired_events" not in collector_globals:
-            raise RuntimeError(
-                "Preview collector does not expose the final expiry-filter binding"
-            )
-
-        original_filter = collector_globals["_filter_final_expired_events"]
-        collector_globals["_filter_final_expired_events"] = _keep_preview_candidates
+        patched = _patch_expiry_filters(base_collect)
         try:
             state = base_collect(store)
         finally:
-            collector_globals["_filter_final_expired_events"] = original_filter
+            _restore_expiry_filters(patched)
 
         state = _enrich_final_preview(store, state)
         remaining_listing_only = sum(
@@ -135,8 +189,7 @@ def apply_preview_pipeline() -> None:
     # Source-specific rendered-card recognition supplies the list-page extraction JS.
     apply_artscience_preview()
     # The exact Preview entrypoint owns listing and detail navigation in one existing
-    # Playwright/browser/context lifecycle. No second browser, browser lease, HTTP/2
-    # override, or post-collector detail session is installed.
+    # Playwright lifecycle. ArtScience documents use sequential browser processes.
     apply_preview_direct_details()
     # Transport remains outermost only to choose the deployed headed Chromium mode and
     # record NetLog diagnostics for MBS. It does not alter the negotiated HTTP protocol.
@@ -149,6 +202,8 @@ def apply_preview_pipeline() -> None:
 __all__ = [
     "apply",
     "apply_preview_pipeline",
+    "_collector_chain",
     "_enrich_final_preview",
+    "_patch_expiry_filters",
     "_wrap_current_collector",
 ]
