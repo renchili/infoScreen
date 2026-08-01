@@ -92,15 +92,20 @@ def test_readme_uses_canonical_main_operator_entrypoints() -> None:
     assert "scripts/setup_surface_go.sh" not in readme
 
 
-def test_readme_has_newcomer_path_runtime_boundaries_and_success_urls() -> None:
+def test_readme_follows_operator_reading_order() -> None:
     readme = read_text("README.md")
 
     ordered = [
-        "## What this is",
-        "## What this is not",
-        "## First 10 minutes",
-        "## Prerequisites",
-        "## Runtime and configuration",
+        "## 1. Project overview",
+        "## 2. Start the project",
+        "## 3. Pages and their relationship",
+        "## 4. Data and page flow",
+        "## 5. Feature guide",
+        "## 6. Configuration and runtime data",
+        "## 7. Common operations",
+        "## 8. Troubleshooting",
+        "## 9. Project structure",
+        "## 10. Development and documentation",
     ]
     positions = [readme.index(heading) for heading in ordered]
     assert positions == sorted(positions)
@@ -108,10 +113,10 @@ def test_readme_has_newcomer_path_runtime_boundaries_and_success_urls() -> None:
     for value in [
         "python3 surface/serve_infoscreen.py",
         "http://127.0.0.1:8765/",
+        "http://127.0.0.1:8765/local-events/studio/",
         "http://127.0.0.1:8765/docs",
         "surface/.env/",
         "surface/local_events_runtime/",
-        "surface/.env/migration_backup/",
     ]:
         assert value in readme
 
@@ -130,15 +135,24 @@ def test_mac_schedule_sync_uses_atomic_remote_publish() -> None:
     sync_script = read_text("mac/sync_schedule.sh")
     setup_script = read_text("mac/scripts/setup-schedule-sync.sh")
 
-    assert 'CONFIG_FILE="$SCRIPT_DIR/local.env"' in sync_script
-    assert 'source "$CONFIG_FILE"' in sync_script
-    assert "SURFACE_HOST:?SURFACE_HOST is required" in sync_script
-    assert "~/infoscreen/surface/.env/schedule.json" in sync_script
-    assert 'REMOTE_TMP_RELATIVE="${REMOTE_RELATIVE_JSON}.tmp.$$"' in sync_script
-    assert 'scp -q "$SCRIPT_DIR/$LOCAL_SCHEDULE_JSON"' in sync_script
-    assert 'mv -f -- \'$REMOTE_TMP_RELATIVE\' \'$REMOTE_RELATIVE_JSON\'' in sync_script
-    assert "unsafe REMOTE_SCHEDULE_JSON" in sync_script
-    assert "${REMOTE_SCHEDULE_JSON:-~/infoscreen/surface/.env/schedule.json}" in setup_script
+    for value in [
+        "--surface-host|--host",
+        "--surface-user|--user",
+        "--remote-path",
+        'REMOTE_TMP_RELATIVE="${REMOTE_RELATIVE_JSON}.tmp.$$"',
+        'scp -q "$SCRIPT_DIR/$LOCAL_SCHEDULE_JSON"',
+        "verify published schedule",
+    ]:
+        assert value in sync_script
+
+    for value in [
+        '"ProgramArguments": [',
+        '"--surface-host"',
+        '"--surface-user"',
+        '"--remote-path"',
+    ]:
+        assert value in setup_script
+
     assert "~/infoscreen/schedule.json" not in sync_script
 
 
@@ -153,41 +167,46 @@ def test_document_roles_are_distinct() -> None:
     assert api.startswith("# InfoScreen HTTP interaction contract")
     assert explanations.startswith("# InfoScreen requirement clarifications")
 
-    assert "## Local Event Studio" in readme
+    assert "## 2. Start the project" in readme
+    assert "## 3. Pages and their relationship" in readme
+    assert "## 5. Feature guide" in readme
     assert "## 6. Source-specific Local Events architecture" in design
     assert "## 5. Market configuration interaction" in api
     assert "## Visual language" in explanations
     assert "## Validation boundaries" in explanations
 
+    assert "--disable-http2" not in readme
+    assert "preview_browser_process_count" not in readme
+    assert "### Acceptance evidence" not in readme
     assert "sudo apt" not in design
     assert "systemctl" not in explanations
     assert "python3 -m pytest" not in explanations
 
 
-def test_readme_covers_current_product_interaction_and_recovery() -> None:
+def test_readme_covers_startup_pages_features_and_operations() -> None:
     readme = read_text("README.md")
 
     required = [
-        "## Data sources and ownership",
-        "## Market symbols",
-        "## Local-event dashboard filter",
-        "## Local Event Studio",
-        "## Local Events collection policy",
-        "## Refresh behaviour",
-        "## Deployment",
-        "## Operation and troubleshooting",
-        "## Calendar sync",
-        "## Photos",
+        "## 1. Project overview",
+        "## 2. Start the project",
+        "## 3. Pages and their relationship",
+        "## 4. Data and page flow",
+        "## 5. Feature guide",
+        "## 6. Configuration and runtime data",
+        "## 7. Common operations",
+        "## 8. Troubleshooting",
+        "### 3.1 Dashboard",
+        "### 3.2 Local Event Studio",
+        "### 3.3 API documentation",
+        "### 5.6 Calendar and Schedule sync",
+        "### 5.7 Photos",
         "infoscreen-live-data.timer",
         "infoscreen-event-stream.timer",
         "infoscreen-local-events.timer",
-        "local_event_search_results.partial.json",
-        "local_event_debug_cards",
+        "mac/scripts/setup-schedule-sync.sh",
+        "python3 surface/build_photos_json.py",
         "market_config.default.json",
-        "Last-Modified" if "Last-Modified" in readme else "Sync ticker",
-        "--disable-http2",
-        "migration_backup",
-        "never change other list-page decisions temporarily",
+        "local_event_search_results.json",
     ]
     for value in required:
         assert value in readme
@@ -279,8 +298,8 @@ def test_questions_follow_mandatory_clarification_structure() -> None:
 
     for value in [
         "macOS Calendar/EventKit",
-        "import EventKit",
-        "~/infoscreen/surface/.env/schedule.json",
+        "LaunchAgent `ProgramArguments`",
+        "absolute remote path",
         "every seven seconds",
         "debug_by_source",
         "local_event_search_results.partial.json",
