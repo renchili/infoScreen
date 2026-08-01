@@ -24,98 +24,71 @@ def _listing_card(raw: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _mark_listing_page(
-    listing_page: Any,
-    source: dict[str, Any],
-    listing: _review.ListingPageCandidate,
-) -> None:
-    listing_page.evaluate(
-        _preview.PREVIEW_LISTING_JS,
-        {
-            "allowedDomains": source.get("allowed_domains") or [],
-            "listingUrl": listing.url,
-            "sourceId": listing.source_id,
-            "maxEvents": _preview.MAX_PREVIEW_EVENTS,
-        },
-    )
+def _open_page_like_listing(
+    context: Any,
+    url: str,
+    error_prefix: str,
+) -> tuple[Any, Any]:
+    """Create a fresh Page and make its first navigation exactly like the List Page."""
+
+    page = context.new_page()
+    try:
+        response = page.goto(
+            url,
+            wait_until="domcontentloaded",
+            timeout=_preview.PREVIEW_PAGE_TIMEOUT_MS,
+        )
+        if response is not None and response.status >= 400:
+            raise ValueError(f"{error_prefix}_http_status_{response.status}")
+        page.wait_for_timeout(_preview.PREVIEW_SETTLE_MS)
+        return page, response
+    except Exception:
+        if not page.is_closed():
+            page.close()
+        raise
 
 
-def _goto_like_listing(page: Any, url: str, error_prefix: str) -> Any:
-    """Use the exact navigation operation already proven by the List Page."""
-
-    response = page.goto(
-        url,
-        wait_until="domcontentloaded",
-        timeout=_preview.PREVIEW_PAGE_TIMEOUT_MS,
-    )
-    if response is not None and response.status >= 400:
-        raise ValueError(f"{error_prefix}_http_status_{response.status}")
-    page.wait_for_timeout(_preview.PREVIEW_SETTLE_MS)
-    return response
-
-
-def _restore_listing_page(
-    listing_page: Any,
-    source: dict[str, Any],
-    listing: _review.ListingPageCandidate,
-) -> None:
-    """Reload the List Page with the same goto operation used for initial collection."""
-
-    _goto_like_listing(listing_page, listing.url, "listing_restore")
-    final_url = str(listing_page.url)
-    if not _preview._host_allowed(final_url, source):
-        raise ValueError("listing restore redirected outside the source allow-list")
-    _mark_listing_page(listing_page, source, listing)
-
-
-def _read_artscience_detail_like_listing(
-    listing_page: Any,
+def _collect_artscience_detail(
+    context: Any,
     source: dict[str, Any],
     listing: _review.ListingPageCandidate,
     raw: dict[str, Any],
 ) -> dict[str, str]:
-    """Open an ArtScience detail exactly as the working List Page is opened.
-
-    This deliberately does not click, create a second Page, wait only for commit, or
-    change the HTTP protocol. It reuses the same headed Chromium tab and calls the same
-    page.goto(..., wait_until="domcontentloaded") operation as List Page collection.
-    """
+    """Open one Detail as a fresh Page, matching the working List Page lifecycle."""
 
     requested_url = str(raw.get("detail_url") or "").strip()
     if not requested_url or not _preview._host_allowed(requested_url, source):
         raise ValueError("detail page is outside the source allow-list")
 
+    detail_page, _response = _open_page_like_listing(
+        context,
+        requested_url,
+        "detail",
+    )
     try:
-        _goto_like_listing(listing_page, requested_url, "detail")
-        final_url = str(listing_page.url)
+        final_url = str(detail_page.url)
         if not _preview._host_allowed(final_url, source):
             raise ValueError("detail page redirected outside the source allow-list")
-        listing_page.bring_to_front()
+        detail_page.bring_to_front()
         return _artscience_detail.read_loaded_detail_candidate(
-            listing_page,
+            detail_page,
             source,
             listing.url,
             requested_url,
         )
     finally:
-        if not listing_page.is_closed():
-            _restore_listing_page(listing_page, source, listing)
+        if not detail_page.is_closed():
+            detail_page.close()
 
 
 def _collect_detail(
     context: Any,
-    listing_page: Any,
     source: dict[str, Any],
     listing: _review.ListingPageCandidate,
     raw: dict[str, Any],
 ) -> dict[str, str]:
     if listing.source_id == _ARTSCIENCE_SOURCE_ID:
-        return _read_artscience_detail_like_listing(
-            listing_page,
-            source,
-            listing,
-            raw,
-        )
+        return _collect_artscience_detail(context, source, listing, raw)
 
     return _effective.detail_candidate(
         context,
@@ -143,8 +116,22 @@ def _failed_detail(
     }
 
 
+def _payload_rows(payload: Any) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    if isinstance(payload, dict):
+        rows = [
+            item
+            for item in payload.get("rows") or []
+            if isinstance(item, dict)
+        ]
+        observed = payload.get("observed") or {}
+        return rows, observed if isinstance(observed, dict) else {}
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)], {}
+    return [], {}
+
+
 def collect_preview(store: _review.EventReviewStore) -> _review.ReviewState:
-    """Collect one List Page and its details in one real browser lifecycle."""
+    """Collect the List Page and each Detail via fresh Pages in one browser context."""
 
     state = store.load()
     confirmed = [item for item in state.listing_pages if item.decision == "confirmed"]
@@ -164,7 +151,7 @@ def collect_preview(store: _review.EventReviewStore) -> _review.ReviewState:
     http_status: int | None = None
     detail_errors: list[dict[str, str]] = []
     detail_attempts = 0
-    listing_style_detail_navigations = 0
+    fresh_detail_pages = 0
     default_venue = str(source.get("default_venue") or source.get("name") or "")
 
     from playwright.sync_api import sync_playwright
@@ -177,13 +164,12 @@ def collect_preview(store: _review.EventReviewStore) -> _review.ReviewState:
                 device_scale_factor=1,
             )
             try:
-                listing_page = context.new_page()
+                listing_page, response = _open_page_like_listing(
+                    context,
+                    listing.url,
+                    "listing",
+                )
                 try:
-                    response = _goto_like_listing(
-                        listing_page,
-                        listing.url,
-                        "listing",
-                    )
                     if response is not None:
                         http_status = int(response.status)
                     final_url = str(listing_page.url)
@@ -191,7 +177,6 @@ def collect_preview(store: _review.EventReviewStore) -> _review.ReviewState:
                         raise ValueError(
                             "listing page redirected outside the source allow-list"
                         )
-
                     payload = listing_page.evaluate(
                         _preview.PREVIEW_LISTING_JS,
                         {
@@ -201,49 +186,40 @@ def collect_preview(store: _review.EventReviewStore) -> _review.ReviewState:
                             "maxEvents": _preview.MAX_PREVIEW_EVENTS,
                         },
                     ) or {}
-                    if isinstance(payload, dict):
-                        rows = [
-                            item
-                            for item in payload.get("rows") or []
-                            if isinstance(item, dict)
-                        ]
-                        observed = payload.get("observed") or {}
-                    elif isinstance(payload, list):
-                        rows = [item for item in payload if isinstance(item, dict)]
-
-                    for raw in rows:
-                        detail_url = str(raw.get("detail_url") or "").strip()
-                        title = str(raw.get("title") or "").strip()
-                        if not title or not _preview._host_allowed(detail_url, source):
-                            continue
-
-                        detail_attempts += 1
-                        if listing.source_id == _ARTSCIENCE_SOURCE_ID:
-                            listing_style_detail_navigations += 1
-                        try:
-                            detail = _collect_detail(
-                                context,
-                                listing_page,
-                                source,
-                                listing,
-                                raw,
-                            )
-                        except Exception as exc:
-                            error = f"{type(exc).__name__}: {exc}"[:500]
-                            detail = _failed_detail(raw, default_venue, error)
-
-                        raw["_detail"] = detail
-                        detail_error = str(detail.get("detail_error") or "").strip()
-                        if detail_error:
-                            detail_errors.append(
-                                {
-                                    "detail_url": detail_url,
-                                    "error": detail_error[:500],
-                                }
-                            )
+                    rows, observed = _payload_rows(payload)
                 finally:
                     if not listing_page.is_closed():
                         listing_page.close()
+
+                for raw in rows:
+                    detail_url = str(raw.get("detail_url") or "").strip()
+                    title = str(raw.get("title") or "").strip()
+                    if not title or not _preview._host_allowed(detail_url, source):
+                        continue
+
+                    detail_attempts += 1
+                    if listing.source_id == _ARTSCIENCE_SOURCE_ID:
+                        fresh_detail_pages += 1
+                    try:
+                        detail = _collect_detail(
+                            context,
+                            source,
+                            listing,
+                            raw,
+                        )
+                    except Exception as exc:
+                        error = f"{type(exc).__name__}: {exc}"[:500]
+                        detail = _failed_detail(raw, default_venue, error)
+
+                    raw["_detail"] = detail
+                    detail_error = str(detail.get("detail_error") or "").strip()
+                    if detail_error:
+                        detail_errors.append(
+                            {
+                                "detail_url": detail_url,
+                                "error": detail_error[:500],
+                            }
+                        )
             finally:
                 context.close()
         finally:
@@ -352,16 +328,14 @@ def collect_preview(store: _review.EventReviewStore) -> _review.ReviewState:
                 "preview_collector._collect_preview"
             ),
             "preview_detail_navigation": (
-                "same_tab_goto_as_listing"
+                "fresh_page_first_goto_as_listing"
                 if listing.source_id == _ARTSCIENCE_SOURCE_ID
                 else "detail_owner_navigation"
             ),
-            "preview_detail_listing_style_navigation_count": (
-                listing_style_detail_navigations
-            ),
+            "preview_detail_fresh_page_count": fresh_detail_pages,
             "preview_detail_transport": "same_browser_context",
             "preview_browser_process_count": 1,
-            "preview_browser_reuse": "listing_and_details",
+            "preview_browser_reuse": "one_browser_fresh_pages",
             "preview_detail_context_count": 1,
             "preview_candidate_listing_detail_urls": listing_detail_urls,
             "detail_page_request_count": detail_attempts,
@@ -387,6 +361,6 @@ def apply() -> None:
 __all__ = [
     "apply",
     "collect_preview",
-    "_goto_like_listing",
-    "_read_artscience_detail_like_listing",
+    "_collect_artscience_detail",
+    "_open_page_like_listing",
 ]
