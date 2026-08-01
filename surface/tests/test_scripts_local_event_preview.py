@@ -8,7 +8,7 @@ from urllib.error import HTTPError, URLError
 from .conftest import ROOT, read_text
 
 
-SCRIPT_PATH = ROOT / "scripts" / "collect_local_event_preview.py"
+SCRIPT_PATH = ROOT / "surface" / "scripts" / "collect_local_event_preview.py"
 LISTING_URL = (
     "https://www.marinabaysands.com/museum/about-us/exhibition-archive.html"
 )
@@ -103,7 +103,7 @@ def test_script_reports_service_transport_failure_separately(monkeypatch) -> Non
 
 
 def test_script_is_only_a_raw_client_for_the_existing_service() -> None:
-    source = read_text("scripts/collect_local_event_preview.py")
+    source = read_text("surface/scripts/collect_local_event_preview.py")
 
     assert (
         'PREVIEW_URL = "http://127.0.0.1:8765/api/local-events/review/preview-events"'

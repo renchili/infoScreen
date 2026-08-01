@@ -49,7 +49,7 @@ jobs:
       - name: Run full local closed-loop tests
         env:
           ACCEPTANCE_ARTIFACT_DIR: /tmp/infoscreen-acceptance
-        run: bash scripts/run_full_ci_tests.sh
+        run: bash .github/scripts/run_full_ci_tests.sh
 
       - name: Upload acceptance diagnostics
         if: always()

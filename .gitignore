@@ -1,12 +1,11 @@
-# Repository root allowlist.
-# Root is for repo control/docs/metadata/CI/operator entrypoints only; runtime state does not belong here.
-/*
+# Default-deny repository root. Only the canonical project tree is allowed.
+*
+!*/
 !/.gitignore
 !/README.md
 !/AGENTS.md
 !/AGENT.md
 !/metadata.json
-!/pyproject.toml
 !/.githooks/
 !/.githooks/**
 !/.github/
@@ -17,48 +16,37 @@
 !/skills/**
 !/surface/
 !/surface/**
-!/deploy/
-!/deploy/**
 !/mac/
 !/mac/**
-!/scripts/
-!/scripts/**
-!/tests/
-!/tests/**
 
-# Local/runtime state.
-.env/
-surface/.env/
-logs/
-.review_delete/
+# Python caches and tooling output
 __pycache__/
+*.py[cod]
 .pytest_cache/
 .coverage
 coverage.xml
 htmlcov/
-*.pyc
-*.tmp
-*.log
-.DS_Store
+test-results/
+artifacts/
 
-# Mac-side local schedule sync runtime state.
+# Local environments, runtime state, logs, and personal files
+.env/
+surface/.env/
+logs/
+*.log
+*.tmp
+*.bak
+*.backup
+*.bak.*
+*.backup.*
+.DS_Store
 mac/local.env
 mac/schedule.json
 mac/*.log
 
-# Test-generated artifacts must be uploaded from /tmp or ignored locally.
-test-results/
-artifacts/
-
-# Frontend source must live under surface/web/assets/, not directly under surface/web/.
-surface/web/*.js
-surface/web/*.css
-!surface/web/index.html
-
-# Local photos are runtime input, not repo root source.
+# Local photo/runtime compatibility paths
 photo/
 photos/
 public_photos/
-
-# Unrelated local tools.
+.review_delete/
 chatgpt-ui-once/

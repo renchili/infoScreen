@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-from .conftest import read_text
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def read_text(path: str) -> str:
+    return (ROOT / path).read_text(encoding="utf-8")
 
 
 def test_launchagent_persists_schedule_configuration_as_arguments() -> None:

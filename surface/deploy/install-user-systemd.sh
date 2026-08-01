@@ -7,6 +7,7 @@ SURFACE_DIR="$REPO_DIR/surface"
 SURFACE_ENV_DIR="$SURFACE_DIR/.env"
 SURFACE_WEB_DIR="$SURFACE_DIR/web"
 MIGRATION_BACKUP_DIR="$SURFACE_ENV_DIR/migration_backup"
+SYSTEMD_SOURCE_DIR="$SURFACE_DIR/deploy/systemd/user"
 REVIEW_URL="http://127.0.0.1:8765/local-events/studio/"
 REVIEW_STATE_URL="http://127.0.0.1:8765/api/local-events/review/state"
 
@@ -181,7 +182,6 @@ install_system_dependencies
 install_python_dependencies
 import_graphical_session_environment
 
-# Runtime/state files belong to surface/.env, not repo root.
 for file in \
   schedule.json \
   weather.json \
@@ -191,15 +191,14 @@ for file in \
   local_event_search_results.json \
   photos.json \
   sync_status.json
-  do
-    move_runtime_file "$file"
-  done
+do
+  move_runtime_file "$file"
+done
 
 for dir in photos public_photos logs; do
   move_runtime_dir "$dir"
 done
 
-# Remove old root-level Surface source/static leftovers after the layout move.
 for file in \
   serve_infoscreen.py \
   fetch_live_data.py \
@@ -215,34 +214,30 @@ for file in \
   market_custom.css \
   market_custom.js \
   official_source_registry.json
-  do
-    if [ -f "$REPO_DIR/$file" ]; then
-      rm -f "$REPO_DIR/$file"
-      echo "[CLEAN] removed root source leftover $file"
-    fi
-  done
+do
+  if [ -f "$REPO_DIR/$file" ]; then
+    rm -f "$REPO_DIR/$file"
+    echo "[CLEAN] removed root source leftover $file"
+  fi
+done
 
 if [ -d "$REPO_DIR/assets" ] && [ -d "$SURFACE_WEB_DIR/assets" ]; then
   rm -rf "$REPO_DIR/assets"
   echo "[CLEAN] removed root source leftover assets/"
 fi
 
-cp "$REPO_DIR"/deploy/systemd/user/*.service "$SYSTEMD_USER_DIR"/
-cp "$REPO_DIR"/deploy/systemd/user/*.timer "$SYSTEMD_USER_DIR"/
+cp "$REPO_DIR"/surface/deploy/systemd/user/*.service "$SYSTEMD_USER_DIR"/
+cp "$REPO_DIR"/surface/deploy/systemd/user/*.timer "$SYSTEMD_USER_DIR"/
 
 systemctl --user daemon-reload
-
 systemctl --user enable --now infoscreen-http.service
 systemctl --user enable --now infoscreen-live-data.timer
 systemctl --user enable --now infoscreen-event-stream.timer
 systemctl --user enable --now infoscreen-local-events.timer
 
-# Unit files may have changed ExecStart paths, so restart/re-run after daemon-reload.
 systemctl --user restart infoscreen-http.service
 systemctl --user start infoscreen-live-data.service
 systemctl --user start infoscreen-event-stream.service
-# A complete Local Events producer run can legitimately take much longer than the
-# installer. Start it asynchronously; systemd owns progress and failure reporting.
 systemctl --user start --no-block infoscreen-local-events.service
 
 printf '\n[CHECK] root Python files:\n'

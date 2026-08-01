@@ -62,9 +62,9 @@ def test_job_writes_collector_primary_and_applies_shared_detail_authorities() ->
 
 def test_deployed_services_allow_complete_collection_duration() -> None:
     local_events = read_text(
-        "deploy/systemd/user/infoscreen-local-events.service"
+        "surface/deploy/systemd/user/infoscreen-local-events.service"
     )
-    http = read_text("deploy/systemd/user/infoscreen-http.service")
+    http = read_text("surface/deploy/systemd/user/infoscreen-http.service")
 
     assert "TimeoutStartSec=7500" in local_events
     assert "Environment=LOCAL_EVENT_SEARCH_TIMEOUT_SECONDS=7500" in http

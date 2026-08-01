@@ -22,7 +22,7 @@ done < <(git ls-files -z -- '*.js')
 html_index=0
 while IFS= read -r -d '' html; do
   html_index=$((html_index + 1))
-  python3 scripts/ci/extract_inline_js.py \
+  python3 .github/scripts/extract_inline_js.py \
     "$html" \
     "$TEMP_DIR/inline-js-$html_index"
 done < <(git ls-files -z -- '*.html')

@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 SURFACE = ROOT / "surface"
 WEB = SURFACE / "web"
-FIXTURES = ROOT / "tests" / "fixtures"
+FIXTURES = SURFACE / "tests" / "fixtures"
 RUNTIME_FIXTURES = FIXTURES / "runtime_data"
 
 
@@ -29,5 +29,8 @@ def seeded_env(tmp_path: Path) -> Path:
         shutil.copy2(source, target / source.name)
     public_photos = target / "public_photos"
     public_photos.mkdir()
-    (public_photos / "fixture-photo.txt").write_text("fixture photo bytes\n", encoding="utf-8")
+    (public_photos / "fixture-photo.txt").write_text(
+        "fixture photo bytes\n",
+        encoding="utf-8",
+    )
     return target

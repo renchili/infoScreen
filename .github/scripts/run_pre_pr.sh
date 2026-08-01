@@ -23,7 +23,7 @@ main() {
 
   for suite in paths content structure python; do
     printf '\n==> %s\n' "$suite"
-    python3 scripts/ci/check_repo.py \
+    python3 .github/scripts/check_repo.py \
       --suite "$suite" \
       --scope changed \
       --base "$base_ref" \
@@ -32,10 +32,10 @@ main() {
   done
 
   printf '\n==> shell\n'
-  bash scripts/ci/check_shell_syntax.sh || return 1
+  bash .github/scripts/check_shell_syntax.sh || return 1
 
   printf '\n==> javascript\n'
-  bash scripts/ci/check_javascript_syntax.sh || return 1
+  bash .github/scripts/check_javascript_syntax.sh || return 1
 
   printf '\nPRE-PR TESTS PASSED\n'
 }

@@ -13,20 +13,21 @@ ROOT = Path.cwd()
 
 TEXT_SUFFIXES = {
     ".css", ".html", ".js", ".json", ".md", ".py",
-    ".sh", ".txt", ".yml", ".yaml", ".plist", ".conf",
+    ".sh", ".txt", ".yml", ".yaml", ".plist", ".conf", ".ini",
 }
 
 ROOT_ALLOW_FILES = {
-    ".gitignore", "AGENT.md", "AGENTS.md", "README.md", "metadata.json", "pyproject.toml",
+    ".gitignore", "AGENT.md", "AGENTS.md", "README.md", "metadata.json",
 }
 
 ROOT_ALLOW_DIRS = {
-    ".github", ".githooks", "deploy", "docs", "mac", "scripts", "skills", "surface", "tests",
+    ".github", ".githooks", "docs", "mac", "skills", "surface",
 }
 
 RUNTIME_BASENAMES = {
-    "event_stream.json", "local_event_search_results.json", "market.json", "market_config.json",
-    "metrics.json", "photos.json", "schedule.json", "sync_status.json", "weather.json",
+    "event_stream.json", "local_event_search_results.json", "market.json",
+    "market_config.json", "metrics.json", "photos.json", "schedule.json",
+    "sync_status.json", "weather.json",
 }
 
 RUNTIME_PREFIXES = (
@@ -37,25 +38,50 @@ RUNTIME_PREFIXES = (
 RUNTIME_PARTS = {"__pycache__", ".pytest_cache"}
 
 OBSOLETE_LOCAL_EVENT_NAMES = (
-    "local_events_controls", "local_events_compact", "local_events_carousel", "local_events_panel_v3",
+    "local_events_controls", "local_events_compact", "local_events_carousel",
+    "local_events_panel_v3",
 )
 
 FORBIDDEN_UI_TEXT = ("official calendars",)
 
-EMAIL_RE = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
-PRIVATE_IPV4_RE = re.compile(r"\b(?:10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2})\b")
-ABSOLUTE_HOME_RE = re.compile(r"(?:/Users/[A-Za-z0-9._-]+/|/home/[A-Za-z0-9._-]+/|[A-Za-z]:\\Users\\[^\\\s]+\\)")
-SECRET_RE = re.compile(r"\b(?:ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|glpat-[A-Za-z0-9_-]{20,}|AKIA[A-Z0-9]{16}|sk-[A-Za-z0-9]{16,})\b")
-CONFLICT_RE = re.compile(r"^(?:<{7}[^\n]*|={7}|>{7}[^\n]*)$", re.MULTILINE)
+EMAIL_RE = re.compile(
+    r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b",
+    re.IGNORECASE,
+)
+PRIVATE_IPV4_RE = re.compile(
+    r"\b(?:10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|"
+    r"172\.(?:1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2})\b"
+)
+ABSOLUTE_HOME_RE = re.compile(
+    r"(?:/Users/[A-Za-z0-9._-]+/|/home/[A-Za-z0-9._-]+/|"
+    r"[A-Za-z]:\\Users\\[^\\\s]+\\)"
+)
+SECRET_RE = re.compile(
+    r"\b(?:ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|"
+    r"glpat-[A-Za-z0-9_-]{20,}|AKIA[A-Z0-9]{16}|"
+    r"sk-[A-Za-z0-9]{16,})\b"
+)
+CONFLICT_RE = re.compile(
+    r"^(?:<{7}[^\n]*|={7}|>{7}[^\n]*)$",
+    re.MULTILINE,
+)
 
 SUITES = ("paths", "content", "structure", "python", "all")
 SCOPES = ("changed", "repository")
 
 
 def git_output(args):
-    result = subprocess.run(["git", *args], cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    result = subprocess.run(
+        ["git", *args],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
     if result.returncode != 0:
-        raise RuntimeError("git command failed: git " + " ".join(args) + "\n" + result.stderr)
+        raise RuntimeError(
+            "git command failed: git " + " ".join(args) + "\n" + result.stderr
+        )
     return result.stdout
 
 
@@ -64,18 +90,34 @@ def split_null_output(text):
 
 
 def changed_paths(base, head, include_working_tree):
-    names = set(split_null_output(git_output(["diff", "--name-only", "-z", f"{base}...{head}"])))
+    names = set(
+        split_null_output(
+            git_output(["diff", "--name-only", "-z", f"{base}...{head}"])
+        )
+    )
     if include_working_tree:
-        names.update(split_null_output(git_output(["diff", "--name-only", "-z"])))
-        names.update(split_null_output(git_output(["diff", "--cached", "--name-only", "-z"])))
-        names.update(split_null_output(git_output(["ls-files", "--others", "--exclude-standard", "-z"])))
+        names.update(
+            split_null_output(git_output(["diff", "--name-only", "-z"]))
+        )
+        names.update(
+            split_null_output(git_output(["diff", "--cached", "--name-only", "-z"]))
+        )
+        names.update(
+            split_null_output(
+                git_output(["ls-files", "--others", "--exclude-standard", "-z"])
+            )
+        )
     return sorted(names)
 
 
 def repository_paths(include_working_tree):
     names = set(split_null_output(git_output(["ls-files", "-z"])))
     if include_working_tree:
-        names.update(split_null_output(git_output(["ls-files", "--others", "--exclude-standard", "-z"])))
+        names.update(
+            split_null_output(
+                git_output(["ls-files", "--others", "--exclude-standard", "-z"])
+            )
+        )
     return sorted(names)
 
 
@@ -84,11 +126,18 @@ def selected_paths(args):
         return repository_paths(args.include_working_tree)
     if not args.base:
         raise ValueError("--base is required when --scope changed is selected")
-    return changed_paths(args.base, args.head, args.include_working_tree)
+    return changed_paths(
+        args.base,
+        args.head,
+        args.include_working_tree,
+    )
 
 
 def is_text_file(path):
-    return path.suffix.lower() in TEXT_SUFFIXES or path.name in {"README", "README.md", ".gitignore"}
+    return (
+        path.suffix.lower() in TEXT_SUFFIXES
+        or path.name in {"README", "README.md", ".gitignore"}
+    )
 
 
 def add_error(errors, relative, message):
@@ -96,7 +145,13 @@ def add_error(errors, relative, message):
 
 
 def under_test_fixture(normalized):
-    return normalized.startswith("tests/fixtures/")
+    return normalized.startswith(
+        (
+            "surface/tests/fixtures/",
+            "mac/tests/fixtures/",
+            ".github/tests/fixtures/",
+        )
+    )
 
 
 def check_path_policy(relative, errors):
@@ -108,29 +163,74 @@ def check_path_policy(relative, errors):
 
     if len(parts) == 1:
         if path.name not in ROOT_ALLOW_FILES:
-            add_error(errors, relative, "root file is outside the repository root allowlist")
+            add_error(
+                errors,
+                relative,
+                "root file is outside the repository root allowlist",
+            )
         if suffix in {".css", ".js"}:
-            add_error(errors, relative, "root browser asset is not an active source path")
+            add_error(
+                errors,
+                relative,
+                "root browser asset is not an active source path",
+            )
     elif parts[0] not in ROOT_ALLOW_DIRS:
-        add_error(errors, relative, "top-level directory is outside the repository root allowlist")
+        add_error(
+            errors,
+            relative,
+            "top-level directory is outside the repository root allowlist",
+        )
 
-    if len(parts) == 3 and parts[0] == "surface" and parts[1] == "web" and suffix in {".css", ".js"}:
-        add_error(errors, relative, "legacy direct surface/web browser asset; use surface/web/assets")
+    if (
+        len(parts) == 3
+        and parts[0] == "surface"
+        and parts[1] == "web"
+        and suffix in {".css", ".js"}
+    ):
+        add_error(
+            errors,
+            relative,
+            "legacy direct surface/web browser asset; use surface/web/assets",
+        )
 
     if any(normalized.startswith(prefix) for prefix in RUNTIME_PREFIXES):
-        add_error(errors, relative, "runtime/generated/local artifact path must not be committed")
+        add_error(
+            errors,
+            relative,
+            "runtime/generated/local artifact path must not be committed",
+        )
 
     if any(part in RUNTIME_PARTS for part in parts):
-        add_error(errors, relative, "cache path must not be committed")
+        add_error(
+            errors,
+            relative,
+            "cache path must not be committed",
+        )
 
     if name in RUNTIME_BASENAMES and not under_test_fixture(normalized):
-        add_error(errors, relative, "runtime/generated JSON must not be committed outside fixtures")
+        add_error(
+            errors,
+            relative,
+            "runtime/generated JSON must not be committed outside fixtures",
+        )
 
-    if suffix in {".pyc", ".tmp", ".log", ".bak", ".backup"} or ".bak" in name or name.endswith(".back"):
-        add_error(errors, relative, "generated, cache, log, or backup file must not be committed")
+    if (
+        suffix in {".pyc", ".tmp", ".log", ".bak", ".backup"}
+        or ".bak" in name
+        or name.endswith(".back")
+    ):
+        add_error(
+            errors,
+            relative,
+            "generated, cache, log, or backup file must not be committed",
+        )
 
     if any(token in name for token in OBSOLETE_LOCAL_EVENT_NAMES):
-        add_error(errors, relative, "obsolete Local Event overlay file is blocked")
+        add_error(
+            errors,
+            relative,
+            "obsolete Local Event overlay file is blocked",
+        )
 
 
 def check_text_content(relative, text, errors):
@@ -157,10 +257,18 @@ def check_text_content(relative, text, errors):
         lowered = text.lower()
         for token in FORBIDDEN_UI_TEXT:
             if token in lowered:
-                add_error(errors, relative, f'blocked UI content detected: "{token}"')
+                add_error(
+                    errors,
+                    relative,
+                    f'blocked UI content detected: "{token}"',
+                )
         for token in OBSOLETE_LOCAL_EVENT_NAMES:
             if token in lowered:
-                add_error(errors, relative, f"obsolete Local Event layer reference detected: {token}")
+                add_error(
+                    errors,
+                    relative,
+                    f"obsolete Local Event layer reference detected: {token}",
+                )
 
 
 def check_html_structure(relative, text, errors):
@@ -194,8 +302,6 @@ def check_python_syntax(errors):
 
 def run_paths_suite(paths, errors):
     for relative in paths:
-        # A deletion can remove a path that violates the current policy. Validate only
-        # paths present in the proposed tree; otherwise cleanup PRs can never pass.
         if not (ROOT / relative).exists():
             continue
         check_path_policy(relative, errors)
@@ -205,7 +311,11 @@ def run_content_suite(paths, errors):
     for relative in paths:
         path = ROOT / relative
         if path.is_file() and is_text_file(path):
-            check_text_content(relative, path.read_text(encoding="utf-8", errors="replace"), errors)
+            check_text_content(
+                relative,
+                path.read_text(encoding="utf-8", errors="replace"),
+                errors,
+            )
 
 
 def run_structure_suite(paths, errors):
@@ -216,7 +326,11 @@ def run_structure_suite(paths, errors):
         if path.suffix.lower() == ".json":
             check_json(relative, path, errors)
         if relative == "surface/web/index.html":
-            check_html_structure(relative, path.read_text(encoding="utf-8", errors="replace"), errors)
+            check_html_structure(
+                relative,
+                path.read_text(encoding="utf-8", errors="replace"),
+                errors,
+            )
 
 
 def run_suite(name, paths, errors):
@@ -253,7 +367,9 @@ def main():
             print(f" - {error}")
         return 1
 
-    print(f"PASSED suite={args.suite} scope={args.scope} files={len(paths)}")
+    print(
+        f"PASSED suite={args.suite} scope={args.scope} files={len(paths)}"
+    )
     return 0
 
 

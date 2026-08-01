@@ -50,11 +50,11 @@ jobs:
         run: |
           set -euo pipefail
           for suite in paths content structure python; do
-            python3 scripts/ci/check_repo.py \
+            python3 .github/scripts/check_repo.py \
               --suite "$suite" \
               --scope changed \
               --base origin/main \
               --head HEAD
           done
-          bash scripts/ci/check_shell_syntax.sh
-          bash scripts/ci/check_javascript_syntax.sh
+          bash .github/scripts/check_shell_syntax.sh
+          bash .github/scripts/check_javascript_syntax.sh

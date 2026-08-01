@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # InfoScreen repository hygiene guard.
-# Root is for repo control/docs/metadata/CI/operator entrypoints only.
-# Project runtime state must stay under documented local runtime directories and must not be committed.
+# Root is restricted to project control, documentation, metadata, and platform owners.
+# Runtime state must stay under documented local runtime directories and must not be committed.
 
 fail=0
 bad_entries=()
@@ -15,7 +15,7 @@ add_bad() {
 
 is_allowed_root_file() {
   case "$1" in
-    .gitignore|README.md|AGENTS.md|AGENT.md|metadata.json|pyproject.toml)
+    .gitignore|README.md|AGENTS.md|AGENT.md|metadata.json)
       return 0
       ;;
     *)
@@ -26,7 +26,7 @@ is_allowed_root_file() {
 
 is_allowed_root_dir() {
   case "$1" in
-    docs|skills|surface|.githooks|.github|deploy|mac|scripts|tests)
+    docs|skills|surface|mac|.githooks|.github)
       return 0
       ;;
     *)
@@ -70,7 +70,7 @@ while IFS= read -r path; do
 
   if [[ "$path" != */* ]]; then
     if ! is_allowed_root_file "$path"; then
-      add_bad "$path" "root files are restricted to repo control/docs/metadata/test config files"
+      add_bad "$path" "root files are restricted to repository control, documentation, and metadata"
     fi
     continue
   fi
@@ -88,7 +88,7 @@ if [ "$fail" -ne 0 ]; then
     echo "  - $entry" >&2
   done
   echo >&2
-  echo "Move runtime JSON to surface/.env/, browser assets to surface/web/assets/, and local photos to surface/.env/photos/." >&2
+  echo "Keep Surface-owned files under surface/, Mac-owned files under mac/, and CI-owned files under .github/." >&2
   echo "Use 'git restore --staged <path>' to unstage a blocked file." >&2
   exit 1
 fi

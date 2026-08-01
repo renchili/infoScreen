@@ -8,7 +8,7 @@ pytestmark = pytest.mark.scripts
 
 
 def test_installer_preserves_conflicting_runtime_state() -> None:
-    script = read_text("deploy/scripts/install-user-systemd.sh")
+    script = read_text("surface/deploy/install-user-systemd.sh")
 
     assert 'MIGRATION_BACKUP_DIR="$SURFACE_ENV_DIR/migration_backup"' in script
     assert "preserve_legacy_path()" in script
@@ -18,11 +18,11 @@ def test_installer_preserves_conflicting_runtime_state() -> None:
 
 
 def test_installer_does_not_hide_required_unit_failures() -> None:
-    script = read_text("deploy/scripts/install-user-systemd.sh")
+    script = read_text("surface/deploy/install-user-systemd.sh")
 
     required_commands = [
-        'cp "$REPO_DIR"/deploy/systemd/user/*.service "$SYSTEMD_USER_DIR"/',
-        'cp "$REPO_DIR"/deploy/systemd/user/*.timer "$SYSTEMD_USER_DIR"/',
+        'cp "$REPO_DIR"/surface/deploy/systemd/user/*.service "$SYSTEMD_USER_DIR"/',
+        'cp "$REPO_DIR"/surface/deploy/systemd/user/*.timer "$SYSTEMD_USER_DIR"/',
         "systemctl --user enable --now infoscreen-live-data.timer",
         "systemctl --user enable --now infoscreen-event-stream.timer",
         "systemctl --user enable --now infoscreen-local-events.timer",
