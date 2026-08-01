@@ -43,3 +43,24 @@ def test_schedule_sync_accepts_explicit_arguments_and_absolute_remote_path() -> 
         assert value in sync
 
     assert "Command-line arguments are the authoritative runtime configuration" in sync
+
+
+def test_schedule_sync_documentation_matches_runtime_contract() -> None:
+    readme = read_text("README.md")
+    questions = read_text("docs/questions.md")
+
+    for value in [
+        "directly in the LaunchAgent `ProgramArguments`",
+        "not supplied by transient shell environment assignments",
+        "accepts either a safe absolute path or a `~/` path",
+        "without a full-page refresh",
+    ]:
+        assert value in readme
+
+    for value in [
+        "one-off shell environment assignments",
+        "explicit arguments are the authoritative unattended runtime configuration",
+        "must not remain a runtime dependency",
+        "without a forced page refresh",
+    ]:
+        assert value in questions
