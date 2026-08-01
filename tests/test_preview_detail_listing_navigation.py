@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import sys
 from types import SimpleNamespace
 
@@ -102,19 +103,13 @@ def test_artscience_detail_uses_the_exact_listing_navigation_operation(
 
 
 def test_listing_style_navigation_does_not_use_click_or_commit_wait() -> None:
-    source = open(
-        SURFACE
-        / "local_events_runtime"
-        / "preview_direct_detail_collector_authority.py",
-        encoding="utf-8",
-    ).read()
+    helper_source = inspect.getsource(authority._goto_like_listing)
+    detail_source = inspect.getsource(authority._read_artscience_detail_like_listing)
 
-    art_start = source.index("def _read_artscience_detail_like_listing(")
-    collect_start = source.index("def _collect_detail(", art_start)
-    art_source = source[art_start:collect_start]
-
-    assert ".goto(" in art_source
-    assert 'wait_until="domcontentloaded"' not in art_source  # delegated to helper
-    assert ".click(" not in art_source
-    assert "expect_navigation" not in art_source
-    assert 'wait_until="commit"' not in source
+    assert ".goto(" in helper_source
+    assert 'wait_until="domcontentloaded"' in helper_source
+    assert "_goto_like_listing(" in detail_source
+    assert ".click(" not in detail_source
+    assert "expect_navigation" not in detail_source
+    assert 'wait_until="commit"' not in helper_source
+    assert 'wait_until="commit"' not in detail_source
