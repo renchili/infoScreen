@@ -50,10 +50,10 @@ def test_schedule_sync_documentation_matches_runtime_contract() -> None:
     questions = read_text("docs/questions.md")
 
     for value in [
-        "directly in the LaunchAgent `ProgramArguments`",
-        "not supplied by transient shell environment assignments",
-        "accepts either a safe absolute path or a `~/` path",
-        "without a full-page refresh",
+        "Run once on the Mac to configure recurring sync",
+        "saves the values used by the automatic LaunchAgent runs",
+        "Do not rely on a one-off environment-variable prefix",
+        "a forced browser refresh is not required",
     ]:
         assert value in readme
 
