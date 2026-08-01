@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from typing import Any
-
 from . import event_review as _review
+from . import event_review_diagnostics as _diagnostics
 from . import http1_browser as _http1
 from . import preview_detail_enrichment_authority as _enrichment
 from . import preview_event_selection_authority as _selection
@@ -13,12 +12,6 @@ _BASE_BIND = None
 
 def _preview_store(store: _review.EventReviewStore) -> bool:
     return store.root.name.startswith("infoscreen-event-preview-")
-
-
-def _keep_preview_candidates(state: Any, effective: Any):
-    """Preview is classification evidence, so do not hide expired real Events."""
-
-    return state
 
 
 def _enrich_final_preview(
@@ -45,70 +38,28 @@ def _preview_listing(store: _review.EventReviewStore) -> _review.ListingPageCand
     return state.listing_pages[0]
 
 
-def _collector_chain(root: Any):
-    """Yield every callable reachable through the installed collector wrappers."""
+def _collect_preview_without_formal_expiry_filter(
+    store: _review.EventReviewStore,
+) -> _review.ReviewState:
+    """Run the installed Preview chain without entering the formal collector.
 
-    pending = [root]
-    seen: set[int] = set()
-    while pending:
-        current = pending.pop()
-        if not callable(current) or id(current) in seen:
-            continue
-        seen.add(id(current))
-        yield current
+    ``http1_browser`` owns the formal collector and applies final expiry filtering
+    after ``diagnostics.collect_event_candidates`` returns. Preview needs the same
+    rendered listing and official-detail collection, but must retain expired Events
+    as classification evidence. The diagnostics binding is already composed as:
 
-        for attribute in ("_infoscreen_base_collect", "__wrapped__", "func"):
-            nested = getattr(current, attribute, None)
-            if callable(nested):
-                pending.append(nested)
+    transport -> preview collector -> direct detail collector.
 
-        for value in getattr(current, "__defaults__", None) or ():
-            if callable(value):
-                pending.append(value)
-        for value in (getattr(current, "__kwdefaults__", None) or {}).values():
-            if callable(value):
-                pending.append(value)
+    Calling it directly keeps that complete Preview chain and avoids only the formal
+    post-collection lifecycle filter.
+    """
 
-        for cell in getattr(current, "__closure__", None) or ():
-            try:
-                value = cell.cell_contents
-            except ValueError:
-                continue
-            if callable(value):
-                pending.append(value)
-
-
-def _patch_expiry_filters(root: Any) -> list[tuple[dict[str, Any], Any]]:
-    """Patch the actual inner collector globals that execute expiry filtering."""
-
-    patched: list[tuple[dict[str, Any], Any]] = []
-    seen_globals: set[int] = set()
-    for collector in _collector_chain(root):
-        namespace = getattr(collector, "__globals__", None)
-        code = getattr(collector, "__code__", None)
-        if not isinstance(namespace, dict) or code is None:
-            continue
-        if "_filter_final_expired_events" not in code.co_names:
-            continue
-        if "_filter_final_expired_events" not in namespace:
-            continue
-        namespace_id = id(namespace)
-        if namespace_id in seen_globals:
-            continue
-        seen_globals.add(namespace_id)
-        patched.append((namespace, namespace["_filter_final_expired_events"]))
-        namespace["_filter_final_expired_events"] = _keep_preview_candidates
-
-    if not patched:
-        raise RuntimeError(
-            "Preview collector chain does not expose the executing expiry filter"
-        )
-    return patched
-
-
-def _restore_expiry_filters(patched: list[tuple[dict[str, Any], Any]]) -> None:
-    for namespace, original in reversed(patched):
-        namespace["_filter_final_expired_events"] = original
+    state = _diagnostics.collect_event_candidates(store)
+    metadata = dict(state.event_collection)
+    metadata.pop("expired_candidate_count", None)
+    metadata["candidate_count"] = len(state.events)
+    state.event_collection = metadata
+    return state
 
 
 def _wrap_current_collector() -> None:
@@ -126,18 +77,14 @@ def _wrap_current_collector() -> None:
         # collection and redirect handling have completed.
         _selection.invalidate_preview_manifest(listing.url)
 
-        patched = _patch_expiry_filters(base_collect)
-        try:
-            state = base_collect(store)
-        finally:
-            _restore_expiry_filters(patched)
-
+        state = _collect_preview_without_formal_expiry_filter(store)
         state = _enrich_final_preview(store, state)
         remaining_listing_only = sum(
             _enrichment._needs_detail(candidate) for candidate in state.events
         )
         state.event_collection = {
             **state.event_collection,
+            "candidate_count": len(state.events),
             "preview_detail_mode": "official_detail_pages",
             "detail_page_requests_skipped": 0,
             "preview_expiry_policy": "retain_for_operator_review",
@@ -194,16 +141,15 @@ def apply_preview_pipeline() -> None:
     # Transport remains outermost only to choose the deployed headed Chromium mode and
     # record NetLog diagnostics for MBS. It does not alter the negotiated HTTP protocol.
     apply_preview_transport()
-    # Patch the final HTTP handoff last so Preview candidates remain visible even when
-    # their official date range has expired and can still be classified by the operator.
+    # Bind the public HTTP collector last. Preview enters the diagnostics Preview chain
+    # directly; formal collection keeps the normal final expiry filter.
     apply()
 
 
 __all__ = [
     "apply",
     "apply_preview_pipeline",
-    "_collector_chain",
+    "_collect_preview_without_formal_expiry_filter",
     "_enrich_final_preview",
-    "_patch_expiry_filters",
     "_wrap_current_collector",
 ]
