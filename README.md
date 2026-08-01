@@ -44,17 +44,17 @@ sudo apt install -y python3 python3-pip curl ca-certificates chromium imagemagic
 python3 -m pip install --user 'pydantic>=2,<3' playwright
 ```
 
-Install or update the user services and timers:
+Install or update the Surface user services and timers:
 
 ```bash
 cd ~/infoscreen
-bash deploy/scripts/install-user-systemd.sh
+bash surface/deploy/install-user-systemd.sh
 ```
 
-Check the complete runtime state:
+Check the complete Surface runtime state:
 
 ```bash
-bash scripts/infoscreen_status.sh
+bash surface/scripts/infoscreen_status.sh
 ```
 
 ### 2.3 Update an existing installation
@@ -64,7 +64,7 @@ cd ~/infoscreen
 git fetch origin
 git switch main
 git pull --ff-only origin main
-bash deploy/scripts/install-user-systemd.sh
+bash surface/deploy/install-user-systemd.sh
 systemctl --user restart infoscreen-http.service
 ```
 
@@ -256,7 +256,7 @@ systemctl --user restart infoscreen-http.service
 ### Check service and timer state
 
 ```bash
-bash scripts/infoscreen_status.sh
+bash surface/scripts/infoscreen_status.sh
 ```
 
 ### Inspect HTTP service logs
@@ -296,7 +296,7 @@ curl -v http://127.0.0.1:8765/
 Run:
 
 ```bash
-bash scripts/infoscreen_status.sh
+bash surface/scripts/infoscreen_status.sh
 ```
 
 Then inspect the matching producer, runtime JSON, and HTTP response. A healthy HTTP server does not guarantee that every producer completed successfully.
@@ -311,6 +311,8 @@ Use the Local Event Studio diagnostics. The Studio reports whether the failure o
 
 ## 9. Project structure
 
+The repository is organized by platform ownership. Surface-specific deployment, operations, and tests stay under `surface/`; Mac Calendar synchronization and its tests stay under `mac/`; CI-only helpers stay under `.github/`.
+
 ```text
 surface/serve_infoscreen.py        local HTTP server and API routes
 surface/fetch_live_data.py         Market and Weather producer
@@ -320,13 +322,20 @@ surface/jobs/                      producer orchestration
 surface/local_events_runtime/      Local Events collection and review logic
 surface/conf/                      committed configuration
 surface/web/                       dashboard and Studio frontend
+surface/deploy/                    Surface installer, user services, and timers
+surface/scripts/                   Surface status and operator utilities
+surface/tests/                     Surface unit, API, frontend, and contract tests
 surface/.env/                      local runtime and personal data
 mac/                               macOS Calendar export and Schedule sync
-deploy/systemd/user/               Surface user services and timers
-scripts/                           status and validation entrypoints
+mac/tests/                         Mac Schedule and LaunchAgent tests
+.github/scripts/                   CI and repository-validation entrypoints
+.github/tests/                     repository-wide contract tests
+.github/pytest.ini                 pytest discovery and marker configuration
 docs/                              design, API, and requirement documentation
-tests/                             unit and contract tests
+skills/                            reusable repository-work instructions
 ```
+
+There are no generic root-level `deploy/`, `scripts/`, `tests/`, or `pyproject.toml` owners. A file must live with its Surface, Mac, CI, or genuinely repository-wide owner.
 
 ## 10. Development and documentation
 
@@ -339,9 +348,9 @@ python3 -m pip install --user pytest 'pydantic>=2,<3'
 Repository validation entrypoints include:
 
 ```bash
-python3 -m py_compile surface/*.py surface/jobs/*.py surface/local_events_runtime/*.py
-python3 -m pytest
-bash scripts/run_full_ci_tests.sh
+python3 -m compileall -q surface mac .github/scripts .github/tests
+python3 -m pytest -c .github/pytest.ini
+bash .github/scripts/run_full_ci_tests.sh
 ```
 
 Documentation roles:
