@@ -11,6 +11,17 @@ from . import review_detail_navigation_authority as _detail_navigation
 ARTSCIENCE_DETAIL_READY_JS = r"""
 () => {
   const clean = value => String(value || "").replace(/\s+/g, " ").trim();
+  const title = clean(document.title);
+  const body = clean(document.body ? (document.body.innerText || document.body.textContent || "") : "");
+  const url = String(location.href || "");
+  const codeMatch = body.match(/\b(?:ERR|DNS_PROBE)_[A-Z0-9_]+\b/i);
+  const browserError =
+    url.startsWith("chrome-error://") ||
+    /(?:this site can.?t be reached|site can.?t be reached|webpage is not available|page isn.?t working|page is not working|aw, snap)/i.test(title) ||
+    /(?:this site can.?t be reached|site can.?t be reached|webpage is not available|page isn.?t working|page is not working|aw, snap)/i.test(body) ||
+    Boolean(codeMatch);
+  if (browserError) return false;
+
   const heading = Array.from(document.querySelectorAll("main h1, article h1, h1"))
     .find(element => clean(element.innerText || element.textContent || ""));
   const root = document.querySelector("main") || document.querySelector("article") || document.body;
@@ -132,7 +143,7 @@ def _safe_requested_url(listing_url: str, raw_url: str) -> str:
 
 
 def _loaded_browser_error(page: Any, requested_url: str) -> str:
-    """Return a precise Chrome error-page diagnostic, or an empty string."""
+    """Describe a browser error page still visible after the detail wait window."""
 
     payload: dict[str, Any] = {}
     try:
@@ -163,16 +174,16 @@ def _loaded_browser_error(page: Any, requested_url: str) -> str:
     if not is_error:
         return ""
 
-    parts = ["browser_error_page"]
+    parts = ["detail_page_not_ready_after_wait", "observed_browser_error_page"]
     if code:
-        parts.append(f"error_code={code}")
+        parts.append(f"observed_code={code}")
     if page_title:
-        parts.append(f"title={page_title}")
+        parts.append(f"observed_title={page_title}")
     if page_url:
-        parts.append(f"page_url={page_url}")
+        parts.append(f"observed_page_url={page_url}")
     parts.append(f"requested_url={requested_url}")
     if body:
-        parts.append(f"body={body[:180]}")
+        parts.append(f"observed_body={body[:180]}")
     return "; ".join(parts)[:500]
 
 
@@ -182,13 +193,9 @@ def read_loaded_detail_candidate(
     listing_url: str,
     requested_url: str,
 ) -> dict[str, str]:
-    """Parse an ArtScience page already opened by a rendered browser interaction."""
+    """Wait through transient pages, then parse the loaded ArtScience detail page."""
 
     requested_url = _safe_requested_url(listing_url, requested_url)
-
-    browser_error = _loaded_browser_error(page, requested_url)
-    if browser_error:
-        raise RuntimeError(browser_error)
 
     try:
         page.wait_for_function(
