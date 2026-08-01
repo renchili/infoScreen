@@ -60,12 +60,23 @@ def _wrap_current_collector() -> None:
         # collection and redirect handling have completed.
         _selection.invalidate_preview_manifest(listing.url)
 
-        original_filter = _http1._filter_final_expired_events
-        _http1._filter_final_expired_events = _keep_preview_candidates
+        # Patch the exact globals used by the bound collector closure. Replacing the
+        # separately imported _http1 module attribute is not sufficient when the
+        # deployed collector was bound from another module instance/import path.
+        collector_globals = getattr(base_collect, "__globals__", None)
+        if not isinstance(collector_globals, dict):
+            raise RuntimeError("Preview collector has no writable global namespace")
+        if "_filter_final_expired_events" not in collector_globals:
+            raise RuntimeError(
+                "Preview collector does not expose the final expiry-filter binding"
+            )
+
+        original_filter = collector_globals["_filter_final_expired_events"]
+        collector_globals["_filter_final_expired_events"] = _keep_preview_candidates
         try:
             state = base_collect(store)
         finally:
-            _http1._filter_final_expired_events = original_filter
+            collector_globals["_filter_final_expired_events"] = original_filter
 
         state = _enrich_final_preview(store, state)
         remaining_listing_only = sum(
