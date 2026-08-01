@@ -62,7 +62,7 @@ The Sync ticker observes per-file `Last-Modified`. The Calendar board rotates ev
 
 ### Required implementation
 
-Keep per-file freshness checks, reload Schedule data without reloading the page, remove idle Studio polling, emit one completed-render event, and restore one stable card anchor or scroll position after that render. Weather and Market producers must log timestamped `component` and `state` fields, preserve distinct `last_attempt_at` and `last_success_at` values, retain the provider exception in the runtime payload, and exit non-zero when a required live-data component fails. `scripts/infoscreen_status.sh` must expose producer results and exit status, recent producer output, timer state, runtime-file age and JSON validity, `status`, `error`, `updated_at`, `last_attempt_at`, `last_success_at`, and the Schedule/Weather/Market HTTP payloads.
+Keep per-file freshness checks, reload Schedule data without reloading the page, remove idle Studio polling, emit one completed-render event, and restore one stable card anchor or scroll position after that render. Weather and Market producers must log timestamped `component` and `state` fields, preserve distinct `last_attempt_at` and `last_success_at` values, retain the provider exception in the runtime payload, and exit non-zero when a required live-data component fails. `surface/scripts/infoscreen_status.sh` must expose producer results and exit status, recent producer output, timer state, runtime-file age and JSON validity, `status`, `error`, `updated_at`, `last_attempt_at`, `last_success_at`, and the Schedule/Weather/Market HTTP payloads.
 
 ### Acceptance evidence
 
@@ -116,15 +116,15 @@ A date-less list card with one official detail link must be admitted and enriche
 
 ### Easy-to-make interpretation
 
-The operator can only accept or reject URLs discovered by the system, a correct URL must be added by editing committed configuration, a manually added page cannot be inspected until it is confirmed, or a browser-restored Preview panel is sufficient proof that its candidate set is still current.
+The operator can only accept or reject URLs discovered by the system, a correct URL must be added by editing committed configuration, a manually added page cannot be inspected until it is confirmed, a browser-restored Preview panel is sufficient proof that its candidate set is still current, or an official candidate whose event date has passed should disappear before the operator can classify it.
 
 ### Why it fails
 
-Automated discovery can return the wrong page, and some institutions expose a shared or non-obvious entrypoint that cannot be discovered reliably. Without a manual input, the user cannot correct the workflow. Requiring confirmation before preview forces a decision before the operator can inspect the Event evidence used to make that decision. Browser session state can outlive a service restart, manifest expiry, newer Preview, or List Page revision change and therefore cannot be the server’s candidate-set authority.
+Automated discovery can return the wrong page, and some institutions expose a shared or non-obvious entrypoint that cannot be discovered reliably. Without a manual input, the user cannot correct the workflow. Requiring confirmation before preview forces a decision before the operator can inspect the Event evidence used to make that decision. Browser session state can outlive a service restart, manifest expiry, newer Preview, or List Page revision change and therefore cannot be the server’s candidate-set authority. Expired official candidates are still classification evidence; hiding them during Preview prevents the operator from recording whether the official list item is a real Event.
 
 ### Correct requirement interpretation
 
-The Studio lets the user select one global institution, enter a correct official Event list URL, save it into review state as pending, preview that saved page without changing its decision, classify every Preview candidate as REAL EVENT or NOT EVENT, then save the complete selection set together with the List Page decision. The submitted identities and original/final URLs must exactly match the latest unexpired server Preview manifest for the unchanged List Page revision. Normal persisted collection requires a confirmed page with committed REAL EVENT selections and collects only those selected rows.
+The Studio lets the user select one global institution, enter a correct official Event list URL, save it into review state as pending, preview that saved page without changing its decision, classify every Preview candidate as REAL EVENT or NOT EVENT, then save the complete selection set together with the List Page decision. The submitted identities and original/final URLs must exactly match the latest unexpired server Preview manifest for the unchanged List Page revision. Preview keeps expired official candidates visible for classification, while formal persisted collection and kiosk publication retain normal event-expiry filtering. Normal persisted collection requires a confirmed page with committed REAL EVENT selections and collects only those selected rows.
 
 ### Required implementation
 
@@ -133,6 +133,8 @@ Provide an always-visible URL field and `ADD LIST PAGE` button. Send `source_id`
 Expose isolated preview for every saved decision state. `POST /api/local-events/review/preview-events` must receive the saved `listing_url`, copy Review state into a temporary store, keep only that list page, mark only the temporary copy confirmed, clear copied Event candidates and feedback, and return the temporary result without changing persisted Review state.
 
 The direct Preview owner must use one Playwright manager, one Chromium process, and one browser context for the selected listing and every admitted official detail page. It must preserve the original list-card identity when a detail page redirects, close the real browser once, and fail rather than start a second browser if listing-only evidence remains after the direct collector completes. Successful metadata must report `preview_browser_process_count: 1`, `preview_browser_reuse: listing_and_details`, `preview_detail_context_count: 1`, and `preview_detail_transport: same_browser_context`.
+
+The final Preview handoff must bypass the executing final-expiry filter only for the isolated Preview result, retain expired official candidates, and report `preview_expiry_policy: retain_for_operator_review`. It must restore every patched filter before returning so non-Preview collection keeps the normal expiry policy.
 
 After final detail collection and redirect handling, the server records the exact returned candidate IDs, original `listing_detail_url` values, final `detail_url` values, and List Page revision in a process-local manifest. The default lifetime is 21,600 seconds, configurable through `INFOSCREEN_PREVIEW_MANIFEST_TTL_SECONDS` with a 60-second minimum. A service restart, expiry, newer Preview, List Page state change, reset, rejection, manual re-add, or discovery retirement invalidates the manifest and requires another Preview.
 
@@ -146,7 +148,7 @@ Scoped discovery must retire no-longer-discovered non-manual pages together with
 
 Select an institution, add a valid allowed-domain URL, observe it immediately in the left-side list as pending, and preview it before confirmation. The preview must return only that page’s candidates while the persisted page decision, Event candidates, feedback, collection metadata, `state.json`, and `preview_event_selections.json` remain byte-for-byte or model-equivalent to their pre-preview state.
 
-A direct-collector fixture must prove that the listing page and detail pages are opened through the same browser context, the browser is launched and closed once, final redirected URLs retain the original candidate identity, and the final handoff rejects any remaining listing-only candidate without opening another browser.
+A direct-collector fixture must prove that the listing page and detail pages are opened through the same browser context, the browser is launched and closed once, final redirected URLs retain the original candidate identity, and the final handoff rejects any remaining listing-only candidate without opening another browser. It must also prove that an expired official detail result remains in Preview, the response reports `preview_expiry_policy: retain_for_operator_review`, every patched expiry filter is restored, and a non-Preview store still follows the normal expiry handoff.
 
 Classify every candidate, save the List Page review, and verify the committed selection set and List Page decision agree. Confirming requires at least one REAL EVENT; rejecting forbids a REAL EVENT. Formal collection must open and persist only selected REAL EVENT candidates, including a selected candidate whose original list link redirects to a different final public URL.
 
