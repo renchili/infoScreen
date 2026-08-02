@@ -43,7 +43,7 @@ def _review_event(candidate: Any) -> dict[str, Any]:
 
 
 def _apply_review_authorities() -> None:
-    """Install current-page, expiry, Preview, and graphical-session policies."""
+    """Install current-page, date, expiry, Preview, and session policies."""
 
     from .review_expiry_authority import apply as apply_review_expiry_authority
     from .preview_final_detail_handoff_authority import apply_preview_pipeline
@@ -53,9 +53,13 @@ def _apply_review_authorities() -> None:
     from .preview_graphical_session_authority import (
         apply as apply_preview_graphical_session_authority,
     )
+    from .detail_operational_notice_authority import (
+        apply as apply_detail_operational_notice_authority,
+    )
 
     apply_review_expiry_authority()
     apply_preview_pipeline()
+    apply_detail_operational_notice_authority()
     apply_listing_page_archive_authority()
     apply_preview_graphical_session_authority()
 
