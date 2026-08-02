@@ -16,18 +16,16 @@ def _preview_store(store: _review.EventReviewStore) -> bool:
 
 
 def _bind_preview_store_replace_events() -> None:
-    """Keep expired candidates only in the isolated Preview store.
+    """Defer Preview expiry filtering until final detail fields are available.
 
-    The effective-fields lifecycle owner normally removes expired candidates inside
-    ``EventReviewStore.replace_events``. That is correct for persisted/formal Review
-    collection, but Preview needs those candidates as classification evidence.
-
-    Replace the effective module's public binding, not only the class attribute, so
-    later calls to ``_effective.apply()`` keep reinstalling this conditional owner.
+    Some list cards do not carry a complete date and can only be classified after the
+    official detail page has been read. The isolated Preview store therefore keeps the
+    intermediate rows during collection, but the final HTTP response filters ended
+    activities before issuing the Preview manifest or returning rows to Studio.
     """
 
     current = _effective.replace_events
-    if getattr(current, "_infoscreen_preview_retains_expired", False):
+    if getattr(current, "_infoscreen_preview_defers_expiry", False):
         _review.EventReviewStore.replace_events = current
         return
 
@@ -53,7 +51,7 @@ def _bind_preview_store_replace_events() -> None:
         metadata.pop("expired_candidate_count", None)
         return base_replace(store, list(candidates), metadata)
 
-    replace_events._infoscreen_preview_retains_expired = True
+    replace_events._infoscreen_preview_defers_expiry = True
     replace_events._infoscreen_formal_replace_events = formal_replace
     _effective.replace_events = replace_events
     _review.EventReviewStore.replace_events = replace_events
@@ -76,6 +74,23 @@ def _enrich_final_preview(
     return state
 
 
+def _filter_expired_preview_events(
+    state: _review.ReviewState,
+) -> _review.ReviewState:
+    """Remove ended activities after detail enrichment and before Studio sees them."""
+
+    active, metadata = _effective._active_candidates(
+        list(state.events),
+        state.event_collection,
+    )
+    state.events = active
+    state.event_collection = {
+        **metadata,
+        "preview_expiry_policy": "exclude_ended_events",
+    }
+    return state
+
+
 def _preview_listing(store: _review.EventReviewStore) -> _review.ListingPageCandidate:
     state = store.load()
     if len(state.listing_pages) != 1:
@@ -83,20 +98,15 @@ def _preview_listing(store: _review.EventReviewStore) -> _review.ListingPageCand
     return state.listing_pages[0]
 
 
-def _collect_preview_without_formal_expiry_filter(
+def _collect_preview_before_final_expiry(
     store: _review.EventReviewStore,
 ) -> _review.ReviewState:
-    """Run the installed Preview chain without entering the formal collector.
+    """Run detail collection before applying the final Preview lifecycle filter.
 
-    ``http1_browser`` owns the formal collector and applies final expiry filtering
-    after ``diagnostics.collect_event_candidates`` returns. Preview needs the same
-    rendered listing and official-detail collection, but must retain expired Events
-    as classification evidence. The diagnostics binding is already composed as:
-
-    transport -> preview collector -> direct detail collector.
-
-    Calling it directly keeps that complete Preview chain and avoids only the formal
-    post-collection lifecycle filter.
+    ``http1_browser`` owns the formal collector and filters expiry after diagnostics.
+    Preview calls the composed diagnostics chain directly so list-only dates can first
+    be replaced by authoritative detail-page dates. The same formal lifecycle rule is
+    then applied explicitly by ``_filter_expired_preview_events``.
     """
 
     state = _diagnostics.collect_event_candidates(store)
@@ -121,11 +131,12 @@ def _wrap_current_collector() -> None:
         listing = _preview_listing(store)
         # A failed or newer Preview must never leave an older candidate set eligible
         # for submission. The replacement manifest is issued only after final detail
-        # collection and redirect handling have completed.
+        # collection, redirect handling, and expiry filtering have completed.
         _selection.invalidate_preview_manifest(listing.url)
 
-        state = _collect_preview_without_formal_expiry_filter(store)
+        state = _collect_preview_before_final_expiry(store)
         state = _enrich_final_preview(store, state)
+        state = _filter_expired_preview_events(state)
         remaining_listing_only = sum(
             _enrichment._needs_detail(candidate) for candidate in state.events
         )
@@ -134,7 +145,7 @@ def _wrap_current_collector() -> None:
             "candidate_count": len(state.events),
             "preview_detail_mode": "official_detail_pages",
             "detail_page_requests_skipped": 0,
-            "preview_expiry_policy": "retain_for_operator_review",
+            "preview_expiry_policy": "exclude_ended_events",
             "listing_only_candidates_remaining": remaining_listing_only,
         }
         state = _selection.issue_preview_manifest(listing, state)
@@ -197,7 +208,8 @@ __all__ = [
     "apply",
     "apply_preview_pipeline",
     "_bind_preview_store_replace_events",
-    "_collect_preview_without_formal_expiry_filter",
+    "_collect_preview_before_final_expiry",
     "_enrich_final_preview",
+    "_filter_expired_preview_events",
     "_wrap_current_collector",
 ]
