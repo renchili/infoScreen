@@ -66,8 +66,8 @@ def _facts_have_date(facts: dict[str, Any]) -> bool:
 def _raw_when(payload: dict[str, Any]) -> str:
     """Keep the activity date and its hours while excluding closure-notice text."""
 
-    base_picker = _effective._BASE_RAW_WHEN or _navigation._raw_when
-    base = _extract.clean(base_picker(payload))
+    base_picker = _effective._BASE_RAW_WHEN
+    base = _extract.clean(base_picker(payload)) if callable(base_picker) else ""
     date_line = _detail_date_line(payload)
     if not date_line:
         return ""
