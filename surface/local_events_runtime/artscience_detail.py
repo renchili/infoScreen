@@ -62,6 +62,7 @@ ARTSCIENCE_BROWSER_ERROR_JS = r"""
 ARTSCIENCE_DETAIL_FIELDS_JS = r"""
 () => {
   const clean = value => String(value || "").replace(/\s+/g, " ").trim();
+  const fact = value => clean(value).replace(/^[|•·\s]+/, "").trim();
   const key = value => clean(value).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   const heading = Array.from(document.querySelectorAll("main h1, article h1, h1"))
     .find(element => clean(element.innerText || element.textContent || "")) || null;
@@ -73,7 +74,7 @@ ARTSCIENCE_DETAIL_FIELDS_JS = r"""
     document.body;
   const lines = String(root ? (root.innerText || root.textContent || "") : "")
     .split(/\n+/)
-    .map(clean)
+    .map(fact)
     .filter(Boolean);
 
   const titleKey = key(title);
@@ -88,12 +89,16 @@ ARTSCIENCE_DETAIL_FIELDS_JS = r"""
     /^(?:exhibition|event|programme|program|experience)\s+details$/i.test(line)
   );
   const start = detailsIndex >= 0 ? detailsIndex + 1 : Math.max(0, titleIndex + 1);
-  const facts = lines.slice(start, start + (detailsIndex >= 0 ? 18 : 45));
+  const rawFacts = lines.slice(start, start + (detailsIndex >= 0 ? 26 : 45));
+  const stopIndex = rawFacts.findIndex(line =>
+    /^(?:buy tickets?|book(?: a)? time slot|notice|about the exhibition|explore the exhibition|programme|program|offers?\s*&\s*promotions?|you may also like|address)$/i.test(line)
+  );
+  const facts = rawFacts.slice(0, stopIndex >= 0 ? stopIndex : rawFacts.length);
 
   const month = "(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)";
-  const fullRange = new RegExp(
+  const closedRange = new RegExp(
     "\\b\\d{1,2}(?:st|nd|rd|th)?\\s+" + month +
-    "\\s+20\\d{2}\\s*[-–—]\\s*\\d{1,2}(?:st|nd|rd|th)?\\s+" +
+    "(?:\\s+20\\d{2})?\\s*[-–—]\\s*\\d{1,2}(?:st|nd|rd|th)?\\s+" +
     month + "\\s+20\\d{2}\\b",
     "i"
   );
@@ -102,15 +107,42 @@ ARTSCIENCE_DETAIL_FIELDS_JS = r"""
     "i"
   );
   const isoDate = /\b20\d{2}-\d{1,2}-\d{1,2}\b/;
-  const when = facts.find(line =>
-    line.length <= 220 && (fullRange.test(line) || oneDate.test(line) || isoDate.test(line))
+  const openSchedule = /^(?:daily|ongoing|permanent)$/i;
+  const dayRange = /^(?:mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\s*[-–—]\s*(?:mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\s*:?$/i;
+  const timeRange = /\b\d{1,2}(?:[.:]\d{1,2})?\s*(?:am|pm)\s*[-–—]\s*\d{1,2}(?:[.:]\d{1,2})?\s*(?:am|pm)\b/i;
+
+  const dateLine = facts.find(line =>
+    line.length <= 220 && (closedRange.test(line) || oneDate.test(line) || isoDate.test(line))
   ) || "";
+  const recurringLine = facts.find(line => openSchedule.test(line)) || "";
+  const schedule = [];
+  if (dateLine) schedule.push(dateLine);
+  else if (recurringLine) schedule.push(recurringLine);
+
+  for (let index = 0; index < facts.length; index += 1) {
+    const label = facts[index];
+    if (!dayRange.test(label)) continue;
+    const hours = facts.slice(index + 1, index + 4).find(line => timeRange.test(line));
+    if (!hours) continue;
+    const normalisedLabel = label.replace(/\s*:$/, "");
+    const value = `${normalisedLabel}: ${hours}`;
+    if (!schedule.includes(value)) schedule.push(value);
+  }
+  const when = schedule.join(" · ");
 
   let where = "";
   for (let index = 0; index < facts.length; index += 1) {
     if (!/^(?:location|venue|where)\s*:?$/i.test(facts[index])) continue;
-    where = clean(facts[index + 1] || "");
+    where = fact(facts[index + 1] || "");
     break;
+  }
+  if (!where) {
+    where = facts.find(line =>
+      line.length <= 120 &&
+      /\b(?:basement|level|gallery|galleries|room|hall|theatre|theater|studio|museum)\b/i.test(line) &&
+      !closedRange.test(line) && !oneDate.test(line) && !isoDate.test(line) &&
+      !dayRange.test(line) && !timeRange.test(line)
+    ) || "";
   }
 
   const summary = clean(document.querySelector('meta[name="description"]')?.content) ||
