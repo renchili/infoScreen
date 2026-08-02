@@ -13,6 +13,7 @@ from .event_review import (
     stable_id,
     utc_now,
 )
+from .listing_page_policy import rejection_reason as listing_page_rejection_reason
 from .review_detail_authority import apply as apply_review_detail_authority
 
 MANUAL_LINK_TEXT = "Manually added by operator"
@@ -59,6 +60,12 @@ def add_manual_listing(
     url = canonical_url(str(request.url))
     if not _host_allowed(url, source):
         raise ValueError("listing URL is outside the institution allow-list")
+    archive_reason = listing_page_rejection_reason(url)
+    if archive_reason:
+        raise ValueError(
+            "listing URL is an archive or past-activities page and cannot be used "
+            f"as a current Event list page ({archive_reason})"
+        )
 
     state = store.load()
     candidate_id = stable_id(source_id, url)
