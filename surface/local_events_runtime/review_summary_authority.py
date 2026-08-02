@@ -43,13 +43,21 @@ def _review_event(candidate: Any) -> dict[str, Any]:
 
 
 def _apply_review_authorities() -> None:
-    """Install the Review expiry rule and explicit Preview composition owner."""
+    """Install current-page, expiry, Preview, and graphical-session policies."""
 
     from .review_expiry_authority import apply as apply_review_expiry_authority
     from .preview_final_detail_handoff_authority import apply_preview_pipeline
+    from .listing_page_archive_authority import (
+        apply as apply_listing_page_archive_authority,
+    )
+    from .preview_graphical_session_authority import (
+        apply as apply_preview_graphical_session_authority,
+    )
 
     apply_review_expiry_authority()
     apply_preview_pipeline()
+    apply_listing_page_archive_authority()
+    apply_preview_graphical_session_authority()
 
 
 def apply() -> None:
