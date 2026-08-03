@@ -47,7 +47,7 @@ DETAIL_DOCUMENT_FACTS_JS = r"""
     if (text && !rows.includes(text)) rows.push(text);
   };
   const rejected = value => /\b(last updated|updated on|page updated|copyright|privacy|cookie|newsletter|previous programme|next programme|previous event|next event|presale|pre-sale|ticket sale|registration opens?)\b/i.test(clean(value));
-  const boundary = value => /^(?:you might also like|you may also like|related (?:events?|programmes?|programs?|activities?)|recommended for you|more from|explore more|previous programme|next programme|previous event|next event|visit .+ today)$/i.test(clean(value));
+  const boundary = value => /^(?:you might also like|you may also like|activities? (?:might|may) also enjoy|related (?:events?|programmes?|programs?|activities?)|recommended for you|more from|explore more|previous programme|next programme|previous event|next event|visit .+ today)$/i.test(clean(value));
   const dateLike = value => /(?:\b20\d{2}-\d{1,2}-\d{1,2}\b|\b\d{1,2}(?:st|nd|rd|th)?(?:\s*(?:,|&|\/|[-–—])\s*\d{1,2}(?:st|nd|rd|th)?)*\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+20\d{2}\b|\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?(?:,)?\s+20\d{2}\b)/i.test(clean(value));
   const timeLike = value => /\b(?:daily|weekdays?|weekends?|mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\b|\b\d{1,2}(?:[.:]\d{1,2})?\s*(?:am|pm)?\s*[-–—]\s*\d{1,2}(?:[.:]\d{1,2})?\s*(?:am|pm)\b/i.test(clean(value));
   const venueLike = value => /\b(?:museum|gallery|galleries|level|room|hall|theatre|theater|auditorium|foyer|atrium|courtyard|plaza|studio|park|gardens?|zoo|centre|center)\b/i.test(clean(value));
@@ -161,7 +161,7 @@ def _detail_date_line(payload: dict[str, Any]) -> str:
 
 
 def _raw_when(payload: dict[str, Any]) -> str:
-    """Require exact date evidence, then keep one exact opening-hours row."""
+    """Use one exact date row, then append at most one opening-hours row."""
 
     base_picker = _BASE_RAW_WHEN or _detail_navigation._raw_when
     base = _extract.clean(base_picker(payload))
@@ -169,13 +169,11 @@ def _raw_when(payload: dict[str, Any]) -> str:
     if not date_line:
         return ""
 
-    values: list[str]
-    if base and _line_dates(base):
-        values = [base]
-    else:
-        values = [date_line]
-        if base and base != date_line:
-            values.append(base)
+    # The generic base picker may concatenate every date-bearing row from the page,
+    # including recommendation cards. The first exact detail date row is authoritative.
+    values = [date_line]
+    if base and base != date_line and not _line_dates(base):
+        values.append(base)
 
     already_has_time = any(
         _detail_navigation._UNLABELLED_TIME_RE.search(value)
