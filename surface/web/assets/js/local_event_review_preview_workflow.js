@@ -241,6 +241,39 @@
     const rows = candidateRows();
     const decisions = decisionsFor(url);
     if (!card || !rows.length || rows.some((row) => !completeCandidateRow(row))) {
+      setGlobalStatus(
+        "PREVIEW DATA INVALID · Run Preview again before saving this List Page review.",
+        "error",
+      );
+      return;
+    }
+
+    const pendingCount = rows.filter(
+      (row) => !["confirmed", "rejected"].includes(decisions[row.candidate_id]),
+    ).length;
+    if (pendingCount) {
+      setGlobalStatus(
+        `REVIEW REQUIRED · ${pendingCount} PREVIEW CANDIDATE${pendingCount === 1 ? "" : "S"} STILL UNREVIEWED`,
+        "error",
+      );
+      return;
+    }
+
+    const realCount = rows.filter(
+      (row) => decisions[row.candidate_id] === "confirmed",
+    ).length;
+    if (decision === "confirmed" && !realCount) {
+      setGlobalStatus(
+        "A LIST PAGE CANNOT BE CONFIRMED WITHOUT A REAL EVENT SELECTION",
+        "error",
+      );
+      return;
+    }
+    if (decision === "rejected" && realCount) {
+      setGlobalStatus(
+        "A REJECTED LIST PAGE CANNOT CONTAIN REAL EVENT SELECTIONS",
+        "error",
+      );
       return;
     }
 
@@ -253,9 +286,6 @@
       });
       await window.InfoScreenReviewStudio?.loadState?.();
       render(url);
-      const realCount = rows.filter(
-        (row) => decisions[row.candidate_id] === "confirmed",
-      ).length;
       setGlobalStatus(
         decision === "confirmed"
           ? `${realCount} REAL EVENT${realCount === 1 ? "" : "S"} SAVED · LIST PAGE CONFIRMED`
@@ -267,6 +297,31 @@
     } finally {
       button.disabled = false;
     }
+  }
+
+  function bindListingReviewButtons(url, card) {
+    const expected = canonical(url);
+    const actions = card?.querySelector(".actions");
+    if (!expected || !actions) return;
+
+    const buttons = [...actions.querySelectorAll("button")];
+    const buttonByLabel = (label) => buttons.find(
+      (button) => text(button.textContent).toUpperCase() === label,
+    );
+
+    const bind = (button, decision) => {
+      if (!button || button.dataset.previewReviewBound === "true") return;
+      button.dataset.previewReviewBound = "true";
+      button.addEventListener("click", (event) => {
+        if (activePreviewUrl() !== expected) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        void saveListPageReview(expected, decision, button);
+      }, true);
+    };
+
+    bind(buttonByLabel("CONFIRM LIST PAGE"), "confirmed");
+    bind(buttonByLabel("REJECT"), "rejected");
   }
 
   async function collectSelectedRealEvents(url, button) {
@@ -302,6 +357,8 @@
       document.getElementById("preview-real-workflow")?.remove();
       return;
     }
+
+    bindListingReviewButtons(expected, listing);
 
     let workflow = document.getElementById("preview-real-workflow");
     if (!workflow) {
