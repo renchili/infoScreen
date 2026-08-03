@@ -267,6 +267,16 @@ def _collect_document_facts(page: Any) -> dict[str, Any]:
         page.wait_for_timeout(150)
 
 
+def _payload_fields(page: Any, payload: dict[str, Any]) -> tuple[str, str, str, str]:
+    """Read the effective fields already present in one primary detail payload."""
+
+    title = _extract.clean(payload.get("title") or page.title() or "")
+    when = _raw_when(payload)
+    where = _detail_navigation._raw_where(payload)
+    summary = _detail_navigation._raw_summary(payload)
+    return title, when, where, summary
+
+
 def _read_detail_page(
     page: Any,
     listing_url: str,
@@ -304,21 +314,23 @@ def _read_detail_page(
     except Exception:
         pass
 
-    facts = _collect_document_facts(page)
     final_url = _detail_navigation._provenance.listing_detail_url(
         listing_url,
         str(page.url),
     ) or requested_url
 
+    # The enriched primary extractor already reads structured Event data, labeled
+    # date/venue fields, and visible activity content. Do not make every candidate wait
+    # through the fallback polling window when those required fields are already ready.
     payload = page.evaluate(_detail_navigation._browser.DETAIL_CARD_JS) or {}
     if not isinstance(payload, dict):
         payload = {}
-    payload = _merge_document_facts(payload, facts)
+    title, when, where, summary = _payload_fields(page, payload)
 
-    title = _extract.clean(payload.get("title") or page.title() or "")
-    when = _raw_when(payload)
-    where = _detail_navigation._raw_where(payload)
-    summary = _detail_navigation._raw_summary(payload)
+    if not all((title, when, where)):
+        facts = _collect_document_facts(page)
+        payload = _merge_document_facts(payload, facts)
+        title, when, where, summary = _payload_fields(page, payload)
 
     missing = [
         name
@@ -513,6 +525,7 @@ __all__ = [
     "_detail_date_line",
     "_expired",
     "_merge_document_facts",
+    "_payload_fields",
     "_raw_when",
     "_read_detail_page",
     "_repair_fields",
