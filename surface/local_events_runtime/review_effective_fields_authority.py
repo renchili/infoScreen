@@ -14,6 +14,7 @@ _BASE_LOAD = None
 _BASE_STATE_PAYLOAD = None
 _BASE_REPLACE_EVENTS = None
 _BASE_RAW_WHEN = None
+_REQUESTED_URL_PAYLOAD_KEY = "_infoscreen_requested_url"
 
 _DATE_NOISE_RE = re.compile(
     r"\b(?:last updated|updated on|page updated|copyright|privacy|cookie|"
@@ -203,12 +204,10 @@ def _detail_date_line(
     return ""
 
 
-def _raw_when(
-    payload: dict[str, Any],
-    requested_url: str = "",
-) -> str:
+def _raw_when(payload: dict[str, Any]) -> str:
     """Use one exact date row, then append at most one opening-hours row."""
 
+    requested_url = _extract.clean(payload.get(_REQUESTED_URL_PAYLOAD_KEY))
     base_picker = _BASE_RAW_WHEN or _detail_navigation._raw_when
     base = _extract.clean(base_picker(payload))
     date_line = _detail_date_line(payload, requested_url)
@@ -317,12 +316,11 @@ def _collect_document_facts(page: Any) -> dict[str, Any]:
 def _payload_fields(
     page: Any,
     payload: dict[str, Any],
-    requested_url: str = "",
 ) -> tuple[str, str, str, str]:
     """Read the effective fields already present in one primary detail payload."""
 
     title = _extract.clean(payload.get("title") or page.title() or "")
-    when = _raw_when(payload, requested_url)
+    when = _raw_when(payload)
     where = _detail_navigation._raw_where(payload)
     summary = _detail_navigation._raw_summary(payload)
     return title, when, where, summary
@@ -376,16 +374,13 @@ def _read_detail_page(
     payload = page.evaluate(_detail_navigation._browser.DETAIL_CARD_JS) or {}
     if not isinstance(payload, dict):
         payload = {}
-    title, when, where, summary = _payload_fields(page, payload, requested_url)
+    payload[_REQUESTED_URL_PAYLOAD_KEY] = requested_url
+    title, when, where, summary = _payload_fields(page, payload)
 
     if not all((title, when, where)):
         facts = _collect_document_facts(page)
         payload = _merge_document_facts(payload, facts)
-        title, when, where, summary = _payload_fields(
-            page,
-            payload,
-            requested_url,
-        )
+        title, when, where, summary = _payload_fields(page, payload)
 
     missing = [
         name
