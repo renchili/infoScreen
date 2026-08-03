@@ -24,7 +24,8 @@ _DATE_NOISE_RE = re.compile(
 )
 _ESPLANADE_SERIES_URL_RE = re.compile(
     r"^https?://(?:www\.)?esplanade\.com/whats-on/festivals-and-series/"
-    r"(?:series|festivals?)/",
+    r"(?:(?:series|festivals?)/(?:[^/?#]+(?:/20\d{2})?|20\d{2}/[^/?#]+)"
+    r"|[^/?#]+/20\d{2})/?(?:[?#].*)?$",
     re.I,
 )
 _DATE_SEGMENT_SEPARATOR_RE = re.compile(r"\s+(?:·|•|\|)\s+")
