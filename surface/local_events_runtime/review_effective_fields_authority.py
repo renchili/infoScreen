@@ -21,6 +21,12 @@ _DATE_NOISE_RE = re.compile(
     r"previous programme|next programme|previous event|next event)\b",
     re.I,
 )
+_ESPLANADE_SERIES_URL_RE = re.compile(
+    r"^https?://(?:www\.)?esplanade\.com/whats-on/festivals-and-series/"
+    r"(?:series|festivals?)/",
+    re.I,
+)
+_DATE_SEGMENT_SEPARATOR_RE = re.compile(r"\s+(?:·|•|\|)\s+")
 
 DETAIL_STABLE_READY_JS = r"""
 () => {
@@ -136,8 +142,43 @@ def _line_dates(value: object) -> list[Any]:
         return list(_extract.label_dates(text))
 
 
-def _detail_date_line(payload: dict[str, Any]) -> str:
-    """Return one exact date-bearing detail row without rewriting it."""
+def _first_date_fragment(value: str) -> str:
+    """Return the earliest complete date fragment from one aggregate text row."""
+
+    text = _extract.clean(value)
+    if not text:
+        return ""
+
+    for segment in _DATE_SEGMENT_SEPARATOR_RE.split(text):
+        candidate = _extract.clean(segment)
+        if candidate and _line_dates(candidate):
+            return candidate
+
+    try:
+        fragments = list(_detail_dates._activity_date_fragments(text))
+    except Exception:
+        fragments = []
+
+    lowered = text.casefold()
+    ranked: list[tuple[int, int, str]] = []
+    for fragment in fragments:
+        candidate = _extract.clean(fragment)
+        if not candidate:
+            continue
+        position = lowered.find(candidate.casefold())
+        if position >= 0:
+            ranked.append((position, -len(candidate), candidate))
+    if ranked:
+        ranked.sort()
+        return ranked[0][2]
+    return text
+
+
+def _detail_date_line(
+    payload: dict[str, Any],
+    requested_url: str = "",
+) -> str:
+    """Return the current detail's date row, excluding child-programme aggregates."""
 
     rows: list[object] = []
     raw_dates = payload.get("dates")
@@ -145,6 +186,7 @@ def _detail_date_line(payload: dict[str, Any]) -> str:
         rows.extend(raw_dates)
     rows.extend(_detail_navigation._payload_lines(payload))
 
+    esplanade_series = bool(_ESPLANADE_SERIES_URL_RE.search(requested_url))
     seen: set[str] = set()
     for raw in rows:
         text = _extract.clean(raw)
@@ -155,22 +197,27 @@ def _detail_date_line(payload: dict[str, Any]) -> str:
             continue
         if _detail_navigation._label_key(text) in _detail_navigation._ALL_FIELD_LABELS:
             continue
-        if _line_dates(text):
-            return text
+        if not _line_dates(text):
+            continue
+        return _first_date_fragment(text) if esplanade_series else text
     return ""
 
 
-def _raw_when(payload: dict[str, Any]) -> str:
+def _raw_when(
+    payload: dict[str, Any],
+    requested_url: str = "",
+) -> str:
     """Use one exact date row, then append at most one opening-hours row."""
 
     base_picker = _BASE_RAW_WHEN or _detail_navigation._raw_when
     base = _extract.clean(base_picker(payload))
-    date_line = _detail_date_line(payload)
+    date_line = _detail_date_line(payload, requested_url)
     if not date_line:
         return ""
 
     # The generic base picker may concatenate every date-bearing row from the page,
-    # including recommendation cards. The first exact detail date row is authoritative.
+    # including recommendation cards and child programmes. The current page's first
+    # exact date range is authoritative.
     values = [date_line]
     if base and base != date_line and not _line_dates(base):
         values.append(base)
@@ -267,11 +314,15 @@ def _collect_document_facts(page: Any) -> dict[str, Any]:
         page.wait_for_timeout(150)
 
 
-def _payload_fields(page: Any, payload: dict[str, Any]) -> tuple[str, str, str, str]:
+def _payload_fields(
+    page: Any,
+    payload: dict[str, Any],
+    requested_url: str = "",
+) -> tuple[str, str, str, str]:
     """Read the effective fields already present in one primary detail payload."""
 
     title = _extract.clean(payload.get("title") or page.title() or "")
-    when = _raw_when(payload)
+    when = _raw_when(payload, requested_url)
     where = _detail_navigation._raw_where(payload)
     summary = _detail_navigation._raw_summary(payload)
     return title, when, where, summary
@@ -325,12 +376,16 @@ def _read_detail_page(
     payload = page.evaluate(_detail_navigation._browser.DETAIL_CARD_JS) or {}
     if not isinstance(payload, dict):
         payload = {}
-    title, when, where, summary = _payload_fields(page, payload)
+    title, when, where, summary = _payload_fields(page, payload, requested_url)
 
     if not all((title, when, where)):
         facts = _collect_document_facts(page)
         payload = _merge_document_facts(payload, facts)
-        title, when, where, summary = _payload_fields(page, payload)
+        title, when, where, summary = _payload_fields(
+            page,
+            payload,
+            requested_url,
+        )
 
     missing = [
         name
@@ -524,6 +579,7 @@ __all__ = [
     "_collect_document_facts",
     "_detail_date_line",
     "_expired",
+    "_first_date_fragment",
     "_merge_document_facts",
     "_payload_fields",
     "_raw_when",
