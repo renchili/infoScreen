@@ -262,7 +262,11 @@ def _merge_detail(source: dict[str, Any], card: dict[str, Any], payload: dict[st
         "canonical_url": canonical,
         "title": _extract.clean(payload.get("title")),
         "date_candidates": [_extract.clean(item) for item in payload.get("dates") or [] if _extract.clean(item)],
+        "time_candidates": [_extract.clean(item) for item in payload.get("times") or [] if _extract.clean(item)],
         "venue_candidates": [_extract.clean(item) for item in payload.get("venues") or [] if _extract.clean(item)],
+        "labeled_date_candidates": [_extract.clean(item) for item in payload.get("labeled_dates") or [] if _extract.clean(item)],
+        "labeled_time_candidates": [_extract.clean(item) for item in payload.get("labeled_times") or [] if _extract.clean(item)],
+        "labeled_venue_candidates": [_extract.clean(item) for item in payload.get("labeled_venues") or [] if _extract.clean(item)],
     }
     if events:
         event = dict(events[0])
@@ -270,7 +274,12 @@ def _merge_detail(source: dict[str, Any], card: dict[str, Any], payload: dict[st
         merged = _official_feeds.event_card(event, str(source.get("id") or "source"), index)
     else:
         title = evidence["title"] or _extract.clean(card.get("link_text"))
-        lines = [title, *evidence["date_candidates"], *evidence["venue_candidates"]]
+        lines = [
+            title,
+            *evidence["date_candidates"],
+            *evidence["time_candidates"],
+            *evidence["venue_candidates"],
+        ]
         summary = _extract.clean(payload.get("summary"))
         if summary:
             lines.append(summary)
@@ -291,6 +300,12 @@ def _merge_detail(source: dict[str, Any], card: dict[str, Any], payload: dict[st
         )
     for key in ("listing_evidence", "listing_url", "listing_card_id", "listing_extraction_mode"):
         merged[key] = card.get(key) or ""
+    merged["detail_dates"] = evidence["date_candidates"]
+    merged["detail_times"] = evidence["time_candidates"]
+    merged["detail_venues"] = evidence["venue_candidates"]
+    merged["detail_labeled_dates"] = evidence["labeled_date_candidates"]
+    merged["detail_labeled_times"] = evidence["labeled_time_candidates"]
+    merged["detail_labeled_venues"] = evidence["labeled_venue_candidates"]
     merged["detail_enriched"] = True
     merged["detail_evidence"] = evidence
     merged["screenshot"] = card.get("screenshot") or ""
