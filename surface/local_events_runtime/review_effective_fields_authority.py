@@ -53,7 +53,7 @@ DETAIL_STABLE_READY_JS = r"""
     .find(element => clean(element.innerText || element.textContent || ""));
   if (!root || !heading) return false;
   const text = clean(root.innerText || root.textContent || "");
-  return document.readyState === "complete" && text.length >= 120;
+  return document.readyState !== "loading" && text.length >= 120;
 }
 """
 
@@ -332,6 +332,16 @@ def _collect_document_facts(page: Any) -> dict[str, Any]:
         page.wait_for_timeout(150)
 
 
+def _document_facts_now(page: Any) -> dict[str, Any]:
+    """Read current DOM facts once without adding another per-candidate wait."""
+
+    try:
+        observed = page.evaluate(DETAIL_DOCUMENT_FACTS_JS) or {}
+    except Exception:
+        return {}
+    return observed if isinstance(observed, dict) else {}
+
+
 def _payload_fields(
     page: Any,
     payload: dict[str, Any],
@@ -396,8 +406,14 @@ def _read_detail_page(
     payload[_REQUESTED_URL_PAYLOAD_KEY] = requested_url
     title, when, where, summary = _payload_fields(page, payload)
 
-    if not all((title, when, where)):
+    if not title or not when:
         facts = _collect_document_facts(page)
+    elif not where:
+        facts = _document_facts_now(page)
+    else:
+        facts = {}
+
+    if facts:
         payload = _merge_document_facts(payload, facts)
         title, when, where, summary = _payload_fields(page, payload)
 
@@ -592,6 +608,7 @@ __all__ = [
     "state_payload",
     "_collect_document_facts",
     "_detail_date_line",
+    "_document_facts_now",
     "_expired",
     "_first_date_fragment",
     "_merge_document_facts",
