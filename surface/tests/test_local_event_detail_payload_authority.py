@@ -79,6 +79,76 @@ def test_acm_detail_payload_produces_date_venue_and_description() -> None:
     assert event["when"] != "30 Jun 2026"
 
 
+def test_gardens_labeled_fields_outrank_promotion_and_advisory() -> None:
+    source = {
+        "id": "gardensbythebay",
+        "name": "Gardens by the Bay",
+        "default_venue": "Gardens by the Bay",
+    }
+    detail_url = (
+        "https://www.gardensbythebay.com.sg/en/things-to-do/calendar-of-events/"
+        "orchid-extravaganza-2026.html"
+    )
+    listing_url = (
+        "https://www.gardensbythebay.com.sg/en/things-to-do/calendar-of-events.html"
+    )
+    card = {
+        "id": "gardens-orchid-extravaganza",
+        "url": detail_url,
+        "headings": ["Orchid Extravaganza"],
+        "link_text": "Orchid Extravaganza",
+        "text": "Orchid Extravaganza",
+        "text_lines": ["Orchid Extravaganza"],
+        "extraction_mode": "detail_link",
+        "listing_evidence": LISTING_EVIDENCE,
+        "listing_url": listing_url,
+        "listing_card_id": "gardens-orchid-extravaganza",
+    }
+    activity_date = "Fri, 3 Jul - Mon, 10 Aug 2026"
+    activity_time = "9.00am - 9.00pm"
+    promotion = (
+        "Visit Flower Dome from 3 Jul to 10 Aug 2026, scan the QR code and "
+        "answer a simple question for a chance to win."
+    )
+    advisory = "Advisory for use of tripods at Disney Garden of Wonder"
+    summary = (
+        "Discover orchids presented through the rich cultures and landscapes "
+        "of Indonesia in this special floral display."
+    )
+    payload = {
+        "title": "Orchid Extravaganza",
+        "dates": [activity_date, promotion],
+        "times": [activity_time],
+        "venues": ["Flower Dome", advisory],
+        "summary": summary,
+        "summary_candidates": [summary],
+        "lines": [
+            "Orchid Extravaganza",
+            "Opening Hours",
+            activity_date,
+            activity_time,
+            "Location",
+            "Flower Dome",
+            promotion,
+            advisory,
+        ],
+        "headings": ["Orchid Extravaganza"],
+        "image_alts": [],
+        "eventObjects": [],
+        "canonical": detail_url,
+    }
+
+    merged = authority.merge_detail_payload(card, payload)
+    event, reason = extract.event_from_card(source, merged)
+
+    assert reason == "accepted"
+    assert event is not None
+    assert event["when"] == f"{activity_date} · {activity_time}"
+    assert event["where"] == "Flower Dome"
+    assert promotion not in event["when"]
+    assert advisory not in event["where"]
+
+
 def test_site_metadata_cta_is_not_an_event_summary() -> None:
     cta = "Visit Asian Civilisations Museum today BOOK YOUR TICKET NOW"
     narrative = (
@@ -194,7 +264,15 @@ def test_detail_dom_extractor_reads_structural_fields_and_rejects_metadata_cta()
     assert "visit\\s+.{0,100}?\\s+today" in script
     assert "(0, 100)" not in script
     assert 'add(lines, "date")' in script
+    assert 'add(lines, "time")' in script
     assert 'add(lines, "location")' in script
+    assert "opening\\s+hours?" in script
+    assert "labeleddates" in script
+    assert "labeledtimes" in script
+    assert "labeledvenues" in script
+    assert "dates: ordereddates" in script
+    assert "times: orderedtimes" in script
+    assert "venues: orderedvenues" in script
 
 
 def test_detail_payload_authority_is_applied_before_final_review_binding() -> None:

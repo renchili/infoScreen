@@ -17,6 +17,13 @@ NOTICE = (
 )
 ACTIVITY_DATE = "1 - 24 May 2026 (except Mondays)"
 ACTIVITY_TIME = "9am - 10.45am | 11am - 12.45pm | 2pm - 3.45pm | 4pm - 5.45pm"
+GARDENS_DATE = "Fri, 3 Jul - Mon, 10 Aug 2026"
+GARDENS_TIME = "9.00am - 9.00pm"
+GARDENS_PROMOTION = (
+    "Visit Flower Dome from 3 Jul to 10 Aug 2026, scan the QR code and "
+    "answer a simple question for a chance to win."
+)
+GARDENS_ADVISORY = "Advisory for use of tripods at Disney Garden of Wonder"
 
 
 def _payload() -> dict:
@@ -52,6 +59,34 @@ def test_when_uses_activity_date_and_hours_not_notice(monkeypatch) -> None:
     assert when == f"{ACTIVITY_DATE} · {ACTIVITY_TIME}"
     assert "private programme" not in when
     assert "closed on" not in when
+
+
+def test_gardens_preview_uses_opening_hours_not_promotion(monkeypatch) -> None:
+    payload = {
+        "dates": [GARDENS_DATE, GARDENS_PROMOTION],
+        "times": [GARDENS_TIME],
+        "venues": ["Flower Dome", GARDENS_ADVISORY],
+        "lines": [
+            "Orchid Extravaganza",
+            "Date",
+            GARDENS_DATE,
+            GARDENS_PROMOTION,
+            "Time",
+            GARDENS_TIME,
+            "Location",
+            "Flower Dome",
+            GARDENS_ADVISORY,
+        ],
+    }
+    monkeypatch.setattr(
+        effective,
+        "_BASE_RAW_WHEN",
+        lambda value: f"{GARDENS_PROMOTION} · {GARDENS_TIME}",
+    )
+
+    assert authority._detail_date_line(payload) == GARDENS_DATE
+    assert authority._raw_when(payload) == f"{GARDENS_DATE} · {GARDENS_TIME}"
+    assert navigation._raw_where(payload) == "Flower Dome"
 
 
 def test_apply_rebinds_final_detail_date_owners(monkeypatch) -> None:

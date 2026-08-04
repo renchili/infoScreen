@@ -49,6 +49,7 @@ ENRICHED_DETAIL_JS = rf"""
   }};
   const rejected = value => /\b(last updated|updated on|page updated|copyright|privacy|cookie|newsletter|previous programme|next programme|previous event|next event|presale|ticket sale|registration opens?)\b/i.test(clean(value));
   const dateLike = value => /\b20\d{{2}}-\d{{1,2}}-\d{{1,2}}\b|\b\d{{1,2}}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+20\d{{2}}\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{{1,2}}(?:st|nd|rd|th)?(?:,)?\s+20\d{{2}}\b/i.test(clean(value));
+  const timeLike = value => /\b\d{{1,2}}(?:[.:]\d{{2}})?\s*(?:am|pm)\s*[-–—]\s*\d{{1,2}}(?:[.:]\d{{2}})?\s*(?:am|pm)\b/i.test(clean(value));
   const summaryCta = value => /\b(book\s+(?:your\s+)?tickets?|buy\s+tickets?|book\s+now|visit\s+.{{0,100}}?\s+today|plan\s+your\s+visit|find\s+out\s+more|learn\s+more|read\s+more|explore\s+more|register\s+now|sign\s+up|get\s+your\s+tickets?|ticket\s+information)\b/i.test(clean(value));
   const shellText = value => /\b(privacy|cookie|newsletter|copyright|breadcrumb|navigation|previous\s+(?:event|programme)|next\s+(?:event|programme))\b/i.test(clean(value));
   const add = (rows, value) => {{
@@ -90,7 +91,11 @@ ENRICHED_DETAIL_JS = rf"""
   }};
 
   const dates = [...(Array.isArray(base.dates) ? base.dates : [])];
+  const times = [...(Array.isArray(base.times) ? base.times : [])];
   const venues = [...(Array.isArray(base.venues) ? base.venues : [])];
+  const labeledDates = [];
+  const labeledTimes = [];
+  const labeledVenues = [];
 
   const dateSelectors = [
     "time[datetime]", "time", "[itemprop='startDate']", "[itemprop='endDate']",
@@ -122,29 +127,62 @@ ENRICHED_DETAIL_JS = rf"""
     if (value && value.length <= 220 && !dateLike(value)) add(venues, value);
   }}
 
-  const labels = Array.from(document.querySelectorAll("main *, article *")).filter(visible);
+  const labelHeading = Array.from(document.querySelectorAll("main h1, article h1, h1"))
+    .find(visible) || null;
+  const labelRoot = labelHeading && labelHeading.closest(
+    "article, [class*='event-detail' i], [class*='eventDetail' i], " +
+    "[class*='detail-page' i], [class*='content-detail' i], main"
+  ) || document.querySelector("main") || document.querySelector("article") || document.body;
+  const labelElements = Array.from(labelRoot ? labelRoot.querySelectorAll("*") : []);
+  const labelHeadingIndex = labelHeading ? labelElements.indexOf(labelHeading) : -1;
+  const labels = labelElements.slice(labelHeadingIndex + 1).filter(visible);
   for (const label of labels) {{
     const name = ownText(label);
-    const isDate = /^(?:event\s+)?(?:date|dates|when)\s*:?$/i.test(name);
+    const isSchedule = /^(?:opening\s+hours?|hours?)\s*:?$/i.test(name);
+    const isDate = isSchedule || /^(?:event\s+)?(?:date|dates|when)\s*:?$/i.test(name);
+    const isTime = isSchedule || /^(?:event\s+)?(?:time|times)\s*:?$/i.test(name);
     const isVenue = /^(?:location|venue|where)\s*:?$/i.test(name);
-    if (!isDate && !isVenue) continue;
+    if (!isDate && !isTime && !isVenue) continue;
 
     const candidates = [];
+    let foundVenue = false;
     if (label.nextElementSibling) candidates.push(label.nextElementSibling);
     const parent = label.parentElement;
     if (parent) {{
       const children = Array.from(parent.children || []);
       const index = children.indexOf(label);
-      candidates.push(...children.slice(index + 1, index + 4));
+      candidates.push(...children.slice(index + 1, index + 5));
     }}
     for (const candidate of candidates) {{
       if (!visible(candidate) || contextRejected(candidate)) continue;
-      const value = fieldValue(candidate);
-      if (!value) continue;
-      if (isDate && dateLike(value)) {{ add(dates, value); break; }}
-      if (isVenue && !dateLike(value) && value.length <= 220) {{ add(venues, value); break; }}
+      const candidateName = ownText(candidate);
+      if (/^(?:(?:event\s+)?(?:date|dates|when|time|times)|opening\s+hours?|hours?|location|venue|where)\s*:?$/i.test(candidateName)) break;
+      const rows = String(candidate.innerText || candidate.textContent || "")
+        .split(/\n+/).map(clean).filter(Boolean);
+      if (!rows.length) rows.push(fieldValue(candidate));
+      for (const value of rows) {{
+        if (!value) continue;
+        if (isDate && dateLike(value)) add(labeledDates, value);
+        if (isTime && timeLike(value)) add(labeledTimes, value);
+        if (isVenue && !dateLike(value) && !timeLike(value) && value.length <= 220) {{
+          add(labeledVenues, value);
+          foundVenue = true;
+          break;
+        }}
+      }}
+      if (foundVenue) break;
     }}
   }}
+
+  const orderedDates = [];
+  labeledDates.forEach(value => add(orderedDates, value));
+  dates.forEach(value => add(orderedDates, value));
+  const orderedTimes = [];
+  labeledTimes.forEach(value => add(orderedTimes, value));
+  times.forEach(value => add(orderedTimes, value));
+  const orderedVenues = [];
+  labeledVenues.forEach(value => add(orderedVenues, value));
+  venues.forEach(value => add(orderedVenues, value));
 
   const title = clean(base.title);
   const primaryHeading = Array.from(document.querySelectorAll("main h1, article h1, h1"))
@@ -203,17 +241,20 @@ ENRICHED_DETAIL_JS = rf"""
     : (Array.isArray(base.text_lines) ? base.text_lines : []);
   const lines = [];
   add(lines, title);
-  if (dates.length) add(lines, "Date");
-  dates.forEach(value => add(lines, value));
-  if (venues.length) add(lines, "Location");
-  venues.forEach(value => add(lines, value));
+  if (orderedDates.length) add(lines, "Date");
+  orderedDates.forEach(value => add(lines, value));
+  if (orderedTimes.length) add(lines, "Time");
+  orderedTimes.forEach(value => add(lines, value));
+  if (orderedVenues.length) add(lines, "Location");
+  orderedVenues.forEach(value => add(lines, value));
   add(lines, summary);
   originalLines.forEach(value => add(lines, value));
 
   return {{
     ...base,
-    dates,
-    venues,
+    dates: orderedDates,
+    times: orderedTimes,
+    venues: orderedVenues,
     summary,
     summary_candidates: summaryCandidates,
     lines,
@@ -284,14 +325,22 @@ def _authoritative_when(card: dict[str, Any]) -> str:
             if item not in all_dates:
                 all_dates.append(item)
 
+    selected = ""
     ranges = [item for item in dated if len(item[1]) >= 2]
     if ranges:
         ranges.sort(key=lambda item: (-len(item[1]), len(item[0])))
-        return ranges[0][0]
-    if len(all_dates) >= 2:
+        selected = ranges[0][0]
+    elif len(all_dates) >= 2:
         start, end = min(all_dates), max(all_dates)
-        return f"{_format_date(start)} – {_format_date(end)}"
-    return dated[0][0] if dated else ""
+        selected = f"{_format_date(start)} – {_format_date(end)}"
+    elif dated:
+        selected = dated[0][0]
+
+    times = _detail_rows(card, "detail_times", "time_candidates")
+    time = next((value for value in times if _extract.TIME_RE.search(value)), "")
+    if selected and time and time not in selected:
+        return f"{selected} · {time}"
+    return selected
 
 
 def _authoritative_venue(card: dict[str, Any]) -> str:
@@ -372,6 +421,7 @@ def merge_detail_payload(
     merged = dict(card)
     title = " ".join(str(detail.get("title") or "").split())
     dates = _clean_rows(detail.get("dates"))
+    times = _clean_rows(detail.get("times"))
     venues = _clean_rows(detail.get("venues"))
     summary_candidates = _clean_rows(detail.get("summary_candidates"))
     summary = useful_event_summary(detail.get("summary"))
@@ -394,6 +444,8 @@ def merge_detail_payload(
     field_values = [title]
     if dates:
         field_values.extend(["Date", *dates])
+    if times:
+        field_values.extend(["Time", *times])
     if venues:
         field_values.extend(["Location", *venues])
     field_values.extend([summary, *detail_lines])
@@ -422,6 +474,7 @@ def merge_detail_payload(
         merged["image_alts"] = image_alts
 
     merged["detail_dates"] = dates
+    merged["detail_times"] = times
     merged["detail_venues"] = venues
     merged["detail_summary"] = summary
     merged["detail_summary_candidates"] = summary_candidates

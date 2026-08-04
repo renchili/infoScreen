@@ -72,18 +72,14 @@ def _raw_when(payload: dict[str, Any]) -> str:
     if not date_line:
         return ""
 
-    values: list[str]
-    if base and not _operational_notice(base) and _effective._line_dates(base):
-        values = [base]
-    else:
-        values = [date_line]
-        if (
-            base
-            and base != date_line
-            and not _operational_notice(base)
-            and not _effective._line_dates(base)
-        ):
-            values.append(base)
+    values = [date_line]
+    if (
+        base
+        and base != date_line
+        and not _operational_notice(base)
+        and not _effective._line_dates(base)
+    ):
+        values.append(base)
 
     already_has_time = any(
         _navigation._UNLABELLED_TIME_RE.search(value)

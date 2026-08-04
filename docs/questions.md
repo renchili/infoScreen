@@ -102,15 +102,15 @@ Correct official Event lists may show only an image, title, category, and detail
 
 ### Correct requirement interpretation
 
-The official list proves membership. Date and venue can be obtained after admission by following the card’s official detail link.
+The official list proves membership. Date and venue can be obtained after admission by following the card’s official detail link. Explicit detail labels such as `Opening Hours`, `Date`, `Time`, and `Location` outrank unlabeled date/venue matches elsewhere in the same document.
 
 ### Required implementation
 
-Do not require a list-card date. Preserve listing evidence, follow the detail URL, and show exact detail status/errors.
+Do not require a list-card date. Preserve listing evidence, follow the detail URL, keep labeled schedule/location values ahead of generic selector candidates, and show exact detail status/errors.
 
 ### Acceptance evidence
 
-A date-less list card with one official detail link must be admitted and enriched from its detail page.
+A date-less list card with one official detail link must be admitted and enriched from its detail page. A fixture containing an explicit activity schedule/location plus promotional dates and advisory copy must return only the labeled activity fields.
 
 ## Local Events manual correct-list-page entry
 
