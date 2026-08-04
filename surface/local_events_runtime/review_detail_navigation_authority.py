@@ -151,8 +151,8 @@ WAIT_FOR_NAVIGATION_JS = r"""
 """
 
 _FIELD_LABELS = {
-    "date": {"date", "dates", "when"},
-    "time": {"time", "times", "duration"},
+    "date": {"date", "dates", "when", "date & time", "date and time"},
+    "time": {"time", "times", "duration", "date & time", "date and time"},
     "where": {"location", "venue", "where"},
 }
 _ALL_FIELD_LABELS = set().union(*_FIELD_LABELS.values(), {"admission", "ticket", "tickets"})
@@ -279,6 +279,11 @@ def _unlabelled_venue_line(lines: list[str]) -> str:
 def _raw_when(payload: dict[str, Any]) -> str:
     """Return exact collected Date/Time/Duration text without reconstruction."""
 
+    labeled_dates = _clean_rows(payload.get("labeled_dates"))
+    labeled_times = _clean_rows(payload.get("labeled_times"))
+    if labeled_dates or labeled_times:
+        return " · ".join([*labeled_dates, *labeled_times])
+
     lines = _payload_lines(payload)
     date_rows = _labeled_values(lines, _FIELD_LABELS["date"])
     time_rows = _labeled_values(lines, _FIELD_LABELS["time"])
@@ -299,6 +304,10 @@ def _raw_when(payload: dict[str, Any]) -> str:
 
 def _raw_where(payload: dict[str, Any]) -> str:
     """Return an exact collected Location/Venue row; never use a source default."""
+
+    labeled_venues = _clean_rows(payload.get("labeled_venues"))
+    if labeled_venues:
+        return labeled_venues[0]
 
     lines = _payload_lines(payload)
     rows = _labeled_values(lines, _FIELD_LABELS["where"])
