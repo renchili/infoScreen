@@ -181,7 +181,7 @@ _UNLABELLED_VENUE_RE = re.compile(
 )
 _UNLABELLED_VENUE_NOISE_RE = re.compile(
     r"^(?:visit|explore|experience|discover|join|learn|see|walk|programme|"
-    r"programmes|admission|ticket|tickets|book)\b",
+    r"programmes|admission|ticket|tickets|book|advisory|closure|construction)\b",
     re.I,
 )
 
