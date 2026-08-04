@@ -29,6 +29,20 @@ _ESPLANADE_SERIES_URL_RE = re.compile(
     re.I,
 )
 _DATE_SEGMENT_SEPARATOR_RE = re.compile(r"\s+(?:·|•|\|)\s+")
+_MONTH_NAME_PATTERN = (
+    r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|"
+    r"Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|"
+    r"Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
+)
+_ESPLANADE_FIRST_RANGE_RE = re.compile(
+    rf"\b(?:"
+    rf"\d{{1,2}}(?:st|nd|rd|th)?\s*[-–—]\s*"
+    rf"\d{{1,2}}(?:st|nd|rd|th)?\s+{_MONTH_NAME_PATTERN}\s+20\d{{2}}"
+    rf"|\d{{1,2}}(?:st|nd|rd|th)?\s+{_MONTH_NAME_PATTERN}\s*[-–—]\s*"
+    rf"\d{{1,2}}(?:st|nd|rd|th)?\s+{_MONTH_NAME_PATTERN}\s+20\d{{2}}"
+    rf")\b",
+    re.I,
+)
 
 DETAIL_STABLE_READY_JS = r"""
 () => {
@@ -145,11 +159,15 @@ def _line_dates(value: object) -> list[Any]:
 
 
 def _first_date_fragment(value: str) -> str:
-    """Return the earliest complete date fragment from one aggregate text row."""
+    """Return the first explicit range from one Esplanade series aggregate row."""
 
     text = _extract.clean(value)
     if not text:
         return ""
+
+    explicit_range = _ESPLANADE_FIRST_RANGE_RE.search(text)
+    if explicit_range:
+        return _extract.clean(explicit_range.group(0))
 
     for segment in _DATE_SEGMENT_SEPARATOR_RE.split(text):
         candidate = _extract.clean(segment)
