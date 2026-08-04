@@ -149,6 +149,80 @@ def test_gardens_labeled_fields_outrank_promotion_and_advisory() -> None:
     assert advisory not in event["where"]
 
 
+def test_formula_one_combined_label_outranks_sitewide_announcements() -> None:
+    source = {
+        "id": "gardensbythebay",
+        "name": "Gardens by the Bay",
+        "default_venue": "Gardens by the Bay",
+    }
+    detail_url = (
+        "https://www.gardensbythebay.com.sg/en/things-to-do/calendar-of-events/"
+        "formula-1-exhibition-singapore.html"
+    )
+    card = {
+        "id": "gardens-formula-one-exhibition",
+        "url": detail_url,
+        "headings": ["Formula 1® Exhibition Singapore"],
+        "link_text": "Formula 1® Exhibition Singapore",
+        "text": "Formula 1® Exhibition Singapore",
+        "text_lines": ["Formula 1® Exhibition Singapore"],
+        "extraction_mode": "detail_link",
+        "listing_evidence": LISTING_EVIDENCE,
+        "listing_url": (
+            "https://www.gardensbythebay.com.sg/en/things-to-do/"
+            "calendar-of-events.html"
+        ),
+        "listing_card_id": "gardens-formula-one-exhibition",
+    }
+    activity_date = "Thu, 23 Jul - Sun, 18 Oct 2026"
+    activity_time = "11.00am - 7.00pm"
+    activity_venue = "Gardens by the Bay MRT Plaza"
+    construction = "Bay South–Bay East Bridge Construction from 4 May 2026"
+    advisory = (
+        "Advisory for use of tripods at Disney Garden of Wonder at Floral Fantasy"
+    )
+    summary = (
+        "For the first time, Asia welcomes the award-winning Formula 1 Exhibition "
+        "for an immersive journey into the world's fastest sport."
+    )
+    payload = {
+        "title": "Formula 1® Exhibition Singapore",
+        "dates": [construction, activity_date],
+        "times": [activity_time],
+        "venues": [advisory, activity_venue],
+        "labeled_dates": [activity_date],
+        "labeled_times": [activity_time],
+        "labeled_venues": [activity_venue],
+        "summary": summary,
+        "summary_candidates": [summary],
+        "lines": [
+            "Formula 1® Exhibition Singapore",
+            "Date & Time",
+            activity_date,
+            activity_time,
+            "Location",
+            activity_venue,
+        ],
+        "headings": ["Formula 1® Exhibition Singapore"],
+        "image_alts": [],
+        "eventObjects": [],
+        "canonical": detail_url,
+    }
+
+    merged = authority.merge_detail_payload(card, payload)
+    event, reason = extract.event_from_card(source, merged)
+
+    assert merged["detail_labeled_dates"] == [activity_date]
+    assert merged["detail_labeled_times"] == [activity_time]
+    assert merged["detail_labeled_venues"] == [activity_venue]
+    assert reason == "accepted"
+    assert event is not None
+    assert event["when"] == f"{activity_date} · {activity_time}"
+    assert event["where"] == activity_venue
+    assert construction not in event["when"]
+    assert advisory not in event["where"]
+
+
 def test_site_metadata_cta_is_not_an_event_summary() -> None:
     cta = "Visit Asian Civilisations Museum today BOOK YOUR TICKET NOW"
     narrative = (
@@ -267,12 +341,18 @@ def test_detail_dom_extractor_reads_structural_fields_and_rejects_metadata_cta()
     assert 'add(lines, "time")' in script
     assert 'add(lines, "location")' in script
     assert "opening\\s+hours?" in script
+    assert "date\\s*(?:&|and)\\s*time" in script
+    assert 'labelheading.closest("main")' in script
+    assert "labelboundaryindex" in script
     assert "labeleddates" in script
     assert "labeledtimes" in script
     assert "labeledvenues" in script
     assert "dates: ordereddates" in script
     assert "times: orderedtimes" in script
     assert "venues: orderedvenues" in script
+    assert "labeled_dates: labeleddates" in script
+    assert "labeled_times: labeledtimes" in script
+    assert "labeled_venues: labeledvenues" in script
 
 
 def test_detail_payload_authority_is_applied_before_final_review_binding() -> None:
