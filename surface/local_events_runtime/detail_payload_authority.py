@@ -129,18 +129,30 @@ ENRICHED_DETAIL_JS = rf"""
 
   const labelHeading = Array.from(document.querySelectorAll("main h1, article h1, h1"))
     .find(visible) || null;
-  const labelRoot = labelHeading && labelHeading.closest(
-    "article, [class*='event-detail' i], [class*='eventDetail' i], " +
-    "[class*='detail-page' i], [class*='content-detail' i], main"
-  ) || document.querySelector("main") || document.querySelector("article") || document.body;
+  const labelRoot = (labelHeading && labelHeading.closest("main")) ||
+    document.querySelector("main") ||
+    (labelHeading && labelHeading.closest("article")) ||
+    document.querySelector("article") ||
+    document.body;
   const labelElements = Array.from(labelRoot ? labelRoot.querySelectorAll("*") : []);
   const labelHeadingIndex = labelHeading ? labelElements.indexOf(labelHeading) : -1;
-  const labels = labelElements.slice(labelHeadingIndex + 1).filter(visible);
+  const detailTail = labelElements.slice(labelHeadingIndex + 1);
+  const labelBoundaryIndex = detailTail.findIndex(element =>
+    visible(element) &&
+    /^(?:(?:other|related)\s+events?|you\s+may\s+also\s+like)$/i.test(ownText(element))
+  );
+  const labels = (labelBoundaryIndex >= 0
+    ? detailTail.slice(0, labelBoundaryIndex)
+    : detailTail
+  ).filter(visible);
   for (const label of labels) {{
     const name = ownText(label);
     const isSchedule = /^(?:opening\s+hours?|hours?)\s*:?$/i.test(name);
-    const isDate = isSchedule || /^(?:event\s+)?(?:date|dates|when)\s*:?$/i.test(name);
-    const isTime = isSchedule || /^(?:event\s+)?(?:time|times)\s*:?$/i.test(name);
+    const isCombinedSchedule = /^(?:event\s+)?date\s*(?:&|and)\s*time\s*:?$/i.test(name);
+    const isDate = isSchedule || isCombinedSchedule ||
+      /^(?:event\s+)?(?:date|dates|when)\s*:?$/i.test(name);
+    const isTime = isSchedule || isCombinedSchedule ||
+      /^(?:event\s+)?(?:time|times)\s*:?$/i.test(name);
     const isVenue = /^(?:location|venue|where)\s*:?$/i.test(name);
     if (!isDate && !isTime && !isVenue) continue;
 
@@ -156,7 +168,7 @@ ENRICHED_DETAIL_JS = rf"""
     for (const candidate of candidates) {{
       if (!visible(candidate) || contextRejected(candidate)) continue;
       const candidateName = ownText(candidate);
-      if (/^(?:(?:event\s+)?(?:date|dates|when|time|times)|opening\s+hours?|hours?|location|venue|where)\s*:?$/i.test(candidateName)) break;
+      if (/^(?:(?:event\s+)?(?:date|dates|when|time|times|date\s*(?:&|and)\s*time)|opening\s+hours?|hours?|location|venue|where)\s*:?$/i.test(candidateName)) break;
       const rows = String(candidate.innerText || candidate.textContent || "")
         .split(/\n+/).map(clean).filter(Boolean);
       if (!rows.length) rows.push(fieldValue(candidate));
@@ -255,6 +267,9 @@ ENRICHED_DETAIL_JS = rf"""
     dates: orderedDates,
     times: orderedTimes,
     venues: orderedVenues,
+    labeled_dates: labeledDates,
+    labeled_times: labeledTimes,
+    labeled_venues: labeledVenues,
     summary,
     summary_candidates: summaryCandidates,
     lines,
@@ -310,7 +325,9 @@ def _format_date(value: date) -> str:
 
 
 def _authoritative_when(card: dict[str, Any]) -> str:
-    rows = _detail_rows(card, "detail_dates", "date_candidates")
+    rows = _clean_rows(card.get("detail_labeled_dates"))
+    if not rows:
+        rows = _detail_rows(card, "detail_dates", "date_candidates")
     if not rows:
         return ""
 
@@ -336,7 +353,9 @@ def _authoritative_when(card: dict[str, Any]) -> str:
     elif dated:
         selected = dated[0][0]
 
-    times = _detail_rows(card, "detail_times", "time_candidates")
+    times = _clean_rows(card.get("detail_labeled_times"))
+    if not times:
+        times = _detail_rows(card, "detail_times", "time_candidates")
     time = next((value for value in times if _extract.TIME_RE.search(value)), "")
     if selected and time and time not in selected:
         return f"{selected} · {time}"
@@ -344,7 +363,9 @@ def _authoritative_when(card: dict[str, Any]) -> str:
 
 
 def _authoritative_venue(card: dict[str, Any]) -> str:
-    rows = _detail_rows(card, "detail_venues", "venue_candidates")
+    rows = _clean_rows(card.get("detail_labeled_venues"))
+    if not rows:
+        rows = _detail_rows(card, "detail_venues", "venue_candidates")
     valid = [
         row
         for row in rows
@@ -423,6 +444,12 @@ def merge_detail_payload(
     dates = _clean_rows(detail.get("dates"))
     times = _clean_rows(detail.get("times"))
     venues = _clean_rows(detail.get("venues"))
+    labeled_dates = _clean_rows(detail.get("labeled_dates"))
+    labeled_times = _clean_rows(detail.get("labeled_times"))
+    labeled_venues = _clean_rows(detail.get("labeled_venues"))
+    dates = [*labeled_dates, *(value for value in dates if value not in labeled_dates)]
+    times = [*labeled_times, *(value for value in times if value not in labeled_times)]
+    venues = [*labeled_venues, *(value for value in venues if value not in labeled_venues)]
     summary_candidates = _clean_rows(detail.get("summary_candidates"))
     summary = useful_event_summary(detail.get("summary"))
     if summary and summary not in summary_candidates:
@@ -476,6 +503,9 @@ def merge_detail_payload(
     merged["detail_dates"] = dates
     merged["detail_times"] = times
     merged["detail_venues"] = venues
+    merged["detail_labeled_dates"] = labeled_dates
+    merged["detail_labeled_times"] = labeled_times
+    merged["detail_labeled_venues"] = labeled_venues
     merged["detail_summary"] = summary
     merged["detail_summary_candidates"] = summary_candidates
     merged["detail_event_objects"] = detail.get("eventObjects") or []
