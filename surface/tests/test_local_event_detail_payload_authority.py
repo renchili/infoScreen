@@ -10,6 +10,7 @@ sys.path.insert(0, str(SURFACE))
 from local_events_runtime import detail_payload_authority as authority  # noqa: E402
 from local_events_runtime import extract  # noqa: E402
 from local_events_runtime import review_detail_navigation_authority as navigation  # noqa: E402
+from local_events_runtime import source_overrides  # noqa: E402
 from local_events_runtime.source_overrides import LISTING_EVIDENCE  # noqa: E402
 
 
@@ -154,6 +155,7 @@ def test_formula_one_combined_label_outranks_sitewide_announcements() -> None:
         "id": "gardensbythebay",
         "name": "Gardens by the Bay",
         "default_venue": "Gardens by the Bay",
+        "allowed_domains": ["gardensbythebay.com.sg"],
     }
     detail_url = (
         "https://www.gardensbythebay.com.sg/en/things-to-do/calendar-of-events/"
@@ -221,6 +223,19 @@ def test_formula_one_combined_label_outranks_sitewide_announcements() -> None:
     assert event["where"] == activity_venue
     assert construction not in event["when"]
     assert advisory not in event["where"]
+
+    formal = source_overrides._merge_detail(source, card, payload, 0)
+    formal_event, formal_reason = extract.event_from_card(source, formal)
+
+    assert formal["detail_labeled_dates"] == [activity_date]
+    assert formal["detail_labeled_times"] == [activity_time]
+    assert formal["detail_labeled_venues"] == [activity_venue]
+    assert formal_reason == "accepted"
+    assert formal_event is not None
+    assert formal_event["when"] == f"{activity_date} · {activity_time}"
+    assert formal_event["where"] == activity_venue
+    assert construction not in formal_event["when"]
+    assert advisory not in formal_event["where"]
 
 
 def test_site_metadata_cta_is_not_an_event_summary() -> None:
