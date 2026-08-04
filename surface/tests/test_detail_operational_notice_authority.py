@@ -24,6 +24,13 @@ GARDENS_PROMOTION = (
     "answer a simple question for a chance to win."
 )
 GARDENS_ADVISORY = "Advisory for use of tripods at Disney Garden of Wonder"
+FORMULA_DATE = "Thu, 23 Jul - Sun, 18 Oct 2026"
+FORMULA_TIME = "11.00am - 7.00pm"
+FORMULA_VENUE = "Gardens by the Bay MRT Plaza"
+FORMULA_CONSTRUCTION = "Bay South–Bay East Bridge Construction from 4 May 2026"
+FORMULA_ADVISORY = (
+    "Advisory for use of tripods at Disney Garden of Wonder at Floral Fantasy"
+)
 
 
 def _payload() -> dict:
@@ -87,6 +94,48 @@ def test_gardens_preview_uses_opening_hours_not_promotion(monkeypatch) -> None:
     assert authority._detail_date_line(payload) == GARDENS_DATE
     assert authority._raw_when(payload) == f"{GARDENS_DATE} · {GARDENS_TIME}"
     assert navigation._raw_where(payload) == "Flower Dome"
+
+
+def test_formula_preview_uses_date_time_and_location_labels(monkeypatch) -> None:
+    payload = {
+        "dates": [FORMULA_CONSTRUCTION, FORMULA_DATE],
+        "times": [FORMULA_TIME],
+        "venues": [FORMULA_ADVISORY, FORMULA_VENUE],
+        "labeled_dates": [FORMULA_DATE],
+        "labeled_times": [FORMULA_TIME],
+        "labeled_venues": [FORMULA_VENUE],
+        "lines": [
+            "Formula 1® Exhibition Singapore",
+            "Date & Time",
+            FORMULA_DATE,
+            FORMULA_TIME,
+            "Location",
+            FORMULA_VENUE,
+        ],
+    }
+    monkeypatch.setattr(
+        effective,
+        "_BASE_RAW_WHEN",
+        lambda value: FORMULA_CONSTRUCTION,
+    )
+
+    assert authority._operational_notice(FORMULA_CONSTRUCTION)
+    assert authority._detail_date_line(payload) == FORMULA_DATE
+    assert authority._raw_when(payload) == f"{FORMULA_DATE} · {FORMULA_TIME}"
+    assert navigation._raw_where(payload) == FORMULA_VENUE
+
+
+def test_unlabelled_advisory_is_not_a_venue() -> None:
+    payload = {
+        "venues": [FORMULA_ADVISORY, FORMULA_VENUE],
+        "lines": [
+            "Formula 1® Exhibition Singapore",
+            FORMULA_ADVISORY,
+            FORMULA_VENUE,
+        ],
+    }
+
+    assert navigation._raw_where(payload) == FORMULA_VENUE
 
 
 def test_apply_rebinds_final_detail_date_owners(monkeypatch) -> None:
