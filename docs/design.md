@@ -118,7 +118,7 @@ Positive Event intent means membership in the correct official activity list. A 
 
 ### 6.5 Detail-page authority
 
-A correct listing card may omit date and venue. After admission, the collector follows only that card’s official detail URL. Within that detail document, values attached to explicit activity labels such as `Opening Hours`, `Date`, `Time`, and `Location` retain provenance and take priority over unlabeled selector matches. Promotional date ranges, closure notices, and advisory text may remain evidence, but must not be promoted ahead of the labeled activity schedule or venue. Detail failure does not erase the list evidence; review candidates remain visible with exact detail status/error.
+A correct listing card may omit date and venue. After admission, the collector follows only that card’s official detail URL. Within that detail document, values attached to explicit activity labels such as `Opening Hours`, `Date & Time`, `Date`, `Time`, and `Location` retain separate provenance through final field selection and take priority over unlabeled selector matches. Label scanning begins at the primary activity heading in the main document and stops before related/other Event sections, so site-wide construction, closure, and advisory notices before the activity cannot become its schedule or venue. Promotional date ranges and other generic matches may remain evidence, but must not be promoted ahead of the labeled activity fields. Detail failure does not erase the list evidence; review candidates remain visible with exact detail status/error.
 
 ## 7. Operator review state and kiosk projection
 
