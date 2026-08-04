@@ -75,7 +75,7 @@ def _label(day: date) -> str:
     return day.strftime("%-d %b %Y")
 
 
-def test_final_preview_excludes_events_whose_end_date_has_passed() -> None:
+def test_final_preview_retains_ended_events_for_operator_review() -> None:
     expired_end = date.today() - timedelta(days=10)
     future_end = date.today() + timedelta(days=10)
     state = ReviewState(
@@ -83,20 +83,26 @@ def test_final_preview_excludes_events_whose_end_date_has_passed() -> None:
             _candidate("Expired activity", _label(expired_end)),
             _candidate("Current activity", _label(future_end)),
         ],
-        event_collection={"candidate_count": 2},
+        event_collection={
+            "candidate_count": 1,
+            "expired_candidate_count": 1,
+        },
     )
 
-    result = authority._filter_expired_preview_events(state)
+    result = authority._retain_expired_preview_events(state)
 
-    assert [row.title for row in result.events] == ["Current activity"]
-    assert result.event_collection["candidate_count"] == 1
-    assert result.event_collection["expired_candidate_count"] == 1
+    assert [row.title for row in result.events] == [
+        "Expired activity",
+        "Current activity",
+    ]
+    assert result.event_collection["candidate_count"] == 2
+    assert "expired_candidate_count" not in result.event_collection
     assert result.event_collection["preview_expiry_policy"] == (
-        "exclude_ended_events"
+        "retain_for_operator_review"
     )
 
 
-def test_preview_filters_expiry_before_issuing_manifest(monkeypatch, tmp_path) -> None:
+def test_preview_retains_expiry_before_issuing_manifest(monkeypatch, tmp_path) -> None:
     expired = _candidate(
         "Stamping the Coast",
         "1 - 24 May 2026 (except Mondays)",
@@ -120,14 +126,12 @@ def test_preview_filters_expiry_before_issuing_manifest(monkeypatch, tmp_path) -
         lambda store, actual: calls.append("enrich") or actual,
     )
 
-    def filter_expired(actual):
-        calls.append("filter")
-        actual.events = []
+    def retain_expired(actual):
+        calls.append("retain")
         actual.event_collection = {
             **actual.event_collection,
-            "candidate_count": 0,
-            "expired_candidate_count": 1,
-            "preview_expiry_policy": "exclude_ended_events",
+            "candidate_count": len(actual.events),
+            "preview_expiry_policy": "retain_for_operator_review",
         }
         return actual
 
@@ -135,7 +139,11 @@ def test_preview_filters_expiry_before_issuing_manifest(monkeypatch, tmp_path) -
         calls.append(("manifest", len(actual.events)))
         return actual
 
-    monkeypatch.setattr(authority, "_filter_expired_preview_events", filter_expired)
+    monkeypatch.setattr(
+        authority,
+        "_retain_expired_preview_events",
+        retain_expired,
+    )
     monkeypatch.setattr(
         authority._selection,
         "invalidate_preview_manifest",
@@ -155,14 +163,14 @@ def test_preview_filters_expiry_before_issuing_manifest(monkeypatch, tmp_path) -
     assert calls == [
         ("invalidate", store.listing.url),
         "enrich",
-        "filter",
-        ("manifest", 0),
+        "retain",
+        ("manifest", 1),
     ]
-    assert result.events == []
-    assert result.event_collection["candidate_count"] == 0
-    assert result.event_collection["expired_candidate_count"] == 1
+    assert result.events == [expired]
+    assert result.event_collection["candidate_count"] == 1
+    assert "expired_candidate_count" not in result.event_collection
     assert result.event_collection["preview_expiry_policy"] == (
-        "exclude_ended_events"
+        "retain_for_operator_review"
     )
     assert store.saved == [result]
 
@@ -215,26 +223,26 @@ def test_formal_collection_keeps_normal_collector(monkeypatch, tmp_path) -> None
     assert store.saved == []
 
 
-def test_review_bootstrap_filters_expiry_before_preview_manifest() -> None:
+def test_review_bootstrap_retains_expiry_before_preview_manifest() -> None:
     summary = read_text("surface/local_events_runtime/review_summary_authority.py")
     handoff = read_text(
         "surface/local_events_runtime/preview_final_detail_handoff_authority.py"
     )
 
     assert "apply_preview_pipeline()" in summary
-    assert "_filter_expired_preview_events" in handoff
-    assert '"preview_expiry_policy": "exclude_ended_events"' in handoff
-    assert "retain_for_operator_review" not in handoff
+    assert "_retain_expired_preview_events" in handoff
+    assert '"preview_expiry_policy": "retain_for_operator_review"' in handoff
+    assert "exclude_ended_events" not in handoff
 
     invalidate_call = "_selection.invalidate_preview_manifest(listing.url)"
     enrich_call = "state = _enrich_final_preview(store, state)"
-    filter_call = "state = _filter_expired_preview_events(state)"
+    retain_call = "state = _retain_expired_preview_events(state)"
     issue_call = "state = _selection.issue_preview_manifest(listing, state)"
 
     assert invalidate_call in handoff
     assert enrich_call in handoff
-    assert filter_call in handoff
+    assert retain_call in handoff
     assert issue_call in handoff
     assert handoff.index(invalidate_call) < handoff.index(enrich_call)
-    assert handoff.index(enrich_call) < handoff.index(filter_call)
-    assert handoff.index(filter_call) < handoff.index(issue_call)
+    assert handoff.index(enrich_call) < handoff.index(retain_call)
+    assert handoff.index(retain_call) < handoff.index(issue_call)
