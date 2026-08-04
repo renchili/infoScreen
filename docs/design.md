@@ -110,7 +110,7 @@ before importing collector code. Chromium launched by scoped discovery, confirme
 
 There is no HTTP/2-first attempt and no protocol retry loop on those paths.
 
-Isolated Preview is a deliberate exception. `preview_direct_detail_collector_authority.py` owns one Playwright manager, one Chromium process, and one browser context for the selected listing plus all admitted detail pages. `preview_transport_authority.py` may run Marina Bay Sands Preview in headed mode and records NetLog diagnostics, but it does not force HTTP/1 or otherwise alter Chromium protocol negotiation.
+Isolated Preview is a deliberate exception. `preview_direct_detail_collector_authority.py` owns one Playwright manager per request, but its Chromium lifecycle is source-specific. Most sources reuse one browser context for the selected listing and admitted detail pages. ArtScience Museum / Marina Bay Sands instead closes the listing browser and opens each admitted detail page as the first document in a fresh sequential Chromium browser/context; this avoids reusing the listing process's network/HTTP2 connection state. `preview_transport_authority.py` may run Marina Bay Sands Preview in headed mode and records NetLog diagnostics, but it does not force HTTP/1 or otherwise alter Chromium protocol negotiation.
 
 ### 6.4 Positive Event intent
 
@@ -154,13 +154,13 @@ When scoped discovery removes a non-manual List Page, it removes that URL’s co
 
 Preview collection is decision-independent. `POST /api/local-events/review/preview-events` copies the current Review state to a temporary store, keeps only the selected list page, marks only that temporary copy confirmed, clears copied Event candidates and feedback, and runs the direct Preview collector/detail owner. The Preview request itself does not change the saved list-page decision, persisted Event candidates, feedback, collection metadata, `state.json`, or kiosk output.
 
-One Preview request owns one real Chromium process and one browser context. The direct collector opens the selected listing page, extracts rendered candidate cards, then opens every admitted official detail page through the same context before closing the browser once. The returned metadata records `preview_browser_process_count: 1`, `preview_browser_reuse: listing_and_details`, `preview_detail_context_count: 1`, and `preview_detail_transport: same_browser_context`. If listing-only evidence still reaches the final HTTP handoff, the request fails instead of opening a second browser or issuing a manifest from incomplete detail results.
+One Preview request owns one Playwright manager and one source-specific browser lifecycle. For non-ArtScience sources, the returned metadata normally records `preview_browser_process_count: 1`, `preview_browser_reuse: listing_and_details`, `preview_detail_context_count: 1`, and `preview_detail_transport: same_browser_context`. For ArtScience Museum / Marina Bay Sands, the listing browser closes before detail collection and the returned metadata records `preview_browser_process_count: 1 + preview_detail_fresh_browser_count`, `preview_browser_reuse: single_playwright_sequential_browsers`, `preview_detail_context_count: preview_detail_fresh_browser_count`, and `preview_detail_transport: sequential_browser_processes`. In both modes, listing-only evidence reaching the final HTTP handoff fails the request instead of issuing a manifest from incomplete detail results.
 
-Preview is classification evidence, so its final handoff bypasses the executing expired-event filter only for the isolated Preview result. Expired official candidates remain visible for operator classification, and the response records `preview_expiry_policy: retain_for_operator_review`. The original expiry filter is restored before the request returns; formal persisted collection and kiosk publication keep the normal expiry policy.
+Preview is classification evidence, so the isolated Preview store bypasses formal expired-event filtering. Expired official candidates remain visible for operator classification, and the response records `preview_expiry_policy: retain_for_operator_review`. Formal persisted collection and kiosk publication continue to apply the normal expiry policy.
 
 The browser keeps the active Preview panel and uncommitted candidate choices in `sessionStorage`. The final Preview handoff first invalidates any older manifest, completes detail enrichment and redirect handling, then issues the exact candidate manifest returned to the browser. When the operator saves the List Page review, `POST /api/local-events/review/listing-decision` receives a `preview-review-v1:` payload containing every Preview candidate and its REAL EVENT / NOT EVENT decision. The backend validates the List Page identity, official-domain detail URLs, candidate identities, and exact equality with the latest unexpired server manifest. Browser drafts may remain visible after the manifest becomes invalid, but submission then fails with guidance to run Preview again. The backend atomically replaces `preview_event_selections.json`, then writes the List Page decision; if that state write fails, the prior selection file is restored and the still-valid manifest remains available for retry.
 
-Normal collection remains separate. `POST /api/local-events/review/collect-events` reads confirmed pages that have committed REAL EVENT selections, filters unselected list cards before detail navigation, persists only the selected Event candidates and diagnostics, marks those candidates confirmed, and leaves list-page decisions unchanged. A confirmed page without a committed REAL EVENT selection is not silently collected as an unrestricted page.
+Normal collection remains separate. `POST /api/local-events/review/collect-events` reads confirmed current list pages that have committed REAL EVENT selections, rejects archive/past list pages even when they remain in legacy Review state, filters unselected list cards before detail navigation, persists only the selected Event candidates and diagnostics, marks those candidates confirmed, and leaves list-page decisions unchanged. A confirmed page without a committed REAL EVENT selection is not silently collected as an unrestricted page.
 
 Decision projection rules are:
 
@@ -201,7 +201,7 @@ select one global institution
   -> include only committed REAL EVENT selections in normal collection
 ```
 
-Manual addition does not edit committed `event_sources.json` and does not automatically collect Events. It creates a review candidate only. The operator may run the isolated preview while the page is pending, rejected, or confirmed. Preview itself does not mutate the real List Page decision; saving the reviewed candidate set and List Page decision is a separate explicit operation.
+Manual addition does not edit committed `event_sources.json` and does not automatically collect Events. It creates a review candidate only. Archive or past-activities pages are rejected even when their hostname is allowed. The operator may run the isolated preview while the page is pending, rejected, or confirmed. Preview itself does not mutate the real List Page decision; saving the reviewed candidate set and List Page decision is a separate explicit operation.
 
 When the same institution/URL already exists, manual addition resets it to `pending`, discards any old Preview selection and manifest, and requires a new Preview before confirmation.
 
@@ -285,10 +285,11 @@ The Sync ticker is an observer, not a scheduler. It performs `HEAD` requests and
 - One Local Event source failure is recorded under that source.
 - A partial Local Event run does not replace a larger verified collector snapshot.
 - A zero-result review page records the first failed recognition stage.
-- A manually supplied list page outside the configured institution allow-list is rejected before persistence.
+- A manually supplied list page outside the configured institution allow-list, or identified as archive/past activity content, is rejected before persistence.
 - A retired discovery page cannot retain a committed Preview selection; failed Review-state persistence restores the previous selection bytes.
+- A persisted archive page is hidden from current Studio state and excluded again at the formal selection boundary, even before discovery retires its legacy state.
 - An expired, missing, superseded, or revision-mismatched Preview manifest rejects submission and tells the operator to run Preview again.
-- Isolated Preview listing and detail reads share one Chromium process and one context; incomplete final detail results fail instead of opening a second process.
+- Isolated Preview uses one Playwright manager. Most sources reuse one Chromium context; ArtScience/MBS uses sequential fresh browser processes so each detail is the first document in its process. Incomplete final detail results fail without issuing a manifest.
 - Preview retains expired official candidates only for classification; formal collection and kiosk publication retain normal expiry filtering.
 - Formal discovery and collection disable HTTP/2 before Chromium starts; isolated Preview keeps normal protocol negotiation and may use headed Chromium for Marina Bay Sands.
 - A dashboard filter with no matches displays an empty filtered state without changing or deleting the underlying runtime events.
