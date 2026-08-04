@@ -120,6 +120,55 @@ def test_manual_archive_url_is_rejected(tmp_path) -> None:
         )
 
 
+def test_formal_collection_skips_persisted_archive_selection(monkeypatch) -> None:
+    archive = "https://example.com/museum/exhibition-archive.html"
+    current = "https://example.com/museum/whats-on.html"
+    monkeypatch.setattr(
+        authority,
+        "_BASE_CONFIRMED_SELECTIONS",
+        lambda store: (
+            {archive: {"old-event"}, current: {"current-event"}},
+            {archive: {"https://example.com/old"}, current: {"https://example.com/new"}},
+            [],
+        ),
+    )
+    store = SimpleNamespace(
+        load=lambda: SimpleNamespace(
+            listing_pages=[
+                SimpleNamespace(url=archive, link_text="Archive"),
+                SimpleNamespace(url=current, link_text="What's On"),
+            ]
+        )
+    )
+
+    ids, urls, skipped = authority._confirmed_selections(store)
+
+    assert ids == {current: {"current-event"}}
+    assert urls == {current: {"https://example.com/new"}}
+    assert skipped == []
+
+
+def test_formal_collection_rejects_archive_only_selection(monkeypatch) -> None:
+    archive = "https://example.com/museum/past-exhibitions"
+    monkeypatch.setattr(
+        authority,
+        "_BASE_CONFIRMED_SELECTIONS",
+        lambda store: (
+            {archive: {"old-event"}},
+            {archive: {"https://example.com/old"}},
+            [],
+        ),
+    )
+    store = SimpleNamespace(
+        load=lambda: SimpleNamespace(
+            listing_pages=[SimpleNamespace(url=archive, link_text="Past Exhibitions")]
+        )
+    )
+
+    with pytest.raises(ValueError, match="no current confirmed List Page"):
+        authority._confirmed_selections(store)
+
+
 def test_review_bootstrap_installs_archive_page_authority() -> None:
     source = (SURFACE / "local_events_runtime" / "review_summary_authority.py").read_text(
         encoding="utf-8"
