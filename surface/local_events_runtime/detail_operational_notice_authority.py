@@ -12,6 +12,7 @@ _APPLIED = False
 _OPERATIONAL_DATE_NOTICE_RE = re.compile(
     r"\b(?:notice|closure|temporarily\s+closed|will\s+be\s+closed|closed\s+on|"
     r"private\s+programme|private\s+program|private\s+event|maintenance|"
+    r"advisory|construction\s+from|no\s+access\s+for|"
     r"unavailable|not\s+available|last\s+admission|kind\s+understanding)\b",
     re.I,
 )
@@ -24,7 +25,9 @@ def _operational_notice(value: object) -> bool:
 
 def _candidate_rows(payload: dict[str, Any]) -> list[str]:
     rows: list[object] = []
-    raw_dates = payload.get("dates")
+    raw_dates = payload.get("labeled_dates")
+    if not isinstance(raw_dates, list) or not raw_dates:
+        raw_dates = payload.get("dates")
     if isinstance(raw_dates, list):
         rows.extend(raw_dates)
     rows.extend(_navigation._payload_lines(payload))
@@ -86,7 +89,9 @@ def _raw_when(payload: dict[str, Any]) -> str:
         for value in values
     )
     if not already_has_time:
-        for line in _navigation._payload_lines(payload):
+        raw_times = payload.get("labeled_times")
+        time_rows = raw_times if isinstance(raw_times, list) else []
+        for line in [*time_rows, *_navigation._payload_lines(payload)]:
             text = _extract.clean(line)
             if (
                 text
