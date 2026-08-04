@@ -60,6 +60,7 @@ def test_repository_root_has_device_owned_layout() -> None:
         "surface/scripts/infoscreen_status.sh",
         "surface/scripts/collect_local_event_preview.py",
         "surface/tests/conftest.py",
+        "surface/tests/test_local_event_review_expiry.py",
         "mac/tests/test_schedule_sync_arguments_contract.py",
         ".github/pytest.ini",
         ".github/scripts/run_full_ci_tests.sh",
@@ -203,6 +204,16 @@ def test_documented_paths_and_runtime_boundaries_match_current_owners() -> None:
     design = read_text("docs/design.md")
     api = read_text("docs/api-spec.md")
     questions = read_text("docs/questions.md")
+    openapi = read_text("surface/openapi_spec.py")
+    handoff = read_text(
+        "surface/local_events_runtime/preview_final_detail_handoff_authority.py"
+    )
+    direct_preview = read_text(
+        "surface/local_events_runtime/preview_direct_detail_collector_authority.py"
+    )
+    archive = read_text(
+        "surface/local_events_runtime/listing_page_archive_authority.py"
+    )
     dashboard = read_text("surface/web/assets/js/dashboard.js")
     index = read_text("surface/web/index.html")
 
@@ -213,6 +224,31 @@ def test_documented_paths_and_runtime_boundaries_match_current_owners() -> None:
         assert "preview_expiry_policy" in document
         assert "retain_for_operator_review" in document
         assert "normal expiry" in document
+
+    assert '"preview_expiry_policy": "retain_for_operator_review"' in handoff
+    assert "exclude_ended_events" not in handoff
+    assert "_retain_expired_preview_events" in handoff
+
+    for document in (design, api, questions, openapi):
+        assert "same_browser_context" in document
+        assert "sequential_browser_processes" in document
+        assert "single_playwright_sequential_browsers" in document
+
+    for value in [
+        '"preview_detail_transport": (',
+        '"sequential_browser_processes"',
+        '"same_browser_context"',
+        '"single_playwright_sequential_browsers"',
+        '1 + fresh_detail_browsers',
+    ]:
+        assert value in direct_preview
+
+    assert "_selection._confirmed_selections = _confirmed_selections" in archive
+    assert "no current confirmed List Page" in archive
+    for document in (design, api, questions, openapi):
+        lowered = document.casefold()
+        assert "archive" in lowered
+        assert "formal" in lowered
 
     assert "browser-generated demo values" in readme
     assert "static kiosk labels" in readme
