@@ -292,6 +292,7 @@ Rules:
 - `source_id` must identify a configured institution;
 - `url` must be absolute HTTP/HTTPS;
 - the hostname must match that institution’s `allowed_domains`;
+- archive, past-event, past-exhibition, and previous-programme pages are not valid current List Pages even when their hostname is allowed;
 - the page is stored in review state as `pending`;
 - adding an existing page resets it to `pending`;
 - resetting an existing URL removes its old committed Preview selection and process-local manifest;
@@ -299,9 +300,9 @@ Rules:
 - the operation does not edit committed `event_sources.json`;
 - the operation does not collect Events automatically;
 - the saved page may be previewed while `pending`, `confirmed`, or `rejected`;
-- normal persisted collection requires the page to be `confirmed` and to have at least one committed REAL EVENT selection.
+- normal persisted collection requires the page to be `confirmed`, current rather than archival, and to have at least one committed REAL EVENT selection.
 
-Invalid institution, URL, or domain returns HTTP `400` without changing review state.
+Invalid institution, URL, domain, or archive/past-page URL returns HTTP `400` without changing review state.
 
 ### Save a List Page decision and Preview selections
 
@@ -374,7 +375,7 @@ Content-Type: application/json
 
 The requested URL must already exist in Review state. Its current decision may be `pending`, `confirmed`, or `rejected`.
 
-Preview is isolated and uses one direct browser lifecycle:
+Preview is isolated and uses one Playwright manager with a source-specific Chromium lifecycle:
 
 ```text
 load real Review state
@@ -384,12 +385,13 @@ load real Review state
   -> clear copied Event candidates, feedback, and Event collection metadata
   -> save the copy under a temporary Review root
   -> invalidate the older process-local manifest for this List Page
-  -> start one Playwright manager, one Chromium process, and one browser context
-  -> open the selected listing page in that context
+  -> start one Playwright manager
+  -> open the selected listing page
   -> extract rendered title + official-detail-link candidates
-  -> open every admitted official detail page in the same context
+  -> for most sources, open details in the listing browser context
+  -> for ArtScience/MBS, close the listing browser and open every detail
+     as the first document in a fresh sequential Chromium browser/context
   -> preserve original list-card identity while recording final redirected URLs
-  -> close the context and real browser once
   -> retain expired official candidates for operator classification
   -> verify no listing-only candidate remains
   -> issue a new exact process-local candidate manifest
@@ -397,9 +399,9 @@ load real Review state
   -> delete the temporary root
 ```
 
-Preview transport may run Marina Bay Sands in headed mode and records NetLog diagnostics. Unlike scoped discovery, confirmed-page formal collection, and scheduled/direct collection, isolated Preview does not force HTTP/1 or alter Chromium protocol negotiation.
+The ArtScience/MBS fresh-browser path deliberately avoids reusing the listing process’s network/HTTP2 connection state. Preview transport may run Marina Bay Sands in headed mode and records NetLog diagnostics. Unlike scoped discovery, confirmed-page formal collection, and scheduled/direct collection, isolated Preview does not force HTTP/1 or alter Chromium protocol negotiation.
 
-The temporary response metadata records:
+For a non-ArtScience source that reuses one context, response metadata normally records:
 
 ```text
 preview_browser_process_count: 1
@@ -409,9 +411,20 @@ preview_detail_transport: same_browser_context
 preview_expiry_policy: retain_for_operator_review
 ```
 
-The expiry override is limited to the isolated Preview result because Preview is classification evidence. The executing final-expiry filter is restored before the request returns. Formal persisted collection and kiosk publication keep the normal expiry policy.
+For ArtScience Museum / Marina Bay Sands, response metadata records:
 
-If a candidate still carries listing-only evidence after the direct collector completes, Preview fails with HTTP `500`. The server does not start a second browser or issue a manifest from incomplete detail results.
+```text
+preview_detail_fresh_browser_count: <number of attempted detail documents>
+preview_browser_process_count: 1 + preview_detail_fresh_browser_count
+preview_browser_reuse: single_playwright_sequential_browsers
+preview_detail_context_count: preview_detail_fresh_browser_count
+preview_detail_transport: sequential_browser_processes
+preview_expiry_policy: retain_for_operator_review
+```
+
+The expiry exception is limited to the isolated temporary Preview store because Preview is classification evidence. Formal persisted collection and kiosk publication keep the normal expiry policy.
+
+If a candidate still carries listing-only evidence after the direct collector completes, Preview fails with HTTP `500`. The server does not issue a manifest or start a separate post-collector fallback browser from the final handoff.
 
 Preview does not call the list-decision endpoint and does not change:
 
@@ -434,7 +447,7 @@ The Studio stores the rendered panel and draft choices in `sessionStorage`; thos
 POST /api/local-events/review/collect-events
 ```
 
-The collector reads pages currently marked `confirmed` and their committed Preview selections. A confirmed page without a committed REAL EVENT selection is skipped; the request fails when no confirmed page has any committed REAL EVENT selection.
+The collector reads pages currently marked `confirmed` and their committed Preview selections. A confirmed page without a committed REAL EVENT selection is skipped; the request fails when no current confirmed page has any committed REAL EVENT selection. Archive/past pages are excluded again at this formal selection boundary even when they remain in legacy persisted Review state with old committed selections.
 
 Before detail navigation, the collector admits only list cards whose original candidate identity or original official link is selected. After detail navigation or redirects, it retains results matching the selected candidate identity, original `listing_detail_url`, or final `detail_url`. Unselected candidate detail pages are not part of the formal collection path. A date is not required on the listing card itself.
 
@@ -479,10 +492,10 @@ The downloadable Chrome Helper, extension files, ZIP generation, and remote `fee
 | Explicit Local Event collection | `POST /api/local-events/search` | Run source-specific collector, write collector snapshot, project Review state | Return refreshed kiosk primary |
 | Review page load or return to tab | `GET /api/local-events/review/state` | None | Render once, then restore card anchor or scroll position |
 | Discover list pages | `POST /api/local-events/review/discover-listings` | Persist selected-institution pages; retire vanished non-manual pages and their old selection state with rollback | Reload list cards |
-| Add list page | `POST /api/local-events/review/listing-page` | Persist one pending page; reset old selection/manifest for the same URL | Reload list cards |
-| Preview any saved list page | `POST /api/local-events/review/preview-events` | Use one Chromium process and context for listing/detail reads, retain expired candidates for classification, issue an exact process-local manifest, and make no persisted mutation | Display candidates and keep draft choices in the browser session |
+| Add list page | `POST /api/local-events/review/listing-page` | Validate current-page policy; persist one pending page; reset old selection/manifest for the same URL | Reload list cards or show the HTTP `400` reason |
+| Preview any saved list page | `POST /api/local-events/review/preview-events` | Use one Playwright manager and the source-specific same-context or sequential-browser detail path; retain expired candidates; issue an exact process-local manifest; make no persisted mutation | Display candidates and keep draft choices in the browser session |
 | Save List Page review | `POST /api/local-events/review/listing-decision` | Validate the exact latest manifest; persist the complete Preview selection set and List Page decision with exception rollback | Refresh Review cards or instruct the user to Preview again |
-| Collect confirmed selections | `POST /api/local-events/review/collect-events` | Persist selected REAL EVENT candidates and diagnostics from confirmed pages | Refresh Review cards |
+| Collect confirmed selections | `POST /api/local-events/review/collect-events` | Exclude archive pages; persist selected REAL EVENT candidates and diagnostics from current confirmed pages | Refresh Review cards |
 | Review Event decision | `POST /api/local-events/review/event-decision` | Persist decision and rebuild kiosk primary | Refresh Review cards |
 | Sync observation | `HEAD` four runtime paths | None | Compute `AGE` and status |
 
