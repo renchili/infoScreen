@@ -102,15 +102,15 @@ Correct official Event lists may show only an image, title, category, and detail
 
 ### Correct requirement interpretation
 
-The official list proves membership. Date and venue can be obtained after admission by following the card’s official detail link. Explicit detail labels such as `Opening Hours`, `Date`, `Time`, and `Location` outrank unlabeled date/venue matches elsewhere in the same document.
+The official list proves membership. Date and venue can be obtained after admission by following the card’s official detail link. Explicit detail labels such as `Opening Hours`, `Date & Time`, `Date`, `Time`, and `Location` outrank unlabeled date/venue matches elsewhere in the same document. Site-wide notices before the primary activity heading are not activity fields.
 
 ### Required implementation
 
-Do not require a list-card date. Preserve listing evidence, follow the detail URL, keep labeled schedule/location values ahead of generic selector candidates, and show exact detail status/errors.
+Do not require a list-card date. Preserve listing evidence, follow the detail URL, scan labeled fields from the primary activity heading to the related/other Event boundary, retain labeled date/time/location provenance through final selection, keep those values ahead of generic selector candidates, and show exact detail status/errors.
 
 ### Acceptance evidence
 
-A date-less list card with one official detail link must be admitted and enriched from its detail page. A fixture containing an explicit activity schedule/location plus promotional dates and advisory copy must return only the labeled activity fields.
+A date-less list card with one official detail link must be admitted and enriched from its detail page. Fixtures must cover separate `Opening Hours` fields and a combined `Date & Time` field, with site-wide construction/closure/advisory text occurring before the activity heading and generic selector matches ordered ahead of the real values; both Preview and formal extraction must still return only the labeled activity schedule and venue.
 
 ## Local Events manual correct-list-page entry
 
