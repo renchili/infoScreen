@@ -132,6 +132,26 @@ def test_formula_preview_uses_date_time_and_location_labels(monkeypatch) -> None
     assert navigation._raw_where(payload) == FORMULA_VENUE
 
 
+def test_trusted_recurring_schedule_is_not_rejected_as_missing() -> None:
+    payload = {
+        "labeled_dates": ["Every Sat, Sun & Mon"],
+        "labeled_times": ["8.00pm - 8.30pm"],
+        "labeled_venues": ["Supertree Grove"],
+        "field_authority_version": FIELD_AUTHORITY_VERSION,
+        "lines": [
+            "Borealis",
+            "Every Sat, Sun & Mon",
+            "8.00pm - 8.30pm",
+            "Supertree Grove",
+        ],
+    }
+
+    assert authority._detail_date_line(payload) == "Every Sat, Sun & Mon"
+    assert authority._raw_when(payload) == (
+        "Every Sat, Sun & Mon · 8.00pm - 8.30pm"
+    )
+
+
 def test_generic_promotion_and_navigation_never_become_collected_fields() -> None:
     payload = {
         "dates": [GARDENS_PROMOTION],
