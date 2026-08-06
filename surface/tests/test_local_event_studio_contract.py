@@ -48,7 +48,8 @@ def test_isolated_preview_renders_temporary_candidates_before_operator_selection
     assert "preview_candidate_listing_detail_urls" in preview
     assert "detail_field_authority_version" in preview
     assert "article.dataset.listingDetailUrl" in preview
-    assert 'renderPreviewCandidatePanel(payload, url);' in preview
+    assert 'renderPreviewCandidatePanel(panelPayload(stored), url);' in preview
+    assert "candidate_rows: candidates" in preview
     assert 'await reloadState();' not in preview[preview.index("async function collectPreview(card, button)"):preview.index("async function collectForGlobalInstitution(button)")]
     assert "/api/local-events/review/event-decision" not in preview
     assert "RELATED ACTIVITY" not in preview
@@ -60,29 +61,56 @@ def test_isolated_preview_renders_temporary_candidates_before_operator_selection
     assert 'id="event-candidates-hint"' in html
 
 
-def test_temporary_preview_fields_are_not_restored_after_a_page_render() -> None:
+def test_preview_survives_tab_resume_from_versioned_structured_state() -> None:
     persistence = read_text(
         "surface/web/assets/js/local_event_review_preview_persistence.js"
     )
     preview = read_text("surface/web/assets/js/local_event_review_previews.js")
+    workflow = read_text(
+        "surface/web/assets/js/local_event_review_preview_workflow.js"
+    )
+    guard = read_text("surface/web/assets/js/local_event_review_scroll_guard.js")
     diagnostics = read_text(
         "surface/web/assets/js/local_event_review_diagnostics.js"
     )
     html = read_text("surface/web/local-events/studio/index.html")
 
     assert 'const STORAGE_KEY = "infoscreen.review.active-preview-panel"' in persistence
-    assert "SNAPSHOT_VERSION = 6" in persistence
+    assert "SNAPSHOT_VERSION = 7" in persistence
     assert 'sessionStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot))' in persistence
     assert "snapshot.html" not in persistence
     assert "container.innerHTML" not in persistence
-    assert "require a fresh" in persistence
+    assert "rebuilds the panel from its versioned structured candidate snapshot" in persistence
     assert 'document.addEventListener("infoscreen:review-preview"' in persistence
     assert 'document.addEventListener("infoscreen:review-rendered"' in persistence
     assert 'document.addEventListener("infoscreen:review-state"' in persistence
-    assert "clearStored();" in persistence
-    assert 'data-preview="true"' in persistence
+    assert "if (event.detail?.restored) return;" in persistence
+
     assert 'const PREVIEW_AUTHORITY_VERSION = "detail-provenance-v2"' in preview
-    assert "stored.authority_version === PREVIEW_AUTHORITY_VERSION" in preview
+    assert "const PREVIEW_PANEL_VERSION = 1" in preview
+    assert "panel_version: PREVIEW_PANEL_VERSION" in preview
+    assert "candidate_rows: candidates" in preview
+    assert "listing_detail_urls: normalizedListingDetailUrls" in preview
+    assert "function restoreActivePreview()" in preview
+    assert "delete entry.candidate_rows;" in preview
+    assert "requireCandidates: true" in preview
+    assert "renderPreviewCandidatePanel(panelPayload(stored), url);" in preview
+    assert "publishPreview(url, stored.diagnostic, { restored: true });" in preview
+    restore = preview[
+        preview.index("function restoreActivePreview()"):
+        preview.index("function enhanceListingCards()")
+    ]
+    assert restore.index("renderPreviewCandidatePanel") < restore.index("publishPreview")
+    assert "restoreActivePreview();" in preview
+    assert 'document.addEventListener("infoscreen:review-preview"' in workflow
+    assert "const decisions = decisionsFor(expected);" in workflow
+    assert "installCandidateActions" in workflow
+    assert "value.authority_version === PREVIEW_AUTHORITY_VERSION" in preview
+    assert "snapshot.html" not in workflow
+    assert "container.innerHTML" not in workflow
+    assert "persistPanelSnapshot" not in workflow
+    assert 'document.addEventListener("visibilitychange"' in guard
+    assert "await loadState();" in guard
     assert "value.authority_version === PREVIEW_AUTHORITY_VERSION" in diagnostics
     assert (
         '<script src="/assets/js/local_event_review_preview_persistence.js" defer></script>'
@@ -90,6 +118,9 @@ def test_temporary_preview_fields_are_not_restored_after_a_page_render() -> None
     )
     assert html.index("local_event_review_previews.js") < html.index(
         "local_event_review_preview_persistence.js"
+    )
+    assert html.index("local_event_review_preview_persistence.js") < html.index(
+        "local_event_review_preview_workflow.js"
     )
 
 

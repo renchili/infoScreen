@@ -161,27 +161,11 @@
     }
   }
 
-  function persistPanelSnapshot() {
-    try {
-      const snapshot = JSON.parse(sessionStorage.getItem(ACTIVE_PREVIEW_KEY) || "null");
-      const container = document.getElementById("event-candidates");
-      if (!snapshot || !container) return;
-      snapshot.html = container.innerHTML;
-      snapshot.count = text(document.getElementById("event-count")?.textContent) || "0";
-      snapshot.title = text(document.getElementById("event-candidates-title")?.textContent);
-      snapshot.hint = text(document.getElementById("event-candidates-hint")?.textContent);
-      sessionStorage.setItem(ACTIVE_PREVIEW_KEY, JSON.stringify(snapshot));
-    } catch {
-      // The current DOM remains usable when session storage is unavailable.
-    }
-  }
-
   function saveOneDecision(url, candidateId, decision) {
     const decisions = decisionsFor(url);
     if (decision === "pending") delete decisions[candidateId];
     else decisions[candidateId] = decision;
     saveDecisions(url, decisions);
-    persistPanelSnapshot();
     render(url);
   }
 

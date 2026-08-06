@@ -354,7 +354,7 @@ Rules:
 - `candidate_id` is validated against the original `listing_detail_url` and therefore remains stable across redirects;
 - legacy rows without `listing_detail_url` fall back to `detail_url`.
 
-A service restart, manifest expiry, newer Preview, List Page state change, reset, rejection, manual re-add, discovery retirement, Studio reload, or completed state render requires a new Preview. The Studio does not restore extracted candidate HTML after a render lifecycle; `sessionStorage` choices remain drafts only and do not replace the server manifest.
+A service restart, manifest expiry, newer Preview, List Page state change, reset, rejection, manual re-add, or discovery retirement requires a new Preview before another save. A Studio state reload, completed render, or browser-tab resume does not itself invalidate the server manifest. The Studio never stores or restores extracted candidate HTML; it may reconstruct the active panel from parser-versioned structured `sessionStorage` candidate rows and reapply draft choices, but those browser drafts do not replace the server manifest.
 
 The selection file is atomically replaced first, followed by the List Page state write. If the state write raises, the previous selection bytes are restored or the newly created selection file is removed, and the current manifest remains available for retry. After a successful decision write, the manifest is invalidated. This is same-request exception rollback, not a cross-file transaction that guarantees recovery from an abrupt process crash between the writes.
 
@@ -439,7 +439,7 @@ Preview does not call the list-decision endpoint and does not change:
 
 The response keeps the original list-card `candidate_id`, reports the final redirected/public `detail_url`, and exposes `event_collection.preview_candidate_listing_detail_urls` so the Studio can submit both identities later. It also records manifest policy, candidate count, and expiry metadata in the temporary response collection metadata.
 
-The Studio stores draft choices in `sessionStorage`, but it does not restore extracted Preview HTML after a reload or completed state render. Cached per-listing summaries and diagnostics are accepted only when their detail-field authority version matches the running collector. Those browser-session drafts are not committed until the List Page review request succeeds, and saving always requires the latest server manifest. A missing or unknown `listing_url` returns HTTP `400`; collection, browser-lifecycle, provenance, or final-detail invariant failure returns HTTP `500`.
+The Studio stores only structured Preview candidate rows, original/final detail identities, summaries, diagnostics, the active Preview URL, and draft choices in `sessionStorage`; it never stores candidate-panel HTML. After initial state loading, manual `RELOAD`, saving a List Page review, or returning to the browser tab, it restores the active panel only when the saved List Page still exists and the stored detail-field authority version matches the running collector, then reapplies the draft choices. Formal Event collection clears the active temporary panel because persisted Event candidates supersede it. These browser-session drafts are not committed until the List Page review request succeeds, and saving always requires the latest server manifest. A missing or unknown `listing_url` returns HTTP `400`; collection, browser-lifecycle, provenance, or final-detail invariant failure returns HTTP `500`.
 
 ### Collect selected REAL EVENT candidates from confirmed pages
 
@@ -490,7 +490,7 @@ The downloadable Chrome Helper, extension files, ZIP generation, and remote `fee
 | Market `REFRESH` | `POST /api/market-refresh` | Run live-data producer | Reload Market and Weather runtime data |
 | Local Event dashboard filter | Existing `GET /api/local-events/search` payload only | None | Filter rows in browser memory |
 | Explicit Local Event collection | `POST /api/local-events/search` | Run source-specific collector, write collector snapshot, project Review state | Return refreshed kiosk primary |
-| Review page load or return to tab | `GET /api/local-events/review/state` | None | Render once, then restore card anchor or scroll position |
+| Review page load or return to tab | `GET /api/local-events/review/state` | None | Render server state once, restore any version-compatible structured active Preview and its draft choices, then restore card anchor or scroll position |
 | Discover list pages | `POST /api/local-events/review/discover-listings` | Persist selected-institution pages; retire vanished non-manual pages and their old selection state with rollback | Reload list cards |
 | Add list page | `POST /api/local-events/review/listing-page` | Validate current-page policy; persist one pending page; reset old selection/manifest for the same URL | Reload list cards or show the HTTP `400` reason |
 | Preview any saved list page | `POST /api/local-events/review/preview-events` | Use one Playwright manager and the source-specific same-context or sequential-browser detail path; retain expired candidates; issue an exact process-local manifest; make no persisted mutation | Display candidates and keep draft choices in the browser session |

@@ -2,7 +2,7 @@
 
 (() => {
   const STORAGE_KEY = "infoscreen.review.active-preview-panel";
-  const SNAPSHOT_VERSION = 6;
+  const SNAPSHOT_VERSION = 7;
   const text = (value) => String(value || "").trim();
 
   function canonical(value) {
@@ -75,42 +75,38 @@
     try {
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
     } catch {
-      // Preview remains visible for the current render even if storage is unavailable.
+      // Preview remains visible for the current render if storage is unavailable.
     }
   }
 
-  function restore() {
+  function validateAfterRender() {
     const snapshot = readStored();
     if (!snapshot || snapshot.version !== SNAPSHOT_VERSION || !text(snapshot.url)) {
       if (snapshot) clearStored();
       return false;
     }
-    if (!listingStillExists(snapshot.url)) return false;
+    if (!listingStillExists(snapshot.url)) {
+      clearStored();
+      return false;
+    }
 
-    // A rendered Preview contains parser output tied to one server-side manifest.
-    // Reloading the Studio, restarting the service, or deploying new extraction code
-    // makes that HTML unprovable. Keep current-document DOM only and require a fresh
-    // Preview after any render lifecycle instead of presenting cached fields as live.
-    clearStored();
-    return false;
+    // The active record contains identity and panel metadata only. The Preview owner
+    // rebuilds the panel from its versioned structured candidate snapshot after the
+    // server-state render; no parser-produced HTML is stored or restored.
+    return true;
   }
 
   document.addEventListener("infoscreen:review-preview", (event) => {
+    if (event.detail?.restored) return;
     const url = text(event.detail?.url);
     if (url) capture(url);
   });
 
-  document.addEventListener("infoscreen:review-rendered", () => {
-    // The main renderer supersedes temporary Preview output. Stored parser fields are
-    // deliberately invalidated rather than restored as current collection evidence.
-    restore();
-  });
+  document.addEventListener("infoscreen:review-rendered", validateAfterRender);
 
   document.addEventListener("infoscreen:review-state", () => {
-    // This event is emitted by the formal Event collection. Its persisted candidates
-    // supersede any temporary Preview panel.
+    // This event is emitted only by formal Event collection. Persisted candidates
+    // supersede the temporary active Preview panel.
     clearStored();
   });
-
-  document.addEventListener("DOMContentLoaded", restore);
 })();

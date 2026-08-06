@@ -1,8 +1,10 @@
 "use strict";
 
 (() => {
+  const ACTIVE_PREVIEW_KEY = "infoscreen.review.active-preview-panel";
   const PREVIEW_STORAGE_KEY = "infoscreen.review.event-previews";
   const PREVIEW_AUTHORITY_VERSION = "detail-provenance-v2";
+  const PREVIEW_PANEL_VERSION = 1;
   const text = (value) => String(value || "").trim();
 
   async function request(path, options = {}) {
@@ -56,20 +58,145 @@
     return rows.find((row) => canonical(row?.listing_url) === expected) || null;
   }
 
-  function savePreview(url, rows, diagnostic, authorityVersion) {
-    const value = previews();
-    value[url] = {
-      authority_version: text(authorityVersion),
-      collected_at: new Date().toISOString(),
-      events: rows,
-      diagnostic: diagnostic && typeof diagnostic === "object" ? diagnostic : null,
+  function normalizedPosition(value) {
+    const position = value && typeof value === "object" ? value : {};
+    return {
+      x: Number(position.x ?? 0),
+      y: Number(position.y ?? 0),
+      width: Number(position.width ?? 0),
+      height: Number(position.height ?? 0),
     };
-    sessionStorage.setItem(PREVIEW_STORAGE_KEY, JSON.stringify(value));
   }
 
-  function publishPreview(url, diagnostic) {
+  function normalizedPreviewCandidates(payload, url) {
+    const expected = canonical(url);
+    return (payload.events || [])
+      .filter((row) => canonical(row.listing_url) === expected)
+      .map((row) => {
+        const evidence = row.evidence && typeof row.evidence === "object"
+          ? row.evidence
+          : {};
+        return {
+          candidate_id: text(row.candidate_id),
+          source_id: text(row.source_id),
+          source_name: text(row.source_name),
+          listing_url: expected,
+          detail_url: canonical(row.detail_url),
+          title: text(row.title) || "Untitled candidate",
+          when: text(row.when),
+          where: text(row.where),
+          summary: text(row.summary),
+          detail_status: text(row.detail_status),
+          detail_error: text(row.detail_error),
+          detail_page_title: text(row.detail_page_title),
+          evidence: {
+            selector: text(evidence.selector),
+            selector_index: Number(evidence.selector_index ?? 0),
+            selector_match_count: Number(evidence.selector_match_count ?? 1),
+            document_position: normalizedPosition(evidence.document_position),
+            viewport_position: normalizedPosition(evidence.viewport_position),
+            page_index: Number(evidence.page_index ?? 0),
+            page_url: canonical(evidence.page_url || expected),
+            text: text(evidence.text),
+          },
+        };
+      });
+  }
+
+  function normalizedListingDetailUrls(payload, candidates) {
+    const raw = payload?.event_collection?.preview_candidate_listing_detail_urls;
+    const values = raw && typeof raw === "object" ? raw : {};
+    const accepted = new Set(candidates.map((row) => row.candidate_id));
+    return Object.fromEntries(
+      Object.entries(values)
+        .filter(([candidateId, value]) =>
+          accepted.has(text(candidateId)) && Boolean(canonical(value)),
+        )
+        .map(([candidateId, value]) => [text(candidateId), canonical(value)]),
+    );
+  }
+
+  function previewSummaryRows(candidates) {
+    return candidates.map((row) => ({
+      title: row.title,
+      when: row.when,
+      where: row.where,
+      detail_status: row.detail_status,
+      detail_url: row.detail_url,
+    }));
+  }
+
+  function savePreview(url, payload, diagnostic, authorityVersion) {
+    const key = canonical(url);
+    const candidates = normalizedPreviewCandidates(payload, key);
+    const stored = {
+      authority_version: text(authorityVersion),
+      panel_version: PREVIEW_PANEL_VERSION,
+      collected_at: new Date().toISOString(),
+      events: previewSummaryRows(candidates),
+      candidate_rows: candidates,
+      listing_detail_urls: normalizedListingDetailUrls(payload, candidates),
+      diagnostic: diagnostic && typeof diagnostic === "object" ? diagnostic : null,
+    };
+    const value = previews();
+    Object.values(value).forEach((entry) => {
+      if (!entry || typeof entry !== "object") return;
+      delete entry.candidate_rows;
+      delete entry.listing_detail_urls;
+    });
+    value[key] = stored;
+    try {
+      sessionStorage.setItem(PREVIEW_STORAGE_KEY, JSON.stringify(value));
+    } catch {
+      // The current Preview remains usable when session storage is unavailable.
+    }
+    return stored;
+  }
+
+  function storedPreview(url, { requireCandidates = false } = {}) {
+    const expected = canonical(url);
+    for (const [key, value] of Object.entries(previews())) {
+      if (
+        canonical(key) === expected
+        && value
+        && typeof value === "object"
+        && value.authority_version === PREVIEW_AUTHORITY_VERSION
+        && Array.isArray(value.events)
+        && (
+          !requireCandidates
+          || (
+            value.panel_version === PREVIEW_PANEL_VERSION
+            && Array.isArray(value.candidate_rows)
+          )
+        )
+      ) {
+        return value;
+      }
+    }
+    return null;
+  }
+
+  function activePreviewUrl() {
+    try {
+      const value = JSON.parse(sessionStorage.getItem(ACTIVE_PREVIEW_KEY) || "null");
+      return canonical(value?.url || "");
+    } catch {
+      return "";
+    }
+  }
+
+  function panelPayload(stored) {
+    return {
+      events: stored.candidate_rows,
+      event_collection: {
+        preview_candidate_listing_detail_urls: stored.listing_detail_urls || {},
+      },
+    };
+  }
+
+  function publishPreview(url, diagnostic, { restored = false } = {}) {
     document.dispatchEvent(new CustomEvent("infoscreen:review-preview", {
-      detail: { url, diagnostic },
+      detail: { url, diagnostic, restored },
     }));
   }
 
@@ -117,18 +244,6 @@
         detail_url: card.querySelector(".card-head h3 a")?.href || "",
       };
     });
-  }
-
-  function normalizedPreviewRows(payload, url) {
-    return (payload.events || [])
-      .filter((row) => canonical(row.listing_url) === canonical(url))
-      .map((row) => ({
-        title: text(row.title) || "Untitled candidate",
-        when: text(row.when),
-        where: text(row.where),
-        detail_status: text(row.detail_status),
-        detail_url: text(row.detail_url),
-      }));
   }
 
   function ensurePreviewBox(card) {
@@ -207,12 +322,8 @@
   }
 
   function previewSummary(card, url) {
-    const stored = previews()[url];
-    if (
-      stored
-      && stored.authority_version === PREVIEW_AUTHORITY_VERSION
-      && Array.isArray(stored.events)
-    ) {
+    const stored = storedPreview(url);
+    if (stored) {
       renderPreviewRows(card, stored.events, { collectedAt: stored.collected_at });
       return;
     }
@@ -393,18 +504,18 @@
 
     try {
       const payload = await collectPreviewPage(url);
-      const rows = normalizedPreviewRows(payload, url);
       const diagnostic = diagnosticFor(payload, url);
-      savePreview(
+      const stored = savePreview(
         url,
-        rows,
+        payload,
         diagnostic,
         payload?.event_collection?.detail_field_authority_version,
       );
+      const rows = stored.events;
       if (card.isConnected) {
-        renderPreviewRows(card, rows, { collectedAt: new Date().toISOString() });
+        renderPreviewRows(card, rows, { collectedAt: stored.collected_at });
       }
-      renderPreviewCandidatePanel(payload, url);
+      renderPreviewCandidatePanel(panelPayload(stored), url);
       publishPreview(url, diagnostic);
 
       setGlobalStatus(
@@ -462,6 +573,29 @@
     original.replaceWith(button);
   }
 
+  function restoreActivePreview() {
+    const url = activePreviewUrl();
+    if (!url) return false;
+
+    const card = [...document.querySelectorAll("#listing-pages > .card")]
+      .find((candidate) => canonical(listingUrl(candidate)) === url);
+    const stored = storedPreview(url, { requireCandidates: true });
+    if (!stored) {
+      try {
+        sessionStorage.removeItem(ACTIVE_PREVIEW_KEY);
+      } catch {
+        // A stale active marker cannot block the normal server-owned panel.
+      }
+      return false;
+    }
+    if (!card) return false;
+
+    renderPreviewRows(card, stored.events, { collectedAt: stored.collected_at });
+    renderPreviewCandidatePanel(panelPayload(stored), url);
+    publishPreview(url, stored.diagnostic, { restored: true });
+    return true;
+  }
+
   function enhanceListingCards() {
     for (const card of document.querySelectorAll("#listing-pages > .card")) {
       const url = listingUrl(card);
@@ -494,6 +628,7 @@
     document.addEventListener("infoscreen:review-rendered", () => {
       restoreCollectedPanelLabels();
       enhanceListingCards();
+      restoreActivePreview();
       window.InfoScreenReviewContext?.applyFilters?.();
     });
   });
