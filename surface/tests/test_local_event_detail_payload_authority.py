@@ -321,6 +321,18 @@ def test_narrative_candidate_wins_when_payload_summary_is_cta() -> None:
     assert merged["detail_summary_candidates"] == [narrative]
 
 
+def test_trusted_recurring_schedule_remains_supported() -> None:
+    card = {
+        "detail_labeled_dates": ["Every Sat, Sun & Mon"],
+        "detail_labeled_times": ["8.00pm - 8.30pm"],
+        "detail_field_authority_version": authority.FIELD_AUTHORITY_VERSION,
+    }
+
+    assert authority._authoritative_when(card) == (
+        "Every Sat, Sun & Mon · 8.00pm - 8.30pm"
+    )
+
+
 def test_separate_structured_start_and_end_dates_become_one_range() -> None:
     card = {"detail_dates": ["2026-06-19", "2027-01-24"]}
     assert authority._authoritative_when(card) == "19 Jun 2026 – 24 Jan 2027"
@@ -413,6 +425,9 @@ def test_detail_dom_extractor_reads_structural_fields_and_rejects_metadata_cta()
     assert 'labelheading.closest("main")' in script
     assert "labelboundaryindex" in script
     assert "full.length <= 80" in script
+    assert "const scopedrows = []" in script
+    assert "const fieldrole = value" in script
+    assert "const originallines = scopedrows.length" in script
     assert "labeleddates" in script
     assert "labeledtimes" in script
     assert "labeledvenues" in script
