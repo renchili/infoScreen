@@ -3,6 +3,7 @@
 (() => {
   const STATE_PATH = "/api/local-events/review/state";
   const PREVIEW_STORAGE_KEY = "infoscreen.review.event-previews";
+  const PREVIEW_AUTHORITY_VERSION = "detail-provenance-v2";
   let refreshTimer = 0;
   let lastPayload = null;
 
@@ -38,7 +39,12 @@
       if (!previews || typeof previews !== "object") return null;
       const expected = canonical(url);
       for (const [key, value] of Object.entries(previews)) {
-        if (canonical(key) === expected && value && typeof value === "object") return value;
+        if (
+          canonical(key) === expected
+          && value
+          && typeof value === "object"
+          && value.authority_version === PREVIEW_AUTHORITY_VERSION
+        ) return value;
       }
     } catch {
       return null;
