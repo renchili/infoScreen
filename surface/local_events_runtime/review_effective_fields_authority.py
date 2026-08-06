@@ -207,10 +207,17 @@ def _detail_date_line(
     """Return the current detail's date row, excluding child-programme aggregates."""
 
     rows: list[object] = []
-    raw_dates = payload.get("dates")
+    authority_version = _extract.clean(payload.get("field_authority_version"))
+    if authority_version:
+        raw_dates = payload.get("labeled_dates")
+        if not isinstance(raw_dates, list) or not raw_dates:
+            raw_dates = payload.get("structured_dates")
+    else:
+        raw_dates = payload.get("dates")
     if isinstance(raw_dates, list):
         rows.extend(raw_dates)
-    rows.extend(_detail_navigation._payload_lines(payload))
+    if not authority_version:
+        rows.extend(_detail_navigation._payload_lines(payload))
 
     esplanade_series = bool(_ESPLANADE_SERIES_URL_RE.search(requested_url))
     seen: set[str] = set()
@@ -272,12 +279,14 @@ def _merge_document_facts(
     """Append document facts even when the base extractor produced a false date."""
 
     merged = dict(payload)
+    authority_version = _extract.clean(merged.get("field_authority_version"))
     for key in ("dates", "venues"):
-        values = _detail_navigation._clean_rows(merged.get(key))
+        target_key = f"fallback_{key}" if authority_version else key
+        values = _detail_navigation._clean_rows(merged.get(target_key))
         for value in _detail_navigation._clean_rows(facts.get(key)):
             if value not in values:
                 values.append(value)
-        merged[key] = values
+        merged[target_key] = values
 
     lines = _detail_navigation._payload_lines(merged)
     for value in _detail_navigation._clean_rows(facts.get("lines")):
@@ -301,8 +310,13 @@ def _facts_signature(facts: dict[str, Any]) -> str:
 
 def _facts_have_date(facts: dict[str, Any]) -> bool:
     rows: list[str] = []
-    rows.extend(_detail_navigation._clean_rows(facts.get("dates")))
-    rows.extend(_detail_navigation._clean_rows(facts.get("lines")))
+    authority_version = _extract.clean(facts.get("field_authority_version"))
+    if authority_version:
+        rows.extend(_detail_navigation._clean_rows(facts.get("labeled_dates")))
+        rows.extend(_detail_navigation._clean_rows(facts.get("structured_dates")))
+    else:
+        rows.extend(_detail_navigation._clean_rows(facts.get("dates")))
+        rows.extend(_detail_navigation._clean_rows(facts.get("lines")))
     return any(_line_dates(value) for value in rows)
 
 
