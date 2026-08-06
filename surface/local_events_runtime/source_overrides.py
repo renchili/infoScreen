@@ -267,6 +267,10 @@ def _merge_detail(source: dict[str, Any], card: dict[str, Any], payload: dict[st
         "labeled_date_candidates": [_extract.clean(item) for item in payload.get("labeled_dates") or [] if _extract.clean(item)],
         "labeled_time_candidates": [_extract.clean(item) for item in payload.get("labeled_times") or [] if _extract.clean(item)],
         "labeled_venue_candidates": [_extract.clean(item) for item in payload.get("labeled_venues") or [] if _extract.clean(item)],
+        "structured_date_candidates": [_extract.clean(item) for item in payload.get("structured_dates") or [] if _extract.clean(item)],
+        "structured_time_candidates": [_extract.clean(item) for item in payload.get("structured_times") or [] if _extract.clean(item)],
+        "structured_venue_candidates": [_extract.clean(item) for item in payload.get("structured_venues") or [] if _extract.clean(item)],
+        "field_authority_version": _extract.clean(payload.get("field_authority_version")),
     }
     if events:
         event = dict(events[0])
@@ -306,6 +310,10 @@ def _merge_detail(source: dict[str, Any], card: dict[str, Any], payload: dict[st
     merged["detail_labeled_dates"] = evidence["labeled_date_candidates"]
     merged["detail_labeled_times"] = evidence["labeled_time_candidates"]
     merged["detail_labeled_venues"] = evidence["labeled_venue_candidates"]
+    merged["detail_structured_dates"] = evidence["structured_date_candidates"]
+    merged["detail_structured_times"] = evidence["structured_time_candidates"]
+    merged["detail_structured_venues"] = evidence["structured_venue_candidates"]
+    merged["detail_field_authority_version"] = evidence["field_authority_version"]
     merged["detail_enriched"] = True
     merged["detail_evidence"] = evidence
     merged["screenshot"] = card.get("screenshot") or ""
