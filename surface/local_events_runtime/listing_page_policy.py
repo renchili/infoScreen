@@ -16,6 +16,31 @@ _ARCHIVE_LINK_RE = re.compile(
     re.I,
 )
 
+_GARDENS_HOST = "gardensbythebay.com.sg"
+_GARDENS_RESOURCE_PATH_RE = re.compile(
+    r"^/(?:[a-z]{2}/)?learn-with-us/explore-resources(?:/|$)",
+    re.I,
+)
+
+
+def non_event_page_rejection_reason(url: object) -> str:
+    """Return why an official page is known not to represent an Event."""
+
+    raw_url = str(url or "").strip()
+    try:
+        parsed = urlsplit(raw_url)
+    except ValueError:
+        return ""
+
+    host = (parsed.hostname or "").casefold().removeprefix("www.")
+    path = unquote(parsed.path or "/").casefold()
+    if (
+        (host == _GARDENS_HOST or host.endswith("." + _GARDENS_HOST))
+        and _GARDENS_RESOURCE_PATH_RE.search(path)
+    ):
+        return "gardens_non_event_resource_path"
+    return ""
+
 
 def rejection_reason(url: object, link_text: object = "") -> str:
     """Return why a URL cannot be a current Event list page."""
@@ -26,6 +51,10 @@ def rejection_reason(url: object, link_text: object = "") -> str:
         parsed = urlsplit(raw_url)
     except ValueError:
         return "invalid_listing_url"
+
+    non_event_reason = non_event_page_rejection_reason(raw_url)
+    if non_event_reason:
+        return non_event_reason
 
     searchable_path = unquote(parsed.path or "").casefold()
     searchable_query = unquote(parsed.query or "").casefold()
@@ -44,4 +73,8 @@ def is_current_listing_page(url: object, link_text: object = "") -> bool:
     return not rejection_reason(url, link_text)
 
 
-__all__ = ["is_current_listing_page", "rejection_reason"]
+__all__ = [
+    "is_current_listing_page",
+    "non_event_page_rejection_reason",
+    "rejection_reason",
+]

@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 from . import event_review as _review
 from . import event_review_diagnostics as _diagnostics
 from . import source_overrides as _source_overrides
+from .listing_page_policy import rejection_reason as listing_page_rejection_reason
 
 _APPLIED = False
 _BASE_SET_LISTING_DECISION = None
@@ -452,6 +453,9 @@ def _confirmed_selections(
     urls: dict[str, set[str]] = {}
     skipped: list[str] = []
     for listing in (item for item in state.listing_pages if item.decision == "confirmed"):
+        if listing_page_rejection_reason(listing.url, listing.link_text):
+            skipped.append(listing.url)
+            continue
         record = records.get(listing.url)
         decisions = record.get("decisions") if isinstance(record, dict) else None
         selected = [

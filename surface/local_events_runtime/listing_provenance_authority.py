@@ -7,6 +7,7 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 from . import extract as _extract
 from . import official_feeds as _official_feeds
 from . import source_overrides as _source_overrides
+from .listing_page_policy import non_event_page_rejection_reason
 
 _APPLIED = False
 _MEDIA_RE = re.compile(r"\.(?:jpg|jpeg|png|gif|webp|svg|pdf)$", re.I)
@@ -55,6 +56,8 @@ def listing_detail_url(listing_url: object, value: object) -> str:
             "",
         )
     )
+    if non_event_page_rejection_reason(canonical):
+        return ""
     if canonical == listing_canonical:
         return ""
     return canonical

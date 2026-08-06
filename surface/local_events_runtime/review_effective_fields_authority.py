@@ -22,6 +22,12 @@ _DATE_NOISE_RE = re.compile(
     r"previous programme|next programme|previous event|next event)\b",
     re.I,
 )
+_POSTAL_ADDRESS_RE = re.compile(
+    r"^\s*\d{1,5}\s+.{1,120}\b(?:road|rd|street|st|avenue|ave|drive|dr|"
+    r"lane|ln|boulevard|blvd|way|close|crescent|place)\b.*"
+    r"\bsingapore\s+\d{6}\b\s*$",
+    re.I,
+)
 _ESPLANADE_SERIES_URL_RE = re.compile(
     r"^https?://(?:www\.)?esplanade\.com/whats-on/festivals-and-series/"
     r"(?:(?:series|festivals?)/(?:[^/?#]+(?:/20\d{2})?|20\d{2}/[^/?#]+)"
@@ -150,7 +156,7 @@ def _repair_fields(
 
 def _line_dates(value: object) -> list[Any]:
     text = _extract.clean(value)
-    if not text:
+    if not text or _POSTAL_ADDRESS_RE.search(text):
         return []
     try:
         return list(_detail_dates._activity_label_dates(text))

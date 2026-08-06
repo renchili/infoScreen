@@ -5,6 +5,7 @@ from urllib.parse import urlsplit
 
 from . import event_review as _review
 from .manual_listing import MANUAL_LINK_TEXT
+from .listing_page_policy import rejection_reason as listing_page_rejection_reason
 
 DISCOVERY_TIMEOUT_MS = 20_000
 _MBS_DOMAIN = "marinabaysands.com"
@@ -26,6 +27,8 @@ def _configured_candidates(
     candidates: dict[str, _review.ListingPageCandidate] = {}
     for value in source.get("listing_urls") or []:
         url = _review.canonical_url(value)
+        if listing_page_rejection_reason(url):
+            continue
         candidate_id = _review.stable_id(source_id, url)
         candidates[candidate_id] = _review.ListingPageCandidate(
             candidate_id=candidate_id,
@@ -108,6 +111,9 @@ def _discover_home_links(
                     url = _review.canonical_url(row.get("url"))
                     if not _review._host_allowed(url, source):
                         continue
+                    link_text = str(row.get("link_text") or "")[:240]
+                    if listing_page_rejection_reason(url, link_text):
+                        continue
                     candidate_id = _review.stable_id(source_id, url)
                     if candidate_id in candidates:
                         continue
@@ -117,7 +123,7 @@ def _discover_home_links(
                         source_name=source_name,
                         url=url,
                         origin="discovered",
-                        link_text=str(row.get("link_text") or "")[:240],
+                        link_text=link_text,
                         discovered_at=discovered_at,
                     )
             finally:

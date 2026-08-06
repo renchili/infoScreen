@@ -292,7 +292,7 @@ Rules:
 - `source_id` must identify a configured institution;
 - `url` must be absolute HTTP/HTTPS;
 - the hostname must match that institution’s `allowed_domains`;
-- archive, past-event, past-exhibition, and previous-programme pages are not valid current List Pages even when their hostname is allowed;
+- archive, past-event, past-exhibition, previous-programme, and known non-Event resource pages are not valid current List Pages even when their hostname is allowed; Gardens by the Bay `Learn with us / Explore resources` pages such as `What\'s Blooming` are rejected;
 - the page is stored in review state as `pending`;
 - adding an existing page resets it to `pending`;
 - resetting an existing URL removes its old committed Preview selection and process-local manifest;
@@ -449,7 +449,7 @@ POST /api/local-events/review/collect-events
 
 The collector reads pages currently marked `confirmed` and their committed Preview selections. A confirmed page without a committed REAL EVENT selection is skipped; the request fails when no current confirmed page has any committed REAL EVENT selection. Archive/past pages are excluded again at this formal selection boundary even when they remain in legacy persisted Review state with old committed selections.
 
-Before detail navigation, the collector admits only list cards whose original candidate identity or original official link is selected. After detail navigation or redirects, it retains results matching the selected candidate identity, original `listing_detail_url`, or final `detail_url`. Unselected candidate detail pages are not part of the formal collection path. A date is not required on the listing card itself.
+Before detail navigation, the collector admits only list cards whose original candidate identity or original official link is selected. Known non-Event resource destinations are removed at the same URL-provenance boundary even if they share the institution hostname or appear inside a broad rendered card. After detail navigation or redirects, it retains results matching the selected candidate identity, original `listing_detail_url`, or final `detail_url`. Unselected candidate detail pages are not part of the formal collection path. A date is not required on the listing card itself.
 
 This is the persisted collection path. It replaces Review Event candidates and Event collection metadata with selected REAL EVENT results, marks those persisted candidates confirmed, preserves matching Event decisions, and never changes List Page decisions. Collection metadata records `preview_selection_policy: confirmed_preview_events_only`, the selected count, and any confirmed List Pages skipped because they lacked a REAL EVENT selection.
 

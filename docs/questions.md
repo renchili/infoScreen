@@ -164,23 +164,23 @@ A discovery-retirement fixture must prove that a no-longer-discovered non-manual
 
 ### Easy-to-make interpretation
 
-A title plus dates, explicit `Event` type, event-looking route, or absence of blacklist terms proves activity intent.
+A title plus dates, explicit `Event` type, event-looking route, same-domain destination, or absence of blacklist terms proves activity intent.
 
 ### Why it fails
 
-Facilities, memberships, promotions, and navigation records can be event-shaped or typed as Events. The SAFRA `Carpark Rates` record demonstrated this failure mode.
+Facilities, memberships, promotions, navigation records, and educational resource pages can be event-shaped or appear inside a broad activity card. The SAFRA `Carpark Rates` record demonstrated the facility failure mode. Gardens by the Bay `What\'s Blooming` demonstrated the resource-page failure mode: it describes current flowering information, while the generic field fallback also misread the footer address `18 Marina Gardens Drive, Singapore 018953` as both schedule and venue.
 
 ### Correct requirement interpretation
 
-Positive event intent means membership in the correct official activity list. Structured data and detail pages cannot independently create output rows.
+Positive event intent means membership in the correct official activity list and a destination that is not classified by the official site as a non-Event resource. Structured data, detail pages, shared-domain URLs, dates in page chrome, and footer addresses cannot independently create output rows.
 
 ### Required implementation
 
-Require rendered official list evidence and match enrichment back to that card. Do not replace this positive authority with title blacklists.
+Require rendered official list evidence and match enrichment back to that card. Apply source-owned URL-category rejection consistently to List Page discovery, manual entry, Preview, and formal detail admission. Reject postal-address rows before date parsing so `18 Marina...` cannot be interpreted as `18 Mar`. Do not replace this positive authority with title blacklists.
 
 ### Acceptance evidence
 
-Reject unmatched typed Event objects and accept matched enrichment without adding title blacklists. Preserve the SAFRA facility regression case.
+Reject unmatched typed Event objects and accept matched enrichment without adding title blacklists. Preserve the SAFRA facility regression case. A Gardens `Learn with us / Explore resources / What\'s Blooming` URL must be absent from both Preview and formal candidates, and its footer address must produce no `When` value.
 
 ## Local Events zero-result diagnostics
 

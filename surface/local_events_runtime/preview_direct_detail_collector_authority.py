@@ -9,6 +9,8 @@ from . import event_review as _review
 from . import event_review_diagnostics as _diagnostics
 from . import preview_collector_authority as _preview
 from . import review_effective_fields_authority as _effective
+from . import listing_provenance_authority as _provenance
+from .listing_page_policy import rejection_reason as listing_page_rejection_reason
 
 _APPLIED = False
 _ARTSCIENCE_SOURCE_ID = "artscience"
@@ -510,6 +512,12 @@ def collect_preview(store: _review.EventReviewStore) -> _review.ReviewState:
     source = store.source(listing.source_id)
     if not _preview._host_allowed(listing.url, source):
         raise ValueError("listing page is outside the source allow-list")
+    listing_reason = listing_page_rejection_reason(listing.url, listing.link_text)
+    if listing_reason:
+        raise ValueError(
+            "listing page is not a current Event list page "
+            f"({listing_reason})"
+        )
 
     _effective.apply()
     started = _review.utc_now()
@@ -590,10 +598,19 @@ def collect_preview(store: _review.EventReviewStore) -> _review.ReviewState:
                 listing_page = None
 
             for raw in rows:
-                detail_url = str(raw.get("detail_url") or "").strip()
+                raw_detail_url = str(raw.get("detail_url") or "").strip()
+                detail_url = _provenance.listing_detail_url(
+                    listing.url,
+                    raw_detail_url,
+                )
                 title = str(raw.get("title") or "").strip()
-                if not title or not _preview._host_allowed(detail_url, source):
+                if (
+                    not title
+                    or not detail_url
+                    or not _preview._host_allowed(detail_url, source)
+                ):
                     continue
+                raw["detail_url"] = detail_url
 
                 detail_attempts += 1
                 if listing.source_id == _ARTSCIENCE_SOURCE_ID:
@@ -629,9 +646,16 @@ def collect_preview(store: _review.EventReviewStore) -> _review.ReviewState:
     candidates: list[_review.EventCandidate] = []
     listing_detail_urls: dict[str, str] = {}
     for index, raw in enumerate(rows):
-        listing_detail_url = str(raw.get("detail_url") or "").strip()
+        listing_detail_url = _provenance.listing_detail_url(
+            listing.url,
+            str(raw.get("detail_url") or "").strip(),
+        )
         listing_title = str(raw.get("title") or "").strip()
-        if not listing_title or not _preview._host_allowed(listing_detail_url, source):
+        if (
+            not listing_title
+            or not listing_detail_url
+            or not _preview._host_allowed(listing_detail_url, source)
+        ):
             continue
 
         detail = raw.get("_detail")

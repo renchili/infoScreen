@@ -114,7 +114,7 @@ Isolated Preview is a deliberate exception. `preview_direct_detail_collector_aut
 
 ### 6.4 Positive Event intent
 
-Positive Event intent means membership in the correct official activity list. A title, date range, explicit `Event` type, or event-looking route is insufficient by itself. Structured XHR, embedded JSON, and detail-page JSON can improve an admitted item only after matching the rendered list card.
+Positive Event intent means membership in the correct official activity list. A title, date range, explicit `Event` type, event-looking route, or same-domain link is insufficient by itself. Structured XHR, embedded JSON, and detail-page JSON can improve an admitted item only after matching the rendered list card. Known non-Event URL categories are rejected before membership: Gardens by the Bay pages under `Learn with us / Explore resources`, including `What\'s Blooming`, describe educational or flowering information rather than activities. The same rejection applies to List Page discovery, manual entry, Preview detail admission, and formal collection.
 
 ### 6.5 Detail-page authority
 
@@ -285,7 +285,7 @@ The Sync ticker is an observer, not a scheduler. It performs `HEAD` requests and
 - One Local Event source failure is recorded under that source.
 - A partial Local Event run does not replace a larger verified collector snapshot.
 - A zero-result review page records the first failed recognition stage.
-- A manually supplied list page outside the configured institution allow-list, or identified as archive/past activity content, is rejected before persistence.
+- A manually supplied list page outside the configured institution allow-list, identified as archive/past activity content, or classified as a known non-Event resource page is rejected before persistence.
 - A retired discovery page cannot retain a committed Preview selection; failed Review-state persistence restores the previous selection bytes.
 - A persisted archive page is hidden from current Studio state and excluded again at the formal selection boundary, even before discovery retires its legacy state.
 - An expired, missing, superseded, or revision-mismatched Preview manifest rejects submission and tells the operator to run Preview again.

@@ -31,6 +31,7 @@ FORMULA_CONSTRUCTION = "Bay South–Bay East Bridge Construction from 4 May 2026
 FORMULA_ADVISORY = (
     "Advisory for use of tripods at Disney Garden of Wonder at Floral Fantasy"
 )
+GARDENS_FOOTER_ADDRESS = "18 Marina Gardens Drive, Singapore 018953"
 
 
 def _payload() -> dict:
@@ -157,3 +158,16 @@ def test_review_bootstrap_installs_operational_notice_authority() -> None:
 
     assert "apply_detail_operational_notice_authority" in source
     assert "apply_detail_operational_notice_authority()" in source
+
+
+def test_footer_address_is_not_parsed_as_an_18_march_event_date() -> None:
+    payload = {
+        "dates": [GARDENS_FOOTER_ADDRESS],
+        "venues": [GARDENS_FOOTER_ADDRESS],
+        "lines": ["What\'s Blooming", GARDENS_FOOTER_ADDRESS],
+    }
+
+    assert effective._line_dates(GARDENS_FOOTER_ADDRESS) == []
+    assert authority._detail_date_line(payload) == ""
+    assert authority._raw_when(payload) == ""
+    assert navigation._raw_where(payload) == GARDENS_FOOTER_ADDRESS

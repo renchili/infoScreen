@@ -60,11 +60,11 @@ def add_manual_listing(
     url = canonical_url(str(request.url))
     if not _host_allowed(url, source):
         raise ValueError("listing URL is outside the institution allow-list")
-    archive_reason = listing_page_rejection_reason(url)
-    if archive_reason:
+    page_reason = listing_page_rejection_reason(url)
+    if page_reason:
         raise ValueError(
-            "listing URL is an archive or past-activities page and cannot be used "
-            f"as a current Event list page ({archive_reason})"
+            "listing URL is not a current Event list page "
+            f"({page_reason})"
         )
 
     state = store.load()

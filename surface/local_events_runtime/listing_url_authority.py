@@ -33,6 +33,12 @@ OFFICIAL_DETAIL_HELPER = r'''
     const cleanPath = value => decodeURIComponent(String(value || "")).replace(/\/+$/, "") || "/";
     const targetPath = cleanPath(target.pathname);
     const listingPath = cleanPath(listing.pathname);
+    const targetHost = target.hostname.replace(/^www\./, "").toLowerCase();
+    const knownNonEventResource =
+      (targetHost === "gardensbythebay.com.sg" ||
+       targetHost.endsWith(".gardensbythebay.com.sg")) &&
+      /^\/(?:[a-z]{2}\/)?learn-with-us\/explore-resources(?:\/|$)/i.test(targetPath);
+    if (knownNonEventResource) return false;
     if (
       target.origin === listing.origin &&
       targetPath === listingPath &&

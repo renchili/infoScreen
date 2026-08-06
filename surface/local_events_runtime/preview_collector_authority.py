@@ -85,6 +85,12 @@ async (args) => {
       const listingPath = decodeURIComponent(listing.pathname).replace(/\/$/, "").toLowerCase();
       if (!path || path === listingPath) return "";
       if (/\.(?:jpg|jpeg|png|gif|webp|svg|pdf|zip)$/i.test(path)) return "";
+      const host = url.hostname.replace(/^www\./, "").toLowerCase();
+      if (
+        (host === "gardensbythebay.com.sg" ||
+         host.endsWith(".gardensbythebay.com.sg")) &&
+        /^\/(?:[a-z]{2}\/)?learn-with-us\/explore-resources(?:\/|$)/i.test(path)
+      ) return "";
       return url.href;
     } catch (error) {
       return "";
