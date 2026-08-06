@@ -102,21 +102,21 @@ Correct official Event lists may show only an image, title, category, and detail
 
 ### Correct requirement interpretation
 
-The official list proves membership. Date and venue can be obtained after admission by following the card’s official detail link. Explicit detail labels such as `Opening Hours`, `Date & Time`, `Date`, `Time`, and `Location` outrank unlabeled date/venue matches elsewhere in the same document. Site-wide notices before the primary activity heading are not activity fields.
+The official list proves membership. Date and venue can be obtained after admission by following the card’s official detail link. Explicit detail labels such as `Opening Hours`, `Date & Time`, `Date`, `Time`, and `Location`, plus identity-matched structured Event fields, are the only trusted detail authorities. Nested labels and non-`h1` activity headings must be recognized. Unlabeled selector matches, promotions, announcements, navigation text, and site-wide notices are evidence only, not activity fields.
 
 ### Required implementation
 
-Do not require a list-card date. Preserve listing evidence, follow the detail URL, scan labeled fields from the primary activity heading to the related/other Event boundary, retain labeled date/time/location provenance through final selection, keep those values ahead of generic selector candidates, and show exact detail status/errors.
+Do not require a list-card date. Preserve listing evidence, follow the detail URL, scan semantic labels from the identity-matched activity heading to the related/other Event boundary, retain labeled and identity-matched structured provenance through final selection, and never generate synthetic field labels around generic candidates. A provenance-aware row without trusted schedule or venue data must remain `incomplete` with exact missing-field errors.
 
 ### Acceptance evidence
 
-A date-less list card with one official detail link must be admitted and enriched from its detail page. Fixtures must cover separate `Opening Hours` fields and a combined `Date & Time` field, with site-wide construction/closure/advisory text occurring before the activity heading and generic selector matches ordered ahead of the real values; both Preview and formal extraction must still return only the labeled activity schedule and venue.
+A date-less list card with one official detail link must be admitted and enriched from its detail page. Fixtures must cover nested separate `Opening Hours` fields, a combined `Date & Time` field, a non-`h1` activity title, site-wide construction/closure/advisory text before the activity, and promotion/navigation candidates ordered ahead of or after the real values. Preview and formal extraction must return only trusted activity fields; when trusted fields are absent, both must return `incomplete` instead of promoting generic text.
 
 ## Local Events manual correct-list-page entry
 
 ### Easy-to-make interpretation
 
-The operator can only accept or reject URLs discovered by the system, a correct URL must be added by editing committed configuration, any same-domain archive page is a valid current List Page, a manually added page cannot be inspected until it is confirmed, a browser-restored Preview panel is sufficient proof that its candidate set is still current, or an official candidate whose event date has passed should disappear before the operator can classify it.
+The operator can only accept or reject URLs discovered by the system, a correct URL must be added by editing committed configuration, any same-domain archive page is a valid current List Page, a manually added page cannot be inspected until it is confirmed, cached Preview fields are sufficient proof that a candidate set is still current, or an official candidate whose event date has passed should disappear before the operator can classify it.
 
 ### Why it fails
 
@@ -274,7 +274,7 @@ Tests and runtime evidence must cover verified-to-partial transitions, timed-out
 
 ### Easy-to-make interpretation
 
-The Studio can display corrected fields while the kiosk continues rendering a separate collector row, a preview may temporarily rewrite the selected or unrelated list-page decisions and restore them later, or any browser-restored Preview panel may be submitted without proving it is the server’s latest candidate set.
+The Studio can display corrected fields while the kiosk continues rendering a separate collector row, a preview may temporarily rewrite the selected or unrelated list-page decisions and restore them later, cached parser output may be displayed as if it were a fresh Preview, or any browser draft may be submitted without proving it is the server’s latest candidate set.
 
 ### Why it fails
 
