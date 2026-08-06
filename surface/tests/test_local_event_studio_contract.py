@@ -46,6 +46,7 @@ def test_isolated_preview_renders_temporary_candidates_before_operator_selection
     assert 'document.getElementById("event-candidates")' in preview
     assert 'article.dataset.preview = "true"' in preview
     assert "preview_candidate_listing_detail_urls" in preview
+    assert "detail_field_authority_version" in preview
     assert "article.dataset.listingDetailUrl" in preview
     assert 'renderPreviewCandidatePanel(payload, url);' in preview
     assert 'await reloadState();' not in preview[preview.index("async function collectPreview(card, button)"):preview.index("async function collectForGlobalInstitution(button)")]
@@ -59,20 +60,30 @@ def test_isolated_preview_renders_temporary_candidates_before_operator_selection
     assert 'id="event-candidates-hint"' in html
 
 
-def test_temporary_preview_panel_survives_page_renders_until_formal_collection() -> None:
+def test_temporary_preview_fields_are_not_restored_after_a_page_render() -> None:
     persistence = read_text(
         "surface/web/assets/js/local_event_review_preview_persistence.js"
+    )
+    preview = read_text("surface/web/assets/js/local_event_review_previews.js")
+    diagnostics = read_text(
+        "surface/web/assets/js/local_event_review_diagnostics.js"
     )
     html = read_text("surface/web/local-events/studio/index.html")
 
     assert 'const STORAGE_KEY = "infoscreen.review.active-preview-panel"' in persistence
+    assert "SNAPSHOT_VERSION = 6" in persistence
     assert 'sessionStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot))' in persistence
-    assert 'container.innerHTML = String(snapshot.html || "")' in persistence
+    assert "snapshot.html" not in persistence
+    assert "container.innerHTML" not in persistence
+    assert "require a fresh" in persistence
     assert 'document.addEventListener("infoscreen:review-preview"' in persistence
     assert 'document.addEventListener("infoscreen:review-rendered"' in persistence
     assert 'document.addEventListener("infoscreen:review-state"' in persistence
     assert "clearStored();" in persistence
     assert 'data-preview="true"' in persistence
+    assert 'const PREVIEW_AUTHORITY_VERSION = "detail-provenance-v2"' in preview
+    assert "stored.authority_version === PREVIEW_AUTHORITY_VERSION" in preview
+    assert "value.authority_version === PREVIEW_AUTHORITY_VERSION" in diagnostics
     assert (
         '<script src="/assets/js/local_event_review_preview_persistence.js" defer></script>'
         in html
