@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from . import detail_payload_authority as _detail_payload
 from . import extract as _extract
 from . import review_detail_navigation_authority as _navigation
 from . import review_effective_fields_authority as _effective
@@ -52,7 +53,10 @@ def _event_date_line(value: object) -> bool:
         return False
     if _navigation._label_key(text) in _navigation._ALL_FIELD_LABELS:
         return False
-    return bool(_effective._line_dates(text))
+    return bool(
+        _effective._line_dates(text)
+        or _detail_payload.TRUSTED_OPEN_SCHEDULE_RE.search(text)
+    )
 
 
 def _detail_date_line(payload: dict[str, Any]) -> str:
