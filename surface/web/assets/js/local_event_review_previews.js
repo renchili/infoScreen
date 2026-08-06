@@ -2,6 +2,7 @@
 
 (() => {
   const PREVIEW_STORAGE_KEY = "infoscreen.review.event-previews";
+  const PREVIEW_AUTHORITY_VERSION = "detail-provenance-v2";
   const text = (value) => String(value || "").trim();
 
   async function request(path, options = {}) {
@@ -55,9 +56,10 @@
     return rows.find((row) => canonical(row?.listing_url) === expected) || null;
   }
 
-  function savePreview(url, rows, diagnostic) {
+  function savePreview(url, rows, diagnostic, authorityVersion) {
     const value = previews();
     value[url] = {
+      authority_version: text(authorityVersion),
       collected_at: new Date().toISOString(),
       events: rows,
       diagnostic: diagnostic && typeof diagnostic === "object" ? diagnostic : null,
@@ -206,7 +208,11 @@
 
   function previewSummary(card, url) {
     const stored = previews()[url];
-    if (stored && Array.isArray(stored.events)) {
+    if (
+      stored
+      && stored.authority_version === PREVIEW_AUTHORITY_VERSION
+      && Array.isArray(stored.events)
+    ) {
       renderPreviewRows(card, stored.events, { collectedAt: stored.collected_at });
       return;
     }
@@ -389,7 +395,12 @@
       const payload = await collectPreviewPage(url);
       const rows = normalizedPreviewRows(payload, url);
       const diagnostic = diagnosticFor(payload, url);
-      savePreview(url, rows, diagnostic);
+      savePreview(
+        url,
+        rows,
+        diagnostic,
+        payload?.event_collection?.detail_field_authority_version,
+      );
       if (card.isConnected) {
         renderPreviewRows(card, rows, { collectedAt: new Date().toISOString() });
       }
