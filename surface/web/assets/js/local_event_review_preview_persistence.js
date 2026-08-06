@@ -2,7 +2,7 @@
 
 (() => {
   const STORAGE_KEY = "infoscreen.review.active-preview-panel";
-  const SNAPSHOT_VERSION = 5;
+  const SNAPSHOT_VERSION = 6;
   const text = (value) => String(value || "").trim();
 
   function canonical(value) {
@@ -70,7 +70,6 @@
       title: text(title?.textContent) || "Preview event candidates",
       hint: text(hint?.textContent),
       count: text(count.textContent) || "0",
-      html: container.innerHTML,
     };
 
     try {
@@ -88,18 +87,12 @@
     }
     if (!listingStillExists(snapshot.url)) return false;
 
-    const container = document.getElementById("event-candidates");
-    const count = document.getElementById("event-count");
-    const title = document.getElementById("event-candidates-title");
-    const hint = document.getElementById("event-candidates-hint");
-    if (!container || !count) return false;
-
-    container.innerHTML = String(snapshot.html || "");
-    count.textContent = text(snapshot.count) || "0";
-    if (title) title.textContent = text(snapshot.title) || "Preview event candidates";
-    if (hint) hint.textContent = text(snapshot.hint);
-    window.InfoScreenReviewContext?.applyFilters?.();
-    return true;
+    // A rendered Preview contains parser output tied to one server-side manifest.
+    // Reloading the Studio, restarting the service, or deploying new extraction code
+    // makes that HTML unprovable. Keep current-document DOM only and require a fresh
+    // Preview after any render lifecycle instead of presenting cached fields as live.
+    clearStored();
+    return false;
   }
 
   document.addEventListener("infoscreen:review-preview", (event) => {
@@ -108,8 +101,8 @@
   });
 
   document.addEventListener("infoscreen:review-rendered", () => {
-    // The main renderer replaces the right panel from persisted Review state. Restore
-    // the active isolated Preview after that replacement has completed.
+    // The main renderer supersedes temporary Preview output. Stored parser fields are
+    // deliberately invalidated rather than restored as current collection evidence.
     restore();
   });
 
