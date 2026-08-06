@@ -121,6 +121,10 @@ def test_gardens_labeled_fields_outrank_promotion_and_advisory() -> None:
         "dates": [activity_date, promotion],
         "times": [activity_time],
         "venues": ["Flower Dome", advisory],
+        "labeled_dates": [activity_date],
+        "labeled_times": [activity_time],
+        "labeled_venues": ["Flower Dome"],
+        "field_authority_version": authority.FIELD_AUTHORITY_VERSION,
         "summary": summary,
         "summary_candidates": [summary],
         "lines": [
@@ -195,6 +199,7 @@ def test_formula_one_combined_label_outranks_sitewide_announcements() -> None:
         "labeled_dates": [activity_date],
         "labeled_times": [activity_time],
         "labeled_venues": [activity_venue],
+        "field_authority_version": authority.FIELD_AUTHORITY_VERSION,
         "summary": summary,
         "summary_candidates": [summary],
         "lines": [
@@ -217,6 +222,7 @@ def test_formula_one_combined_label_outranks_sitewide_announcements() -> None:
     assert merged["detail_labeled_dates"] == [activity_date]
     assert merged["detail_labeled_times"] == [activity_time]
     assert merged["detail_labeled_venues"] == [activity_venue]
+    assert merged["detail_field_authority_version"] == authority.FIELD_AUTHORITY_VERSION
     assert reason == "accepted"
     assert event is not None
     assert event["when"] == f"{activity_date} · {activity_time}"
@@ -230,12 +236,57 @@ def test_formula_one_combined_label_outranks_sitewide_announcements() -> None:
     assert formal["detail_labeled_dates"] == [activity_date]
     assert formal["detail_labeled_times"] == [activity_time]
     assert formal["detail_labeled_venues"] == [activity_venue]
+    assert formal["detail_field_authority_version"] == authority.FIELD_AUTHORITY_VERSION
     assert formal_reason == "accepted"
     assert formal_event is not None
     assert formal_event["when"] == f"{activity_date} · {activity_time}"
     assert formal_event["where"] == activity_venue
     assert construction not in formal_event["when"]
     assert advisory not in formal_event["where"]
+
+
+def test_provenance_payload_never_promotes_generic_page_text_to_fields() -> None:
+    promotion = (
+        "Visit Flower Dome from 3 Jul to 10 Aug 2026, scan the QR code and "
+        "answer a simple question for a chance to win."
+    )
+    navigation_text = "OUR GARDENS STORY"
+    payload = {
+        "title": "Orchid Extravaganza",
+        "dates": [promotion],
+        "times": [],
+        "venues": [navigation_text],
+        "labeled_dates": [],
+        "labeled_times": [],
+        "labeled_venues": [],
+        "structured_dates": [],
+        "structured_times": [],
+        "structured_venues": [],
+        "field_authority_version": authority.FIELD_AUTHORITY_VERSION,
+        "lines": ["Orchid Extravaganza", promotion, navigation_text],
+    }
+    merged = authority.merge_detail_payload(
+        {
+            "text": "Orchid Extravaganza",
+            "text_lines": ["Orchid Extravaganza"],
+            "extraction_mode": "detail_link",
+        },
+        payload,
+    )
+
+    event, reason = extract.event_from_card(
+        {
+            "id": "gardensbythebay",
+            "name": "Gardens by the Bay",
+            "default_venue": "Gardens by the Bay",
+        },
+        merged,
+    )
+
+    assert authority._authoritative_when(merged) == ""
+    assert authority._authoritative_venue(merged) == ""
+    assert event is None
+    assert reason == "current_date_not_found_in_card"
 
 
 def test_site_metadata_cta_is_not_an_event_summary() -> None:
@@ -352,13 +403,16 @@ def test_detail_dom_extractor_reads_structural_fields_and_rejects_metadata_cta()
     assert "structured_event" in script
     assert "visit\\s+.{0,100}?\\s+today" in script
     assert "(0, 100)" not in script
-    assert 'add(lines, "date")' in script
-    assert 'add(lines, "time")' in script
-    assert 'add(lines, "location")' in script
+    assert 'add(lines, "date")' not in script
+    assert 'add(lines, "time")' not in script
+    assert 'add(lines, "location")' not in script
     assert "opening\\s+hours?" in script
     assert "date\\s*(?:&|and)\\s*time" in script
+    assert '"main h1, main h2, main h3' in script
+    assert "expectedtitle" in script
     assert 'labelheading.closest("main")' in script
     assert "labelboundaryindex" in script
+    assert "full.length <= 80" in script
     assert "labeleddates" in script
     assert "labeledtimes" in script
     assert "labeledvenues" in script
@@ -368,6 +422,9 @@ def test_detail_dom_extractor_reads_structural_fields_and_rejects_metadata_cta()
     assert "labeled_dates: labeleddates" in script
     assert "labeled_times: labeledtimes" in script
     assert "labeled_venues: labeledvenues" in script
+    assert "structured_dates: structureddates" in script
+    assert "structured_venues: structuredvenues" in script
+    assert 'field_authority_version: "detail-provenance-v2"' in script
 
 
 def test_detail_payload_authority_is_applied_before_final_review_binding() -> None:
