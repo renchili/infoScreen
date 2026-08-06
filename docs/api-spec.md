@@ -354,7 +354,7 @@ Rules:
 - `candidate_id` is validated against the original `listing_detail_url` and therefore remains stable across redirects;
 - legacy rows without `listing_detail_url` fall back to `detail_url`.
 
-A service restart, manifest expiry, newer Preview, List Page state change, reset, rejection, manual re-add, or discovery retirement requires a new Preview. Browser-restored HTML and `sessionStorage` choices are drafts only and do not replace the server manifest.
+A service restart, manifest expiry, newer Preview, List Page state change, reset, rejection, manual re-add, discovery retirement, Studio reload, or completed state render requires a new Preview. The Studio does not restore extracted candidate HTML after a render lifecycle; `sessionStorage` choices remain drafts only and do not replace the server manifest.
 
 The selection file is atomically replaced first, followed by the List Page state write. If the state write raises, the previous selection bytes are restored or the newly created selection file is removed, and the current manifest remains available for retry. After a successful decision write, the manifest is invalidated. This is same-request exception rollback, not a cross-file transaction that guarantees recovery from an abrupt process crash between the writes.
 
@@ -439,7 +439,7 @@ Preview does not call the list-decision endpoint and does not change:
 
 The response keeps the original list-card `candidate_id`, reports the final redirected/public `detail_url`, and exposes `event_collection.preview_candidate_listing_detail_urls` so the Studio can submit both identities later. It also records manifest policy, candidate count, and expiry metadata in the temporary response collection metadata.
 
-The Studio stores the rendered panel and draft choices in `sessionStorage`; those browser-session drafts are not committed until the List Page review request succeeds. They may remain visible after the process-local manifest expires or disappears, but saving then fails and requires a new Preview. A missing or unknown `listing_url` returns HTTP `400`; collection, browser-lifecycle, or final-detail invariant failure returns HTTP `500`.
+The Studio stores draft choices in `sessionStorage`, but it does not restore extracted Preview HTML after a reload or completed state render. Cached per-listing summaries and diagnostics are accepted only when their detail-field authority version matches the running collector. Those browser-session drafts are not committed until the List Page review request succeeds, and saving always requires the latest server manifest. A missing or unknown `listing_url` returns HTTP `400`; collection, browser-lifecycle, provenance, or final-detail invariant failure returns HTTP `500`.
 
 ### Collect selected REAL EVENT candidates from confirmed pages
 
