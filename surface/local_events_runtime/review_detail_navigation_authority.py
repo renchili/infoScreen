@@ -151,8 +151,14 @@ WAIT_FOR_NAVIGATION_JS = r"""
 """
 
 _FIELD_LABELS = {
-    "date": {"date", "dates", "when", "date & time", "date and time"},
-    "time": {"time", "times", "duration", "date & time", "date and time"},
+    "date": {
+        "date", "dates", "when", "date & time", "date and time",
+        "opening hours", "opening hour", "hours",
+    },
+    "time": {
+        "time", "times", "duration", "date & time", "date and time",
+        "opening hours", "opening hour", "hours",
+    },
     "where": {"location", "venue", "where"},
 }
 _ALL_FIELD_LABELS = set().union(*_FIELD_LABELS.values(), {"admission", "ticket", "tickets"})
@@ -281,8 +287,15 @@ def _raw_when(payload: dict[str, Any]) -> str:
 
     labeled_dates = _clean_rows(payload.get("labeled_dates"))
     labeled_times = _clean_rows(payload.get("labeled_times"))
-    if labeled_dates or labeled_times:
-        return " · ".join([*labeled_dates, *labeled_times])
+    structured_dates = _clean_rows(payload.get("structured_dates"))
+    structured_times = _clean_rows(payload.get("structured_times"))
+    trusted_dates = labeled_dates or structured_dates
+    trusted_times = labeled_times or structured_times
+    if trusted_dates or trusted_times:
+        return " · ".join([*trusted_dates, *trusted_times])
+
+    if _extract.clean(payload.get("field_authority_version")):
+        return ""
 
     lines = _payload_lines(payload)
     date_rows = _labeled_values(lines, _FIELD_LABELS["date"])
@@ -306,8 +319,13 @@ def _raw_where(payload: dict[str, Any]) -> str:
     """Return an exact collected Location/Venue row; never use a source default."""
 
     labeled_venues = _clean_rows(payload.get("labeled_venues"))
-    if labeled_venues:
-        return labeled_venues[0]
+    structured_venues = _clean_rows(payload.get("structured_venues"))
+    trusted_venues = labeled_venues or structured_venues
+    if trusted_venues:
+        return trusted_venues[0]
+
+    if _extract.clean(payload.get("field_authority_version")):
+        return ""
 
     lines = _payload_lines(payload)
     rows = _labeled_values(lines, _FIELD_LABELS["where"])
@@ -340,10 +358,15 @@ def _merge_fallback_fields(
     """Add only exact fields collected from the same detail document."""
 
     merged = dict(payload)
+    authority_version = _extract.clean(merged.get("field_authority_version"))
     for key in ("dates", "venues"):
-        if _clean_rows(merged.get(key)):
+        values = _clean_rows(fallback.get(key))
+        if not values:
             continue
-        merged[key] = _clean_rows(fallback.get(key))
+        if authority_version:
+            merged[f"fallback_{key}"] = values
+        elif not _clean_rows(merged.get(key)):
+            merged[key] = values
     if not _extract.clean(merged.get("summary")):
         merged["summary"] = _extract.clean(fallback.get("summary"))
     return merged
