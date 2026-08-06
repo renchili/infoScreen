@@ -7,6 +7,7 @@ from .conftest import SURFACE, read_text
 sys.path.insert(0, str(SURFACE))
 
 from local_events_runtime import detail_operational_notice_authority as authority  # noqa: E402
+from local_events_runtime.detail_payload_authority import FIELD_AUTHORITY_VERSION  # noqa: E402
 from local_events_runtime import review_detail_navigation_authority as navigation  # noqa: E402
 from local_events_runtime import review_effective_fields_authority as effective  # noqa: E402
 
@@ -74,6 +75,10 @@ def test_gardens_preview_uses_opening_hours_not_promotion(monkeypatch) -> None:
         "dates": [GARDENS_DATE, GARDENS_PROMOTION],
         "times": [GARDENS_TIME],
         "venues": ["Flower Dome", GARDENS_ADVISORY],
+        "labeled_dates": [GARDENS_DATE],
+        "labeled_times": [GARDENS_TIME],
+        "labeled_venues": ["Flower Dome"],
+        "field_authority_version": FIELD_AUTHORITY_VERSION,
         "lines": [
             "Orchid Extravaganza",
             "Date",
@@ -105,6 +110,7 @@ def test_formula_preview_uses_date_time_and_location_labels(monkeypatch) -> None
         "labeled_dates": [FORMULA_DATE],
         "labeled_times": [FORMULA_TIME],
         "labeled_venues": [FORMULA_VENUE],
+        "field_authority_version": FIELD_AUTHORITY_VERSION,
         "lines": [
             "Formula 1® Exhibition Singapore",
             "Date & Time",
@@ -124,6 +130,41 @@ def test_formula_preview_uses_date_time_and_location_labels(monkeypatch) -> None
     assert authority._detail_date_line(payload) == FORMULA_DATE
     assert authority._raw_when(payload) == f"{FORMULA_DATE} · {FORMULA_TIME}"
     assert navigation._raw_where(payload) == FORMULA_VENUE
+
+
+def test_generic_promotion_and_navigation_never_become_collected_fields() -> None:
+    payload = {
+        "dates": [GARDENS_PROMOTION],
+        "times": [],
+        "venues": ["OUR GARDENS STORY"],
+        "labeled_dates": [],
+        "labeled_times": [],
+        "labeled_venues": [],
+        "structured_dates": [],
+        "structured_times": [],
+        "structured_venues": [],
+        "field_authority_version": FIELD_AUTHORITY_VERSION,
+        "lines": [
+            "Orchid Extravaganza",
+            GARDENS_PROMOTION,
+            "OUR GARDENS STORY",
+        ],
+    }
+
+    assert authority._detail_date_line(payload) == ""
+    assert authority._raw_when(payload) == ""
+    assert navigation._raw_where(payload) == ""
+
+    class Page:
+        @staticmethod
+        def title() -> str:
+            return "Orchid Extravaganza"
+
+    authority.apply()
+    title, when, where, _summary = effective._payload_fields(Page(), payload)
+    assert title == "Orchid Extravaganza"
+    assert when == ""
+    assert where == ""
 
 
 def test_unlabelled_advisory_is_not_a_venue() -> None:
