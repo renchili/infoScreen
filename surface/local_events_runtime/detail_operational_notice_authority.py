@@ -25,12 +25,16 @@ def _operational_notice(value: object) -> bool:
 
 def _candidate_rows(payload: dict[str, Any]) -> list[str]:
     rows: list[object] = []
+    authority_version = _extract.clean(payload.get("field_authority_version"))
     raw_dates = payload.get("labeled_dates")
     if not isinstance(raw_dates, list) or not raw_dates:
+        raw_dates = payload.get("structured_dates")
+    if (not isinstance(raw_dates, list) or not raw_dates) and not authority_version:
         raw_dates = payload.get("dates")
     if isinstance(raw_dates, list):
         rows.extend(raw_dates)
-    rows.extend(_navigation._payload_lines(payload))
+    if not authority_version:
+        rows.extend(_navigation._payload_lines(payload))
 
     output: list[str] = []
     for raw in rows:
@@ -89,9 +93,13 @@ def _raw_when(payload: dict[str, Any]) -> str:
         for value in values
     )
     if not already_has_time:
+        authority_version = _extract.clean(payload.get("field_authority_version"))
         raw_times = payload.get("labeled_times")
+        if not isinstance(raw_times, list) or not raw_times:
+            raw_times = payload.get("structured_times")
         time_rows = raw_times if isinstance(raw_times, list) else []
-        for line in [*time_rows, *_navigation._payload_lines(payload)]:
+        fallback_rows = [] if authority_version else _navigation._payload_lines(payload)
+        for line in [*time_rows, *fallback_rows]:
             text = _extract.clean(line)
             if (
                 text
