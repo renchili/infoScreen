@@ -10,6 +10,7 @@ from . import event_review_diagnostics as _diagnostics
 from . import preview_collector_authority as _preview
 from . import review_effective_fields_authority as _effective
 from . import listing_provenance_authority as _provenance
+from .detail_payload_authority import FIELD_AUTHORITY_VERSION
 from .listing_page_policy import rejection_reason as listing_page_rejection_reason
 
 _APPLIED = False
@@ -750,6 +751,7 @@ def collect_preview(store: _review.EventReviewStore) -> _review.ReviewState:
             "selector_audit_skipped": True,
             "listing_diagnostics_skipped": False,
             "preview_detail_mode": "official_detail_pages",
+            "detail_field_authority_version": FIELD_AUTHORITY_VERSION,
             "preview_detail_enrichment_entrypoint": (
                 "preview_collector._collect_preview"
             ),
