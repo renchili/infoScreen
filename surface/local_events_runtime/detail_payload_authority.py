@@ -14,6 +14,7 @@ _BASE_DETAIL_JS = _detail_dates.ACTIVITY_DETAIL_JS
 _BASE_PICK_WHEN = None
 _BASE_PICK_VENUE = None
 _BASE_PICK_SUMMARY = None
+FIELD_AUTHORITY_VERSION = "detail-provenance-v2"
 _SUBVENUE_RE = re.compile(
     r"\b(?:gallery|galleries|level|room|hall|theatre|theater|foyer|atrium|"
     r"concourse|stadium|arena|auditorium|lawn|green)\b",
@@ -59,7 +60,10 @@ ENRICHED_DETAIL_JS = rf"""
   const ownText = element => {{
     const clone = element.cloneNode(true);
     for (const child of Array.from(clone.children || [])) child.remove();
-    return clean(clone.textContent || element.getAttribute("aria-label") || "");
+    const direct = clean(clone.textContent || element.getAttribute("aria-label") || "");
+    if (direct) return direct;
+    const full = clean(element.innerText || element.textContent || "");
+    return full.length <= 80 ? full : "";
   }};
   const fieldValue = element => {{
     for (const attribute of [
@@ -96,6 +100,29 @@ ENRICHED_DETAIL_JS = rf"""
   const labeledDates = [];
   const labeledTimes = [];
   const labeledVenues = [];
+  const structuredDates = [];
+  const structuredTimes = [];
+  const structuredVenues = [];
+  const structuredEvent = Array.isArray(base.eventObjects) ? base.eventObjects[0] : null;
+  if (structuredEvent && typeof structuredEvent === "object") {{
+    const start = clean(structuredEvent.startDate || structuredEvent.start);
+    const end = clean(structuredEvent.endDate || structuredEvent.end);
+    add(structuredDates, start && end && start !== end ? start + " - " + end : (start || end));
+    for (const value of [
+      structuredEvent.doorTime,
+      structuredEvent.startTime,
+      structuredEvent.endTime
+    ]) {{
+      if (timeLike(value)) add(structuredTimes, value);
+    }}
+    const location = structuredEvent.location ||
+      structuredEvent.venue || structuredEvent.place;
+    if (typeof location === "string") {{
+      add(structuredVenues, location);
+    }} else if (location && typeof location === "object") {{
+      add(structuredVenues, location.name || location.title);
+    }}
+  }}
 
   const dateSelectors = [
     "time[datetime]", "time", "[itemprop='startDate']", "[itemprop='endDate']",
@@ -127,8 +154,22 @@ ENRICHED_DETAIL_JS = rf"""
     if (value && value.length <= 220 && !dateLike(value)) add(venues, value);
   }}
 
-  const labelHeading = Array.from(document.querySelectorAll("main h1, article h1, h1"))
-    .find(visible) || null;
+  const labelHeadings = Array.from(document.querySelectorAll(
+    "main h1, main h2, main h3, main h4, main h5, main h6, " +
+    "article h1, article h2, article h3, article h4, article h5, article h6, " +
+    "h1, h2, h3, h4, h5, h6"
+  )).filter(visible);
+  const normalizedHeading = value => clean(value)
+    .toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const expectedTitle = normalizedHeading(base.title);
+  const labelHeading = labelHeadings.find(element => {{
+    const candidate = normalizedHeading(element.innerText || element.textContent);
+    return Boolean(candidate && expectedTitle && (
+      candidate === expectedTitle ||
+      candidate.includes(expectedTitle) ||
+      expectedTitle.includes(candidate)
+    ));
+  }}) || labelHeadings[0] || null;
   const labelRoot = (labelHeading && labelHeading.closest("main")) ||
     document.querySelector("main") ||
     (labelHeading && labelHeading.closest("article")) ||
@@ -188,12 +229,15 @@ ENRICHED_DETAIL_JS = rf"""
 
   const orderedDates = [];
   labeledDates.forEach(value => add(orderedDates, value));
+  structuredDates.forEach(value => add(orderedDates, value));
   dates.forEach(value => add(orderedDates, value));
   const orderedTimes = [];
   labeledTimes.forEach(value => add(orderedTimes, value));
+  structuredTimes.forEach(value => add(orderedTimes, value));
   times.forEach(value => add(orderedTimes, value));
   const orderedVenues = [];
   labeledVenues.forEach(value => add(orderedVenues, value));
+  structuredVenues.forEach(value => add(orderedVenues, value));
   venues.forEach(value => add(orderedVenues, value));
 
   const title = clean(base.title);
@@ -212,7 +256,6 @@ ENRICHED_DETAIL_JS = rf"""
     summaryRows.push({{text, score, origin}});
   }};
 
-  const structuredEvent = Array.isArray(base.eventObjects) ? base.eventObjects[0] : null;
   if (structuredEvent && typeof structuredEvent === "object") {{
     pushSummary(structuredEvent.description || structuredEvent.summary, 1000, "structured_event");
   }}
@@ -253,14 +296,8 @@ ENRICHED_DETAIL_JS = rf"""
     : (Array.isArray(base.text_lines) ? base.text_lines : []);
   const lines = [];
   add(lines, title);
-  if (orderedDates.length) add(lines, "Date");
-  orderedDates.forEach(value => add(lines, value));
-  if (orderedTimes.length) add(lines, "Time");
-  orderedTimes.forEach(value => add(lines, value));
-  if (orderedVenues.length) add(lines, "Location");
-  orderedVenues.forEach(value => add(lines, value));
-  add(lines, summary);
   originalLines.forEach(value => add(lines, value));
+  add(lines, summary);
 
   return {{
     ...base,
@@ -270,6 +307,10 @@ ENRICHED_DETAIL_JS = rf"""
     labeled_dates: labeledDates,
     labeled_times: labeledTimes,
     labeled_venues: labeledVenues,
+    structured_dates: structuredDates,
+    structured_times: structuredTimes,
+    structured_venues: structuredVenues,
+    field_authority_version: "detail-provenance-v2",
     summary,
     summary_candidates: summaryCandidates,
     lines,
@@ -324,9 +365,15 @@ def _format_date(value: date) -> str:
     return f"{value.day} {value.strftime('%b')} {value.year}"
 
 
+def _field_authority_enabled(card: dict[str, Any]) -> bool:
+    return _extract.clean(card.get("detail_field_authority_version")) == FIELD_AUTHORITY_VERSION
+
+
 def _authoritative_when(card: dict[str, Any]) -> str:
     rows = _clean_rows(card.get("detail_labeled_dates"))
     if not rows:
+        rows = _clean_rows(card.get("detail_structured_dates"))
+    if not rows and not _field_authority_enabled(card):
         rows = _detail_rows(card, "detail_dates", "date_candidates")
     if not rows:
         return ""
@@ -355,6 +402,8 @@ def _authoritative_when(card: dict[str, Any]) -> str:
 
     times = _clean_rows(card.get("detail_labeled_times"))
     if not times:
+        times = _clean_rows(card.get("detail_structured_times"))
+    if not times and not _field_authority_enabled(card):
         times = _detail_rows(card, "detail_times", "time_candidates")
     time = next((value for value in times if _extract.TIME_RE.search(value)), "")
     if selected and time and time not in selected:
@@ -365,6 +414,8 @@ def _authoritative_when(card: dict[str, Any]) -> str:
 def _authoritative_venue(card: dict[str, Any]) -> str:
     rows = _clean_rows(card.get("detail_labeled_venues"))
     if not rows:
+        rows = _clean_rows(card.get("detail_structured_venues"))
+    if not rows and not _field_authority_enabled(card):
         rows = _detail_rows(card, "detail_venues", "venue_candidates")
     valid = [
         row
@@ -402,6 +453,8 @@ def _pick_when(card: dict[str, Any]) -> tuple[str, str]:
     value = _authoritative_when(card)
     if value:
         return _extract.short(value, 180), value
+    if _field_authority_enabled(card):
+        return "", ""
     return _BASE_PICK_WHEN(card)
 
 
@@ -414,6 +467,8 @@ def _pick_venue(
     value = _authoritative_venue(card)
     if value:
         return value
+    if _field_authority_enabled(card):
+        return ""
     return _BASE_PICK_VENUE(source, card, when, when_line)
 
 
@@ -447,9 +502,16 @@ def merge_detail_payload(
     labeled_dates = _clean_rows(detail.get("labeled_dates"))
     labeled_times = _clean_rows(detail.get("labeled_times"))
     labeled_venues = _clean_rows(detail.get("labeled_venues"))
-    dates = [*labeled_dates, *(value for value in dates if value not in labeled_dates)]
-    times = [*labeled_times, *(value for value in times if value not in labeled_times)]
-    venues = [*labeled_venues, *(value for value in venues if value not in labeled_venues)]
+    structured_dates = _clean_rows(detail.get("structured_dates"))
+    structured_times = _clean_rows(detail.get("structured_times"))
+    structured_venues = _clean_rows(detail.get("structured_venues"))
+    authority_version = _extract.clean(detail.get("field_authority_version"))
+    trusted_dates = [*labeled_dates, *(value for value in structured_dates if value not in labeled_dates)]
+    trusted_times = [*labeled_times, *(value for value in structured_times if value not in labeled_times)]
+    trusted_venues = [*labeled_venues, *(value for value in structured_venues if value not in labeled_venues)]
+    dates = [*trusted_dates, *(value for value in dates if value not in trusted_dates)]
+    times = [*trusted_times, *(value for value in times if value not in trusted_times)]
+    venues = [*trusted_venues, *(value for value in venues if value not in trusted_venues)]
     summary_candidates = _clean_rows(detail.get("summary_candidates"))
     summary = useful_event_summary(detail.get("summary"))
     if summary and summary not in summary_candidates:
@@ -468,14 +530,17 @@ def merge_detail_payload(
         ]
 
     ordered: list[str] = []
-    field_values = [title]
-    if dates:
-        field_values.extend(["Date", *dates])
-    if times:
-        field_values.extend(["Time", *times])
-    if venues:
-        field_values.extend(["Location", *venues])
-    field_values.extend([summary, *detail_lines])
+    if authority_version == FIELD_AUTHORITY_VERSION:
+        field_values = [title, *detail_lines, summary]
+    else:
+        field_values = [title]
+        if dates:
+            field_values.extend(["Date", *dates])
+        if times:
+            field_values.extend(["Time", *times])
+        if venues:
+            field_values.extend(["Location", *venues])
+        field_values.extend([summary, *detail_lines])
     for value in field_values:
         text = " ".join(str(value or "").split())
         if text and text not in ordered:
@@ -506,6 +571,10 @@ def merge_detail_payload(
     merged["detail_labeled_dates"] = labeled_dates
     merged["detail_labeled_times"] = labeled_times
     merged["detail_labeled_venues"] = labeled_venues
+    merged["detail_structured_dates"] = structured_dates
+    merged["detail_structured_times"] = structured_times
+    merged["detail_structured_venues"] = structured_venues
+    merged["detail_field_authority_version"] = authority_version
     merged["detail_summary"] = summary
     merged["detail_summary_candidates"] = summary_candidates
     merged["detail_event_objects"] = detail.get("eventObjects") or []
@@ -553,7 +622,9 @@ __all__ = [
     "apply",
     "merge_detail_payload",
     "useful_event_summary",
+    "FIELD_AUTHORITY_VERSION",
     "_authoritative_summary",
     "_authoritative_venue",
     "_authoritative_when",
+    "_field_authority_enabled",
 ]
