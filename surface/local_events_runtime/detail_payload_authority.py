@@ -32,6 +32,10 @@ _SUMMARY_SHELL_RE = re.compile(
     r"previous\s+(?:event|programme)|next\s+(?:event|programme))\b",
     re.I,
 )
+TRUSTED_OPEN_SCHEDULE_RE = re.compile(
+    r"\b(?:every|daily|weekdays?|weekends?|ongoing|permanent)\b",
+    re.I,
+)
 
 # The base detail extractor identifies the primary activity boundary. This wrapper
 # supplements semantic date/venue fields and selects an activity description from
@@ -227,6 +231,62 @@ ENRICHED_DETAIL_JS = rf"""
     }}
   }}
 
+  const recurringLike = value => /\b(every|daily|weekdays?|weekends?|ongoing|permanent)\b/i.test(clean(value));
+  const fieldRole = value => {{
+    const name = clean(value);
+    const schedule = /^(?:opening\s+hours?|hours?)\s*:?$/i.test(name);
+    const combined = /^(?:event\s+)?date\s*(?:&|and)\s*time\s*:?$/i.test(name);
+    return {{
+      date: schedule || combined || /^(?:event\s+)?(?:date|dates|when)\s*:?$/i.test(name),
+      time: schedule || combined || /^(?:event\s+)?(?:time|times)\s*:?$/i.test(name),
+      venue: /^(?:location|venue|where)\s*:?$/i.test(name)
+    }};
+  }};
+  const allFieldLabel = value => {{
+    const role = fieldRole(value);
+    return role.date || role.time || role.venue ||
+      /^(?:admission|ticket|tickets|price|prices)\s*:?$/i.test(clean(value));
+  }};
+  const rootRows = String(labelRoot ? (labelRoot.innerText || labelRoot.textContent || "") : "")
+    .split(/\n+/).map(clean).filter(Boolean);
+  const scopedRows = [];
+  let activityStarted = !expectedTitle;
+  for (const row of rootRows) {{
+    const rowKey = normalizedHeading(row);
+    if (!activityStarted) {{
+      if (rowKey && (
+        rowKey === expectedTitle ||
+        rowKey.includes(expectedTitle) ||
+        expectedTitle.includes(rowKey)
+      )) {{
+        activityStarted = true;
+      }} else {{
+        continue;
+      }}
+    }}
+    if (
+      scopedRows.length > 1 &&
+      /^(?:(?:other|related)\s+events?|you\s+may\s+also\s+like)$/i.test(row)
+    ) break;
+    add(scopedRows, row);
+  }}
+  for (let index = 0; index < scopedRows.length; index += 1) {{
+    const role = fieldRole(scopedRows[index]);
+    if (!role.date && !role.time && !role.venue) continue;
+    for (const value of scopedRows.slice(index + 1, index + 7)) {{
+      if (allFieldLabel(value)) break;
+      if (role.date && (dateLike(value) || recurringLike(value))) add(labeledDates, value);
+      if (role.time && timeLike(value)) add(labeledTimes, value);
+      if (
+        role.venue && !dateLike(value) && !timeLike(value) &&
+        value.length <= 220
+      ) {{
+        add(labeledVenues, value);
+        break;
+      }}
+    }}
+  }}
+
   const orderedDates = [];
   labeledDates.forEach(value => add(orderedDates, value));
   structuredDates.forEach(value => add(orderedDates, value));
@@ -291,9 +351,11 @@ ENRICHED_DETAIL_JS = rf"""
   const summaryCandidates = summaryRows.map(row => row.text);
   const summary = summaryCandidates[0] || "";
 
-  const originalLines = Array.isArray(base.lines)
-    ? base.lines
-    : (Array.isArray(base.text_lines) ? base.text_lines : []);
+  const originalLines = scopedRows.length
+    ? scopedRows
+    : (Array.isArray(base.lines)
+      ? base.lines
+      : (Array.isArray(base.text_lines) ? base.text_lines : []));
   const lines = [];
   add(lines, title);
   originalLines.forEach(value => add(lines, value));
@@ -399,6 +461,11 @@ def _authoritative_when(card: dict[str, Any]) -> str:
         selected = f"{_format_date(start)} – {_format_date(end)}"
     elif dated:
         selected = dated[0][0]
+    else:
+        selected = next(
+            (row for row in rows if TRUSTED_OPEN_SCHEDULE_RE.search(row)),
+            "",
+        )
 
     times = _clean_rows(card.get("detail_labeled_times"))
     if not times:
@@ -623,6 +690,7 @@ __all__ = [
     "merge_detail_payload",
     "useful_event_summary",
     "FIELD_AUTHORITY_VERSION",
+    "TRUSTED_OPEN_SCHEDULE_RE",
     "_authoritative_summary",
     "_authoritative_venue",
     "_authoritative_when",
