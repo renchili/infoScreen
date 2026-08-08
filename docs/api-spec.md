@@ -401,6 +401,8 @@ load real Review state
 
 The ArtScience/MBS fresh-browser path deliberately avoids reusing the listing process’s network/HTTP2 connection state. Preview transport may run Marina Bay Sands in headed mode and records NetLog diagnostics. Unlike scoped discovery, confirmed-page formal collection, and scheduled/direct collection, isolated Preview does not force HTTP/1 or alter Chromium protocol negotiation.
 
+Every automated collection path defaults to the Chromium revision installed by the active Playwright package and does not discover `/snap/bin/chromium` or another system browser from `PATH`. An explicit `INFOSCREEN_CHROMIUM_PATH` or `PLAYWRIGHT_CHROMIUM_EXECUTABLE` value changes the launch source to `configured`. A Preview launch failure occurs before navigation and includes `preview_browser`, `preview_browser_source`, `preview_browser_version`, `preview_browser_mode`, and NetLog paths when available; no second browser or page request is attempted.
+
 For a non-ArtScience source that reuses one context, response metadata normally records:
 
 ```text

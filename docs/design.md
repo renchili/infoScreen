@@ -78,7 +78,7 @@ It defines source ID, display name, official home, allowed domains, configured l
 
 ```text
 source configuration or confirmed review-state list page
-  -> launch Chromium with --disable-http2
+  -> launch Playwright-managed Chromium with --disable-http2
   -> open official list URL
   -> deep-scroll and operate expansion/pagination controls
   -> identify rendered card boundaries
@@ -109,6 +109,8 @@ before importing collector code. Chromium launched by scoped discovery, confirme
 ```
 
 There is no HTTP/2-first attempt and no protocol retry loop on those paths.
+
+Automated Local Event collection defaults to the Chromium revision installed by the active Playwright package. It does not auto-select a system or Snap browser through `PATH`; `INFOSCREEN_CHROMIUM_PATH` and `PLAYWRIGHT_CHROMIUM_EXECUTABLE` are explicit operator overrides only. `surface/deploy/install-user-systemd.sh` runs `python3 -m playwright install chromium` even when the Python package is already importable, so a package update and its browser revision cannot drift. Browser selection or launch failure stops before the first page navigation and reports the selection source and expected executable; it does not retry the request with another browser.
 
 Isolated Preview is a deliberate exception. `preview_direct_detail_collector_authority.py` owns one Playwright manager per request, but its Chromium lifecycle is source-specific. Most sources reuse one browser context for the selected listing and admitted detail pages. ArtScience Museum / Marina Bay Sands instead closes the listing browser and opens each admitted detail page as the first document in a fresh sequential Chromium browser/context; this avoids reusing the listing process's network/HTTP2 connection state. `preview_transport_authority.py` may run Marina Bay Sands Preview in headed mode and records NetLog diagnostics, but it does not force HTTP/1 or otherwise alter Chromium protocol negotiation.
 
@@ -293,7 +295,7 @@ The Sync ticker is an observer, not a scheduler. It performs `HEAD` requests and
 - An expired, missing, superseded, or revision-mismatched Preview manifest rejects submission and tells the operator to run Preview again.
 - Isolated Preview uses one Playwright manager. Most sources reuse one Chromium context; ArtScience/MBS uses sequential fresh browser processes so each detail is the first document in its process. Incomplete final detail results fail without issuing a manifest.
 - Preview retains expired official candidates only for classification; formal collection and kiosk publication retain normal expiry filtering.
-- Formal discovery and collection disable HTTP/2 before Chromium starts; isolated Preview keeps normal protocol negotiation and may use headed Chromium for Marina Bay Sands.
+- Formal discovery and collection disable HTTP/2 before Playwright-managed Chromium starts; isolated Preview keeps normal protocol negotiation and may use headed mode for Marina Bay Sands. System/Snap browsers are never auto-selected for automated collection.
 - A dashboard filter with no matches displays an empty filtered state without changing or deleting the underlying runtime events.
 - A Review projection failure must leave the previous kiosk primary intact because both collector and display writes are atomic.
 - Market, Weather, News, and photo manifest producers use temporary files and atomic replacement.

@@ -218,15 +218,15 @@ An HTTP/2-first retry doubles formal navigation behavior and hides the first fai
 
 ### Correct requirement interpretation
 
-Scoped discovery, confirmed-page formal collection, scheduled collection, and direct search disable HTTP/2 before Chromium launches and do not retry protocols. Isolated Preview is a separate direct collector with normal Chromium protocol negotiation and one Playwright manager. Most sources can reuse one browser context. ArtScience/MBS uses sequential fresh Chromium processes so every detail is the first document in its process, may run headed, and records NetLog diagnostics.
+Scoped discovery, confirmed-page formal collection, scheduled collection, and direct search disable HTTP/2 before Chromium launches and do not retry protocols. All automated paths default to the Chromium revision managed by the active Playwright package; they do not auto-select a system or Snap browser. A machine browser path is used only through an explicit `INFOSCREEN_CHROMIUM_PATH` or `PLAYWRIGHT_CHROMIUM_EXECUTABLE` override. Isolated Preview is a separate direct collector with normal Chromium protocol negotiation and one Playwright manager. Most sources can reuse one browser context. ArtScience/MBS uses sequential fresh Chromium processes so every detail is the first document in its process, may run headed, and records NetLog diagnostics.
 
 ### Required implementation
 
-Apply `surface/local_events_runtime/http1_browser.py` before formal collection code in `surface/serve_infoscreen.py` and `surface/search_local_events.py`. Formal-path Chromium launches include `--disable-http2`. `preview_direct_detail_collector_authority.py` must not add a second protocol owner, retry loop, or `--disable-http2`; it may own the source-specific fresh-process lifecycle. `preview_transport_authority.py` owns Preview mode and diagnostics only.
+Apply `surface/local_events_runtime/http1_browser.py` before formal collection code in `surface/serve_infoscreen.py` and `surface/search_local_events.py`. Formal-path Chromium launches include `--disable-http2`. The installer must synchronize Playwright’s managed Chromium even when the Python package is already installed. Shared launch code must omit `executable_path` by default, honor only explicit configured overrides, and stop before navigation when selection or launch fails. `preview_direct_detail_collector_authority.py` must not add a second protocol owner, retry loop, or `--disable-http2`; it may own the source-specific fresh-process lifecycle. `preview_transport_authority.py` owns Preview mode and diagnostics only.
 
 ### Acceptance evidence
 
-Static and runtime evidence must distinguish the paths. Formal discovery/collection process arguments show `--disable-http2` and no hidden retry. Non-ArtScience Preview shows the documented same-context lifecycle with normal protocol negotiation. ArtScience/MBS Preview shows listing-process closure, sequential fresh detail processes, the required headed mode when applicable, normal protocol negotiation, and NetLog diagnostics on failure.
+Static and runtime evidence must distinguish the paths. Formal discovery/collection process arguments show `--disable-http2` and no hidden retry. Default launch arguments contain no `executable_path`, while an explicit override reports `preview_browser_source=configured`. The installed managed executable must exist after setup. Non-ArtScience Preview shows the documented same-context lifecycle with normal protocol negotiation. ArtScience/MBS Preview shows listing-process closure, sequential fresh detail processes, the required headed mode when applicable, normal protocol negotiation, and NetLog diagnostics on failure.
 
 ## Generated helper and archive boundary
 

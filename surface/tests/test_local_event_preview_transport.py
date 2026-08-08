@@ -35,6 +35,8 @@ def test_preview_browser_keeps_http2_and_captures_netlog(monkeypatch, tmp_path) 
         version = "149.0.0.0"
 
     class Chromium:
+        executable_path = "/home/rody/.cache/ms-playwright/chromium/chrome"
+
         def launch(self, **kwargs):
             observed.update(kwargs)
             return Browser()
@@ -43,7 +45,8 @@ def test_preview_browser_keeps_http2_and_captures_netlog(monkeypatch, tmp_path) 
         chromium = Chromium()
 
     netlog = tmp_path / "preview-netlog.json"
-    monkeypatch.setattr(browser_runtime, "find_browser_executable", lambda: "/usr/bin/chromium")
+    monkeypatch.delenv("INFOSCREEN_CHROMIUM_PATH", raising=False)
+    monkeypatch.delenv("PLAYWRIGHT_CHROMIUM_EXECUTABLE", raising=False)
     monkeypatch.setattr(transport, "_new_netlog_path", lambda executable: netlog)
     monkeypatch.setattr(transport._navigation, "apply", lambda: navigation_calls.append(True))
     monkeypatch.setattr(transport, "_PREVIEW_HEADLESS", True)
@@ -53,26 +56,32 @@ def test_preview_browser_keeps_http2_and_captures_netlog(monkeypatch, tmp_path) 
     assert isinstance(result, Browser)
     assert navigation_calls == [True]
     assert observed["headless"] is True
-    assert observed["executable_path"] == "/usr/bin/chromium"
+    assert "executable_path" not in observed
     assert "--disable-http2" not in observed["args"]
+    assert "--no-sandbox" not in observed["args"]
+    assert "--disable-dev-shm-usage" not in observed["args"]
+    assert "--disable-gpu" not in observed["args"]
     assert "--start-minimized" not in observed["args"]
     assert f"--log-net-log={netlog}" in observed["args"]
     assert "--net-log-capture-mode=Default" in observed["args"]
     assert transport._LAST_PREVIEW_DIAGNOSTIC == {
-        "browser_executable": "/usr/bin/chromium",
+        "browser_executable": Chromium.executable_path,
+        "browser_source": "playwright-managed",
         "browser_version": "149.0.0.0",
         "browser_mode": "headless",
         "netlog": str(netlog),
     }
 
 
-def test_mbs_preview_launches_same_installed_chromium_headed(monkeypatch, tmp_path) -> None:
+def test_mbs_preview_launches_playwright_managed_chromium_headed(monkeypatch, tmp_path) -> None:
     observed: dict[str, object] = {}
 
     class Browser:
         version = "150.0.7871.128"
 
     class Chromium:
+        executable_path = "/home/rody/.cache/ms-playwright/chromium/chrome"
+
         def launch(self, **kwargs):
             observed.update(kwargs)
             return Browser()
@@ -81,7 +90,8 @@ def test_mbs_preview_launches_same_installed_chromium_headed(monkeypatch, tmp_pa
         chromium = Chromium()
 
     netlog = tmp_path / "preview-netlog.json"
-    monkeypatch.setattr(browser_runtime, "find_browser_executable", lambda: "/snap/bin/chromium")
+    monkeypatch.delenv("INFOSCREEN_CHROMIUM_PATH", raising=False)
+    monkeypatch.delenv("PLAYWRIGHT_CHROMIUM_EXECUTABLE", raising=False)
     monkeypatch.setattr(transport, "_new_netlog_path", lambda executable: netlog)
     monkeypatch.setattr(transport._navigation, "apply", lambda: None)
     monkeypatch.setattr(transport, "_PREVIEW_HEADLESS", False)
@@ -90,10 +100,80 @@ def test_mbs_preview_launches_same_installed_chromium_headed(monkeypatch, tmp_pa
 
     assert isinstance(result, Browser)
     assert observed["headless"] is False
-    assert observed["executable_path"] == "/snap/bin/chromium"
+    assert "executable_path" not in observed
     assert "--start-minimized" in observed["args"]
     assert "--disable-http2" not in observed["args"]
+    assert transport._LAST_PREVIEW_DIAGNOSTIC["browser_source"] == "playwright-managed"
     assert transport._LAST_PREVIEW_DIAGNOSTIC["browser_mode"] == "headed"
+
+
+def test_explicit_browser_path_is_the_only_executable_override(monkeypatch, tmp_path) -> None:
+    observed: dict[str, object] = {}
+
+    class Browser:
+        version = "150.0.0.0"
+
+    class Chromium:
+        executable_path = "/managed/chromium"
+
+        def launch(self, **kwargs):
+            observed.update(kwargs)
+            return Browser()
+
+    class Playwright:
+        chromium = Chromium()
+
+    explicit = tmp_path / "configured-chromium"
+    explicit.write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setenv("INFOSCREEN_CHROMIUM_PATH", str(explicit))
+    monkeypatch.delenv("PLAYWRIGHT_CHROMIUM_EXECUTABLE", raising=False)
+    monkeypatch.setattr(
+        transport,
+        "_new_netlog_path",
+        lambda executable: tmp_path / "netlog.json",
+    )
+    monkeypatch.setattr(transport._navigation, "apply", lambda: None)
+    monkeypatch.setattr(transport, "_PREVIEW_HEADLESS", True)
+
+    transport._launch_preview_chromium(Playwright())
+
+    assert observed["executable_path"] == str(explicit)
+    assert transport._LAST_PREVIEW_DIAGNOSTIC["browser_source"] == "configured"
+    assert transport._LAST_PREVIEW_DIAGNOSTIC["browser_executable"] == str(explicit)
+
+
+def test_missing_explicit_browser_fails_before_launch(monkeypatch, tmp_path) -> None:
+    launch_calls: list[dict[str, object]] = []
+
+    class Chromium:
+        executable_path = "/managed/chromium"
+
+        def launch(self, **kwargs):
+            launch_calls.append(kwargs)
+            raise AssertionError("launch must not run for a missing configured file")
+
+    class Playwright:
+        chromium = Chromium()
+
+    missing = tmp_path / "missing-chromium"
+    monkeypatch.setenv("INFOSCREEN_CHROMIUM_PATH", str(missing))
+    monkeypatch.delenv("PLAYWRIGHT_CHROMIUM_EXECUTABLE", raising=False)
+    monkeypatch.setattr(transport._navigation, "apply", lambda: None)
+    monkeypatch.setattr(transport, "_PREVIEW_HEADLESS", True)
+
+    with pytest.raises(browser_runtime.MissingPlaywright) as raised:
+        transport._launch_preview_chromium(Playwright())
+
+    assert "preview_chromium_selection_failed" in str(raised.value)
+    assert "configured_chromium_not_found" in str(raised.value)
+    assert launch_calls == []
+    assert transport._LAST_PREVIEW_DIAGNOSTIC == {
+        "browser_executable": str(missing),
+        "browser_source": "configured",
+        "browser_version": "",
+        "browser_mode": "headless",
+        "netlog": "",
+    }
 
 
 def test_only_mbs_listing_requires_headed_preview(tmp_path) -> None:
@@ -238,6 +318,7 @@ def test_netlog_summary_keeps_http2_error_evidence(monkeypatch, tmp_path) -> Non
     summary = transport._write_netlog_summary(
         {
             "browser_executable": "/usr/bin/chromium",
+            "browser_source": "configured",
             "browser_version": "149.0.0.0",
             "browser_mode": "headless",
             "netlog": str(netlog),
@@ -247,6 +328,7 @@ def test_netlog_summary_keeps_http2_error_evidence(monkeypatch, tmp_path) -> Non
     payload = json.loads((tmp_path / "preview.summary.json").read_text(encoding="utf-8"))
     assert summary == str(tmp_path / "preview.summary.json")
     assert payload["browser_executable"] == "/usr/bin/chromium"
+    assert payload["browser_source"] == "configured"
     assert payload["browser_mode"] == "headless"
     assert payload["events"][0]["type"] == "HTTP2_SESSION"
     assert payload["events"][0]["params"]["net_error"] == -337
@@ -266,6 +348,7 @@ def test_preview_failure_reports_browser_mode_and_netlog(monkeypatch, tmp_path) 
     def base_collect(store):
         transport._LAST_PREVIEW_DIAGNOSTIC = {
             "browser_executable": "/usr/bin/chromium",
+            "browser_source": "configured",
             "browser_version": "149.0.0.0",
             "browser_mode": "headless",
             "netlog": str(netlog),
@@ -281,6 +364,7 @@ def test_preview_failure_reports_browser_mode_and_netlog(monkeypatch, tmp_path) 
     message = str(raised.value)
     assert "ERR_HTTP2_PROTOCOL_ERROR" in message
     assert "preview_browser=/usr/bin/chromium" in message
+    assert "preview_browser_source=configured" in message
     assert "preview_browser_version=149.0.0.0" in message
     assert "preview_browser_mode=headless" in message
     assert f"preview_netlog={netlog}" in message

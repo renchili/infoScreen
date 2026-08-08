@@ -33,7 +33,8 @@ def test_navigation_authority_is_installed_before_browser_launch() -> None:
     bootstrap = read_text("surface/local_events_runtime/http1_browser.py")
 
     navigation = bootstrap.index("apply_navigation()")
-    executable = bootstrap.index("executable = original_find()")
-    chromium_launch = bootstrap.index("playwright.chromium.launch(")
+    managed_launch = bootstrap.index("_browser.launch_playwright_chromium(")
 
-    assert navigation < executable < chromium_launch
+    assert navigation < managed_launch
+    assert "original_find" not in bootstrap
+    assert "executable_path=" not in bootstrap

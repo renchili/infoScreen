@@ -33,3 +33,15 @@ def test_installer_does_not_hide_required_unit_failures() -> None:
     for command in required_commands:
         assert command in script
         assert f"{command} 2>/dev/null || true" not in script
+
+
+def test_installer_synchronizes_playwright_managed_chromium() -> None:
+    script = read_text("surface/deploy/install-user-systemd.sh")
+
+    assert "install_playwright_browser()" in script
+    assert "python3 -m playwright install chromium" in script
+    assert "playwright.chromium.executable_path" in script
+    assert "install_python_dependencies\ninstall_playwright_browser" in script
+    assert script.index("install_python_dependencies") < script.index(
+        "install_playwright_browser"
+    ) < script.index("import_graphical_session_environment")

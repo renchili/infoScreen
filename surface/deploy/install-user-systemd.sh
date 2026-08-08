@@ -69,6 +69,24 @@ print(f"[OK] pydantic={pydantic.__version__}; playwright=available")
 PY
 }
 
+install_playwright_browser() {
+  echo "[INSTALL] Playwright-managed Chromium"
+  python3 -m playwright install chromium
+  python3 - <<'PY'
+from pathlib import Path
+from playwright.sync_api import sync_playwright
+
+with sync_playwright() as playwright:
+    executable = Path(playwright.chromium.executable_path)
+    if not executable.is_file():
+        raise SystemExit(
+            "Playwright Chromium is missing after installation: "
+            f"{executable}"
+        )
+    print(f"[OK] playwright-managed-chromium={executable}")
+PY
+}
+
 import_graphical_session_environment() {
   local names=()
   local name
@@ -180,6 +198,7 @@ verify_http_service() {
 
 install_system_dependencies
 install_python_dependencies
+install_playwright_browser
 import_graphical_session_environment
 
 for file in \

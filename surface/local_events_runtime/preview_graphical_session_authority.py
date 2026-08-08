@@ -105,7 +105,7 @@ def graphical_session_environment() -> dict[str, str]:
 
 @contextmanager
 def borrow_graphical_session() -> Iterator[dict[str, str]]:
-    """Temporarily expose the active kiosk session to a headed Preview launch."""
+    """Temporarily expose the active kiosk session to a headed managed launch."""
 
     values = graphical_session_environment()
     if not _usable_environment(values):

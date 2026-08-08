@@ -553,7 +553,11 @@ DETAIL_CARD_JS = r"""
 
 
 def find_browser_executable() -> str:
-    env_path = os.environ.get("INFOSCREEN_CHROMIUM_PATH") or os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE")
+    """Find a system browser for the interactive feedback window only."""
+
+    env_path = os.environ.get("INFOSCREEN_CHROMIUM_PATH") or os.environ.get(
+        "PLAYWRIGHT_CHROMIUM_EXECUTABLE"
+    )
     candidates = [
         env_path,
         shutil.which("chromium"),
@@ -575,25 +579,95 @@ def find_browser_executable() -> str:
     return ""
 
 
-def launch_chromium(playwright):
-    args = [
-        "--no-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-        "--disable-background-networking",
-    ]
-    executable = find_browser_executable()
-    if executable:
-        return playwright.chromium.launch(headless=True, executable_path=executable, args=args)
-    try:
-        return playwright.chromium.launch(headless=True, args=args)
-    except Exception as exc:
+def configured_browser_executable() -> str:
+    """Return only an explicitly configured automation browser path.
+
+    Automated collection defaults to the browser revision installed by the active
+    Playwright package. System and Snap browsers are not auto-selected because
+    Playwright does not guarantee compatibility with arbitrary executables.
+    """
+
+    raw = str(
+        os.environ.get("INFOSCREEN_CHROMIUM_PATH")
+        or os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE")
+        or ""
+    ).strip()
+    if not raw:
+        return ""
+
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        path = (Path.cwd() / path).resolve()
+    if not path.is_file():
         raise MissingPlaywright(
-            "missing_system_chromium: Playwright bundled Chromium is unavailable on this distro. "
-            "Install a system browser and set INFOSCREEN_CHROMIUM_PATH if needed. "
-            "Examples: sudo apt install chromium; or install Google Chrome and export INFOSCREEN_CHROMIUM_PATH=/usr/bin/google-chrome. "
-            f"Original error: {exc}"
+            "configured_chromium_not_found: "
+            f"{path}; unset INFOSCREEN_CHROMIUM_PATH and "
+            "PLAYWRIGHT_CHROMIUM_EXECUTABLE to use Playwright-managed Chromium, "
+            "or configure an existing browser file"
+        )
+    return str(path)
+
+
+def playwright_browser_target(playwright: Any) -> dict[str, str]:
+    """Describe the browser selected before launch without starting it."""
+
+    configured = configured_browser_executable()
+    if configured:
+        return {
+            "source": "configured",
+            "executable": configured,
+        }
+
+    expected = getattr(playwright.chromium, "executable_path", "")
+    if callable(expected):
+        try:
+            expected = expected()
+        except Exception:
+            expected = ""
+    return {
+        "source": "playwright-managed",
+        "executable": str(expected or "playwright-managed-chromium"),
+    }
+
+
+def launch_playwright_chromium(
+    playwright: Any,
+    *,
+    headless: bool,
+    args: list[str] | None = None,
+) -> Any:
+    """Launch the version-matched Playwright browser or one explicit override."""
+
+    target = playwright_browser_target(playwright)
+    kwargs: dict[str, Any] = {
+        "headless": headless,
+        "args": list(args or []),
+    }
+    if target["source"] == "configured":
+        kwargs["executable_path"] = target["executable"]
+
+    try:
+        return playwright.chromium.launch(**kwargs)
+    except Exception as exc:
+        guidance = (
+            "verify the configured browser and unset INFOSCREEN_CHROMIUM_PATH/"
+            "PLAYWRIGHT_CHROMIUM_EXECUTABLE to return to the managed browser"
+            if target["source"] == "configured"
+            else "run python3 -m playwright install chromium for the same Python user"
+        )
+        raise MissingPlaywright(
+            "playwright_chromium_launch_failed: "
+            f"source={target['source']}; executable={target['executable']}; "
+            f"recovery={guidance}; original_error={exc}"
         ) from exc
+
+
+def launch_chromium(playwright: Any) -> Any:
+    return launch_playwright_chromium(
+        playwright,
+        headless=True,
+        args=[],
+    )
 
 
 def card_has_date(card: dict[str, Any]) -> bool:

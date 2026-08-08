@@ -44,7 +44,10 @@ Install the runtime dependencies:
 sudo apt update
 sudo apt install -y python3 python3-pip curl ca-certificates chromium imagemagick ffmpeg
 python3 -m pip install --user 'pydantic>=2,<3' playwright
+python3 -m playwright install chromium
 ```
+
+Local Events automation uses the Chromium revision managed by the installed Playwright package. The system `chromium` package remains available for the kiosk/browser desktop, but it is not auto-selected for automated collection. `INFOSCREEN_CHROMIUM_PATH` or `PLAYWRIGHT_CHROMIUM_EXECUTABLE` is an explicit operator override only.
 
 Install or update the Surface user services and timers:
 
@@ -306,6 +309,25 @@ Then inspect the matching producer, runtime JSON, and HTTP response. A healthy H
 ### Calendar content is old
 
 Check the Mac Schedule sync result and confirm that the Surface `schedule.json` modification time changes. The Calendar area re-reads the file independently, so a page refresh should not be required after the file is updated.
+
+### Local Events Preview cannot launch Chromium
+
+Re-run the installer so the browser revision matches the installed Playwright package:
+
+```bash
+cd ~/infoscreen
+bash surface/deploy/install-user-systemd.sh
+systemctl --user restart infoscreen-http.service
+```
+
+For a browser-only repair, run:
+
+```bash
+python3 -m playwright install chromium
+systemctl --user restart infoscreen-http.service
+```
+
+Automated collection does not auto-select `/snap/bin/chromium`. If `INFOSCREEN_CHROMIUM_PATH` or `PLAYWRIGHT_CHROMIUM_EXECUTABLE` was set intentionally, verify that file or unset the override to return to the Playwright-managed browser.
 
 ### Local Events returns no results
 
